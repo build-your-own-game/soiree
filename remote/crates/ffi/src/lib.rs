@@ -5,8 +5,15 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use remote_core::{Haptic as CoreHaptic, n64};
-use remote_protocol::N64Button as CoreButton;
+use remote_core::controls::{self, Gate};
+use remote_core::draw::{self, Canvas};
+use remote_core::remote::{Motion as CoreMotion, Remote as CoreRemote};
+use remote_core::session::{self, Event};
+use remote_core::{
+    Haptic as CoreHaptic, Insets as CoreInsets, Point as CorePoint, Rect as CoreRect,
+    Size as CoreSize,
+};
+use remote_protocol::{self as protocol, Action, Kind, encode};
 
 uniffi::setup_scaffolding!();
 
@@ -38,155 +45,459 @@ pub struct Rect {
     pub bottom: f32,
 }
 
+/// A haptic to play now: from a touch (press, release, the stick's rim) or
+/// from the game (success, warning).
 #[derive(uniffi::Enum, Clone, Copy)]
 pub enum Haptic {
     Edge,
     Release,
     Press,
-}
-
-#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
-pub enum N64Button {
-    A,
-    B,
-    Z,
-    Start,
-    DUp,
-    DDown,
-    DLeft,
-    DRight,
-    L,
-    R,
-    CUp,
-    CDown,
-    CLeft,
-    CRight,
+    Success,
+    Warning,
 }
 
 #[derive(uniffi::Enum)]
-pub enum ButtonShape {
-    Circle { radius: f32 },
-    Capsule { width: f32, height: f32 },
+pub enum ControlShape {
+    Circle {
+        radius: f32,
+    },
+    Capsule {
+        width: f32,
+        height: f32,
+    },
+    RoundedRect {
+        width: f32,
+        height: f32,
+        corner: f32,
+    },
+}
+
+#[derive(uniffi::Enum, Clone, Copy)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(uniffi::Enum)]
+pub enum ControlLabel {
+    Text { text: String },
+    Arrow { direction: Direction },
+    Blank,
+}
+
+/// A button or a tool, placed on this screen.
+#[derive(uniffi::Record)]
+pub struct Control {
+    pub id: u8,
+    pub center: Point,
+    pub shape: ControlShape,
+    pub label: ControlLabel,
+    /// `0xRRGGBB`.
+    pub color: u32,
+    /// For a drawing size tool: a dot as wide as its line, in points.
+    pub dot: Option<f32>,
 }
 
 #[derive(uniffi::Record)]
-pub struct ButtonLayout {
-    pub button: N64Button,
+pub struct Stick {
+    pub id: u8,
     pub center: Point,
-    pub shape: ButtonShape,
-}
-
-#[derive(uniffi::Record)]
-pub struct StickLayout {
-    pub center: Point,
-    /// Knob travel to the gate along an axis, then along a diagonal.
+    /// Knob travel to the gate along an axis, then along a diagonal: equal
+    /// for a round gate, further for the N64's octagon.
     pub travel: f32,
     pub diagonal_travel: f32,
     pub knob_radius: f32,
+    pub octagonal: bool,
 }
 
 #[derive(uniffi::Record)]
-pub struct DPadLayout {
+pub struct DPad {
     pub center: Point,
     pub size: f32,
+    pub up: u8,
+    pub down: u8,
+    pub left: u8,
+    pub right: u8,
 }
 
 #[derive(uniffi::Record)]
-pub struct N64Layout {
+pub struct RemoteLayout {
     pub area: Rect,
-    pub stick: StickLayout,
-    pub dpad: DPadLayout,
-    pub buttons: Vec<ButtonLayout>,
+    pub controls: Vec<Control>,
+    pub dpads: Vec<DPad>,
+    pub sticks: Vec<Stick>,
+    /// The drawing canvas, if the layout has one.
+    pub canvas: Option<Rect>,
+    /// Steering by tilt: read the motion sensors.
+    pub tilt: bool,
+    /// A cursor on the TV: read the motion sensors.
+    pub pointer: bool,
 }
 
-/// What to draw now: the pad as a game reads it, and where the stick is.
+/// One motion sample, in the device's axes (x to the right of the portrait
+/// screen, y to its top, z out of it).
+#[derive(uniffi::Record, Clone, Copy)]
+pub struct Motion {
+    /// Gravity in g.
+    pub gravity_x: f32,
+    pub gravity_y: f32,
+    pub gravity_z: f32,
+    /// Rotation rate in radians per second.
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
+    /// Seconds since boot, the clock of touches.
+    pub time: f64,
+    /// The interface is in landscape-left: the device's top points right.
+    pub landscape_left: bool,
+}
+
 #[derive(uniffi::Record)]
-pub struct N64Frame {
-    pub pressed: Vec<N64Button>,
-    pub stick_x: i8,
-    pub stick_y: i8,
-    /// The four bytes a game receives.
-    pub wire: Vec<u8>,
-    pub stick_knob: Point,
+pub struct WheelView {
+    /// The phone's tilt in degrees, positive to the right.
+    pub angle: f32,
+    /// -1 to 1.
+    pub steering: f32,
+    pub available: bool,
 }
 
-/// A Nintendo 64 remote. Each call is a few comparisons; the app calls it on
+#[derive(uniffi::Record)]
+pub struct PointerView {
+    /// Where the cursor is on the TV, 0 to 1 across and down.
+    pub x: f32,
+    pub y: f32,
+    pub available: bool,
+}
+
+#[derive(uniffi::Record)]
+pub struct Knob {
+    pub id: u8,
+    pub center: Point,
+}
+
+/// A line, in screen points.
+#[derive(uniffi::Record)]
+pub struct Stroke {
+    /// `0xRRGGBB`.
+    pub color: u32,
+    pub width: f32,
+    pub points: Vec<Point>,
+}
+
+/// What to draw now.
+#[derive(uniffi::Record)]
+pub struct Frame {
+    /// Ids of the pressed buttons and D-pad directions.
+    pub pressed: Vec<u8>,
+    /// Ids of tools shown as selected: the drawing color and size, and Clear
+    /// while it waits for its second tap.
+    pub selected: Vec<u8>,
+    pub knobs: Vec<Knob>,
+    pub wheel: Option<WheelView>,
+    pub pointer: Option<PointerView>,
+    /// The line being drawn.
+    pub live_stroke: Option<Stroke>,
+    /// Changes whenever finished lines change: then call `strokes()`.
+    pub drawing_revision: u32,
+    /// The state the game receives, encoded.
+    pub wire: Vec<u8>,
+}
+
+/// What a frame from the game changed.
+#[derive(uniffi::Enum)]
+pub enum GameEvent {
+    /// Draw the layout from `layout()`.
+    ShowPad,
+    /// Show the game's page at this address, absolute or relative to the
+    /// game's host.
+    ShowWeb {
+        url: String,
+    },
+    Feedback {
+        haptic: Option<Haptic>,
+        color: Option<u32>,
+    },
+    Refused {
+        reason: String,
+    },
+    Unreadable,
+}
+
+/// Where to connect for a scanned text or an opened link.
+#[derive(uniffi::Record)]
+pub struct JoinTarget {
+    /// The remote's WebSocket.
+    pub socket: String,
+    /// The game's page: the base of a relative address the game sends.
+    pub page: String,
+}
+
+/// The game a scanned QR code or an opened `telecommande://` link points
+/// to, if any.
+#[uniffi::export]
+#[expect(clippy::needless_pass_by_value, reason = "UniFFI passes strings owned")]
+pub fn join_target(text: String) -> Option<JoinTarget> {
+    remote_core::join::target(&text).map(|t| JoinTarget {
+        socket: t.socket,
+        page: t.page,
+    })
+}
+
+/// The connection to one game. The app owns the WebSocket: it passes every
+/// frame received to `receive`, calls `tick` each screen refresh, and sends
+/// what `drain` returns. Each call is a few comparisons; the app calls it on
 /// the main thread, the lock only satisfies Swift's `Sendable`.
 #[derive(uniffi::Object)]
-pub struct N64Remote(Mutex<n64::N64Remote>);
+pub struct Session(Mutex<session::Session>);
 
 #[uniffi::export]
-impl N64Remote {
+impl Session {
+    /// `player`: 16 random bytes the app keeps, the same on every connection.
     #[uniffi::constructor]
-    pub fn new(screen: Size, insets: Insets) -> Self {
-        Self(Mutex::new(n64::N64Remote::new(
+    pub fn new(player: Vec<u8>, name: String, screen: Size, insets: Insets) -> Self {
+        let mut token = [0; 16];
+        for (slot, byte) in token.iter_mut().zip(player) {
+            *slot = byte;
+        }
+        Self(Mutex::new(session::Session::new(
+            token,
+            name,
             screen.into(),
             insets.into(),
         )))
+    }
+
+    /// The WebSocket (re)opened.
+    pub fn connected(&self) {
+        self.lock().connected();
+    }
+
+    #[expect(clippy::needless_pass_by_value, reason = "UniFFI passes bytes owned")]
+    pub fn receive(&self, frame: Vec<u8>) -> GameEvent {
+        match self.lock().receive(&frame) {
+            Event::ShowPad => GameEvent::ShowPad,
+            Event::ShowWeb(url) => GameEvent::ShowWeb { url },
+            Event::Feedback(feedback) => GameEvent::Feedback {
+                haptic: feedback.haptic.map(|h| match h {
+                    protocol::Haptic::Press => Haptic::Press,
+                    protocol::Haptic::Release => Haptic::Release,
+                    protocol::Haptic::Success => Haptic::Success,
+                    protocol::Haptic::Warning => Haptic::Warning,
+                }),
+                color: feedback.color,
+            },
+            Event::Refused(reason) => GameEvent::Refused { reason },
+            Event::Unreadable => GameEvent::Unreadable,
+        }
     }
 
     pub fn resize(&self, screen: Size, insets: Insets) {
         self.lock().resize(screen.into(), insets.into());
     }
 
-    pub fn layout(&self) -> N64Layout {
-        self.lock().layout().into()
+    /// `now`: seconds since boot.
+    pub fn tick(&self, now: f64) {
+        self.lock().tick(now);
     }
 
-    pub fn touch_down(&self, id: u64, point: Point) -> Option<Haptic> {
-        self.lock().touch_down(id, point.into()).map(Into::into)
+    /// The frames to send, in order.
+    pub fn drain(&self) -> Vec<Vec<u8>> {
+        self.lock().drain()
     }
 
-    pub fn touch_move(&self, id: u64, point: Point) -> Option<Haptic> {
-        self.lock().touch_move(id, point.into()).map(Into::into)
+    pub fn layout(&self) -> Option<RemoteLayout> {
+        self.lock().remote().map(layout)
+    }
+
+    pub fn touch_down(&self, id: u64, point: Point, time: f64) -> Option<Haptic> {
+        self.lock()
+            .remote_mut()?
+            .touch_down(id, point.into(), time)
+            .map(Into::into)
+    }
+
+    pub fn touch_move(&self, id: u64, point: Point, time: f64) -> Option<Haptic> {
+        self.lock()
+            .remote_mut()?
+            .touch_move(id, point.into(), time)
+            .map(Into::into)
     }
 
     pub fn touch_up(&self, id: u64) -> Option<Haptic> {
-        self.lock().touch_up(id).map(Into::into)
+        self.lock().remote_mut()?.touch_up(id).map(Into::into)
+    }
+
+    pub fn motion(&self, motion: Motion) {
+        if let Some(remote) = self.lock().remote_mut() {
+            remote.motion(CoreMotion {
+                gravity: [motion.gravity_x, motion.gravity_y, motion.gravity_z],
+                rotation_rate: [motion.rotation_x, motion.rotation_y, motion.rotation_z],
+                time: motion.time,
+                landscape_left: motion.landscape_left,
+            });
+        }
     }
 
     pub fn release_all(&self) {
-        self.lock().release_all();
+        if let Some(remote) = self.lock().remote_mut() {
+            remote.release_all();
+        }
     }
 
-    pub fn frame(&self) -> N64Frame {
-        let remote = self.lock();
-        let pad = remote.pad();
-        let stick = remote.stick();
-        N64Frame {
-            pressed: CoreButton::ALL
+    /// `time`: now, in seconds since boot.
+    pub fn frame(&self, time: f64) -> Option<Frame> {
+        let session = self.lock();
+        let remote = session.remote()?;
+        let canvas = remote.canvas();
+        Some(Frame {
+            pressed: remote.pressed().ids().collect(),
+            selected: remote.selected(time),
+            knobs: remote
+                .knobs()
                 .into_iter()
-                .filter(|b| pad.buttons.contains(*b))
-                .map(Into::into)
+                .map(|(id, center)| Knob {
+                    id,
+                    center: center.into(),
+                })
                 .collect(),
-            stick_x: pad.stick_x,
-            stick_y: pad.stick_y,
-            wire: pad.to_bytes().to_vec(),
-            stick_knob: stick.knob.into(),
-        }
+            wheel: remote.wheel().map(|w| WheelView {
+                angle: w.angle,
+                steering: w.steering,
+                available: w.available,
+            }),
+            pointer: remote.pointer().map(|p| PointerView {
+                x: p.cursor.x,
+                y: p.cursor.y,
+                available: p.available,
+            }),
+            live_stroke: canvas.and_then(|c| c.live().map(|s| stroke(c, s))),
+            drawing_revision: canvas.map_or(0, Canvas::revision),
+            wire: encode(&remote.state(0)),
+        })
+    }
+
+    /// The finished lines, in drawing order.
+    pub fn strokes(&self) -> Vec<Stroke> {
+        let session = self.lock();
+        session
+            .remote()
+            .and_then(CoreRemote::canvas)
+            .map(|c| c.strokes().iter().map(|s| stroke(c, s)).collect())
+            .unwrap_or_default()
     }
 }
 
-impl N64Remote {
-    fn lock(&self) -> MutexGuard<'_, n64::N64Remote> {
+impl Session {
+    fn lock(&self) -> MutexGuard<'_, session::Session> {
         // A panic mid-call leaves plain data behind, still usable.
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
-impl From<Point> for remote_core::Point {
+/// The game's layout as placed on this screen, with what the game said
+/// about each control.
+fn layout(remote: &CoreRemote) -> RemoteLayout {
+    let (spec, placed) = (remote.spec(), remote.layout());
+    let canvas = remote.canvas();
+    let controls = placed
+        .buttons
+        .iter()
+        .filter_map(|b| {
+            let control = spec.controls.iter().find(|c| c.id == b.id)?;
+            let dot = match (control.kind, canvas) {
+                (
+                    Kind::Action {
+                        action: Action::Size(width),
+                        ..
+                    },
+                    Some(canvas),
+                ) => Some(canvas.width_on_screen(width)),
+                _ => None,
+            };
+            Some(Control {
+                id: b.id,
+                center: b.center.into(),
+                shape: b.shape.into(),
+                label: (&control.label).into(),
+                color: control.color,
+                dot,
+            })
+        })
+        .collect();
+    RemoteLayout {
+        area: placed.area.into(),
+        controls,
+        dpads: placed
+            .dpads
+            .iter()
+            .map(|d| {
+                let [up, down, left, right] = d.ids;
+                DPad {
+                    center: d.center.into(),
+                    size: d.size,
+                    up,
+                    down,
+                    left,
+                    right,
+                }
+            })
+            .collect(),
+        sticks: placed
+            .sticks
+            .iter()
+            .map(|s| Stick {
+                id: s.id,
+                center: s.center.into(),
+                travel: s.travel,
+                diagonal_travel: s.travel * s.gate.diagonal_reach(),
+                knob_radius: s.knob_radius,
+                octagonal: matches!(s.gate, Gate::Octagon { .. }),
+            })
+            .collect(),
+        canvas: remote.canvas_rect().map(Into::into),
+        tilt: spec.tilt,
+        pointer: spec.pointer,
+    }
+}
+
+fn stroke(canvas: &Canvas, stroke: &draw::Stroke) -> Stroke {
+    Stroke {
+        color: stroke.color,
+        width: canvas.width_on_screen(stroke.width),
+        points: stroke
+            .points
+            .iter()
+            .map(|p| canvas.to_screen(*p).into())
+            .collect(),
+    }
+}
+
+impl From<Point> for CorePoint {
     fn from(p: Point) -> Self {
         Self::new(p.x, p.y)
     }
 }
 
-impl From<remote_core::Point> for Point {
-    fn from(p: remote_core::Point) -> Self {
+impl From<CorePoint> for Point {
+    fn from(p: CorePoint) -> Self {
         Self { x: p.x, y: p.y }
     }
 }
 
-impl From<Size> for remote_core::Size {
+impl From<CoreRect> for Rect {
+    fn from(r: CoreRect) -> Self {
+        Self {
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+        }
+    }
+}
+
+impl From<Size> for CoreSize {
     fn from(s: Size) -> Self {
         Self {
             width: s.width,
@@ -195,24 +506,13 @@ impl From<Size> for remote_core::Size {
     }
 }
 
-impl From<Insets> for remote_core::Insets {
+impl From<Insets> for CoreInsets {
     fn from(i: Insets) -> Self {
         Self {
             top: i.top,
             left: i.left,
             bottom: i.bottom,
             right: i.right,
-        }
-    }
-}
-
-impl From<remote_core::Rect> for Rect {
-    fn from(r: remote_core::Rect) -> Self {
-        Self {
-            left: r.left,
-            top: r.top,
-            right: r.right,
-            bottom: r.bottom,
         }
     }
 }
@@ -227,59 +527,37 @@ impl From<CoreHaptic> for Haptic {
     }
 }
 
-impl From<CoreButton> for N64Button {
-    fn from(b: CoreButton) -> Self {
-        match b {
-            CoreButton::A => Self::A,
-            CoreButton::B => Self::B,
-            CoreButton::Z => Self::Z,
-            CoreButton::Start => Self::Start,
-            CoreButton::DUp => Self::DUp,
-            CoreButton::DDown => Self::DDown,
-            CoreButton::DLeft => Self::DLeft,
-            CoreButton::DRight => Self::DRight,
-            CoreButton::L => Self::L,
-            CoreButton::R => Self::R,
-            CoreButton::CUp => Self::CUp,
-            CoreButton::CDown => Self::CDown,
-            CoreButton::CLeft => Self::CLeft,
-            CoreButton::CRight => Self::CRight,
-        }
-    }
-}
-
-impl From<n64::Shape> for ButtonShape {
-    fn from(s: n64::Shape) -> Self {
+impl From<controls::Shape> for ControlShape {
+    fn from(s: controls::Shape) -> Self {
         match s {
-            n64::Shape::Circle { radius } => Self::Circle { radius },
-            n64::Shape::Capsule { width, height } => Self::Capsule { width, height },
+            controls::Shape::Circle { radius } => Self::Circle { radius },
+            controls::Shape::Capsule { width, height } => Self::Capsule { width, height },
+            controls::Shape::RoundedRect {
+                width,
+                height,
+                corner,
+            } => Self::RoundedRect {
+                width,
+                height,
+                corner,
+            },
         }
     }
 }
 
-impl From<&n64::Layout> for N64Layout {
-    fn from(l: &n64::Layout) -> Self {
-        Self {
-            area: l.area.into(),
-            stick: StickLayout {
-                center: l.stick.center.into(),
-                travel: l.stick.travel,
-                diagonal_travel: l.stick.travel * n64::gate_diagonal_reach(),
-                knob_radius: l.stick.knob_radius,
+impl From<&protocol::Label> for ControlLabel {
+    fn from(l: &protocol::Label) -> Self {
+        match l {
+            protocol::Label::Text(text) => Self::Text { text: text.clone() },
+            protocol::Label::Arrow(direction) => Self::Arrow {
+                direction: match direction {
+                    protocol::Direction::Up => Direction::Up,
+                    protocol::Direction::Down => Direction::Down,
+                    protocol::Direction::Left => Direction::Left,
+                    protocol::Direction::Right => Direction::Right,
+                },
             },
-            dpad: DPadLayout {
-                center: l.dpad.center.into(),
-                size: l.dpad.size,
-            },
-            buttons: l
-                .buttons
-                .iter()
-                .map(|b| ButtonLayout {
-                    button: b.button.into(),
-                    center: b.center.into(),
-                    shape: b.shape.into(),
-                })
-                .collect(),
+            protocol::Label::None => Self::Blank,
         }
     }
 }

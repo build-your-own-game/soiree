@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/core", "crates/ffi", "xtask"]
+members = ["crates/protocol", "crates/core", "crates/ffi", "crates/demo", "xtask"]
 
 [workspace.package]
 edition = "2024"
@@ -12,6 +12,10 @@ publish = false
 remote-protocol = { path = "crates/protocol" }
 remote-core = { path = "crates/core" }
 uniffi = "0.32"
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["alloc"] }
+# Same results on iOS, the Mac and WASM, unlike the platform's own trigonometry.
+libm = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -27,7 +31,11 @@ missing_panics_doc = "allow"
 # Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
 unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
 dbg_macro = "deny"
 todo = "deny"
 

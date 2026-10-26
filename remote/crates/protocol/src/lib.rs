@@ -1,125 +1,195 @@
-//! What a remote sends to a game. Draft: only the Nintendo 64 pad exists yet.
+//! The contract between a game and the iPhone remote, as `MANIFESTE.md`
+//! describes it (*Télécommande native*).
 //!
-//! Inputs are state, not events: a remote sends its whole current state and a
-//! game keeps the latest one. A lost packet is then replaced by the next one.
+//! The game serves a WebSocket at [`PATH`]. Each binary frame carries one
+//! message, encoded with [`encode`] and read with [`decode`]. The phone says
+//! [`PhoneMessage::Hello`]; the game answers [`GameMessage::Show`] with the
+//! remote to display, and sends it again to change it. The phone then sends
+//! its state ([`InputState`]) and drawing strokes ([`DrawEvent`]).
 
-/// A Nintendo 64 pad, laid out like the real controller's status reply on the
-/// Joybus wire: two button bytes, then the stick as signed X and Y (Y up).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct N64Pad {
-    pub buttons: N64Buttons,
-    pub stick_x: i8,
-    pub stick_y: i8,
+use serde::{Deserialize, Serialize};
+
+mod layout;
+pub mod presets;
+
+pub use layout::{
+    Action, Anchor, Control, Direction, Gate, Kind, Label, Layout, MAX_ID, Place, Shape,
+};
+
+/// Bumped whenever a message changes shape. A game refuses another version.
+pub const VERSION: u16 = 1;
+
+/// Where the game serves the remote's WebSocket, beside its phone page.
+pub const PATH: &str = "/remote";
+
+/// Phone to game.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PhoneMessage {
+    /// First message, and again after each reconnection.
+    Hello {
+        version: u16,
+        /// The player's identity, the same on every reconnection: random,
+        /// kept by the app, no account.
+        player: [u8; 16],
+        /// The phone owner's first name, if the app knows it.
+        name: String,
+    },
+    /// The whole state of the remote's controls. The latest one wins.
+    Input(InputState),
+    /// A drawing, step by step, in order.
+    Draw(DrawEvent),
 }
 
-impl N64Pad {
-    /// Stick reach of a good original pad in its octagonal gate: 85 straight
-    /// along an axis, 70 on both axes in a diagonal notch (the "ideal OEM"
-    /// reference of the mimi test ROM). Nintendo only guaranteed 70 to 74 on
-    /// a new pad, and games accept anything up to ±127.
-    pub const STICK_CARDINAL: i8 = 85;
-    pub const STICK_DIAGONAL: i8 = 70;
+/// Game to phone.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum GameMessage {
+    /// The remote to show now. Sent again to change it.
+    Show(Remote),
+    /// Something to feel or see, for instance "first on the buzzer".
+    Feedback(Feedback),
+    /// The game will not take this phone; the app shows the reason.
+    Refuse { reason: String },
+}
 
-    /// Size of [`N64Pad::to_bytes`].
-    pub const WIRE_LEN: usize = 4;
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Remote {
+    /// Controls the app draws and handles itself, with its touch rules: a
+    /// preset from [`presets`] or the game's own composition.
+    Pad(Layout),
+    /// The game's own page, full screen. A relative `url` starts from the
+    /// game's host. The page talks to the game however it likes.
+    Web { url: String },
+}
 
-    /// The real controller's byte order: buttons high byte first, then X, Y.
-    pub fn to_bytes(self) -> [u8; Self::WIRE_LEN] {
-        let [high, low] = self.buttons.0.to_be_bytes();
-        [
-            high,
-            low,
-            self.stick_x.to_be_bytes()[0],
-            self.stick_y.to_be_bytes()[0],
-        ]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Feedback {
+    pub haptic: Option<Haptic>,
+    /// Tints the remote's background, `0xRRGGBB`, until the next feedback.
+    pub color: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Haptic {
+    Press,
+    Release,
+    Success,
+    Warning,
+}
+
+/// The state of a [`Remote::Pad`]: what a game reads, whole, each time.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputState {
+    /// Counts up with every state sent: a game ignores an older one.
+    pub seq: u32,
+    /// One bit per pressed button or D-pad direction, by control id.
+    pub pressed: u32,
+    /// Every stick, even at rest.
+    pub sticks: Vec<StickValue>,
+    /// Steering from tilting the phone, -127 (left) to 127 (right), for a
+    /// layout with `tilt`.
+    pub tilt: i8,
+    /// Where the cursor is on the TV, 0 to 65535 across and down, for a
+    /// layout with `pointer`.
+    pub pointer: Option<[u16; 2]>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StickValue {
+    pub id: u8,
+    /// -127 to 127, Y up.
+    pub x: i8,
+    pub y: i8,
+}
+
+impl InputState {
+    pub fn is_pressed(&self, id: u8) -> bool {
+        self.pressed
+            .checked_shr(u32::from(id))
+            .is_some_and(|bits| bits & 1 == 1)
     }
 
-    pub fn from_bytes(bytes: [u8; Self::WIRE_LEN]) -> Self {
-        let [high, low, x, y] = bytes;
-        Self {
-            buttons: N64Buttons(u16::from_be_bytes([high, low])),
-            stick_x: i8::from_be_bytes([x]),
-            stick_y: i8::from_be_bytes([y]),
-        }
+    /// The stick's deflection on each axis, -1 to 1, Y up; 0 if absent.
+    pub fn stick(&self, id: u8) -> (f32, f32) {
+        self.sticks
+            .iter()
+            .find(|s| s.id == id)
+            .map_or((0.0, 0.0), |s| (unit_i8(s.x), unit_i8(s.y)))
+    }
+
+    /// Steering, -1 to 1.
+    pub fn tilt(&self) -> f32 {
+        unit_i8(self.tilt)
+    }
+
+    /// The cursor, 0 to 1 across and down.
+    pub fn pointer(&self) -> Option<(f32, f32)> {
+        self.pointer
+            .map(|[x, y]| (f32::from(x) / 65535.0, f32::from(y) / 65535.0))
     }
 }
 
-/// Pressed buttons, one bit each, at the real controller's bit positions.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct N64Buttons(pub u16);
-
-impl N64Buttons {
-    pub fn contains(self, button: N64Button) -> bool {
-        self.0 & button.bit() != 0
-    }
-
-    pub fn set(&mut self, button: N64Button, pressed: bool) {
-        if pressed {
-            self.0 |= button.bit();
-        } else {
-            self.0 &= !button.bit();
-        }
-    }
+fn unit_i8(value: i8) -> f32 {
+    f32::from(value) / 127.0
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum N64Button {
-    A,
-    B,
-    Z,
-    Start,
-    DUp,
-    DDown,
-    DLeft,
-    DRight,
-    L,
-    R,
-    CUp,
-    CDown,
-    CLeft,
-    CRight,
+/// -1..=1 to -127..=127.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "rounded and clamped to ±127 first"
+)]
+pub fn to_i8(value: f32) -> i8 {
+    (value * 127.0).round().clamp(-127.0, 127.0) as i8
 }
 
-impl N64Button {
-    pub const ALL: [Self; 14] = [
-        Self::A,
-        Self::B,
-        Self::Z,
-        Self::Start,
-        Self::DUp,
-        Self::DDown,
-        Self::DLeft,
-        Self::DRight,
-        Self::L,
-        Self::R,
-        Self::CUp,
-        Self::CDown,
-        Self::CLeft,
-        Self::CRight,
-    ];
+/// 0..=1 to 0..=65535.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "rounded and clamped to u16 first"
+)]
+#[expect(clippy::cast_sign_loss, reason = "clamped to 0 first")]
+pub fn to_u16(value: f32) -> u16 {
+    (value * 65535.0).round().clamp(0.0, 65535.0) as u16
+}
 
-    /// Bit in [`N64Buttons`], as libultra defines it. The high byte is A B Z
-    /// Start Up Down Left Right. In the low byte, bit 7 is the reset flag a
-    /// real pad raises while L+R+Start recalibrates it, and bit 6 is unused:
-    /// a remote has nothing to recalibrate, both stay clear.
-    pub const fn bit(self) -> u16 {
-        match self {
-            Self::A => 0x8000,
-            Self::B => 0x4000,
-            Self::Z => 0x2000,
-            Self::Start => 0x1000,
-            Self::DUp => 0x0800,
-            Self::DDown => 0x0400,
-            Self::DLeft => 0x0200,
-            Self::DRight => 0x0100,
-            Self::L => 0x0020,
-            Self::R => 0x0010,
-            Self::CUp => 0x0008,
-            Self::CDown => 0x0004,
-            Self::CLeft => 0x0002,
-            Self::CRight => 0x0001,
-        }
-    }
+/// One step of a drawing, in canvas units: 4096 across, 2304 down (16:9, as
+/// the TV). A stroke may run past the edge. A game rebuilds the drawing from
+/// these, in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DrawEvent {
+    /// `color` is `0xRRGGBB`; `width` in canvas units.
+    Begin {
+        stroke: u16,
+        color: u32,
+        width: u16,
+        x: i16,
+        y: i16,
+    },
+    Point {
+        stroke: u16,
+        x: i16,
+        y: i16,
+    },
+    End {
+        stroke: u16,
+    },
+    /// Removes the last finished stroke.
+    Undo,
+    Clear,
+}
+
+pub const CANVAS_WIDTH: u16 = 4096;
+pub const CANVAS_HEIGHT: u16 = 2304;
+
+pub use postcard::Error as DecodeError;
+
+/// One message, ready for a binary WebSocket frame.
+pub fn encode<T: Serialize>(message: &T) -> Vec<u8> {
+    // Serializing these types cannot fail: no maps, no unsized lengths.
+    postcard::to_allocvec(message).unwrap_or_default()
+}
+
+pub fn decode<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> Result<T, DecodeError> {
+    postcard::from_bytes(frame)
 }
 
 #[cfg(test)]
@@ -127,27 +197,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bytes_round_trip() {
-        let mut buttons = N64Buttons::default();
-        buttons.set(N64Button::A, true);
-        buttons.set(N64Button::CLeft, true);
-        let pad = N64Pad {
-            buttons,
-            stick_x: -80,
-            stick_y: 127,
-        };
-        assert_eq!(pad.to_bytes(), [0x80, 0x02, 0xb0, 0x7f]);
-        assert_eq!(N64Pad::from_bytes(pad.to_bytes()), pad);
+    fn every_message_survives_the_wire() {
+        let phone = [
+            PhoneMessage::Hello {
+                version: VERSION,
+                player: [7; 16],
+                name: "Axel".into(),
+            },
+            PhoneMessage::Input(InputState {
+                seq: 42,
+                pressed: 0b101,
+                sticks: vec![StickValue {
+                    id: 3,
+                    x: -127,
+                    y: 64,
+                }],
+                tilt: -12,
+                pointer: Some([0, 65535]),
+            }),
+            PhoneMessage::Draw(DrawEvent::Begin {
+                stroke: 1,
+                color: 0x00FF_0000,
+                width: 41,
+                x: -5,
+                y: 2400,
+            }),
+            PhoneMessage::Draw(DrawEvent::Clear),
+        ];
+        for message in phone {
+            assert_eq!(decode::<PhoneMessage>(&encode(&message)), Ok(message));
+        }
+        let game = [
+            GameMessage::Show(Remote::Pad(presets::n64())),
+            GameMessage::Show(Remote::Web {
+                url: "/play/remote".into(),
+            }),
+            GameMessage::Feedback(Feedback {
+                haptic: Some(Haptic::Success),
+                color: Some(0x0000_FF00),
+            }),
+            GameMessage::Refuse {
+                reason: "La partie est pleine".into(),
+            },
+        ];
+        for message in game {
+            assert_eq!(decode::<GameMessage>(&encode(&message)), Ok(message));
+        }
     }
 
     #[test]
-    fn every_button_has_its_own_bit() {
-        let mut all = 0u16;
-        for button in N64Button::ALL {
-            assert_eq!(button.bit().count_ones(), 1);
-            assert_eq!(all & button.bit(), 0, "{button:?} shares a bit");
-            all |= button.bit();
-        }
-        assert_eq!(all & 0x00c0, 0, "reset and reserved bits stay clear");
+    fn a_state_reads_back_in_units() {
+        let state = InputState {
+            pressed: 1 << 4,
+            sticks: vec![StickValue {
+                id: 2,
+                x: 127,
+                y: -127,
+            }],
+            tilt: to_i8(-0.5),
+            pointer: Some([to_u16(0.25), to_u16(1.0)]),
+            ..InputState::default()
+        };
+        assert!(state.is_pressed(4) && !state.is_pressed(3) && !state.is_pressed(200));
+        assert_eq!(state.stick(2), (1.0, -1.0));
+        assert_eq!(state.stick(9), (0.0, 0.0));
+        assert!((state.tilt() + 0.5).abs() < 0.01);
+        let (x, y) = state.pointer().unwrap_or_default();
+        assert!((x - 0.25).abs() < 1e-4 && (y - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn garbage_is_an_error_not_a_crash() {
+        assert!(decode::<GameMessage>(&[0xFF, 0x13, 0x37]).is_err());
+        assert!(decode::<PhoneMessage>(&[]).is_err());
     }
 }

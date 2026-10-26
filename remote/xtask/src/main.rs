@@ -15,8 +15,8 @@ const IOS_TARGETS: [&str; 2] = ["aarch64-apple-ios", "aarch64-apple-ios-sim"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
-        Some("ios") => ios(&args[1..]),
+    let result = match args.split_first() {
+        Some((command, rest)) if command == "ios" => ios(rest),
         _ => Err("usage: cargo xtask ios [--target <triple>] [--release]".into()),
     };
     match result {
@@ -57,11 +57,10 @@ fn ios(args: &[String]) -> Result<(), String> {
 
     // Bindings only depend on the Rust API, identical for every target.
     let profile = if release { "release" } else { "debug" };
-    let library = root
-        .join("target")
-        .join(&targets[0])
-        .join(profile)
-        .join(LIBRARY);
+    let Some(target) = targets.first() else {
+        return Err("no target to generate bindings from".into());
+    };
+    let library = root.join("target").join(target).join(profile).join(LIBRARY);
     let out_dir = root.join("ios").join("Generated");
     generate_swift_bindings(SwiftBindingsOptions {
         generate_swift_sources: true,

@@ -5,5 +5,30 @@
 	<!-- Lets SwiftUI draw at 120 Hz on ProMotion iPhones instead of 60 Hz. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- telecommande://join?url=… opens the app on a game. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>fr.buildyourowngame.remote.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>telecommande</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Pour scanner le QR code affiché sur la TV.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Pour rejoindre le jeu qui tourne sur l'ordinateur branché à la TV.</string>
+	<!-- Games run on a computer of the local network, over plain HTTP. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Motion needs no permission today, but iOS 27.2 adds an authorization status: say why, in case. -->
+	<key>NSMotionUsageDescription</key>
+	<string>Certains jeux se jouent en inclinant ou en pointant le téléphone.</string>
 </dict>
 </plist>

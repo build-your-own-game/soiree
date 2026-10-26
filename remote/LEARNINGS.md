@@ -75,16 +75,100 @@ Mesuré chez nous : un écran filmé dans le simulateur montrait une tape rapide
 | Les touchers prédits (`predictedTouches`) sont prévus pour le dessin et sont provisoires | Apple | A | **Jeté.** |
 | GCVirtualController a une disposition figée (un stick et quatre boutons par côté) | WWDC21 | L | **Jeté** : la N64 a trop de boutons. |
 
-## Format envoyé aux jeux
+## Connexion et format envoyé aux jeux
+
+Le contrat complet pour les jeux est dans `CONTRAT.md`.
 
 | Leçon | Source | Cat. | Conséquence ici |
 |---|---|---|---|
-| 4 octets comme la vraie manette : boutons (bits de libultra), puis X et Y signés, Y positif vers le haut | `os_cont.h` de libultra ; libjoybus ; Mario Kart 64 | P | **Gardé** (`remote-protocol`). |
-| La vraie manette lève un bit « reset » pendant L+R+Start pour se recalibrer | n64brew Joybus | L | **Jeté** : rien à recalibrer, le bit reste à 0. |
-| Une pression plus courte qu'une image ne doit pas se perdre | TAK, déduction | P | Le cœur traite chaque toucher. **À garder** quand on enverra au jeu. |
+| C'est le jeu qui choisit la télécommande, et il en change selon la phase de jeu | Jackbox (chaque phase a son écran de téléphone) ; décision de l'hôte | U | **Gardé** : pas de menu dans l'app. `GameMessage::Show`, à tout moment. |
+| Un preset et une composition sont la même chose : des contrôles placés depuis des repères de l'écran | Touch Controller d'Apple (9 repères, décalages en points) | U | **Gardé** : `Layout`, et les presets en sont des exemples. |
+| Il faut aussi une voie sans aucune contrainte | demande de l'hôte | U | **Gardé** : `Remote::Web`, la page du jeu dans WebKit. WebKit est le seul moteur autorisé à exécuter du code téléchargé à pleine vitesse sur iOS. |
+| Le QR du jeu suffit : même hôte, même port, chemin `/remote`, même requête | décision, pour ne rien demander de plus aux jeux | U | **Gardé** (`join.rs`, testé). |
+| Les entrées sont un état, pas des événements : un seul état en attente, le dernier gagne, au plus 60 envois par seconde, et un rappel régulier | Sidequest (`movement-sender.ts`, 13 paquets → 1) | P | **Gardé** (`session.rs`) : à chaque changement, toutes les 250 ms sinon, avec un `seq`. |
+| Le dessin, lui, est fait d'événements qui doivent tous arriver, dans l'ordre | scribble.rs | P | **Gardé** : le WebSocket les livre ; ils partent avant l'état. |
+| L'identité survit à une reconnexion, sans compte | Sidequest (`PartyRoom.ts`, jeton anonyme) | U | **Gardé** : 16 octets gardés par l'app, renvoyés dans chaque `Hello`. |
+| Reconnexion avec attente croissante : 0,5 s, doublée, plafonnée à 5 s | Sidequest | U | **Gardé** (`GameConnection.swift`). |
+| Ce qui vient du réseau ne doit pas pouvoir faire planter | manifeste durci (`expect_used`, `panic`, `indexing_slicing`) | P | **Gardé** : une trame illisible est ignorée, un contrôle mal formé (identifiant au-delà de 31, taille négative ou infinie) est écarté, testé. |
+| La vraie manette N64 envoie 4 octets (boutons de libultra, X et Y signés) | libultra ; libjoybus | L | **Jeté** : tous les presets parlent le même `InputState`. Le gate octogonal, lui, reste. |
+| Une pression plus courte qu'une image ne doit pas se perdre | TAK, déduction | P | **Gardé** : le cœur traite chaque toucher, et l'état part dès la prochaine image. |
 
 Seuils de perception :
 - un appui en retard de moins d'environ 60 ms passe inaperçu (Jota et al., CHI 2013) ;
 - un glisser se perçoit dès quelques ms (Ng et al., UIST 2012).
 
 Le bouton du stick dessiné sur le téléphone doit donc suivre le doigt dans la même image. Le budget de 80 ms du manifeste s'applique au trajet jusqu'à la TV.
+
+## Les autres télécommandes
+
+Trois recherches de plus, une par famille :
+- **le buzzer, le pad deux pouces et la croix** : les skins NES et Game Boy de Delta (en points, sur une grille de 812×375), les overlays de RetroArch, Buzz! (pilote `hid-sony` de Linux), Kahoot, les règles de *Jeopardy!*, AirConsole ;
+- **le volant et le pointeur** : SuperTuxKart, PPSSPP, Dolphin (`EmulateIMUCursor`), RetroArch, les écrits de Jibb Smart (GyroWiki, JoyShockMapper), libogc, le filtre 1€, CoreMotion ;
+- **le dessin** : JackboxDrawer (le format des dessins Jackbox), scribble.rs, perfect-freehand, tldraw, Excalidraw, signature_pad, la doc Apple des touchers.
+
+### Pad deux pouces, croix, buzzer
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| Peu de boutons, gros, aux coins ou sous les pouces, pour jouer sans regarder | AirConsole | P | **Gardé** : le moteur commun, des presets à 2 à 4 boutons de jeu. |
+| A et B sur une diagonale de 40 à 45°, B en bas à gauche, assez proches pour qu'un pouce sur la jointure presse les deux | Delta (NES 45°, Game Boy ~39°) ; RetroArch | U | **Gardé** : 40° pour le pad, 45° pour la croix, 16 à 20 pt d'écart. |
+| Start et Select petits, au centre, sans zone élargie : on ne doit pas les toucher par accident | Delta ; RetroArch | U | **Gardé** : boutons « mineurs » sans marge, 28 pt minimum au lieu de 44. |
+| Croix de 130 à 150 pt, centre à ~100 pt du bord | Delta | P | **Gardé** : 150 pt, centre à 110 pt. |
+| Turbo, Game Boy en portrait, skins interchangeables | Delta, Nostalgia.NES | L | **Jeté.** |
+| Le buzzer réagit au contact, pas au relâchement | Delta (`touchesBegan`) | P | **Gardé** : tout l'écran est le bouton. |
+| La lumière du buzzer annonce la décision de l'hôte, pas l'appui : le joueur voit « appuyé » tout de suite, puis « premier » ou « trop tard » quand le jeu le dit | Buzz! (`buzz_set_leds`) | U | **À faire** avec la connexion : états Attente / Armé / Premier / Trop tard. |
+| Buzzer trop tôt bloque environ 0,25 s, sinon les joueurs martèlent | *Jeopardy!* (règle de 1985) | U | **À faire** côté jeu. |
+| Le Wi-Fi a une longue traîne (p90 ~20 ms, p99 ~250 ms) : l'ordre d'arrivée ment sur les courses serrées. Il faut l'heure du toucher, recalée sur l'horloge de l'hôte | Microsoft Research ; algorithme de Cristian | P | **À faire** avec la connexion : on garde déjà `UITouch.timestamp`. |
+
+### Volant
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| Lire la gravité fusionnée par iOS, pas l'accéléromètre brut ni des angles d'Euler | PPSSPP f84e63f7 ; doc CoreMotion | P | **Gardé** (`deviceMotion.gravity`). |
+| L'angle = élévation du grand côté du téléphone : il ne dépend pas de l'inclinaison avant-arrière, donc le volant marche tenu droit ou à plat | PPSSPP `TiltEventProcessor` ; SuperTuxKart | P | **Gardé**, testé. |
+| Braquage complet entre 19,5° (SuperTuxKart) et 32° (PPSSPP), zone morte de ~2,3° | code de SuperTuxKart et PPSSPP | U | **Gardé** : 25° et 2,5°, linéaire. **À faire** : un réglage de sensibilité. |
+| Téléphone presque à plat : l'angle ne veut plus rien dire, on garde le dernier | SuperTuxKart | P | **Gardé** (sous 0,3 g dans le plan de l'écran). |
+| Pas de calibration : la gravité est absolue | SuperTuxKart, PPSSPP | P | **Gardé.** |
+| Mario Kart Wii ne lit que 15 niveaux de braquage : la finesse ne fait pas le plaisir | Dolphin, bug 8756 | U | On envoie une valeur continue, le jeu arrondit s'il veut. |
+| Le simulateur n'a pas de capteurs | Apple | — | Message affiché ; **à vérifier sur un vrai iPhone**, signe compris. |
+
+### Pointeur
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| Pointeur relatif, à partir de la vitesse de rotation. Pas le magnétomètre, qu'une TV perturbe | Dolphin ; déduction | P | **Gardé.** |
+| Gauche-droite mesuré autour de la vraie verticale (« player space ») : même sensation quelle que soit l'inclinaison | Jibb Smart, GyroWiki | P | **Gardé** (vitesse de rotation projetée sur la gravité). |
+| Environ 30° pour traverser l'écran (Dolphin 25°, JoyShockMapper ~45°), mêmes degrés par point en hauteur | Dolphin ; JoyShockMapper | P | **Gardé** : 30°. |
+| Le curseur s'arrête au bord, ce qui recentre comme une souris ; un bouton Centrer | Dolphin `EmulateIMUCursor` | U | **Gardé.** |
+| Lissage « par paliers » : lissé en dessous de ~5°/s (tremblement), jamais au-dessus | Jibb Smart | U | **Gardé** (0,125 s). |
+| Un trou dans les échantillons n'est pas un mouvement | SuperTuxKart (dt plafonné) | A / P | **Gardé** : au-delà de 0,1 s, ignoré. |
+| Un glisser du doigt en secours (pas de gyroscope, réglage fin) | Dolphin Android | U | **Gardé** : tout l'écran hors boutons. |
+| Envoyer la position absolue du curseur, pas des écarts : un paquet perdu ne décale rien | déduction | P | **Gardé** (`PointerState`). |
+| Le signe du « vers le haut » dépend de l'orientation de l'interface | RetroArch `cocoa_input.m` | P | **Gardé** ; **à vérifier sur un vrai iPhone**. |
+
+### Dessin
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| Des traits en coordonnées entières dans une toile fixe, pas des images : Jackbox est passé du PNG aux vecteurs | JackboxDrawer | P / L | **Gardé** : toile 4096×2304 (16:9 comme la TV), entiers signés pour qu'un trait déborde sans être coupé (scribble.rs). |
+| Traits avec identifiant : Annuler et Effacer deviennent triviaux | scribble.rs #279 (sans identifiant, il faut deviner les traits) | L | **Gardé** : `DrawEvent` Begin / Point / End / Undo / Clear. |
+| Un seul doigt dessine | scribble.rs | U | **Gardé.** |
+| UIKit livre les touchers à ~60 Hz alors que l'écran échantillonne à 120 Hz et plus : il faut les touchers fusionnés | doc Apple (`coalescedTouches`) | P | **Gardé.** |
+| Les touchers prédits servent seulement à l'affichage local, jamais envoyés | doc Apple | A | **Pas encore utilisés.** |
+| Ignorer les points à moins de ~1,5 pt, lisser par une moyenne dans le temps (pas par échantillon), finir sur le vrai dernier point | perfect-freehand, signature_pad, tldraw | P | **Gardé** (12 ms). |
+| Une tape fait un point | perfect-freehand | U | **Gardé.** |
+| Épaisseur constante : pour deviner, lisible bat joli | Excalidraw (option ajoutée en 2026) | U | **Gardé.** |
+| Dessiner des courbes par les milieux, pas des segments | scribble.rs #368 | P | **Gardé** (côté Swift). |
+| Peu d'outils : 8 à 12 couleurs, 3 tailles, Annuler, Effacer ; pas de pot de peinture ni de formes | scribble.rs, Drawful 2 | U | **Gardé** : 7 couleurs (44 pt chacune), 3 tailles. Effacer demande deux appuis en 2 s. |
+
+## Écarts au manifeste
+
+Un point par principe d'ingénierie du manifeste : **Respecté.**, **Écart.** (avec sa « Raison : ») ou **À faire.** `tools/check.sh`, à la racine du dépôt, vérifie que les sept y sont.
+
+1. **À faire.** Le clippy du manifeste passe, sans `unwrap` ni index qui peut paniquer, et ce qui vient d'un jeu est validé avant usage : trames illisibles ignorées, contrôles mal formés écartés, identifiants bornés à 31, le tout testé. Reste la coquille Swift, hors lints et hors tests : la durée d'affichage minimale d'un appui, le choix des vibrations, l'attribution des doigts, la reconnexion.
+2. **Écart.** Pas de simulation à pas fixe. Raison : la télécommande n'est pas un jeu ; elle lit les doigts et envoie un état, et la simulation vit dans chaque jeu. Le temps entre tout de même comme paramètre dans les gestes (dessin, pointeur).
+3. **Respecté.** Le temps est une entrée, la trigonométrie passe par `libm`, tout est en `BTreeMap`, et les tests tournent à temps fixe.
+4. **Respecté.** `remote-core` ne dépend que de `remote-protocol` et `libm`, et ses tests tournent sans iOS.
+5. **Écart.** Raison : c'est une app iOS native, pas une page web ; COOP/COEP, WebGPU et les threads WASM ne s'y appliquent pas.
+6. **Écart.** Le transport est un WebSocket, donc TCP, pas un canal non fiable. Raison : un seul canal porte l'état et les traits de dessin, qui doivent arriver tous et dans l'ordre, et chaque jeu a déjà un serveur WebSocket ; en Wi-Fi local, la perte est rare. Pour limiter le retard d'un paquet bloqué : l'état est complet (le dernier suffit), numéroté (`seq`), envoyé au plus 60 fois par seconde, et le faux jeu coupe Nagle (`TCP_NODELAY`). `Hello` porte la version du protocole, et `remote-protocol` décode tout côté jeu. Passer l'état en UDP reste possible si la latence mesurée l'exige (point 7).
+7. **À faire.** La latence entre le toucher, l'envoi et la TV n'est pas mesurée (voir « Vibrations et iOS »).
