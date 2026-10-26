@@ -92,6 +92,12 @@ Le contrat complet pour les jeux est dans `CONTRAT.md`.
 | Ce qui vient du réseau ne doit pas pouvoir faire planter | manifeste durci (`expect_used`, `panic`, `indexing_slicing`) | P | **Gardé** : une trame illisible est ignorée, un contrôle mal formé (identifiant au-delà de 31, taille négative ou infinie) est écarté, testé. |
 | La vraie manette N64 envoie 4 octets (boutons de libultra, X et Y signés) | libultra ; libjoybus | L | **Jeté** : tous les presets parlent le même `InputState`. Le gate octogonal, lui, reste. |
 | Une pression plus courte qu'une image ne doit pas se perdre | TAK, déduction | P | **Gardé** : le cœur traite chaque toucher, et l'état part dès la prochaine image. |
+| Safari sur iPhone n'a aucune vibration, demande la permission des capteurs à chaque visite, ne garde pas le plein écran ni l'orientation, et ne parle pas UDP | WebKit | P | **Gardé** : la page libre reçoit tout cela par des messages à l'app et des événements en retour (`CONTRAT.md`). |
+| La seule porte entre une page et l'app est un objet JavaScript de WebKit ; une page en Rust y passe par la colle que génère `wasm-bindgen` | WebKit ; manifeste (« JavaScript limité à la colle générée ») | P | **Gardé** : aucun JavaScript écrit à la main dans l'app, qui n'injecte qu'une donnée. Le crate `remote-web` donne le tout en Rust ; les messages bruts restent documentés pour les autres langages. |
+| Une page qui en remplace une autre ne doit rien en hériter (orientation demandée, données injectées) | constaté au premier essai | U | **Gardé** : une vue web neuve par page, qui repart en paysage ; l'orientation est redite à la fin du chargement, car un tour pendant le chargement arrive avant que la page écoute. |
+| Le micro et la caméra marchent dans une page de l'app, mais WebKit redemande la permission après iOS | API `WKUIDelegate` d'Apple | U | **Gardé** : accordés sans seconde question aux pages de l'hôte du jeu, et à elles seules. |
+| Une page vient du réseau : ses demandes de vibration ou de sockets ne doivent rien pouvoir casser | déduction | P | **Gardé** : 64 événements et 5 s par vibration au plus, 8 sockets, datagrammes de 65 507 octets au plus, UDP vers l'hôte du jeu seulement. |
+| Donner à du contenu web l'accès à des fonctions natives demande en principe l'accord d'Apple sur l'App Store public | App Review Guidelines 4.7.2 | U | **Écart assumé** sur TestFlight ; à revoir avant une publication publique. |
 
 Seuils de perception :
 - un appui en retard de moins d'environ 60 ms passe inaperçu (Jota et al., CHI 2013) ;

@@ -31,18 +31,19 @@ Il affiche un QR code et l'adresse du jeu :
 
 Ensuite, tape une touche puis Entrée dans le terminal du faux jeu :
 - **`1` à `7`** imposent l'un des sept presets ;
-- **`w`** envoie sa page libre ;
+- **`w`** envoie une page libre en JavaScript, qui essaie tout ce que l'app ajoute aux pages ;
+- **`r`** envoie une page libre écrite en Rust avec le crate `remote-web` (construis-la d'abord avec `cargo xtask page`, qui demande le CLI `wasm-bindgen 0.2.129`) ;
 - **`s` et `x`** font vibrer le téléphone.
 
 Le terminal affiche tout ce que le téléphone envoie.
 
 ## Ce qui existe
 
-- **L'accueil :** un scanner de QR code, ou une adresse à taper.
+- **L'accueil :** le prénom du joueur, puis un scanner de QR code ou une adresse à taper.
 - **Les liens :** `telecommande://join?url=…` ouvre l'app sur un jeu.
 - **Sept presets,** toutes en paysage : deux pouces, croix rétro, volant, pointeur, buzzer, dessin, Nintendo 64.
 - **Les compositions :** n'importe quels boutons, sticks, croix et outils de dessin, placés par le jeu.
-- **La page libre** du jeu, en plein écran, avec vibrations et capteurs.
+- **La page libre** du jeu, en plein écran, avec tout ce qu'un navigateur ne donne pas : vibrations sur mesure, capteurs, orientation, identité du joueur, UDP, micro et caméra.
 - **La croix en haut à gauche** quitte la partie, après confirmation.
 
 En bas d'une télécommande, les octets que le jeu reçoit.

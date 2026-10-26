@@ -1,0 +1,18 @@
+[package]
+name = "remote-demo-page"
+description = "The fake game's free page written in Rust: what a game's own page looks like with remote-web."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+remote-web.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlElement", "Event", "EventTarget"] }
+
+[lints]
+workspace = true

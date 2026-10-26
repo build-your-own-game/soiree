@@ -1,8 +1,9 @@
-//! `cargo xtask ios [--target <triple>] [--release]`
+//! `cargo xtask ios [--target <triple>] [--release]`, `cargo xtask page`
 //!
-//! Builds `remote-ffi` as a static library for iOS and writes its Swift
+//! `ios` builds `remote-ffi` as a static library for iOS and writes its Swift
 //! bindings to `ios/Generated`. Xcode runs it before compiling, with the
 //! target and profile of the build; by hand, it builds device and simulator.
+//! `page` builds the fake game's Rust page (needs the wasm-bindgen CLI).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -17,7 +18,10 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.split_first() {
         Some((command, rest)) if command == "ios" => ios(rest),
-        _ => Err("usage: cargo xtask ios [--target <triple>] [--release]".into()),
+        Some((command, _)) if command == "page" => page(),
+        _ => {
+            Err("usage: cargo xtask ios [--target <triple>] [--release] | cargo xtask page".into())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -82,6 +86,34 @@ fn ios(args: &[String]) -> Result<(), String> {
         targets.join(", "),
         out_dir.display()
     );
+    Ok(())
+}
+
+/// Builds the fake game's Rust page into `target/demo-page`: the WASM, its
+/// generated glue, and the HTML that loads them.
+fn page() -> Result<(), String> {
+    let root = workspace_root();
+    let out = root.join("target").join("demo-page");
+    run(Command::new(env!("CARGO")).current_dir(&root).args([
+        "build",
+        "--release",
+        "--lib",
+        "--package",
+        "remote-demo-page",
+        "--target",
+        "wasm32-unknown-unknown",
+    ]))?;
+    let wasm = root.join("target/wasm32-unknown-unknown/release/remote_demo_page.wasm");
+    run(Command::new("wasm-bindgen")
+        .arg(&wasm)
+        .args(["--target", "web", "--no-typescript", "--out-dir"])
+        .arg(out.join("pkg")))?;
+    std::fs::copy(
+        root.join("crates/demo-page/web/index.html"),
+        out.join("index.html"),
+    )
+    .map_err(|e| format!("copying index.html: {e}"))?;
+    println!("xtask: page → {}", out.display());
     Ok(())
 }
 

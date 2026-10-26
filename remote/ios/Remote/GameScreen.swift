@@ -58,7 +58,10 @@ struct GameScreen: View {
                 PadScreen(model: pad)
             }
         case let .web(url):
-            WebRemote(url: url).ignoresSafeArea()
+            // A new page is a new web view: nothing carries over from the last.
+            WebRemote(url: url, player: GameConnection.player, name: GameConnection.name)
+                .id(url)
+                .ignoresSafeArea()
         }
     }
 }

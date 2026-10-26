@@ -60,8 +60,13 @@ fn run() -> Result<(), String> {
         println!("  {key}  preset {name}");
     }
     println!(
-        "  w  page libre (/free)\n  s  vibration « succès »\n  x  vibration « attention »\n  q  quitter\n"
+        "  w  page libre en JavaScript (/free)\n  r  page libre en Rust (/rust/, après cargo xtask page)\n  s  vibration « succès »\n  x  vibration « attention »\n  q  quitter\n"
     );
+
+    // Datagrams from a free page (telecommande.datagram), echoed back.
+    let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, PORT))
+        .map_err(|e| format!("UDP port {PORT}: {e}"))?;
+    thread::spawn(move || echo(&udp));
 
     let state: State = Arc::new(Mutex::new(Shared {
         remote: Remote::Pad(presets::pad()),
@@ -85,6 +90,9 @@ fn run() -> Result<(), String> {
             "q" => return Ok(()),
             "w" => GameMessage::Show(Remote::Web {
                 url: "/free".into(),
+            }),
+            "r" => GameMessage::Show(Remote::Web {
+                url: "/rust/".into(),
             }),
             "s" => GameMessage::Feedback(Feedback {
                 haptic: Some(Haptic::Success),
@@ -128,37 +136,60 @@ fn serve(stream: TcpStream, state: &State) -> Result<(), String> {
     if path.starts_with(PATH) {
         return phone(stream, state);
     }
-    let (status, kind, body) = if path == "/free" {
-        ("200 OK", "text/html; charset=utf-8", FREE_PAGE.to_string())
-    } else if let Some(query) = path.strip_prefix("/free-input?") {
-        println!("\n← page libre : {query}");
-        ("204 No Content", "text/plain", String::new())
+    let (status, kind, body): (&str, &str, Vec<u8>) = if path == "/free" {
+        ("200 OK", "text/html; charset=utf-8", FREE_PAGE.into())
+    } else if let Some(file) = path.strip_prefix("/rust/") {
+        rust_page(file)
     } else if path == "/" || path.starts_with("/play") {
         let link = join_link(&format!("http://{}:{PORT}/play", lan_ip()));
         (
             "200 OK",
             "text/html; charset=utf-8",
-            PLAY_PAGE.replace("{link}", &link),
+            PLAY_PAGE.replace("{link}", &link).into(),
         )
     } else {
-        ("404 Not Found", "text/plain", "introuvable".to_string())
+        ("404 Not Found", "text/plain", "introuvable".into())
     };
     respond(stream, status, kind, &body)
 }
 
-fn respond(mut stream: TcpStream, status: &str, kind: &str, body: &str) -> Result<(), String> {
+/// The Rust page's files, built by `cargo xtask page`.
+fn rust_page(file: &str) -> (&'static str, &'static str, Vec<u8>) {
+    let file = if file.is_empty() { "index.html" } else { file };
+    let kind = match file.rsplit('.').next() {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript",
+        Some("wasm") => "application/wasm",
+        _ => "application/octet-stream",
+    };
+    if file.contains("..") {
+        return ("404 Not Found", "text/plain", "introuvable".into());
+    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/demo-page");
+    match std::fs::read(dir.join(file)) {
+        Ok(bytes) => ("200 OK", kind, bytes),
+        Err(_) => (
+            "404 Not Found",
+            "text/plain",
+            "lance d'abord : cargo xtask page".into(),
+        ),
+    }
+}
+
+fn respond(mut stream: TcpStream, status: &str, kind: &str, body: &[u8]) -> Result<(), String> {
     // Read the request away so the browser sees a clean close.
     let mut request = [0; 4096];
     stream
         .set_read_timeout(Some(Duration::from_millis(50)))
         .map_err(|e| e.to_string())?;
     let _ = stream.read(&mut request);
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n{body}",
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
         body.len()
     );
     stream
-        .write_all(response.as_bytes())
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body))
         .map_err(|e| e.to_string())
 }
 
@@ -267,6 +298,16 @@ fn describe(input: &InputState) -> String {
     line
 }
 
+/// Prints each datagram and sends it back, prefixed with "écho : ".
+fn echo(socket: &UdpSocket) {
+    let mut buffer = [0; 2048];
+    while let Ok((length, from)) = socket.recv_from(&mut buffer) {
+        let text = String::from_utf8_lossy(buffer.get(..length).unwrap_or_default()).into_owned();
+        println!("\n← datagramme de {from} : {text}");
+        let _ = socket.send_to(format!("écho : {text}").as_bytes(), from);
+    }
+}
+
 /// The address phones on the Wi-Fi reach: the interface of the default
 /// route, found by "connecting" a UDP socket (nothing is sent).
 fn lan_ip() -> IpAddr {
@@ -308,21 +349,55 @@ const PLAY_PAGE: &str = r#"<!doctype html><meta charset="utf-8"><meta name="view
 <title>Faux jeu</title><body style="font:18px -apple-system,sans-serif;background:#14161b;color:#fff;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
 <div><p>Faux jeu de la Télécommande</p><p><a style="color:#3a86ff;font-size:22px" href="{link}">Ouvrir dans l'app Télécommande</a></p></div>"#;
 
-/// The free path: the game's own page, here a single button. It calls the
-/// app's bridge when it is there and tells the game through plain HTTP.
+/// The free path, in plain JavaScript: the game's own page, using the app's
+/// raw messages (`CONTRAT.md`). It tries everything the app adds to a page,
+/// and still works, with less, in a plain browser.
 const FREE_PAGE: &str = r#"<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Page libre</title>
-<style>html,body{margin:0;height:100%;background:#14161b;color:#fff;font:600 18px -apple-system,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
-body{display:grid;place-items:center}#b{width:46vmin;height:46vmin;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff8a5c,#e2471f);display:grid;place-items:center;font-size:6vmin;box-shadow:0 1vmin 0 #8c2a10}
-#b.on{transform:scale(.94);filter:brightness(.85)}#m{position:fixed;bottom:14px;width:100%;text-align:center;opacity:.6;font:13px ui-monospace,monospace}</style>
-<div id="b">PAGE LIBRE</div><div id="m"></div>
+<style>
+html,body{margin:0;height:100%;background:#14161b;color:#fff;font:600 15px -apple-system,sans-serif;-webkit-user-select:none;user-select:none}
+body{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));align-content:start;gap:8px;padding:10px max(10px,env(safe-area-inset-right)) 10px max(56px,env(safe-area-inset-left));box-sizing:border-box}
+section{background:#22252c;border-radius:12px;padding:8px 10px}h2{margin:0 0 8px;font-size:13px;opacity:.6;text-transform:uppercase}
+button{font:inherit;color:#fff;background:#3a86ff;border:0;border-radius:9px;padding:7px 10px;margin:0 5px 5px 0}
+pre{margin:0;font:12px ui-monospace,monospace;white-space:pre-wrap;opacity:.85}video{width:100%;border-radius:8px;background:#000;max-height:70px}
+meter{width:100%}
+</style>
+<section><h2>Identité</h2><pre id="who"></pre></section>
+<section><h2>Vibrations</h2><button data-v="press">press</button><button data-v="release">release</button><button data-v="success">success</button><button data-v="warning">warning</button><button id="beat">sur mesure</button></section>
+<section><h2>Capteurs</h2><button id="motion">démarrer</button><pre id="m">—</pre></section>
+<section><h2>Orientation</h2><button data-o="portrait">portrait</button><button data-o="landscape">paysage</button><pre id="o"></pre></section>
+<section><h2>Micro</h2><button id="mic">écouter</button><meter id="level" max="1"></meter></section>
+<section><h2>Caméra</h2><button id="cam">filmer</button><video id="video" playsinline muted></video></section>
+<section><h2>UDP</h2><button id="udp">ping</button><pre id="u">—</pre></section>
 <script>
-const app = window.telecommande, b = document.getElementById("b"), m = document.getElementById("m");
-let taps = 0;
-b.addEventListener("pointerdown", () => { b.classList.add("on"); app && app.vibrate("press"); fetch("/free-input?tap=" + (++taps)); });
-for (const e of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(e, () => b.classList.remove("on"));
-if (app) app.motion(s => { m.textContent = "gravité " + s.gravity.map(v => v.toFixed(2)).join(" "); });
-else m.textContent = "Hors de l'app : ni vibration ni capteurs";
+// The app's door, in plain JavaScript: post a message, listen to its events.
+const info = window.telecommande, $ = (id) => document.getElementById(id);
+const post = (message) => window.webkit?.messageHandlers?.telecommande?.postMessage(message);
+const show = (id, text) => { $(id).textContent = text; };
+show("who", info ? `joueur ${info.player.slice(0, 8)}…\nprénom « ${info.name} »` : "hors de l'app");
+show("o", info ? info.orientation : "hors de l'app");
+addEventListener("telecommande:orientation", (e) => show("o", e.detail));
+for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => post({ vibrate: b.dataset.v });
+$("beat").onclick = () => post({ haptic: [0, 0.15, 0.3].map((time, i) => ({ time, intensity: 1 - i * 0.3, sharpness: 0.8 })).concat({ time: 0.5, duration: 0.4, intensity: 0.6, sharpness: 0.2 }) });
+let moving = false;
+addEventListener("telecommande:motion", (e) => show("m", ["gravity", "rotation", "acceleration", "attitude"].map((k) => k + " " + e.detail[k].map((v) => v.toFixed(2)).join(" ")).join("\n")));
+$("motion").onclick = () => { moving = !moving; $("motion").textContent = moving ? "arrêter" : "démarrer"; post({ motion: moving }); };
+for (const b of document.querySelectorAll("[data-o]")) b.onclick = () => post({ orientation: b.dataset.o });
+$("mic").onclick = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const audio = new AudioContext(), analyser = audio.createAnalyser(), data = new Uint8Array(256);
+  audio.createMediaStreamSource(stream).connect(analyser);
+  const loop = () => { analyser.getByteTimeDomainData(data); $("level").value = Math.max(...data.map((v) => Math.abs(v - 128))) / 128; requestAnimationFrame(loop); };
+  loop();
+};
+$("cam").onclick = async () => { $("video").srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }); $("video").play(); };
+let opened = false, pings = 0;
+addEventListener("telecommande:datagram", (e) => { if (e.detail.id === 1) show("u", new TextDecoder().decode(Uint8Array.from(atob(e.detail.data), (c) => c.charCodeAt(0)))); });
+$("udp").onclick = () => {
+  if (!info) return show("u", "hors de l'app");
+  if (!opened) { post({ datagram: { op: "open", id: 1, port: Number(location.port || 80) } }); opened = true; }
+  post({ datagram: { op: "send", id: 1, data: Array.from(new TextEncoder().encode("ping " + ++pings)) } });
+};
 </script>"#;
 
 #[cfg(test)]

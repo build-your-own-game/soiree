@@ -12,9 +12,11 @@ Lis et applique `../MANIFESTE.md`. Ce dossier n'est pas un jeu : c'est l'app iPh
   - `join` : du QR scanné à l'adresse du WebSocket.
   - `feel` (tests) : la sensation, vérifiée sur tous les presets et plusieurs iPhone.
 - `crates/ffi` (`remote-ffi`) : la face Swift du cœur, générée par UniFFI. Les types y sont recopiés pour que le cœur reste sans code FFI.
-- `crates/demo` (`remote-demo`) : un faux jeu pour tout essayer sans vrai jeu.
-- `xtask` : `cargo xtask ios` compile le cœur pour iOS et génère les liaisons Swift dans `ios/Generated` (ignoré par git).
-- `ios/` : la coquille Swift 6 (SwiftUI). Elle ne décide rien : elle tient le WebSocket, transmet les doigts et les capteurs à Rust, dessine ce que Rust dit et joue les vibrations. La page libre tourne dans WebKit, avec `window.telecommande`.
+- `crates/web` (`remote-web`) : pour la page libre d'un jeu en Rust (WASM). Il enveloppe les messages entre la page et l'app (`CONTRAT.md`) ; leur forme est testée en natif dans `message.rs`.
+- `crates/demo` (`remote-demo`) : un faux jeu pour tout essayer sans vrai jeu, avec une page libre en JavaScript (`/free`).
+- `crates/demo-page` (`remote-demo-page`) : la page libre du faux jeu écrite en Rust (`/rust/`), construite par `cargo xtask page`.
+- `xtask` : `cargo xtask ios` compile le cœur pour iOS et génère les liaisons Swift dans `ios/Generated` (ignoré par git) ; `cargo xtask page` construit la page Rust du faux jeu.
+- `ios/` : la coquille Swift 6 (SwiftUI). Elle ne décide rien : elle tient le WebSocket, transmet les doigts et les capteurs à Rust, dessine ce que Rust dit et joue les vibrations. La page libre tourne dans WebKit : l'app n'y injecte qu'une donnée (`window.telecommande`), reçoit les messages de la page et lui répond par des événements.
 
 ## Commandes
 

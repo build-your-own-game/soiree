@@ -5,6 +5,7 @@ import SwiftUI
 /// game shows the remote it wants.
 @main
 struct RemoteApp: App {
+    @UIApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var target: JoinTarget?
 
     var body: some Scene {

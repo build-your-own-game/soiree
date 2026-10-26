@@ -7,6 +7,7 @@ import VisionKit
 struct JoinView: View {
     let onJoin: (JoinTarget) -> Void
     @State private var address = ""
+    @State private var name = GameConnection.name
     @State private var problem: String?
 
     var body: some View {
@@ -25,10 +26,18 @@ struct JoinView: View {
                     Text(QRScanner.isAvailable ? "Scanne le QR code affiché sur la TV." : "Entre l'adresse du jeu affichée sur la TV.")
                         .font(.system(size: 17, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.7))
+                    TextField(
+                        "Prénom", text: $name,
+                        prompt: Text("Ton prénom").foregroundStyle(.white.opacity(0.35)))
+                        .textContentType(.givenName)
+                        .submitLabel(.done)
+                        .onChange(of: name) { _, typed in GameConnection.name = String(typed.prefix(24)) }
+                        .padding(10)
+                        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
                     HStack {
                         TextField(
                             "Adresse", text: $address,
-                            prompt: Text("http://192.168.1.12:8090/play").foregroundStyle(.white.opacity(0.35)))
+                            prompt: Text("Adresse du jeu").foregroundStyle(.white.opacity(0.35)))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)

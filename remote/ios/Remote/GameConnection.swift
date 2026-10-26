@@ -41,7 +41,7 @@ final class GameConnection {
     init(target: JoinTarget) {
         self.target = target
         session = Session(
-            player: Self.player, name: "", screen: Size(width: 0, height: 0),
+            player: Self.player, name: Self.name, screen: Size(width: 0, height: 0),
             insets: Insets(top: 0, left: 0, bottom: 0, right: 0))
     }
 
@@ -54,6 +54,7 @@ final class GameConnection {
     /// The player left the game.
     func stop() {
         closed = true
+        Orientation.allow(.landscape)
         ticker?.stop()
         ticker = nil
         pad?.stop()
@@ -92,6 +93,7 @@ final class GameConnection {
         status = .connected
         switch session.receive(frame: frame) {
         case .showPad:
+            Orientation.allow(.landscape)
             if pad == nil {
                 pad = RemoteModel(session: session)
             }
@@ -142,9 +144,15 @@ final class GameConnection {
         }
     }
 
+    /// The first name the player typed on the join screen, or "".
+    static var name: String {
+        get { UserDefaults.standard.string(forKey: "name") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "name") }
+    }
+
     /// 16 random bytes, made once and kept: the player's identity in every
     /// game, without an account.
-    private static var player: Data {
+    static var player: Data {
         let key = "player"
         if let saved = UserDefaults.standard.data(forKey: key), saved.count == 16 {
             return saved

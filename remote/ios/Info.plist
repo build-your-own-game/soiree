@@ -18,7 +18,9 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Pour scanner le QR code affiché sur la TV.</string>
+	<string>Pour scanner le QR code affiché sur la TV, et pour les jeux qui prennent une photo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pour les jeux qui se jouent à la voix.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Pour rejoindre le jeu qui tourne sur l'ordinateur branché à la TV.</string>
 	<!-- Games run on a computer of the local network, over plain HTTP. -->
