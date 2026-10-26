@@ -92,27 +92,41 @@ private struct ButtonView: View {
         ZStack {
             // A pressed button is hidden under the thumb: a halo wider than
             // the button shows around it.
-            halo.opacity(pressed ? 1 : 0)
+            halo
+                .opacity(pressed ? 1 : 0)
+                .animation(release(Self.haloFade), value: pressed)
             shape
                 .scaleEffect(pressed ? 0.94 : 1)
                 .brightness(pressed ? -0.14 : 0)
+                .animation(release(Self.buttonFade), value: pressed)
         }
         .position(layout.center.cgPoint)
     }
 
+    /// A press shows on the next frame. A release fades: a quick tap lasts
+    /// about one frame, and a full-strength flash that short reads as
+    /// flicker. The button springs back first, the halo fades after it.
+    static let buttonFade = 0.06
+    static let haloFade = 0.12
+
+    private func release(_ duration: Double) -> Animation? {
+        pressed ? nil : .easeOut(duration: duration)
+    }
+
+    /// Kept small and soft: a big change on every press distracts.
     @ViewBuilder private var halo: some View {
         switch layout.shape {
         case let .circle(radius):
+            let r = CGFloat(radius)
             Circle()
                 .fill(RadialGradient(
-                    colors: [color.opacity(0.55), color.opacity(0)],
-                    center: .center, startRadius: CGFloat(radius) * 0.9, endRadius: CGFloat(radius) * 1.6))
-                .frame(width: CGFloat(radius) * 3.2, height: CGFloat(radius) * 3.2)
+                    colors: [color.opacity(0.4), color.opacity(0)],
+                    center: .center, startRadius: r * 0.9, endRadius: r * 1.2))
+                .frame(width: r * 2.4, height: r * 2.4)
         case let .capsule(width, height):
             Capsule()
-                .fill(.white.opacity(0.18))
-                .frame(width: CGFloat(width) + 24, height: CGFloat(height) + 24)
-                .blur(radius: 8)
+                .fill(.white.opacity(0.14))
+                .frame(width: CGFloat(width) + 14, height: CGFloat(height) + 14)
         }
     }
 
@@ -127,7 +141,7 @@ private struct ButtonView: View {
                 .overlay(Circle().strokeBorder(.black.opacity(0.4), lineWidth: max(1.5, r * 0.07)))
                 .overlay { label(size: r) }
                 .frame(width: r * 2, height: r * 2)
-                .shadow(color: .black.opacity(pressed ? 0.25 : 0.55), radius: pressed ? 1 : r * 0.14, y: pressed ? 1 : r * 0.12)
+                .shadow(color: .black.opacity(pressed ? 0.35 : 0.55), radius: r * 0.14, y: pressed ? r * 0.04 : r * 0.12)
         case let .capsule(width, height):
             let (w, hh) = (CGFloat(width), CGFloat(height))
             Capsule()
@@ -137,7 +151,7 @@ private struct ButtonView: View {
                 .overlay(Capsule().strokeBorder(.black.opacity(0.4), lineWidth: 2))
                 .overlay { label(size: hh / 2) }
                 .frame(width: w, height: hh)
-                .shadow(color: .black.opacity(pressed ? 0.25 : 0.55), radius: pressed ? 1 : 4, y: pressed ? 1 : 3)
+                .shadow(color: .black.opacity(pressed ? 0.35 : 0.55), radius: 4, y: pressed ? 1 : 3)
         }
     }
 
@@ -199,10 +213,12 @@ private struct DPadView: View {
                     startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.55), radius: 4, y: 3)
             ForEach(Self.arms, id: \.button) { item in
+                let pressed = model.isPressed(item.button)
                 Rectangle()
-                    .fill(.black.opacity(model.isPressed(item.button) ? 0.35 : 0))
+                    .fill(.black.opacity(pressed ? 0.35 : 0))
                     .frame(width: arm, height: arm)
                     .offset(x: item.dx * arm, y: item.dy * arm)
+                    .animation(pressed ? nil : .easeOut(duration: ButtonView.buttonFade), value: pressed)
                 Triangle()
                     .fill(.black.opacity(0.35))
                     .frame(width: arm * 0.42, height: arm * 0.32)

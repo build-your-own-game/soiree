@@ -41,6 +41,19 @@ Trois sources ont été étudiées :
 | Un bouton appuyé est caché sous le pouce : il faut un halo plus large que lui | HIG ; PPSSPP a9a45481c | U | **Gardé** : halo de la couleur du bouton. |
 | Start en haut au centre comme sur la vraie manette, et rien d'important en bas au centre (geste « accueil ») | n64brew ; PPSSPP f42f7ac9d | P / U | **Gardé.** |
 
+## Dessin d'un appui
+
+Mesuré chez nous : un écran filmé dans le simulateur montrait une tape rapide pendant une seule image (8 ms), voire aucune, puis halo, assombrissement et ombre disparaissaient d'un coup. C'était le « scintillement ».
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| L'appui s'affiche tout de suite : aucun émulateur n'anime le passage à l'état appuyé, ni n'échange la latence contre un effet | PPSSPP `GamepadEmu.cpp` ; Delta 1ef4247b2 et 633dfa869 ; Dolphin ; RetroArch `alpha_mod` | U | **Gardé** : aucune animation à l'appui. |
+| En dessous d'environ 100 ms, l'œil cumule la luminosité d'un flash (loi de Bloch). Des flashs à pleine force de durées variables se lisent comme un scintillement | loi de Bloch | P | **Gardé** : un bouton reste dessiné appuyé au moins 60 ms. Le jeu, lui, reçoit le relâchement à l'instant. |
+| Les kits d'interface ajoutent un fondu au relâchement ou un temps d'affichage minimum | Android `RippleForeground` (au moins 225 ms, puis fondu de 150 ms) ; Unity uGUI (100 ms) ; Chromium iOS (70 ms) ; Flutter | U | **Gardé** : le bouton revient en 60 ms, le halo s'efface en 120 ms. |
+| Un gros changement à chaque appui distrait : PPSSPP a réduit l'agrandissement de ×2 à ×1,5 | PPSSPP #12987, a9a45481c | U | **Gardé** : halo réduit à 2,4 fois le rayon et 40 % d'opacité. |
+| Ombres et flous sont des passes de rendu supplémentaires : en changer le rayon à chaque appui coûte | doc Apple (ProMotion, `shadowPath`) | P | **Gardé** : rayon d'ombre fixe, seuls décalage et opacité changent. Plus de flou sur le halo de L et R. |
+| Le simulateur, piloté à la souris, ne rend pas comme un vrai iPhone | — | A | **À vérifier** sur un vrai iPhone (Instruments, rendu hors écran). |
+
 ## Croix
 
 | Leçon | Source | Cat. | Conséquence ici |

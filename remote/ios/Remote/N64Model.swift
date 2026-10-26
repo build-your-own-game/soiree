@@ -8,9 +8,17 @@ import UIKit
 final class N64Model {
     private(set) var layout: N64Layout?
     private(set) var frame: N64Frame?
+    /// Buttons drawn as pressed: those held now, and those pressed less than
+    /// `minimumPress` ago. A tap can go down and up before the next frame is
+    /// drawn, and would otherwise never show.
+    private(set) var shown: Set<N64Button> = []
+
+    /// Only the drawing waits: the pad itself already reads the release.
+    static let minimumPress = Duration.milliseconds(60)
 
     @ObservationIgnored private var remote: N64Remote?
     @ObservationIgnored private let haptics = Haptics()
+    @ObservationIgnored private var pressedAt: [N64Button: ContinuousClock.Instant] = [:]
 
     func handle(_ event: TouchSurface.Event) {
         switch event {
@@ -33,17 +41,41 @@ final class N64Model {
         case let .up(id):
             haptics.play(remote?.touchUp(id: id))
         }
-        frame = remote?.frame()
+        update()
     }
 
     /// The app left the foreground: nothing may stay held.
     func releaseAll() {
         remote?.releaseAll()
-        frame = remote?.frame()
+        update()
     }
 
     func isPressed(_ button: N64Button) -> Bool {
-        frame?.pressed.contains(button) ?? false
+        shown.contains(button)
+    }
+
+    private func update() {
+        let before = Set(frame?.pressed ?? [])
+        frame = remote?.frame()
+        let held = Set(frame?.pressed ?? [])
+        let now = ContinuousClock.now
+        for button in held.subtracting(before) {
+            pressedAt[button] = now
+        }
+        refreshShown(now: now)
+    }
+
+    private func refreshShown(now: ContinuousClock.Instant) {
+        let held = Set(frame?.pressed ?? [])
+        pressedAt = pressedAt.filter { held.contains($0.key) || now - $0.value < Self.minimumPress }
+        let lingering = Set(pressedAt.keys).subtracting(held)
+        let next = held.union(lingering)
+        if next != shown { shown = next }
+        guard let oldest = lingering.compactMap({ pressedAt[$0] }).min() else { return }
+        Task { [weak self] in
+            try? await Task.sleep(until: oldest + Self.minimumPress, clock: .continuous)
+            self?.refreshShown(now: .now)
+        }
     }
 }
 
