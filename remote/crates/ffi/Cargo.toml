@@ -1,0 +1,19 @@
+[package]
+name = "remote-ffi"
+description = "The Swift face of remote-core, through UniFFI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+name = "remote_ffi"
+
+[dependencies]
+remote-core.workspace = true
+remote-protocol.workspace = true
+uniffi.workspace = true
+
+[lints]
+workspace = true

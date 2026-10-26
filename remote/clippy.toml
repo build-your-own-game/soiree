@@ -1,0 +1,29 @@
+allow-unwrap-in-tests = true
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "ordre d'itération aléatoire : utilise BTreeMap ou un hasher à graine fixe" },
+  { path = "std::collections::HashSet", reason = "ordre d'itération aléatoire : utilise BTreeSet ou un hasher à graine fixe" },
+]
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "panique sur wasm32-unknown-unknown ; le temps entre dans la simulation comme une entrée" },
+  { path = "std::time::SystemTime::now", reason = "le temps entre dans la simulation comme une entrée" },
+  { path = "f32::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::tan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::sin_cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::atan2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::tan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::sin_cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::atan2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+]
+
+# Noms propres de la télécommande, en plus des valeurs par défaut de Clippy.
+doc-valid-idents = ["GoldenEye", "iPhone", "iOS", "UniFFI", "SwiftUI", "UIKit", "WebKit", "XCFramework", "..",]

@@ -1,0 +1,10 @@
+[package]
+name = "remote-protocol"
+description = "What a phone remote sends to a game. Shared by the iPhone app, games and fake phones."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
