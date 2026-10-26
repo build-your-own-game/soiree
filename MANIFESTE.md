@@ -89,6 +89,8 @@ Les jeux existants sont aussi une source : projets publics de décompilation, an
 
 On repense tout de zéro, mais toujours avec une raison. Si ton jeu a une meilleure raison de faire autrement, fais autrement et écris pourquoi.
 
+Écris-le dans une section `## Écarts au manifeste` de ton `LEARNINGS.md`, avec un point numéroté par principe ci-dessous. Chaque point commence par **Respecté.**, par **Écart.** suivi d'une « Raison : », ou par **À faire.**
+
 1. **La machine vérifie, pas l'humain.** Préfère les choix qui laissent le compilateur, les tests et les replays attraper les erreurs : types forts, états impossibles non représentables, aucun `unwrap` dans la boucle de jeu sans raison écrite.
 2. **Simulation à pas fixe, rendu interpolé.** La logique avance par ticks fixes et le rendu interpole entre eux. C'est ce qui rend la sensation de jeu indépendante de la fréquence de l'écran.
 3. **Déterminisme par défaut.** Une partie, c'est une graine, un état initial et un flux d'entrées horodatées. Tu obtiens gratuitement les replays, la reproduction de bugs, le rollback et les tests. Attention aux flottants entre WASM et natif, à l'ordre d'itération des `HashMap`, et à toute source de hasard sans graine.
@@ -138,7 +140,11 @@ missing_panics_doc = "allow"
 # Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
 unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
 dbg_macro = "deny"
 todo = "deny"
 
@@ -155,6 +161,9 @@ overflow-checks = true
 
 ```toml
 allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
 
 disallowed-types = [
   { path = "std::collections::HashMap", reason = "ordre d'itération aléatoire : utilise BTreeMap ou un hasher à graine fixe" },
@@ -171,6 +180,24 @@ disallowed-methods = [
   { path = "f32::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f32::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f32::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::asin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::acos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::atan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::sinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::cosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::tanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::asinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::acosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::atanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::exp2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::exp_m1", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::ln_1p", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::log", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::log2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::log10", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::hypot", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::cbrt", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f32::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou utilise libm::pow" },
   { path = "f64::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::tan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
@@ -179,6 +206,24 @@ disallowed-methods = [
   { path = "f64::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::asin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::acos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::atan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::sinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::cosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::tanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::asinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::acosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::atanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::exp2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::exp_m1", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::ln_1p", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::log", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::log2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::log10", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::hypot", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::cbrt", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
+  { path = "f64::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou utilise libm::pow" },
 ]
 ```
 
@@ -192,6 +237,16 @@ cargo clippy --all-targets -- -D warnings
 cargo clippy --target wasm32-unknown-unknown -- -D warnings
 cargo test
 ```
+
+Ensuite, depuis la racine du dépôt, `tools/check.sh <dossier-du-jeu>` vérifie tout ce qu'une machine peut vérifier dans ce document :
+
+- le socle ci-dessus, lu dans ce fichier même ;
+- une simulation (`crates/core`) qui ne dépend ni du navigateur ni du GPU ;
+- aucun JavaScript écrit à la main dans `web/` ;
+- les chemins cités dans `AGENTS.md` et `README.md`, qui doivent exister ;
+- la section « Écarts au manifeste ».
+
+Il relance aussi les quatre commandes. Le reste (états impossibles, sensation, validité d'une raison) demande toujours un jugement.
 
 ## Vérification
 
