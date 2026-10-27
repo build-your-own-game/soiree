@@ -28,6 +28,7 @@ Le jeu reste jouable de bout en bout à tout moment. L'ambition s'empile par cou
 - Le jeu est écrit en Rust et compilé en WebAssembly. Le JavaScript se limite à la colle générée (wasm-bindgen) et au strict nécessaire pour atteindre une API du navigateur.
 - Tu peux livrer en plus un binaire Rust natif qui tourne sur la même machine : serveur local, relais réseau, service des fichiers. Idéalement, il partage son code avec le jeu.
 - Le réseau n'est pas encore tranché : Wi-Fi local, internet, ou les deux (voir *Matériel*). Un jeu peut aussi utiliser internet en direct comme mécanique de jeu.
+- La TV, les téléphones, l'app iPhone et les manettes rejoignent le jeu par la couche commune `salon/`, qui gère tout le réseau : lis `salon/README.md`.
 
 ### Qui joue, et avec quoi
 

@@ -24,7 +24,7 @@ Deux idées viennent des navigateurs. La suite commune web-platform-tests, que C
 | **3. Le salon** | avant la soirée | 15 min | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
 
 - **Étage 1.** Il joue des milliers de suites d'entrées au hasard sur la simulation (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
-- **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones dans le Chrome de l'ordinateur, sans écran, pilotés par Playwright. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des messages hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
+- **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones dans le Chrome de l'ordinateur, sans écran, pilotés par Playwright. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Toxiproxy ne porte que du TCP : la TV et les téléphones ouvrent leur page avec `?salon=ws`, qui garde salon sur son WebSocket. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des paquets hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
 - **Étage 3.** Ce qu'aucun simulateur ne reproduit : la suspension d'iOS, un vrai Wi-Fi, le recul du canapé, savoir si c'est drôle.
 
 ## La règle du bug trouvé en jouant
@@ -34,6 +34,8 @@ Un bug découvert en jouant est un échec de la certification avant d'être un �
 1. **Le reproduire.** Un replay, ou une suite d'entrées, qui devient un test de l'étage 1.
 2. **Répondre par écrit** dans `LEARNINGS.md` : *pourquoi aucun item de cette liste ne l'a vu ?*
 3. **Renforcer la liste.** Ajoute un item, ou durcis un item existant, pour que **tous** les jeux en profitent.
+
+Un test n'est jamais supprimé sans dire ce qui le couvre maintenant : chaque jeu en tient le registre dans la section « Tests retirés au passage à salon » de son `LEARNINGS.md`.
 
 ## Lancer le harnais
 
@@ -53,7 +55,7 @@ node tools/cert/cert.mjs games/<jeu> --seed 12          # rejoue le hasard d'un 
 node tools/cert/cert.mjs games/<jeu> --soak 30          # 30 min d'endurance (R2)
 ```
 
-Les scénarios, dans l'ordre : `join`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. Le rapport s'affiche à la fin, avec un tableau par item, et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗.
+Les scénarios, dans l'ordre : `join`, `rtc`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après `rtc`. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗.
 
 Le harnais garde trois oracles pendant tous les scénarios :
 - aucune exception dans aucune page ;
@@ -62,7 +64,7 @@ Le harnais garde trois oracles pendant tous les scénarios :
 
 ## Le fichier `cert.json`
 
-Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint. C'est le seul endroit où le harnais apprend quelque chose du jeu.
+Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint. C'est le seul endroit où le harnais apprend quelque chose du jeu. Le plus petit est celui de la démo de salon (`salon/cert.json`) : on y rejoint sans aucune étape.
 
 ```json
 {
@@ -72,7 +74,7 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
   "ready": "Punchline ready",
   "tv": "/",
   "phone": "/play",
-  "socket": "/ws",
+  "socket": "/salon/ws",
   "players": { "min": 3, "max": 8 },
   "join": [
     { "fill": "input", "text": "{name}" },
@@ -85,15 +87,14 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 
 - **`launch`**, **`relaunch`** et **`env`** décrivent le lancement. `{port}` y est remplacé par le port choisi par le harnais, et `{tmp}` par un dossier temporaire (pour les résultats qu'un jeu enregistre). `relaunch` sert au redémarrage en pleine partie, sans recompiler.
 - **`ready`** est la ligne de la sortie de l'hôte qui dit qu'il écoute. **`capture`** lit une valeur dans cette sortie, comme un code de salle : `{ "room": "Room ([0-9A-F]+)" }` remplace ensuite `{room}` dans les chemins.
-- **`tv`** et **`phone`** sont les chemins des pages. **`socket`** est le chemin du WebSocket, pour les messages hostiles.
+- **`tv`** et **`phone`** sont les chemins des pages ; le harnais y ajoute `salon=ws`, à la suite de la requête s'il y en a une (`/play?room=X&salon=ws`). **`socket`** est le chemin du WebSocket de salon, `/salon/ws` : le harnais y envoie des paquets binaires de salon (postcard), vrais, mutés ou inventés.
 - **`join`** liste les étapes pour rejoindre depuis un téléphone : `fill` (un champ et son texte, `{name}` étant le prénom), `click` (un sélecteur), `press` (une touche). **`joined`** est une expression évaluée dans la page téléphone, vraie une fois le joueur dans la partie.
 - **`start`** lance la partie depuis la TV, et **`advance`** la fait avancer (passer une étape), pour la parcourir vite. Chacun est `{ "key": "…" }` ou `{ "text": "Play" }` (le bouton qui porte ce texte).
 - **`players.max`** est la taille de la salle (R3).
-- **`spectators: true`** dit qu'un appareil du réseau peut regarder la TV sans aucun droit (E4 devient « à juger »).
 - **`layout: false`**, avec **`layout_reason`**, saute la vérification de la zone sûre : une TV dessinée sur un canvas, une page qui n'est pas une TV.
 - Un jeu sans téléphone (`"phone": null`) passe seulement les items qui le concernent : le singe joue alors sur sa page.
 
-**Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Le scénario `silent` compare donc les horaires : une page qui ne réagit qu'après la fermeture par l'hôte n'a pas de délai de silence à elle (C3 ✗).
+**Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Et l'hôte de salon renonce après le même silence que la page. Le scénario `silent` n'avale donc que ce que l'hôte envoie : l'hôte entend toujours la page et ne ferme rien, et seule une page qui a son propre délai de silence s'en aperçoit (C3).
 
 ## Les exigences
 
@@ -103,6 +104,8 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - son origine (l'expérience dont elle vient) ;
 - qui la vérifie : **1** pour un test de propriété, **2** pour un scénario du harnais (`scénario`), **3** pour le salon.
 
+**salon** dans cette colonne : la garantie est celle de la couche réseau commune (`salon/crates/core`), qu'aucun jeu ne réécrit. Elle est jouée par `salon/crates/core/tests/` sur un faux réseau à graine, qui perd, retarde, double et coupe ; le harnais la vérifie encore jeu par jeu.
+
 **Si un item ne s'applique pas** à un jeu, son `LEARNINGS.md` le dit, dans la section « Écarts au manifeste ». Exemple : pas de téléphones dans la tier-list.
 
 ### C — Connexion
@@ -111,14 +114,14 @@ Jackbox admet que sa reconnexion marche « 90 % du temps », et c'est la premiè
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| C1 | Un téléphone neuf rejoint la partie en moins de 30 s, sans compte. | manifeste | 2 `join` |
-| C2 | Après une coupure courte (3 s), le téléphone retrouve **sa** place seul, en moins de 10 s, avec son nom, son personnage et son score. | Jackbox, XR-115 | 1, 2 `cut` |
-| C3 | Après une coupure **silencieuse** (rien n'est fermé : la page gèle, les paquets disparaissent), l'hôte constate l'absence en moins de 20 s, et le téléphone se reconnecte au réveil en moins de 10 s. Si le Wi-Fi meurt pendant que la page tourne, la page s'en aperçoit **d'elle-même** en moins de 20 s, sans attendre un `onclose` qui n'arrivera jamais. | iOS (TN2277), WebKit 247943, XR-112 | 2 `freeze` + `silent` |
-| C4 | Recharger la page en pleine manche rend la même place, grâce au jeton. | Jackbox, Kahoot | 2 `reload` |
-| C5 | Deux onglets pour le même joueur : le dernier gagne, et l'autre ne se reconnecte pas en boucle. | Sidequest Live (code 4001) | 2 `twin` |
+| C1 | Un téléphone neuf rejoint la partie en moins de 30 s, sans compte. | manifeste | 2 `join` + `rtc` |
+| C2 | Après une coupure courte (3 s), le téléphone retrouve **sa** place seul, en moins de 10 s, avec son nom, son personnage et son score. | Jackbox, XR-115 | salon, 1, 2 `cut` |
+| C3 | Après une coupure **silencieuse** (rien n'est fermé : la page gèle, les paquets disparaissent), l'hôte constate l'absence en moins de 20 s, et le téléphone se reconnecte au réveil en moins de 10 s. Si le Wi-Fi meurt pendant que la page tourne, la page s'en aperçoit **d'elle-même** en moins de 20 s, sans attendre un `onclose` qui n'arrivera jamais. | iOS (TN2277), WebKit 247943, XR-112 | salon, 2 `freeze` + `silent` |
+| C4 | Recharger la page en pleine manche rend la même place, grâce au jeton. | Jackbox, Kahoot | salon (le retour de C2, sans test à lui), 2 `reload` |
+| C5 | Deux onglets pour le même joueur : le dernier gagne, et l'autre ne se reconnecte pas en boucle. | Sidequest Live (code 4001) | salon, 2 `twin` |
 | C6 | Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance. | Jackbox, AirConsole | 1 |
-| C7 | L'hôte qui redémarre en pleine partie ne laisse aucun écran figé. La TV et les téléphones se reconnectent, ou disent clairement quoi faire. | rocketcrab #70 | 2 `restart` |
-| C8 | Une salle pleine, une partie déjà lancée ou une mauvaise version donnent un message clair au joueur, jamais un « lobby fantôme ». | Drawphone #57 | 1, 2 `join` |
+| C7 | L'hôte qui redémarre en pleine partie ne laisse aucun écran figé. La TV et les téléphones se reconnectent, ou disent clairement quoi faire. | rocketcrab #70 | salon, 2 `restart` |
+| C8 | Une salle pleine, une partie déjà lancée ou une mauvaise version donnent un message clair au joueur, jamais un « lobby fantôme ». | Drawphone #57 | salon, 1, 2 `join` |
 | C9 | Les données gardées par le navigateur (jeton, sauvegarde), corrompues ou inaccessibles, n'empêchent pas la page de s'ouvrir. | rocketcrab #105 | 1, 2 `storage` |
 
 ### E — Entrées hostiles
@@ -127,10 +130,10 @@ Sur un serveur qui fait autorité, une panique termine la soirée. Les clones de
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| E1 | Un message illisible (octets au hasard, JSON tronqué, mauvais type, frame binaire) est ignoré. L'hôte et les autres joueurs continuent. | ClusterFuzz, Drawphone #124 | 1, 2 `hostile` |
-| E2 | Un message plus gros que la limite ferme cette connexion, et elle seule. | Drawphone #94 | 2 `hostile` |
-| E3 | Un téléphone qui inonde l'hôte (des milliers de messages par seconde) ne ralentit pas les autres. | Colyseus (limiteur) | 2 `hostile` |
-| E4 | Un téléphone ne peut ni devenir la TV, ni prendre la place d'un autre avec un jeton inventé. | red team | 2 `hostile` |
+| E1 | Un message illisible (octets au hasard, paquet tronqué ou muté, frame texte) est ignoré. L'hôte et les autres joueurs continuent. | ClusterFuzz, Drawphone #124 | salon, 1, 2 `hostile` |
+| E2 | Un message plus gros que la limite (64 Kio) ferme cette connexion, et elle seule. | Drawphone #94 | salon (la limite de 64 Kio est dans `salon-host`, sans test à lui), 2 `hostile` |
+| E3 | Un téléphone qui inonde l'hôte (des milliers de messages par seconde) ne ralentit pas les autres. | Colyseus (limiteur) | salon, 2 `hostile` |
+| E4 | Un téléphone ne peut ni devenir la TV, ni prendre la place d'un autre avec un jeton inventé. Le premier paquet de la TV, rejoué depuis le réseau, reçoit un refus court et sa connexion se ferme en 3 s, sans jamais l'écran de la TV. | red team | salon, 2 `hostile` |
 | E5 | Une action hors de sa phase, ou d'un joueur qui n'est pas concerné, est refusée sans rien changer. Exemples : voter pour soi, répondre après l'échéance, agir dans une partie finie. | Drawphone #124 | 1 |
 | E6 | 8 téléphones qui tapent et écrivent au hasard pendant toute une partie ne font apparaître aucune exception, ni dans les pages ni dans l'hôte. | gremlins.js, Android monkey | 2 `monkey` |
 

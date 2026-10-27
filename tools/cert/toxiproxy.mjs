@@ -10,6 +10,10 @@
 //                      that locks, a router that hangs): the host only learns
 //                      it from its own silence timeout, the page from its own
 //                      heartbeat, if it has one
+//   deafen()           nothing gets from the host to the page, and the page
+//                      still gets through to the host: the host has no
+//                      reason to close anything, so only the page's own
+//                      silence timer can notice
 //   reset()            closes every connection at once (iOS took the sockets
 //                      back while the phone slept) and lets new ones through
 //   heal()             back to normal
@@ -120,6 +124,10 @@ class Proxy {
     for (const stream of ["upstream", "downstream"]) {
       await this.toxic(`blackhole-${stream}`, "timeout", stream, { timeout: 0 });
     }
+  }
+
+  deafen() {
+    return this.toxic("blackhole-downstream", "timeout", "downstream", { timeout: 0 });
   }
 
   async reset() {

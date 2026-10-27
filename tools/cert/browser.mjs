@@ -20,7 +20,12 @@ const IPHONE = {
 // Frames drawn since the page loaded: a TV that stops drawing is frozen.
 const FRAME_COUNTER = "window.__certFrames = 0; (function f() { window.__certFrames++; requestAnimationFrame(f); })();";
 
-export async function launchBrowser() {
+/** `live(payload)` says whether a received frame shows the game talking to
+ * this page (salon's Welcome, or a packet of the game), rather than a refusal
+ * or a goodbye: a page only refused is not connected. `remember(payload)`
+ * picks the sent frames the harness needs later even after the first 300
+ * (salon's Hello, which carries the device's token): the last one is kept. */
+export async function launchBrowser({ live = () => true, remember = () => false } = {}) {
   const browser = await chromium.launch({
     channel: process.env.CHROME ? undefined : "chrome",
     executablePath: process.env.CHROME,
@@ -37,7 +42,7 @@ export async function launchBrowser() {
     async open(url, { width = 1280, height = 720, mobile = false, context = undefined } = {}) {
       const ctx = context ?? (await browser.newContext(mobile ? IPHONE : { viewport: { width, height } }));
       if (!context) await ctx.addInitScript(FRAME_COUNTER);
-      const tab = new Tab(ctx, await ctx.newPage(), mobile);
+      const tab = new Tab(ctx, await ctx.newPage(), mobile, live, remember);
       await tab.attach();
       if (url) await tab.goto(url);
       return tab;
@@ -48,7 +53,11 @@ export async function launchBrowser() {
 
 /** One page, with what it logged and what its WebSockets carried. */
 export class Tab {
-  constructor(context, page, mobile) {
+  constructor(context, page, mobile, live = () => true, remember = () => false) {
+    this.live = live;
+    this.remember = remember;
+    /** The last sent frame that `remember` picked. */
+    this.remembered = null;
     this.context = context;
     this.page = page;
     this.mobile = mobile;
@@ -59,6 +68,9 @@ export class Tab {
     this.wsSent = [];
     this.wsReceived = [];
     this.lastWsFrame = 0;
+    /** When the last frame that `live` accepted came, and the last frame received. */
+    this.lastLiveFrame = 0;
+    this.lastReceived = null;
     /** WebSockets the page opened: a page that keeps reopening is fighting. */
     this.sockets = 0;
     /** Each WebSocket's opening and closing times, in order. */
@@ -82,10 +94,15 @@ export class Tab {
       ws.on("close", () => (times.closedAt = Date.now()));
       ws.on("framereceived", ({ payload: data }) => {
         this.lastWsFrame = Date.now();
-        if (this.wsReceived.length < 50) this.wsReceived.push(payload(data));
+        const frame = payload(data);
+        this.lastReceived = frame;
+        if (this.live(frame.payload)) this.lastLiveFrame = this.lastWsFrame;
+        if (this.wsReceived.length < 50) this.wsReceived.push(frame);
       });
       ws.on("framesent", ({ payload: data }) => {
-        if (this.wsSent.length < 300) this.wsSent.push(payload(data));
+        const frame = payload(data);
+        if (this.remember(frame.payload)) this.remembered = frame;
+        if (this.wsSent.length < 300) this.wsSent.push(frame);
       });
     });
     this.cdp = await this.context.newCDPSession(page);
