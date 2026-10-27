@@ -1,6 +1,6 @@
 //! « Écarts au manifeste » in `LEARNINGS.md`: each engineering principle
 //! (1 to 7) is respected, or its gap is written with its reason, or it is
-//! still to do. Ported from `check_gaps` in `tools/check.sh`.
+//! still to do. Ported from the former shell check.
 
 use std::path::Path;
 
@@ -53,7 +53,7 @@ fn judge(dir: &Path, number: u32, text: &str, report: &mut Report) {
 }
 
 /// The numbered points of the section, each with its continuation lines, or
-/// `None` without the section. Like the `awk` of `check.sh`.
+/// `None` without the section. Like the former shell check.
 fn points(text: &str) -> Option<Vec<(u32, String)>> {
     let mut inside = false;
     let mut found = false;
@@ -123,7 +123,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn points_follow_the_awk_of_check_sh() {
+    fn points_gather_their_continuation_lines() {
         let text = "# L\n\n## Écarts au manifeste\n\nIntro.\n\n1. **Respecté.** a\n   suite\n2. **Écart.** b\n\n3. **À faire.** c\n## Autre\n4. **Respecté.** hors section\n";
         let found = points(text).unwrap();
         assert_eq!(found.len(), 3);

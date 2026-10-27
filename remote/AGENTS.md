@@ -26,7 +26,7 @@ cargo clippy --all-targets -- -D warnings
 cargo clippy -p remote-protocol -p remote-core --target wasm32-unknown-unknown -- -D warnings
 cargo clippy -p remote-ffi --target aarch64-apple-ios -- -D warnings
 cargo test
-../tools/check.sh .      # tout ce que le manifeste permet de vérifier par machine
+soiree check .           # tout ce que le manifeste permet de vérifier par machine (../outil/)
 cargo xtask ios          # une fois avant d'ouvrir Xcode, ensuite Xcode le relance à chaque build
 open ios/Remote.xcodeproj
 ```

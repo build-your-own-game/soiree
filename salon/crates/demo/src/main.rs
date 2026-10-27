@@ -5,7 +5,7 @@
 mod protocol;
 
 // The host is a native program; on wasm32 there is nothing to run, so a
-// workspace-wide wasm check passes (tools/check.sh).
+// workspace-wide wasm check passes (soiree check).
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 

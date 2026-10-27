@@ -7,7 +7,7 @@ version.workspace = true
 publish.workspace = true
 
 # The host is a native program. On wasm32 the crate is empty, so a game's
-# workspace can run its wasm checks on every crate (tools/check.sh).
+# workspace can run its wasm checks on every crate (soiree check).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 salon-core.workspace = true
 # The iPhone app's handshake (/remote): it is sent to the game's phone page.

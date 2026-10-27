@@ -1,6 +1,6 @@
 # Manifeste : jeux de soirée en Rust, repensés de zéro
 
-> Ce fichier s'adresse à l'agent de code (Claude Code, Codex…) qui code ton jeu. Mets-le à la racine de ton repo et ajoute dans ton `AGENTS.md` la ligne : « Lis et applique `MANIFESTE.md`. »
+> Ce fichier s'adresse à l'agent de code (Claude Code, Codex…) qui code ton jeu. L'outil `soiree` l'écrit dans `.soiree/MANIFESTE.md` de chaque jeu, à la version de son `soiree.toml`, et l'`AGENTS.md` du jeu dit de le lire et de l'appliquer.
 
 ## Le pari
 
@@ -109,146 +109,33 @@ On repense tout de zéro, mais toujours avec une raison. Si ton jeu a une meille
 
 Tous les jeux utilisent la même version de Rust, pour que n'importe lequel compile sur la machine de l'hôte sans surprise. Rust stable est rétrocompatible : la dernière version stable est aussi la plus mûre. On la fige jusqu'à la soirée.
 
-Ces règles sont un socle. Tu peux les durcir librement. Pour en assouplir une, il faut une raison écrite.
+Ces règles sont un socle. Tu peux les durcir librement. Pour en assouplir une, il faut une raison écrite, à l'endroit précis : `#[expect(lint, reason = "...")]`, jamais `#[allow]`.
 
-`rust-toolchain.toml` :
+Les fichiers eux-mêmes sont dans `outil/regles/` du dépôt commun, embarqués dans l'outil `soiree` de chaque version. `soiree new` et `soiree upgrade` les écrivent dans le jeu ; `soiree check` vérifie qu'ils y sont. Ce qu'ils imposent, et pourquoi :
 
-```toml
-[toolchain]
-channel = "1.99"
-components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]
-```
-
-`Cargo.toml` (dans un workspace, mets les lints sous `[workspace.lints]`) :
-
-```toml
-[package]
-edition = "2024"
-rust-version = "1.99"
-
-[lints.rust]
-unsafe_code = "deny"
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-# Du bruit dans du code de jeu : conversions entier → flottant partout, documentation d'API publique inutile ici.
-cast_precision_loss = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-# Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
-allow_attributes = "deny"
-allow_attributes_without_reason = "deny"
-# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-indexing_slicing = "deny"
-dbg_macro = "deny"
-todo = "deny"
-
-# Un jeu compilé en debug sans optimisation est injouable : on optimise les dépendances même en dev.
-[profile.dev.package."*"]
-opt-level = 3
-
-# Un dépassement d'entier est un bug, même en release.
-[profile.release]
-overflow-checks = true
-```
-
-`clippy.toml`, pour les règles de déterminisme :
-
-```toml
-allow-unwrap-in-tests = true
-allow-expect-in-tests = true
-allow-panic-in-tests = true
-allow-indexing-slicing-in-tests = true
-
-disallowed-types = [
-  { path = "std::collections::HashMap", reason = "ordre d'itération aléatoire : utilise BTreeMap ou un hasher à graine fixe" },
-  { path = "std::collections::HashSet", reason = "ordre d'itération aléatoire : utilise BTreeSet ou un hasher à graine fixe" },
-]
-disallowed-methods = [
-  { path = "std::time::Instant::now", reason = "panique sur wasm32-unknown-unknown ; le temps entre dans la simulation comme une entrée" },
-  { path = "std::time::SystemTime::now", reason = "le temps entre dans la simulation comme une entrée" },
-  { path = "f32::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::tan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::sin_cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::atan2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::asin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::acos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::atan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::sinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::cosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::tanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::asinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::acosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::atanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::exp2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::exp_m1", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::ln_1p", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::log", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::log2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::log10", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::hypot", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::cbrt", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f32::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou utilise libm::pow" },
-  { path = "f64::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::tan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::sin_cos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::atan2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::exp", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::ln", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::powf", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::asin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::acos", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::atan", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::sinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::cosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::tanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::asinh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::acosh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::atanh", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::exp2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::exp_m1", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::ln_1p", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::log", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::log2", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::log10", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::hypot", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::cbrt", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
-  { path = "f64::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou utilise libm::pow" },
-]
-```
+- **`rust-toolchain.toml`** fige la version de Rust, avec `rustfmt`, `clippy` et la cible `wasm32-unknown-unknown`.
+- **`Cargo.toml`** (dans un workspace, sous `[workspace.lints]`, chaque crate reprenant `[lints] workspace = true`) :
+  - l'édition 2024 ;
+  - pas de code `unsafe` ;
+  - Clippy `all` et `pedantic` en erreur, sauf quatre lints qui ne sont que du bruit dans du code de jeu (conversions entier → flottant, documentation d'API publique) ;
+  - aucune exception muette : `#[allow]` est interdit, `#[expect]` doit donner sa raison ;
+  - ni `unwrap`, ni `expect`, ni `panic!`, ni index hors bornes, ni `dbg!`, ni `todo!` : chacun arrête la partie ;
+  - les dépendances optimisées même en debug, sans quoi un jeu est injouable ;
+  - le dépassement d'entier vérifié même en release : c'est un bug.
+- **`clippy.toml`** protège le déterminisme (principe 3) : ni `HashMap` ni `HashSet` (ordre d'itération aléatoire), ni `Instant::now` ni `SystemTime::now` (le temps entre dans la simulation comme une entrée), ni les fonctions mathématiques des flottants dont le résultat diffère entre WASM et natif (`sin`, `cos`, `powf`… : utilise le crate `libm`). Les tests, eux, ont droit à `unwrap`, `expect`, `panic!` et aux index.
 
 Ces interdictions protègent la simulation. Si le code de rendu a besoin d'une `HashMap` ou de `sin`, utilise `#[expect(clippy::disallowed_types, reason = "...")]`, ou donne au crate de rendu son propre `clippy.toml`.
 
-Avant de déclarer une étape finie, ces commandes passent sans erreur :
+Avant de déclarer une étape finie, `soiree check`, dans le dossier du jeu, passe sans erreur. Il vérifie tout ce qu'une machine peut vérifier dans ce document :
 
-```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo clippy --target wasm32-unknown-unknown -- -D warnings
-cargo test
-```
-
-Ensuite, depuis la racine du dépôt, `tools/check.sh <dossier-du-jeu>` vérifie tout ce qu'une machine peut vérifier dans ce document :
-
-- le socle ci-dessus, lu dans ce fichier même ;
+- les règles ci-dessus, dans la version de `soiree.toml` ;
 - une simulation (`crates/core`) qui ne dépend ni du navigateur ni du GPU ;
 - aucun JavaScript écrit à la main dans `web/` ;
 - les chemins cités dans `AGENTS.md` et `README.md`, qui doivent exister ;
 - la section « Écarts au manifeste » ;
-- un `cert.json` lisible par le harnais de `CERTIFICATION.md`.
+- un `cert.json` lisible par le harnais de `CERTIFICATION.md`, et le `CERTIFICATION.md` du jeu, dont chaque test nommé existe.
 
-Il relance aussi les quatre commandes. Le reste (états impossibles, sensation, validité d'une raison) demande toujours un jugement.
+Il lance aussi `cargo fmt --check`, Clippy en natif et en WASM avec `-D warnings`, et `cargo test` ; `soiree check --fast` les saute, pour la boucle serrée. Le reste (états impossibles, sensation, validité d'une raison) demande toujours un jugement.
 
 ## Vérification
 
@@ -260,7 +147,7 @@ C'est le vrai goulot. Tu dois savoir que ton jeu marche sans que l'hôte ait à 
 - **Faux téléphones et fausses manettes** : un mode qui simule 8 télécommandes depuis un seul ordinateur.
 - **Overlay de diagnostic** : images par seconde, temps par image, latence d'entrée par joueur, état du réseau. Il s'active d'une seule touche.
 - **Une vraie session de jeu** avant de déclarer le jeu fini : lance-le, rejoins avec un téléphone, et joue une partie entière.
-- **La certification** : `CERTIFICATION.md` liste ce que chaque jeu doit tenir le soir même (reconnexions, entrées hostiles, textes vicieux, déroulement, endurance). Ses tests de propriétés tournent dans `cargo test`. Son harnais, `node tools/cert/cert.mjs <dossier-du-jeu>`, attaque le jeu en boîte noire à partir de son `cert.json`.
+- **La certification** : `CERTIFICATION.md` liste ce que chaque jeu doit tenir le soir même (reconnexions, entrées hostiles, textes vicieux, déroulement, endurance). Ses tests de propriétés tournent dans `cargo test`. Son harnais, `soiree certify` dans le dossier du jeu, attaque le jeu en boîte noire à partir de son `cert.json`.
 
 ## Le soir même
 

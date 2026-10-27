@@ -10,7 +10,7 @@ L'app iPhone de `remote/` sert de télécommande à tous les jeux. Le joueur n'y
 
 ## Messages
 
-Des frames WebSocket binaires, un message par frame, encodés par le crate `remote-protocol`. Ajoute-le avec `remote-protocol = { path = "../../remote/crates/protocol" }` ; il fixe le format, et ses tests vérifient l'aller-retour.
+Des frames WebSocket binaires, un message par frame, encodés par le crate `remote-protocol`. Ajoute-le avec `remote-protocol = { git = "https://github.com/build-your-own-game/soiree", tag = "v0.1.0" }`, à l'étiquette de ton `soiree.toml` ; il fixe le format, et ses tests vérifient l'aller-retour.
 
 1. Le téléphone envoie `PhoneMessage::Hello { version, player, name }`.
    - `player` est un jeton de 16 octets, le même à chaque reconnexion : c'est l'identité du joueur, sans compte.
@@ -55,7 +55,7 @@ Dans l'app, ta page peut faire ce qu'un navigateur ne permet pas. Hors de l'app,
 
 ### En Rust (page compilée en WASM)
 
-Ajoute `remote-web = { path = "../../remote/crates/web" }`. Le crate fait tout, sans une ligne de JavaScript à écrire :
+Ajoute `remote-web = { git = "https://github.com/build-your-own-game/soiree", tag = "v0.1.0" }`, à l'étiquette de ton `soiree.toml`. Le crate fait tout, sans une ligne de JavaScript à écrire :
 
 | Capacité | Appel |
 |---|---|

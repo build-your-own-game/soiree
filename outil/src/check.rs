@@ -1,5 +1,5 @@
-//! `soiree check`: what a machine can verify of the manifesto, ported from
-//! `tools/check.sh`, with the rules embedded in this binary rather than read
+//! `soiree check`: what a machine can verify of the manifesto, with the rules
+//! embedded in this binary (`regles/`), where a shell script once read them
 //! from `MANIFESTE.md`. On top of it: the version in `soiree.toml`, `.soiree/`,
 //! where salon comes from, and the certification files.
 
@@ -362,7 +362,7 @@ fn check_doc_paths(dir: &Path, report: &mut Report) {
 }
 
 /// The code spans that look like a path with a `/`, like the `grep -o` of
-/// `check.sh`: `` `[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*` ``, with a
+/// the former shell check: `` `[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*` ``, with a
 /// letter, sorted and without duplicates.
 fn cited_paths(text: &str) -> BTreeSet<String> {
     let allowed = |c: char| c.is_ascii_alphanumeric() || "_./-".contains(c);
@@ -493,7 +493,7 @@ fn check_commands(dir: &Path, options: Options, report: &mut Report) {
     }
 }
 
-/// The lines of a failed command worth showing (the `grep -E` of `check.sh`).
+/// The lines of a failed command worth showing (the filter of the former shell check).
 fn notable(line: &str) -> bool {
     if line.contains("could not compile") {
         return false;
@@ -512,7 +512,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cited_paths_follow_the_grep_of_check_sh() {
+    fn cited_paths_are_code_spans_with_a_slash() {
         let text = "Voir `crates/core/src/lib.rs`, `../../salon/README.md` et `a b/c`.\n`cargo run -p x` `/play?seat=1` `1/2` `-x/y` `.soiree/`\n";
         let found: Vec<_> = cited_paths(text).into_iter().collect();
         assert_eq!(
@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn notable_lines_match_the_filter_of_check_sh() {
+    fn notable_lines_are_diagnostics_and_failures() {
         assert!(notable("src/lib.rs:3:5: error[E0425]: cannot find value"));
         assert!(notable("warning: unused import"));
         assert!(notable("Diff in /x/src/lib.rs:1:"));

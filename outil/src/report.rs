@@ -1,4 +1,4 @@
-//! What a command found, printed as it goes, in the style of `check.sh`:
+//! What a command found, printed as it goes, in the style of the former shell check:
 //! ✓ held, ✗ broken (an error), ! to look at (a warning), – for information.
 
 use std::process::ExitCode;

@@ -20,7 +20,7 @@ Deux idées viennent des navigateurs. La suite commune web-platform-tests, que C
 | Étage | Quand | Durée | Qui vérifie | Commande |
 |---|---|---|---|---|
 | **1. Propriétés** | à chaque commit | secondes | `cargo test` | `cargo test` ; `PROPTEST_CASES=5000 cargo test` pour chercher plus loin |
-| **2. Certification** | avant de déclarer une étape finie | minutes | le harnais, en boîte noire | `node tools/cert/cert.mjs games/<jeu>` |
+| **2. Certification** | avant de déclarer une étape finie | minutes | le harnais, en boîte noire | `soiree certify`, dans le dossier du jeu |
 | **3. Le salon** | avant la soirée | 15 min | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
 
 - **Étage 1.** Il joue des milliers de suites d'entrées au hasard sur la simulation (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
@@ -39,23 +39,18 @@ Un test n'est jamais supprimé sans dire ce qui le couvre maintenant : chaque je
 
 ## Lancer le harnais
 
-Une fois, sur l'ordinateur :
+Le harnais est dans `tools/cert/` du dépôt commun, et l'outil `soiree` l'embarque à sa version. Une fois, sur l'ordinateur, `soiree doctor` dit ce qui manque (Node, Chrome, [Toxiproxy](https://github.com/Shopify/toxiproxy)). Au premier passage, `soiree certify` écrit le harnais dans un cache par version et y lance `npm ci`.
+
+Puis, dans le dossier du jeu (les options après `--` vont au harnais) :
 
 ```sh
-brew install toxiproxy
-(cd tools/cert && npm install)
+soiree certify                          # tous les scénarios (5 à 8 min)
+soiree certify -- --only cut,freeze     # quelques scénarios
+soiree certify -- --seed 12             # rejoue le hasard d'un passage
+soiree certify -- --soak 30             # 30 min d'endurance (R2)
 ```
 
-Puis, depuis la racine du dépôt :
-
-```sh
-node tools/cert/cert.mjs games/<jeu>                    # tous les scénarios (5 à 8 min)
-node tools/cert/cert.mjs games/<jeu> --only cut,freeze  # quelques scénarios
-node tools/cert/cert.mjs games/<jeu> --seed 12          # rejoue le hasard d'un passage
-node tools/cert/cert.mjs games/<jeu> --soak 30          # 30 min d'endurance (R2)
-```
-
-Les scénarios, dans l'ordre : `join`, `rtc`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après `rtc`. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗.
+Les scénarios, dans l'ordre : `join`, `rtc`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après `rtc`. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗. `soiree certify` copie ce rapport dans `certification/rapport.md` du jeu, et écrit à côté `certification/rapport.json` : les versions, la graine, la date, la machine et l'empreinte du code certifié ; les deux se committent avec le code.
 
 Le harnais garde trois oracles pendant tous les scénarios :
 - aucune exception dans aucune page ;
@@ -141,7 +136,7 @@ Sur un serveur qui fait autorité, une panique termine la soirée. Les clones de
 
 Pour les noms, c'est Xbox XR-046 : les gamertags, même modernes, s'affichent correctement. Pour le bord de l'écran, c'est la zone sûre de la TV : les 90 % intérieurs. Pour les textes plus longs que prévu, c'est la pseudo-localisation de Netflix et d'Android, et le bug de Punchline (`LEARNINGS.md`, « Mise en page déterministe »).
 
-Les **textes vicieux** sont ceux de `tools/cert/nasty.json` :
+Les **textes vicieux** sont ceux de `tools/cert/nasty.json`, dans le dépôt commun :
 - des emoji composés (`👨‍👩‍👧‍👦`, `🤦🏼‍♂️`) ;
 - des lettres surchargées d'accents (« Zalgo ») ;
 - de l'arabe et de l'hébreu, qui s'écrivent de droite à gauche ;

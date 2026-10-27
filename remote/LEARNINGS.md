@@ -171,7 +171,7 @@ Trois recherches de plus, une par famille :
 
 ## Écarts au manifeste
 
-Un point par principe d'ingénierie du manifeste : **Respecté.**, **Écart.** (avec sa « Raison : ») ou **À faire.** `tools/check.sh`, à la racine du dépôt, vérifie que les sept y sont.
+Un point par principe d'ingénierie du manifeste : **Respecté.**, **Écart.** (avec sa « Raison : ») ou **À faire.** `soiree check` vérifie que les sept y sont.
 
 1. **À faire.** Le clippy du manifeste passe, sans `unwrap` ni index qui peut paniquer, et ce qui vient d'un jeu est validé avant usage : trames illisibles ignorées, contrôles mal formés écartés, identifiants bornés à 31, le tout testé. Reste la coquille Swift, hors lints et hors tests : la durée d'affichage minimale d'un appui, le choix des vibrations, l'attribution des doigts, la reconnexion.
 2. **Écart.** Pas de simulation à pas fixe. Raison : la télécommande n'est pas un jeu ; elle lit les doigts et envoie un état, et la simulation vit dans chaque jeu. Le temps entre tout de même comme paramètre dans les gestes (dessin, pointeur).
