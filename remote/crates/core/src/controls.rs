@@ -45,6 +45,10 @@ const TAN_25: f32 = 0.466_307_66;
 const OCTAGON_DIAGONAL: f32 = 70.0 / 85.0;
 /// Corner radius of a button that fills the screen.
 const FILL_CORNER: f32 = 40.0;
+/// The shortest stick travel a game may ask for, in points: below it, a
+/// thumb's offset divided by the travel runs out of `f32` and the knob lands
+/// at NaN, which UIKit refuses.
+const MIN_TRAVEL: f32 = 1.0;
 
 /// A control's bit in [`Pressed`]: 0 to [`MAX_ID`].
 pub type ButtonId = u8;
@@ -348,10 +352,21 @@ impl Layout {
             area,
             ..Self::default()
         };
+        // A control centred more than a screen away from it can never be seen
+        // nor touched, and coordinates that large overflow in the stick's
+        // arithmetic: such a control is a game's mistake, and is left out.
+        let reach = area.width().max(area.height());
+        let bounds = Rect {
+            left: area.left - reach,
+            top: area.top - reach,
+            right: area.right + reach,
+            bottom: area.bottom + reach,
+        };
         for control in &spec.controls {
             let center =
                 anchor(area, control.at.anchor).plus(Point::new(control.at.x, control.at.y));
-            if !(center.x.is_finite() && center.y.is_finite()) || control.id > MAX_ID {
+            // `contains` is false for a NaN or infinite center too.
+            if !bounds.contains(center) || control.id > MAX_ID {
                 continue;
             }
             match control.kind {
@@ -401,9 +416,10 @@ impl Layout {
                     knob_radius,
                     gate,
                 } => {
-                    if [travel, knob_radius]
-                        .iter()
-                        .all(|v| v.is_finite() && *v > 0.0)
+                    if travel.is_finite()
+                        && travel >= MIN_TRAVEL
+                        && knob_radius.is_finite()
+                        && knob_radius > 0.0
                     {
                         let gate = match gate {
                             protocol::Gate::Round => Gate::Round,

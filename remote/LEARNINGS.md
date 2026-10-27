@@ -97,6 +97,7 @@ Le contrat complet pour les jeux est dans `CONTRAT.md`.
 | Une page qui en remplace une autre ne doit rien en hériter (orientation demandée, données injectées) | constaté au premier essai | U | **Gardé** : une vue web neuve par page, qui repart en paysage ; l'orientation est redite à la fin du chargement, car un tour pendant le chargement arrive avant que la page écoute. |
 | Le micro et la caméra marchent dans une page de l'app, mais WebKit redemande la permission après iOS | API `WKUIDelegate` d'Apple | U | **Gardé** : accordés sans seconde question aux pages de l'hôte du jeu, et à elles seules. |
 | Une page vient du réseau : ses demandes de vibration ou de sockets ne doivent rien pouvoir casser | déduction | P | **Gardé** : 64 événements et 5 s par vibration au plus, 8 sockets, datagrammes de 65 507 octets au plus, UDP vers l'hôte du jeu seulement. |
+| Une composition vient du jeu, donc du réseau : un contrôle placé à `f32::MAX` ou un stick de course infime mettaient le bouton du stick à NaN, que UIKit refuse | tests de propriétés (`CERTIFICATION.md`, E1) | P | **Gardé** : un contrôle centré à plus d'un écran du bord est écarté, et la course d'un stick vaut au moins 1 pt (`Layout::resolve`). |
 | Donner à du contenu web l'accès à des fonctions natives demande en principe l'accord d'Apple sur l'App Store public | App Review Guidelines 4.7.2 | U | **Écart assumé** sur TestFlight ; à revoir avant une publication publique. |
 
 Seuils de perception :
@@ -158,6 +159,7 @@ Trois recherches de plus, une par famille :
 |---|---|---|---|
 | Des traits en coordonnées entières dans une toile fixe, pas des images : Jackbox est passé du PNG aux vecteurs | JackboxDrawer | P / L | **Gardé** : toile 4096×2304 (16:9 comme la TV), entiers signés pour qu'un trait déborde sans être coupé (scribble.rs). |
 | Traits avec identifiant : Annuler et Effacer deviennent triviaux | scribble.rs #279 (sans identifiant, il faut deviner les traits) | L | **Gardé** : `DrawEvent` Begin / Point / End / Undo / Clear. |
+| Un jeu qui change de télécommande en plein trait doit quand même recevoir la fin du trait : le socket « livre tous » les traits | tests de propriétés (`CERTIFICATION.md`) | U | **Gardé** : avant de remplacer la télécommande, la session lâche tous les doigts et envoie ce qui restait dans l'ancienne toile, `End` compris (`Session::let_go`). |
 | Un seul doigt dessine | scribble.rs | U | **Gardé.** |
 | UIKit livre les touchers à ~60 Hz alors que l'écran échantillonne à 120 Hz et plus : il faut les touchers fusionnés | doc Apple (`coalescedTouches`) | P | **Gardé.** |
 | Les touchers prédits servent seulement à l'affichage local, jamais envoyés | doc Apple | A | **Pas encore utilisés.** |

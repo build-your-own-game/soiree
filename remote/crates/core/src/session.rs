@@ -72,20 +72,33 @@ impl Session {
     pub fn receive(&mut self, frame: &[u8]) -> Event {
         match decode::<GameMessage>(frame) {
             Ok(GameMessage::Show(Shown::Pad(layout))) => {
-                if let Some(old) = &mut self.remote {
-                    old.release_all();
-                }
+                self.let_go();
                 self.remote = Some(Remote::new(layout, self.screen, self.insets));
                 self.last_sent = None;
                 Event::ShowPad
             }
             Ok(GameMessage::Show(Shown::Web { url })) => {
+                self.let_go();
                 self.remote = None;
                 Event::ShowWeb(url)
             }
             Ok(GameMessage::Feedback(feedback)) => Event::Feedback(feedback),
             Ok(GameMessage::Refuse { reason }) => Event::Refused(reason),
             Err(_) => Event::Unreadable,
+        }
+    }
+
+    /// Before the remote is replaced: every finger lets go, and the drawing
+    /// steps still in its canvas go out, the stroke's `End` included. The
+    /// socket delivers every stroke (`CONTRAT.md`), even one the game cut
+    /// short by changing the remote.
+    fn let_go(&mut self) {
+        let Some(old) = &mut self.remote else {
+            return;
+        };
+        old.release_all();
+        for event in old.drain_drawing() {
+            self.outbox.push(encode(&PhoneMessage::Draw(event)));
         }
     }
 

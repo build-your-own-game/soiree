@@ -304,13 +304,24 @@ proptest! {
                 SessionStep::Show(index) => {
                     let (_, spec) = presets::all()[*index % presets::all().len()].clone();
                     session.receive(&encode(&GameMessage::Show(Shown::Pad(spec))));
+                    // The old canvas's last steps go out at once: its stroke ends.
+                    for message in sent(&mut session) {
+                        if let PhoneMessage::Draw(event) = message {
+                            follow_stroke(&mut open, event);
+                        }
+                    }
+                    prop_assert_eq!(open, None, "a stroke cut by a new remote never ended");
                     last_state = None;
-                    open = None;
                 }
                 SessionStep::ShowWeb => {
                     let web = Shown::Web { url: "/free".into() };
                     session.receive(&encode(&GameMessage::Show(web)));
-                    open = None;
+                    for message in sent(&mut session) {
+                        if let PhoneMessage::Draw(event) = message {
+                            follow_stroke(&mut open, event);
+                        }
+                    }
+                    prop_assert_eq!(open, None, "a stroke cut by the game's page never ended");
                 }
                 SessionStep::Hand(hand) => play(&mut session, hand, now),
                 SessionStep::Tick(dt) => {
@@ -414,7 +425,6 @@ proptest! {
     /// which still owns its half of the screen; a thumb at `(484, 0)` puts its
     /// knob at `(NaN, 0)` (the offset over the travel overflows to infinity).
     #[test]
-    #[ignore = "bug: a stick far off screen or with a tiny travel draws its knob at NaN (controls::TouchPad::knobs)"]
     fn a_hostile_layout_draws_its_knobs_at_finite_points(
         (screen, insets) in screen(),
         spec in layout(),
@@ -460,7 +470,6 @@ fn follow_stroke(open: &mut Option<u16>, event: DrawEvent) {
 /// releasing the old remote; but the `End` it produces stays in the old
 /// canvas, which is dropped, along with any step not yet sent.
 #[test]
-#[ignore = "bug: changing the remote mid-stroke drops the old canvas's unsent steps, End included (Session::receive)"]
 fn a_stroke_cut_by_a_new_remote_still_ends() {
     let (screen, insets) = SCREENS[0];
     let mut session = Session::new([9; 16], "Axel".into(), screen, insets);
