@@ -1,0 +1,29 @@
+# Le [patch] local de l'hôte : chaque jeu de ce dossier prend salon et la
+# télécommande dans `soiree/`, au lieu de l'étiquette git de son Cargo.toml.
+# Ce fichier n'est dans aucun dépôt. Voir AGENTS.md, à côté de `.cargo/`.
+#
+# Chemins relatifs : la doc de Cargo (« Config-relative paths », et la section
+# [patch] de https://doc.rust-lang.org/cargo/reference/config.html) dit qu'un
+# chemin d'un fichier de config est relatif au dossier PARENT du dossier qui
+# contient ce fichier : ici, au dossier qui contient `.cargo/`, pas à `.cargo/`
+# lui-même. Vérifié avec cargo 1.99 sur un faux dossier de la même forme.
+#
+# Deux comportements de Cargo à connaître (vérifiés aussi) :
+# - l'étiquette nommée dans le Cargo.toml du jeu doit exister sur GitHub :
+#   Cargo récupère la source git avant de la remplacer ;
+# - un jeu qui n'utilise pas l'une de ces crates (la tier-list n'a pas de
+#   salon-web) affiche « patch `…` was not used in the crate graph ». C'est
+#   un avertissement de Cargo, pas de rustc : `-D warnings` ne le rend pas
+#   bloquant.
+#
+# Les crates listées sont celles que les jeux utilisent aujourd'hui (leurs
+# Cargo.toml) : salon-core, salon-host, salon-web, remote-protocol, remote-web.
+# salon-host dépend lui-même de remote-protocol par un chemin interne à soiree :
+# avec ce patch, jeu et salon partagent bien le même remote-protocol.
+
+[patch."https://github.com/build-your-own-game/soiree"]
+salon-core = { path = "soiree/salon/crates/core" }
+salon-host = { path = "soiree/salon/crates/host" }
+salon-web = { path = "soiree/salon/crates/web" }
+remote-protocol = { path = "soiree/remote/crates/protocol" }
+remote-web = { path = "soiree/remote/crates/web" }

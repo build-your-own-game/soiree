@@ -1,3 +1,6 @@
 target/
 dist/
 .DS_Store
+# The tool's build, and the harness's dependencies.
+/outil/target/
+node_modules/

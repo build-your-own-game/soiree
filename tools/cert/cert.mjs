@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Stage 2 of CERTIFICATION.md: the black-box certification of one game.
 //
-//   node tools/cert/cert.mjs games/quiplash                 everything (~5 min)
-//   node tools/cert/cert.mjs games/quiplash --only cut,freeze
-//   node tools/cert/cert.mjs games/quiplash --soak 30       30 min of chaos
-//   node tools/cert/cert.mjs games/quiplash --phones 4 --seed 12   replay a run
+//   soiree certify                        in the game's folder: everything (~5 min)
+//   soiree certify -- --only cut,freeze   options after -- reach this harness
+//   soiree certify -- --soak 30           30 min of chaos
+//   node cert.mjs <game> --phones 4 --seed 12   this file alone: replay a run
 //
 // It starts the game from its cert.json, opens the TV and the phones in a
 // headless Chrome driven by Playwright (browser.mjs), each phone behind its

@@ -1,0 +1,49 @@
+# L'outil `soiree`. Il embarque, depuis ce dépôt, les règles, le modèle, le
+# catalogue, les documents et le harnais de sa version. Il s'installe avec :
+#   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.1.0 soiree
+# ou, depuis un clone : cargo install --locked --path outil
+[package]
+name = "soiree"
+description = "L'outil de la soirée : vérifier, certifier, créer et suivre les jeux."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+# Son propre workspace : rien au-dessus ne l'englobe.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"
+toml = "1"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Du bruit dans du code de jeu : conversions entier → flottant partout, documentation d'API publique inutile ici.
+cast_precision_loss = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
+# Un jeu compilé en debug sans optimisation est injouable : on optimise les dépendances même en dev.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Un dépassement d'entier est un bug, même en release.
+[profile.release]
+overflow-checks = true

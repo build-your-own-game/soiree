@@ -1,0 +1,5 @@
+# Écrit par `soiree new` et `soiree upgrade`, vérifié par `soiree check`.
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
