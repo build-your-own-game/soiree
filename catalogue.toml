@@ -1,0 +1,25 @@
+# Les jeux de la soirée. `soiree play` les lit, récupère chaque dépôt et en
+# fait le menu de la TV.
+#
+# Pour proposer ton jeu : une pull request qui ajoute un bloc [[game]], une
+# seule fois. Le reste (version du commun, certification) est lu dans le
+# dépôt du jeu lui-même.
+#
+#   name    le nom affiché sur la TV
+#   repo    le dépôt git du jeu
+#   author  son auteur : un pseudo GitHub
+
+[[game]]
+name = "Punchline"
+repo = "https://github.com/build-your-own-game/punchline"
+author = "AxENSRennes"
+
+[[game]]
+name = "Sidequest"
+repo = "https://github.com/build-your-own-game/sidequest"
+author = "AxENSRennes"
+
+[[game]]
+name = "Tier list"
+repo = "https://github.com/build-your-own-game/tier-list"
+author = "AxENSRennes"
