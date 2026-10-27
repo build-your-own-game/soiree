@@ -1,0 +1,26 @@
+[package]
+name = "salon-host"
+description = "The host's shell around salon-core: pages, WebRTC, WebSocket, the TV key"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+# The host is a native program. On wasm32 the crate is empty, so a game's
+# workspace can run its wasm checks on every crate (tools/check.sh).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+salon-core.workspace = true
+# The iPhone app's handshake (/remote): it is sent to the game's phone page.
+remote-protocol = { path = "../../../remote/crates/protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# WebRTC without I/O, like salon-core, with no crypto backend of its own: its
+# backends all compile C somewhere. salon-crypto provides it in Rust only.
+# The media code is compiled but unused.
+str0m = { version = "=0.24.1", default-features = false }
+salon-crypto = { path = "../crypto" }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+
+[lints]
+workspace = true

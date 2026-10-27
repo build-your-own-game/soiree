@@ -1,0 +1,15 @@
+[package]
+name = "salon-demo"
+description = "A tiny game on salon: everybody taps, the TV counts"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+salon-core.workspace = true
+salon-host = { path = "../host" }
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

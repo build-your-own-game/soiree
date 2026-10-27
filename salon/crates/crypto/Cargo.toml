@@ -1,0 +1,34 @@
+[package]
+name = "salon-crypto"
+description = "WebRTC's cryptography for str0m, in Rust only: no C to compile"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+# Adapted from str0m-rust-crypto 0.6.0 (Martin Algesten, MIT OR Apache-2.0),
+# whose certificate generation goes through rcgen and aws-lc-rs, written in C.
+# Here the certificate is built with RustCrypto alone. The host is native: on
+# wasm32 the crate is empty, so a workspace-wide wasm check passes.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aes = "0.8"
+aes-gcm = "0.10"
+ctr = "0.9"
+hmac = "0.12.1"
+sha1 = "0.10"
+# `oid`: the certificate names its signature algorithm (ECDSA with SHA-256).
+sha2 = { version = "0.10", features = ["oid"] }
+# The DTLS layer str0m uses, with its RustCrypto backend only (its `rcgen`
+# feature would bring aws-lc-rs back).
+dimpl = { version = "=0.7.6", default-features = false, features = ["rust-crypto"] }
+str0m-proto = { version = "=0.7.0", default-features = false, features = ["dtls"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+x509-cert = { version = "0.2", default-features = false, features = ["builder", "std"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+str0m = { version = "=0.24.1", default-features = false }
+x509-cert = { version = "0.2", default-features = false }
+
+[lints]
+workspace = true

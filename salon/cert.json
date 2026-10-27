@@ -1,0 +1,12 @@
+{
+  "launch": ["cargo", "run", "--release", "-p", "salon-demo"],
+  "relaunch": ["cargo", "run", "--release", "-p", "salon-demo", "--", "--no-build"],
+  "env": { "SALON_DEMO_PORT": "{port}", "SALON_DEMO_DATA": "{tmp}" },
+  "ready": "Salon demo ready",
+  "tv": "/",
+  "phone": "/play",
+  "socket": "/salon/ws",
+  "players": { "min": 1, "max": 15 },
+  "join": [],
+  "joined": "document.querySelector('#tap') !== null"
+}
