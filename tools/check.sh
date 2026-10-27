@@ -187,6 +187,29 @@ check_commands() {
     rm -f "$log"
 }
 
+# CERTIFICATION.md : un jeu décrit au harnais comment le lancer et le rejoindre.
+check_cert() {
+    local dir="$1" problem
+    case "$dir" in "$ROOT"/games/*) ;; *) return ;; esac
+    if [ ! -f "$dir/cert.json" ]; then
+        warn "cert.json absent : le harnais de CERTIFICATION.md ne sait pas lancer ce jeu"
+        return
+    fi
+    problem=$(node -e '
+        const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        const missing = ["launch", "ready", "tv"].filter((k) => !c[k]);
+        if (!("phone" in c)) missing.push("phone (null sans téléphones)");
+        if (c.phone && !c.joined) missing.push("joined");
+        if (c.phone && !Array.isArray(c.join)) missing.push("join");
+        if (missing.length) console.log("il manque " + missing.join(", "));
+    ' "$dir/cert.json" 2>&1)
+    if [ -n "$problem" ]; then
+        err "cert.json : ${problem%%$'\n'*}"
+    else
+        ok "cert.json lisible par le harnais (node tools/cert/cert.mjs ${dir#"$ROOT"/})"
+    fi
+}
+
 check_project() {
     local dir="$1"
     printf '\n== %s\n' "${dir#"$ROOT"/}"
@@ -201,6 +224,7 @@ check_project() {
     check_javascript "$dir"
     check_doc_paths "$dir"
     check_gaps "$dir"
+    check_cert "$dir"
     [ "$FAST" = 1 ] || check_commands "$dir"
 }
 

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ddf8114c7c7382582720d85d5aa17039a59385b8ad128a0bd99572c2fda25d75 # shrinks to (screen, insets) = (Size { width: 874.0, height: 402.0 }, Insets { top: 0.0, left: 62.0, bottom: 21.0, right: 62.0 }), spec = Layout { controls: [Control { id: 0, kind: Stick { travel: 0.8203734, knob_radius: 1.1754944e-38, gate: Round }, at: Place { anchor: TopLeft, x: 3.4028235e38, y: 0.0 }, label: Text(""), color: 0 }], tilt: false, pointer: false, canvas: false }, hands = [Down(0, Point { x: 484.02237, y: 0.0 })]

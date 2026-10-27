@@ -10,5 +10,8 @@ publish.workspace = true
 remote-protocol.workspace = true
 libm.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

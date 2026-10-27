@@ -244,7 +244,8 @@ Ensuite, depuis la racine du dépôt, `tools/check.sh <dossier-du-jeu>` vérifie
 - une simulation (`crates/core`) qui ne dépend ni du navigateur ni du GPU ;
 - aucun JavaScript écrit à la main dans `web/` ;
 - les chemins cités dans `AGENTS.md` et `README.md`, qui doivent exister ;
-- la section « Écarts au manifeste ».
+- la section « Écarts au manifeste » ;
+- un `cert.json` lisible par le harnais de `CERTIFICATION.md`.
 
 Il relance aussi les quatre commandes. Le reste (états impossibles, sensation, validité d'une raison) demande toujours un jugement.
 
@@ -258,6 +259,7 @@ C'est le vrai goulot. Tu dois savoir que ton jeu marche sans que l'hôte ait à 
 - **Faux téléphones et fausses manettes** : un mode qui simule 8 télécommandes depuis un seul ordinateur.
 - **Overlay de diagnostic** : images par seconde, temps par image, latence d'entrée par joueur, état du réseau. Il s'active d'une seule touche.
 - **Une vraie session de jeu** avant de déclarer le jeu fini : lance-le, rejoins avec un téléphone, et joue une partie entière.
+- **La certification** : `CERTIFICATION.md` liste ce que chaque jeu doit tenir le soir même (reconnexions, entrées hostiles, textes vicieux, déroulement, endurance). Ses tests de propriétés tournent dans `cargo test`. Son harnais, `node tools/cert/cert.mjs <dossier-du-jeu>`, attaque le jeu en boîte noire à partir de son `cert.json`.
 
 ## Le soir même
 
