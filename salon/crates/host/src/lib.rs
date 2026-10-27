@@ -31,9 +31,12 @@
 
 mod app;
 mod clock;
+pub mod driver;
 mod http;
+pub mod journal;
 mod room;
 mod rtc;
+pub mod simulation;
 mod store;
 mod ws;
 
@@ -43,7 +46,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use clock::Clock;
-use salon_core::{DeviceEvent, Host, Limits, Ms, Timing};
+use salon_core::{DeviceEvent, Host, Limits, Ms, Qr, Timing};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -58,15 +61,21 @@ pub trait Game: Send + 'static {
     /// Once, before any device: add the gamepads ([`Host::add_local`]),
     /// open or close the room.
     fn start(&mut self, now: Ms, host: &mut Host<Self::Up, Self::Down>) {
-        let _ = (now, host);
+        let _: (Ms, &mut Host<Self::Up, Self::Down>) = (now, host);
     }
 
     /// A device arrived, left, came back, sent an event or a state.
     fn on(&mut self, now: Ms, event: DeviceEvent<Self::Up>, host: &mut Host<Self::Up, Self::Down>);
 
+    /// A browser panic reported by the common recovery hook. Games may
+    /// attach it to their current replay journal.
+    fn diagnostic(&mut self, now: Ms, report: &salon_core::journal::Diagnostic) {
+        let _: (Ms, &salon_core::journal::Diagnostic) = (now, report);
+    }
+
     /// Every [`Options::tick`], and at [`Game::next_deadline`].
     fn tick(&mut self, now: Ms, host: &mut Host<Self::Up, Self::Down>) {
-        let _ = (now, host);
+        let _: (Ms, &mut Host<Self::Up, Self::Down>) = (now, host);
     }
 
     /// When the game needs [`Game::tick`] at the latest (a countdown's end).
@@ -173,13 +182,31 @@ pub fn join_url(port: u16, path: &str) -> String {
     format!("http://{host}:{port}{path}")
 }
 
-/// A QR code for `url`, as SVG.
-pub fn qr_svg(url: &str, dark: &str, light: &str) -> Result<String, String> {
+/// The QR code of `url`, as modules for the page to draw (`salon_web::qr`).
+pub fn qr(url: &str) -> Result<Qr, String> {
     let code = qrcode::QrCode::new(url.as_bytes()).map_err(|error| error.to_string())?;
-    Ok(code
-        .render::<qrcode::render::svg::Color>()
-        .min_dimensions(320, 320)
-        .dark_color(qrcode::render::svg::Color(dark))
-        .light_color(qrcode::render::svg::Color(light))
-        .build())
+    Ok(Qr {
+        width: u32::try_from(code.width()).map_err(|error| error.to_string())?,
+        dark: code
+            .to_colors()
+            .into_iter()
+            .map(|color| color == qrcode::Color::Dark)
+            .collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_qr_code_is_a_square_of_modules() {
+        let code = super::qr("http://192.168.1.5:8095/play").unwrap();
+        let width = usize::try_from(code.width).unwrap();
+        assert!(
+            width >= 21,
+            "a QR code is at least 21 modules wide, got {width}"
+        );
+        assert_eq!(code.dark.len(), width * width);
+        // The top-left finder pattern: a dark corner.
+        assert_eq!(code.dark.first(), Some(&true));
+    }
 }

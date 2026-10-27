@@ -1,0 +1,99 @@
+{
+  "frames_lobby": {
+    "frames": 181,
+    "duration_ms": 3016.539999999999,
+    "fps": 60.00251944280535,
+    "p50_ms": 16.665000000000873,
+    "p95_ms": 16.670000000000073,
+    "max_ms": 16.670000000000073,
+    "observer": "raf",
+    "trailing_gap_ms": 0
+  },
+  "frames_gameplay": [
+    {
+      "frames": 181,
+      "duration_ms": 3016.545000000013,
+      "fps": 60.0024199871042,
+      "p50_ms": 16.66500000000815,
+      "p95_ms": 16.670000000012806,
+      "max_ms": 16.670000000012806,
+      "observer": "raf",
+      "trailing_gap_ms": 0,
+      "gestures": 49
+    }
+  ],
+  "probes": [
+    {
+      "index": 1,
+      "engine": "webkit",
+      "budget_ms": 80,
+      "latency_ms": 25.409912109375,
+      "screen": "phone",
+      "baseline": "\"0 taps\"",
+      "rendered": "\"1 taps\""
+    },
+    {
+      "index": 2,
+      "engine": "chromium",
+      "budget_ms": 80,
+      "latency_ms": 23.510009765625,
+      "screen": "phone",
+      "baseline": "\"1 taps\"",
+      "rendered": "\"2 taps\""
+    }
+  ],
+  "joins": [
+    {
+      "phone": 1,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 597
+    },
+    {
+      "phone": 2,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 321
+    },
+    {
+      "phone": 3,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 419
+    },
+    {
+      "phone": 4,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 316
+    },
+    {
+      "phone": 5,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 431
+    },
+    {
+      "phone": 6,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 420
+    },
+    {
+      "phone": 7,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 446
+    },
+    {
+      "phone": 8,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 343
+    }
+  ],
+  "browsers": {
+    "chromium": 4,
+    "webkit": 4
+  }
+}

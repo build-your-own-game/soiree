@@ -11,12 +11,7 @@ pub fn run(name: &str, parent: &Path, org: &str) -> ExitCode {
         Ok(dir) => {
             println!("{} créé, à la version {VERSION} du commun.", dir.display());
             println!();
-            println!(
-                "TODO : le code du jeu de départ n'existe pas encore. Le modèle viendra de la"
-            );
-            println!("démo de salon ; d'ici là, `crates/` est vide et Cargo ne compile rien.");
-            println!("Déjà là : AGENTS.md, soiree.toml, Cargo.toml, les règles, CERTIFICATION.md,");
-            println!("LEARNINGS.md et .soiree/.");
+            println!("Le jeu de départ est jouable : TV, téléphones, simulation et tests.");
             println!();
             println!("Ensuite :");
             println!("  cd {name}");
@@ -103,7 +98,7 @@ mod tests {
         lints::check_cargo(&project, &mut report);
         lints::check_clippy(&dir, &mut report);
         crate::gaps::check(&dir, &mut report);
-        crate::items::check(&dir, true, &mut report);
+        crate::items::check(&dir, crate::check::Folder::Game, &mut report);
         assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
 
         assert!(create("canards", &parent, "amis").is_err());

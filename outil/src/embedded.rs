@@ -32,6 +32,8 @@ pub const DOCS: &[(&str, &str)] = &[
     ("CERTIFICATION.md", include_str!("../../CERTIFICATION.md")),
     ("salon/README.md", include_str!("../../salon/README.md")),
     ("remote/CONTRAT.md", include_str!("../../remote/CONTRAT.md")),
+    // The build script that gives a game its version (salon/README.md).
+    ("salon/version.rs", include_str!("../../salon/version.rs")),
 ];
 
 include!(concat!(env!("OUT_DIR"), "/catalogue.rs"));
@@ -42,6 +44,26 @@ include!(concat!(env!("OUT_DIR"), "/catalogue.rs"));
 pub const HARNESS: &[(&str, &str)] = &[
     ("cert.mjs", include_str!("../../tools/cert/cert.mjs")),
     ("browser.mjs", include_str!("../../tools/cert/browser.mjs")),
+    (
+        "performance.mjs",
+        include_str!("../../tools/cert/performance.mjs"),
+    ),
+    (
+        "socket-observer.test.mjs",
+        include_str!("../../tools/cert/socket-observer.test.mjs"),
+    ),
+    (
+        "performance.test.mjs",
+        include_str!("../../tools/cert/performance.test.mjs"),
+    ),
+    (
+        "input.test.mjs",
+        include_str!("../../tools/cert/input.test.mjs"),
+    ),
+    (
+        "storage.test.mjs",
+        include_str!("../../tools/cert/storage.test.mjs"),
+    ),
     (
         "toxiproxy.mjs",
         include_str!("../../tools/cert/toxiproxy.mjs"),
@@ -72,6 +94,69 @@ pub const HOST_FOLDER: &[(&str, &str)] = &[
 /// `{{org}}` and `{{version}}` are replaced when it is written.
 pub const MODEL: &[(&str, &str)] = &[
     ("AGENTS.md", include_str!("../../modele/AGENTS.md")),
+    (
+        "tools/press-check.mjs",
+        include_str!("../../modele/tools/press-check.mjs"),
+    ),
+    (
+        "crates/host/tests/replays/session.jsonl",
+        include_str!("../../modele/crates/host/tests/replays/session.jsonl"),
+    ),
+    (
+        "crates/host/src/tests.rs",
+        include_str!("../../modele/crates/host/src/tests.rs"),
+    ),
+    ("README.md", include_str!("../../modele/README.md")),
+    (
+        "crates/web/src/page.rs",
+        include_str!("../../modele/crates/web/src/page.rs"),
+    ),
+    (
+        "crates/core/src/replay.rs",
+        include_str!("../../modele/crates/core/src/replay.rs"),
+    ),
+    ("cert.json", include_str!("../../modele/cert.json")),
+    (
+        "crates/core/Cargo.toml",
+        include_str!("../../modele/crates/core/Cargo.toml"),
+    ),
+    (
+        "crates/core/build.rs",
+        include_str!("../../modele/crates/core/build.rs"),
+    ),
+    (
+        "crates/core/src/lib.rs",
+        include_str!("../../modele/crates/core/src/lib.rs"),
+    ),
+    (
+        "crates/core/src/protocol.rs",
+        include_str!("../../modele/crates/core/src/protocol.rs"),
+    ),
+    (
+        "crates/host/Cargo.toml",
+        include_str!("../../modele/crates/host/Cargo.toml"),
+    ),
+    (
+        "crates/host/src/main.rs",
+        include_str!("../../modele/crates/host/src/main.rs"),
+    ),
+    (
+        "crates/host/src/native.rs",
+        include_str!("../../modele/crates/host/src/native.rs"),
+    ),
+    (
+        "crates/web/Cargo.toml",
+        include_str!("../../modele/crates/web/Cargo.toml"),
+    ),
+    (
+        "crates/web/src/lib.rs",
+        include_str!("../../modele/crates/web/src/lib.rs"),
+    ),
+    (
+        "web/index.html",
+        include_str!("../../modele/web/index.html"),
+    ),
+    ("web/style.css", include_str!("../../modele/web/style.css")),
     ("soiree.toml", include_str!("../../modele/soiree.toml")),
     ("Cargo.toml", include_str!("../../modele/Cargo.toml")),
     (

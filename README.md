@@ -22,7 +22,7 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    ```sh
    soiree doctor
    ```
-   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il soit tout vert.
+   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il soit tout vert.
 4. **Créer le jeu**, dans le dossier où tu ranges tes projets :
    ```sh
    soiree new mon-jeu
@@ -49,6 +49,7 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 | `soiree new <nom>` | une fois par jeu | secondes | crée le jeu depuis `modele/` |
 | `soiree check` | après chaque changement | secondes à minutes | formatage, Clippy, tests, règles communes, items du jeu reliés à leur test |
 | `soiree check --fast` | en boucle serrée | secondes | les mêmes contrôles, sans formatage, Clippy ni tests |
+| `soiree mutants` | à la demande | variable | vérifie que les tests détectent des mutations ; rapports sans bloquer check/certify |
 | `soiree certify` | à la fin d'une étape | 5 à 10 min | le harnais complet ; écrit `certification/` |
 | `soiree upgrade` | quand tu veux | secondes | passe le jeu à la dernière version du commun |
 | `soiree status` | chez l'hôte | secondes | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |

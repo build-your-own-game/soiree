@@ -3,12 +3,15 @@
 //! a button that turns the page. `cargo xtask page` builds it for
 //! `remote-demo` to serve at `/rust`.
 
+pub mod page;
+
 use std::cell::RefCell;
 
+use page::Id;
 use remote_web::{Allowed, Datagram, HapticEvent, Listener, Motions, Orientation, Vibration};
 use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::{Closure, wasm_bindgen};
-use web_sys::{Document, HtmlElement};
+use wasm_bindgen::prelude::{Closure, JsValue, wasm_bindgen};
+use web_sys::{EventTarget, HtmlElement};
 
 /// The game's UDP port: the same as its web page.
 const PORT: u16 = 8095;
@@ -28,12 +31,8 @@ thread_local! {
 
 #[wasm_bindgen(start)]
 pub fn start() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
     show(
-        &document,
-        "info",
+        page::id::INFO,
         &match remote_web::info() {
             Some(info) => format!(
                 "joueur {}…\nprénom « {} »\n{:?}",
@@ -45,27 +44,18 @@ pub fn start() {
         },
     );
 
-    let motion_document = document.clone();
     let motion = remote_web::motion(move |sample| {
         let [x, y, z] = sample.gravity;
         show(
-            &motion_document,
-            "motion",
+            page::id::MOTION,
             &format!("gravité {x:+.2} {y:+.2} {z:+.2}"),
         );
     });
-    let orientation_document = document.clone();
     let orientation = remote_web::on_orientation(move |turned: Orientation| {
-        show(
-            &orientation_document,
-            "info",
-            &format!("tourné : {turned:?}"),
-        );
+        show(page::id::INFO, &format!("tourné : {turned:?}"));
     });
     let mut datagram = Datagram::open(PORT);
-    let echo_document = document.clone();
-    datagram
-        .on_message(move |bytes| show(&echo_document, "echo", &String::from_utf8_lossy(&bytes)));
+    datagram.on_message(move |bytes| show(page::id::ECHO, &String::from_utf8_lossy(&bytes)));
     PAGE.with_borrow_mut(|page| {
         *page = Some(Page {
             _motion: motion,
@@ -76,25 +66,30 @@ pub fn start() {
         });
     });
 
-    on(&document, "buzz", "pointerdown", |document| {
-        set_class(document, "buzz", "down");
+    on(page::id::BUZZ, "pointerdown", || {
+        // Without the class, the button only looks unpressed.
+        if let Ok(buzz) = page::id::BUZZ.get() {
+            let _: Result<(), JsValue> = page::class::DOWN.add_to(&buzz);
+        }
         remote_web::vibrate(Vibration::Press);
         PAGE.with_borrow_mut(|page| {
             if let Some(page) = page {
-                page.taps += 1;
+                page.taps = page.taps.saturating_add(1);
                 page.datagram
                     .send(format!("tap {} depuis Rust", page.taps).as_bytes());
             }
         });
     });
-    on(&document, "buzz", "pointerup", |document| {
-        set_class(document, "buzz", "");
+    on(page::id::BUZZ, "pointerup", || {
+        if let Ok(buzz) = page::id::BUZZ.get() {
+            let _: Result<(), JsValue> = page::class::DOWN.remove_from(&buzz);
+        }
         remote_web::haptic(&[
             HapticEvent::tap(0.0, 0.5, 0.9),
             HapticEvent::tap(0.08, 0.3, 0.9),
         ]);
     });
-    on(&document, "turn", "click", |_| {
+    on(page::id::TURN, "click", || {
         let portrait = PAGE.with_borrow_mut(|page| {
             page.as_mut().map(|p| {
                 p.portrait = !p.portrait;
@@ -109,30 +104,22 @@ pub fn start() {
     });
 }
 
-fn element(document: &Document, id: &str) -> Option<HtmlElement> {
-    document.get_element_by_id(id)?.dyn_into().ok()
-}
-
-fn show(document: &Document, id: &str, text: &str) {
-    if let Some(element) = element(document, id) {
-        element.set_inner_text(text);
-    }
-}
-
-fn set_class(document: &Document, id: &str, class: &str) {
-    if let Some(element) = element(document, id) {
-        element.set_class_name(class);
+fn show<T: JsCast + AsRef<HtmlElement>>(id: Id<T>, text: &str) {
+    // A missing element: the page shows less, and goes on.
+    if let Ok(element) = id.get() {
+        AsRef::<HtmlElement>::as_ref(&element).set_inner_text(text);
     }
 }
 
 /// Calls `action` on each `event` of the element, for the page's lifetime.
-fn on(document: &Document, id: &str, event: &str, action: fn(&Document)) {
-    let Some(element) = element(document, id) else {
+fn on<T: JsCast + AsRef<EventTarget>>(id: Id<T>, event: &str, action: fn()) {
+    let Ok(element) = id.get() else {
         return;
     };
-    let target = document.clone();
-    let closure = Closure::<dyn FnMut()>::new(move || action(&target));
-    let _ = element.add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
+    let closure = Closure::<dyn FnMut()>::new(action);
+    let target: &EventTarget = element.as_ref();
+    let _: Result<(), JsValue> =
+        target.add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
     // The page never removes its buttons: the listener lives as long as it.
     closure.forget();
 }

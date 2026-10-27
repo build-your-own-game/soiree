@@ -101,6 +101,10 @@ pub fn now_utc() -> String {
 
 /// Seconds since 1970 as an ISO 8601 date in UTC (Howard Hinnant's
 /// `civil_from_days`).
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "Howard Hinnant's civil_from_days: each subtraction takes less than it starts from, and days = seconds / 86 400 leave room for every addition and product"
+)]
 pub fn format_utc(seconds: u64) -> String {
     let days = seconds / 86_400;
     let rest = seconds % 86_400;

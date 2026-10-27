@@ -28,17 +28,18 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launchBrowser, sleep } from "./browser.mjs";
+import { launchBrowser, sleep, silenceReaction } from "./browser.mjs";
+import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NASTY = JSON.parse(readFileSync(join(HERE, "nasty.json"), "utf8")).texts;
 NASTY.push("é".repeat(500));
 
-const ALL = ["join", "rtc", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "monkey", "restart", "storage"];
+const ALL = ["join", "rtc", "performance", "panic", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "monkey", "restart", "storage"];
 // Scenarios that run in the lobby, before the TV presses `start`: a new
 // player may still join there.
-const LOBBY = ["join", "rtc"];
+const LOBBY = ["join", "rtc", "performance", "panic"];
 let order = ALL;
 
 // ---------------------------------------------------------------- arguments
@@ -172,9 +173,10 @@ function forgeToken(hello) {
 
 /** The device number the host gave this page, from its first Welcome. */
 function deviceOf(tab) {
+  if (Number.isInteger(tab.device)) return tab.device;
   for (const frame of tab.wsReceived) {
     const packet = readPacket(frame.payload);
-    if (packet.control === "Welcome") return packet.device;
+    if (!packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device)) return packet.device;
   }
   return null;
 }
@@ -233,6 +235,7 @@ class Host {
   constructor(port) {
     this.port = port;
     this.panics = [];
+    this.browserPanics = [];
     this.stderr = [];
     this.process = null;
     this.exitedUnexpectedly = false;
@@ -258,6 +261,12 @@ class Host {
     this.process = spawn(program, rest, { cwd: gameDir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     let ready = false;
     const onLine = (line, err) => {
+      if (line.startsWith("salon: browser panic recorded:")) {
+        let report;
+        try { report = JSON.parse(line.slice("salon: browser panic recorded: ".length)); } catch { report = null; }
+        this.browserPanics.push({ at: Date.now(), line, report });
+        return;
+      }
       if (/panicked at|thread '.*' panicked/.test(line)) this.panics.push(line.trim());
       if (/^salon: link \d+ (opened|closed)/.test(line.trim())) {
         this.links.push({ at: Date.now(), line: line.trim() });
@@ -372,6 +381,8 @@ let host;
 let browser;
 let toxiproxy;
 let tv;
+const fixture = new FixtureGuard();
+const measurements = { frames_lobby: null, frames_gameplay: [], probes: [], joins: [], browsers: {} };
 const phones = []; // { index, name, tab, proxy, sent: [], context }
 /** The TV pressed `start` (cert.json): a new player may be refused from then on. */
 let gameStarted = false;
@@ -407,10 +418,10 @@ function phoneUrl(phone) {
 async function openPhone(index, { webrtc = false } = {}) {
   // A phone reaches the game from the network, as a real phone would.
   const proxy = await toxiproxy.proxy(config.phone_upstream === "loopback" || !lan ? "127.0.0.1" : lan, host.port);
-  const phone = { index, name: null, proxy, webrtc };
+  const phone = { index, name: null, proxy, webrtc, openedAt: Date.now() };
   phone.url = phoneUrl(phone);
-  phone.tab = await browser.open(phone.url, { width: 390, height: 844, mobile: true });
-  phone.tab.label = `téléphone ${index}`;
+  phone.tab = await browser.open(phone.url, { width: 390, height: 844, mobile: true, engine: index % 2 === 1 ? "webkit" : "chromium" });
+  phone.tab.label = `téléphone ${index} (${phone.tab.engine})`;
   return phone;
 }
 
@@ -478,7 +489,8 @@ const extraTabs = [];
 let tvFrames = 0;
 async function tvDrawing() {
   try {
-    const frames = await tv.tab.evaluate("window.__certFrames", 3_000);
+    const frames = await tv.tab.evaluate(config.painted ?? "window.__certFrames", 3_000);
+    if (typeof frames !== "number" || !Number.isFinite(frames) || frames <= 0) return false;
     // A reload starts the count again: any change means the page draws.
     const moving = frames !== tvFrames;
     tvFrames = frames;
@@ -488,13 +500,22 @@ async function tvDrawing() {
   }
 }
 
+function checkBrowserPanics(scenario) {
+  for (const receipt of (host?.browserPanics ?? []).filter((receipt) => !receipt.consumed)) {
+    receipt.consumed = true;
+    fail("E1", `[${scenario}] panique de page inattendue journalisée : ${receipt.line}`);
+  }
+}
+
 /** The oracles every scenario must keep. */
 async function invariants(scenario) {
+  fixture.check();
   for (const error of newErrors(scenario)) {
     const item = /panicked|RuntimeError|unreachable/.test(error) ? "E1" : "E6";
     if (/^.*: console\./.test(error) && !/panicked/.test(error)) partial(item, `[${scenario}] ${error}`);
     else fail(item, `[${scenario}] ${error}`);
   }
+  checkBrowserPanics(scenario);
   while (host.panics.length) fail("E1", `[${scenario}] l'hôte a paniqué : ${host.panics.shift()}`);
   if (!host.alive()) {
     fail("E1", `[${scenario}] l'hôte ne tourne plus`);
@@ -599,7 +620,13 @@ async function gesture(phone) {
     // A drag from one thing to another, with the mouse (drag and drop, sliders).
     await tab.drag(pick(targets), pick(targets));
   } else if (roll < 0.2) {
-    await tab.key(pick(["Enter", "Escape", "Backspace", "Tab", "ArrowLeft", "ArrowRight", " "]));
+    const textFocus = tab.mobile && await tab.evaluate(`(() => {
+      const e = document.activeElement;
+      if (!e || e.disabled || e.readOnly) return false;
+      return e.isContentEditable || e instanceof HTMLTextAreaElement ||
+        (e instanceof HTMLInputElement && ["text", "search", "email", "password", "tel", "url", "number"].includes(e.type));
+    })()`, 1000).catch(() => false);
+    await tab.key(pick(gestureKeys({ mobile: tab.mobile, textFocus })));
   } else if (targets.length && roll < 0.75) {
     const t = pick(targets);
     if (random() < 0.5) await tab.tap(t.x, t.y);
@@ -623,36 +650,76 @@ async function gesture(phone) {
 /** Runs gestures on every phone (except those in `busy`) until `stop()`. */
 function monkey(busy = new Set()) {
   let running = true;
+  let gestures = 0;
+  const pending = new Set();
   // A game without phones is played on its only page.
   const players = phones.length ? phones : [tv];
   const loops = players.map(async (phone) => {
     while (running) {
       if (!busy.has(phone)) {
         try {
+          pending.add(phone);
           await gesture(phone);
-        } catch {}
+          gestures++;
+        } catch {} finally { pending.delete(phone); }
       }
       await sleep(150 + random() * 600);
     }
   });
-  return async () => {
+  const stop = async () => {
     running = false;
-    await Promise.all(loops);
+    let blocked = [];
+    const stopped = await stopTasks(loops, async () => {
+      const actors = [...pending];
+      fixture.invalidate(`contexte fermé par le harnais après un geste natif bloqué : ${actors.map((phone) => phone.tab.label).join(", ")}`);
+      blocked = actors.map((phone) => ({
+        page: phone.tab.label,
+        engine: phone.tab.engine,
+        url: phone.tab.page.url(),
+        last_input: phone.tab.lastInput,
+        input_history: phone.tab.inputHistory,
+        operation: phone.tab.pendingInput?.operation ?? "gesture",
+        elapsed_ms: phone.tab.pendingInput ? Date.now() - phone.tab.pendingInput.started : null,
+      }));
+      await Promise.allSettled(actors.map(async (phone, index) => {
+        blocked[index].state = await phone.tab.evaluate("({ ready: document.readyState, frames: window.__certFrames, paints: window.__certPaints })", 200).catch((error) => ({ error: error.message }));
+      }));
+      await Promise.allSettled(actors.map((phone) => phone.tab.context.close()));
+    });
+    if (!stopped) fail("E6", `un geste du singe n'a pas terminé : contexte bloqué fermé, arrêt borné ; ${JSON.stringify(blocked)}`);
   };
+  Object.defineProperty(stop, "gestures", { get: () => gestures });
+  return stop;
 }
 
 /** Presses the TV's advance key every `everyMs`, to go through the game fast. */
+async function stopActors(...stops) {
+  for (const outcome of await Promise.allSettled(stops.map((stop) => stop()))) {
+    if (outcome.status === "rejected") fail("E6", `arrêt d'un acteur du harnais : ${outcome.reason?.message ?? outcome.reason}`);
+  }
+}
+
 function advancer(everyMs) {
   let running = true;
+  let timer;
+  let wake;
   const loop = (async () => {
     while (running && config.advance) {
-      await sleep(everyMs);
+      await new Promise((resolve) => { wake = resolve; timer = setTimeout(resolve, everyMs); });
       if (running) await press(tv.tab, config.advance).catch(() => {});
     }
   })();
   return async () => {
     running = false;
-    await loop;
+    clearTimeout(timer);
+    wake?.();
+    let blocked;
+    const stopped = await stopTasks([loop], () => {
+      fixture.invalidate("contexte TV fermé par le harnais après une commande native bloquée");
+      blocked = { page: tv.tab.label, engine: tv.tab.engine, url: tv.tab.page.url(), last_input: tv.tab.lastInput, input_history: tv.tab.inputHistory, operation: tv.tab.pendingInput?.operation, elapsed_ms: tv.tab.pendingInput ? Date.now() - tv.tab.pendingInput.started : null };
+      return tv.tab.context.close();
+    });
+    if (!stopped) fail("E6", `la commande d'avance de la TV n'a pas terminé : contexte bloqué fermé, arrêt borné ; ${JSON.stringify(blocked)}`);
   };
 }
 
@@ -700,6 +767,86 @@ async function storageOfPage(page) {
 }
 
 const scenarios = {
+  /** Presentation cadence, then controlled actions with causal render oracles. */
+  async performance() {
+    for (const setup of config.performance?.setup ?? []) {
+      const target = setup.screen === "tv" ? tv : phones[(setup.phone ?? 1) - 1];
+      if (!target) throw new Error("écran absent pour performance.setup");
+      await performAction(target.tab, setup.action ?? {});
+    }
+    // Start-up and page navigation are measured by C1, not by the in-game
+    // frame budget. No resizing, chaos, or screenshot runs during this sample.
+    await sleep(1000);
+    const sample = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
+    measurements.frames_lobby = sample;
+    measurements.browsers = Object.fromEntries(["chromium", "webkit"].map((engine) => [engine, phones.filter((p) => p.tab.engine === engine).length]));
+    const line = `avant partie : ${sample.frames} images, ${sample.fps.toFixed(1)} images/s, p50 ${sample.p50_ms.toFixed(1)} ms, p95 ${sample.p95_ms.toFixed(1)} ms, maximum ${sample.max_ms.toFixed(1)} ms ; téléphones ${measurements.browsers.webkit} WebKit + ${measurements.browsers.chromium} Chromium`;
+    const failures = frameFailures(sample, config.performance);
+    if (failures.length) fail("P1", `${line} (${failures.join(" ; ")})`);
+    else ok("P1", line);
+    const probes = config.performance?.probes;
+    if (!Array.isArray(probes) || !probes.length) {
+      fail("P2", "cert.json doit décrire performance.probes : une entrée et son effet visible causal sur la TV");
+      return;
+    }
+    for (const [index, probe] of probes.entries()) {
+      const target = probe.screen === "tv" ? tv : phones[(probe.phone ?? 1) - 1];
+      if (!target) { fail("P2", `sonde ${index + 1} : écran d'entrée absent`); continue; }
+      const budget = positiveBudget(probe.budget_ms, probe.screen === "tv" ? 50 : 80, "performance.probes[].budget_ms");
+      try {
+        const measured = await measureProbe(tv.tab, target.tab, probe);
+        measurements.probes.push({ index: index + 1, engine: target.tab.engine, budget_ms: budget, ...measured });
+        const text = `sonde ${index + 1} (${probe.screen ?? "phone"}, ${target.tab.engine}) : entrée → rendu ${measured.latency_ms.toFixed(1)} ms, budget ${budget} ms`;
+        if (measured.latency_ms > budget) fail("P2", text);
+        else ok("P2", text);
+      } catch (error) {
+        measurements.probes.push({ index: index + 1, error: error.message });
+        fail("P2", `sonde ${index + 1} : ${error.message}`);
+      }
+    }
+    await invariants("performance");
+  },
+
+  /** A real WASM panic, with the normal token and seat preserved on reload. */
+  async panic() {
+    if (!phones.length) return skip("C10", "pas de téléphones : le hook solo est exercé par ses tests");
+    for (const engine of ["webkit", "chromium"]) {
+      const phone = phones.find((p) => p.tab.engine === engine);
+      if (!phone) continue;
+      const url = new URL(phone.url);
+      url.searchParams.set("salon-test-panic", "1");
+      const nonce = `${args.seed}-${phone.index}-${host.browserPanics.length}`;
+      url.searchParams.set("salon-test-id", nonce);
+      await phone.tab.goto(url.href);
+      if ((await waitJoined(phone, 10000)) === null) { fail("C10", `${engine} : pas de place avant l'injection`); continue; }
+      const token = tokenInUse(phone.tab);
+      const device = deviceOf(phone.tab);
+      const before = phone.tab.sockets;
+      const errorStart = phone.tab.errors.length;
+      const reportStart = host.browserPanics.length;
+      const welcomesBefore = phone.tab.welcomes;
+      const reload = phone.tab.page.waitForEvent("load", { timeout: 10000 });
+      await phone.tab.evaluate(`document.dispatchEvent(new Event("salon:test-panic"))`).catch(() => {});
+      try { await reload; } catch { fail("C10", `${engine} : la panique WASM n'a pas rechargé la page en 10 s`); continue; }
+      const seat = await waitJoined(phone, 10000);
+      // Consume only the deliberately injected panic. An unrelated panic or
+      // exception still reaches the global invariants.
+      const receipt = host.browserPanics.slice(reportStart).find(({ report, consumed }) => !consumed && panicMatches(report, nonce, url.pathname));
+      const recorded = Boolean(receipt);
+      if (receipt) receipt.consumed = true;
+      const newErrors = injectedPanicRemainder(phone.tab.errors.slice(errorStart), nonce, recorded);
+      phone.tab.errors.splice(errorStart, phone.tab.errors.length - errorStart, ...newErrors);
+      if (!recorded) fail("C10", `${engine} : aucune panique avec le nonce ${nonce} et la page ${url.pathname} reçue et journalisée par l'hôte`);
+      const sameToken = token !== null && tokenInUse(phone.tab) === token;
+      const freshWelcome = phone.tab.welcomes > welcomesBefore;
+      const sameDevice = freshWelcome && Number.isInteger(device) && deviceOf(phone.tab) === device;
+      if (seat === null || !sameToken || !sameDevice || phone.tab.sockets <= before) fail("C10", `${engine} : après la panique, place ${seat !== null}, jeton conservé ${sameToken}, appareil conservé ${sameDevice}, nouveau Welcome ${freshWelcome}, connexion rouverte ${phone.tab.sockets > before}`);
+      else ok("C10", `${engine} : après une vraie panique WASM, même appareil ${device}, même jeton et même place`);
+      // Leave the test-only injection mode on the test navigation only.
+      await phone.tab.evaluate(`{ const u = new URL(location.href); u.searchParams.delete("salon-test-panic"); u.searchParams.delete("salon-test-id"); history.replaceState(null, "", u); }`);
+    }
+    await invariants("panic");
+  },
   /** C1, C8, R3: everyone joins, the extra player is refused clearly. */
   async join() {
     if (!config.phone) return skip("C1", "pas de téléphones");
@@ -709,7 +856,7 @@ const scenarios = {
       const phone = await openPhone(i + 1);
       phones.push(phone);
       const name = names[i] ?? `Joueur${i + 1}`;
-      const start = Date.now();
+      const start = phone.openedAt;
       await runJoin(phone, name);
       let took = await waitJoined(phone, 10_000);
       if (took === null) {
@@ -721,8 +868,10 @@ const scenarios = {
         took = await waitJoined(phone, 20_000);
         if (took !== null) took = Date.now() - start;
       }
-      if (took === null) fail("C1", `téléphone ${i + 1} n'a pas rejoint en 30 s`);
-      else ok("C1", `téléphone ${i + 1} a rejoint en ${(took / 1000).toFixed(1)} s`);
+      const elapsed = Date.now() - start;
+      measurements.joins.push({ phone: i + 1, engine: phone.tab.engine, joined: took !== null, elapsed_ms: elapsed });
+      if (took === null || elapsed > 30_000) fail("C1", `${phone.tab.label} n'a pas rejoint en 30 s (${(elapsed / 1000).toFixed(1)} s depuis l'ouverture)`);
+      else ok("C1", `${phone.tab.label} a rejoint en ${(elapsed / 1000).toFixed(1)} s depuis l'ouverture`);
     }
     const max = config.players?.max;
     if (max && args.phones >= max) {
@@ -797,6 +946,25 @@ const scenarios = {
     if (!config.phone) return storageOfPage(tv);
     if (phones.length < 2) return skip("C9", "il faut au moins 2 téléphones");
     const [a, b] = phones;
+    // A transport Welcome after C7 can precede the new game's view. Begin
+    // from fresh documents, then wait for the actual joined/join screen;
+    // otherwise a stale pre-restart DOM can misclassify a vacant seat.
+    for (const phone of [a, b]) {
+      const welcomes = phone.tab.welcomes;
+      phone.url = phoneUrl(phone);
+      await phone.tab.page.goto(phone.url, { waitUntil: "load", timeout: 15_000 });
+      const until = Date.now() + 10_000;
+      let ready = false;
+      while (Date.now() < until) {
+        if (phone.tab.welcomes > welcomes && ((await joined(phone)) || ((config.join ?? []).length && (await joinOffered(phone))))) { ready = true; break; }
+        await sleep(100);
+      }
+      if (!ready) {
+        fail("C9", `la fixture de ${phone.tab.label} n'a pas reçu son écran courant après rechargement`);
+        fixture.invalidate(`C9 : état de départ de ${phone.tab.label} non vérifiable`);
+        fixture.check();
+      }
+    }
     // A phone whose storage is refused or corrupted arrives as a new device.
     // If it had a seat, the game keeps that seat for a player who will never
     // come back (Punchline, for 90 s in the lobby): seating the new device
@@ -807,6 +975,10 @@ const scenarios = {
 
     // A browser that refuses storage (private mode, blocked cookies).
     const aSeated = await joined(a);
+    const aToken = tokenInUse(a.tab);
+    const aDevice = deviceOf(a.tab);
+    const aTokenKeys = await a.tab.evaluate(`Object.entries(localStorage).filter(([key]) => key === "salon.token.Phone" || key.startsWith("salon.token.Phone."))`);
+    const aTokenKey = aTokenKeys.find(([, value]) => value === aToken)?.[0];
     const allowStorage = await a.tab.beforeScripts(BLOCK_STORAGE);
     a.url = phoneUrl(a);
     await a.tab.goto(a.url);
@@ -827,23 +999,28 @@ const scenarios = {
     }
     await allowStorage();
     const aNew = !aSeated && (await joined(a));
-    if (aNew) {
-      // The storage comes back: the phone stays the device it joined as,
-      // whose token only lived in the page (or a reload would make it a
-      // third device, its seat a ghost).
-      const token = tokenInUse(a.tab);
-      if (token) {
-        await a.tab.evaluate(`(() => {
-          const keys = Object.keys(localStorage).filter((k) => /^salon\\.token\\.Phone(\\.|$)/.test(k));
-          localStorage.setItem(keys.length === 1 ? keys[0] : "salon.token.Phone", ${JSON.stringify(token)});
-        })()`).catch(() => {});
+    if (aSeated || aNew) {
+      // Disposing BLOCK_STORAGE affects future documents only: this one's
+      // non-configurable getters still throw. Rehydrate the new identity
+      // before the next document's application reads its original key.
+      const token = aNew ? tokenInUse(a.tab) : aToken;
+      const device = aNew ? deviceOf(a.tab) : aDevice;
+      const welcomes = a.tab.welcomes;
+      try {
+        if (aNew) {
+          if (!aTokenKey || !token || !Number.isInteger(device)) throw new Error("clé, jeton ou appareil observé absent");
+          await a.tab.reloadWithStorage([[aTokenKey, token]]);
+        } else await a.tab.reload();
+        const seat = await waitJoined(a, 10_000);
+        const sameToken = token !== null && tokenInUse(a.tab) === token;
+        const sameDevice = Number.isInteger(device) && a.tab.welcomes > welcomes && deviceOf(a.tab) === device;
+        if (seat === null || !sameToken || !sameDevice) throw new Error(`place ${seat !== null}, jeton conservé ${sameToken}, appareil conservé ${sameDevice}`);
+        ok("C9", `stockage revenu : ${a.tab.label} garde son jeton et l'appareil ${device} après rechargement, à sa place`);
+      } catch (error) {
+        fail("C9", `restauration de la fixture impossible pour ${a.tab.label} : ${error.message}`);
+        fixture.invalidate(`C9 : identité de ${a.tab.label} impossible à restaurer sans place fantôme`);
+        fixture.check();
       }
-    }
-    // Back on its storage: a seated phone returns to its seat, the other
-    // keeps the one it just took.
-    if (aSeated || aNew) await a.tab.reload();
-    if ((aSeated || aNew) && (await waitJoined(a, 10_000)) === null) {
-      partial("C9", `stockage revenu, ${a.tab.label} rechargé ne retrouve pas sa place (le harnais n'a pas su lui rendre son identité) ; il lit « ${(await pageText(a.tab)).slice(0, 100)} »`);
     }
 
     // Garbage in every key the page saved, then a reload.
@@ -872,7 +1049,14 @@ const scenarios = {
     }
     await invariants("storage");
     const missing = await rejoinAll();
-    if (missing.length) partial("C9", await describeMissing(missing));
+    if (missing.length) {
+      fail("C9", await describeMissing(missing));
+      fixture.invalidate("C9 : tous les téléphones ne retrouvent pas leur place après réparation de la fixture");
+      fixture.check();
+    } else {
+      ok("C9", `${phones.length}/${phones.length} téléphones à leur place après les essais de stockage`);
+      for (const phone of [a, b]) writeFileSync(join(outDir, `storage-phone-${phone.index}.png`), await phone.tab.screenshot());
+    }
   },
 
   /** C2: a 3 s Wi-Fi drop. */
@@ -893,7 +1077,8 @@ const scenarios = {
   /** C3: the iPhone locks for 30 s: frozen page, swallowed connection. */
   async freeze() {
     if (!phones.length) return skip("C3", "pas de téléphones");
-    const phone = phones[Math.min(1, phones.length - 1)];
+    const phone = phones.find((p) => p.tab.engine === "chromium");
+    if (!phone) return skip("C3", "gel JavaScript : nécessite un téléphone Chromium ; coupure et silence couvrent aussi WebKit");
     // Connections of earlier scenarios settle first: one closing now would
     // look like the host giving up.
     await sleep(3_000);
@@ -937,26 +1122,36 @@ const scenarios = {
   async silent() {
     if (phones.length < 5) return skip("C3", "il faut au moins 5 téléphones pour ce scénario");
     const phone = phones[4];
-    const sockets = phone.tab.sockets;
-    const open = phone.tab.socketTimes.filter((s) => s.closedAt === null);
-    await phone.proxy.deafen();
-    const start = Date.now();
-    let noticed = null;
-    while (Date.now() - start < 25_000 && noticed === null) {
-      if (phone.tab.sockets > sockets) noticed = Date.now() - start;
-      await sleep(100);
+    const baseline = await phone.tab.socketTrace();
+    const opened = new Set();
+    for (const event of baseline) {
+      if (event.kind === "open-event") opened.add(event.id);
+      else if (["close-call", "close-event", "error-event"].includes(event.kind)) opened.delete(event.id);
     }
-    // A page that reacted well after its old socket closed only reacted to that.
-    const reopened = phone.tab.socketTimes[sockets]?.openedAt ?? Infinity;
-    const closedFirst = open.find((s) => s.closedAt !== null && s.closedAt < reopened - 500);
-    if (noticed !== null && closedFirst) {
-      fail("C3", `Wi-Fi mort en silence : la page n'a réagi qu'à la fermeture de son WebSocket (${((closedFirst.closedAt - start) / 1000).toFixed(1)} s), qu'un vrai Wi-Fi mort ne transmet pas : il lui faut son propre délai de silence`);
-    } else if (noticed === null) {
-      fail("C3", "Wi-Fi mort en silence pendant 25 s (plus rien n'arrive de l'hôte) : la page n'a rien tenté. Elle croit son WebSocket ouvert (`readyState` reste OPEN) : il lui faut son propre délai de silence");
-    } else if (noticed > 20_000) fail("C3", `Wi-Fi mort en silence : la page s'en est aperçue en ${(noticed / 1000).toFixed(1)} s (> 20 s)`);
-    else ok("C3", `Wi-Fi mort en silence : la page s'en est aperçue d'elle-même en ${(noticed / 1000).toFixed(1)} s et a rouvert une connexion`);
-    await sleep(Math.max(0, 25_000 - (Date.now() - start)));
-    await phone.proxy.reset();
+    if (!opened.size) { fail("C3", `${phone.tab.label} : aucune connexion native ouverte à observer`); return; }
+    const start = Date.now();
+    let reaction = { independent: false };
+    let trace = baseline;
+    try {
+      await phone.proxy.deafen();
+      while (Date.now() - start < 25_000 && !reaction.independent) {
+        trace = await phone.tab.socketTrace();
+        reaction = silenceReaction(trace, [...opened], start);
+        if (!reaction.independent) await sleep(100);
+      }
+      if (!reaction.independent) {
+        const native = trace.filter((event) => event.at >= start);
+        fail("C3", `${phone.tab.label} : aucun close() décidé sur un WebSocket OPEN, avant tout close/error natif, suivi d'une tentative indépendante en moins de 20 s ; ${JSON.stringify(native)}`);
+      } else {
+        ok("C3", `${phone.tab.label} : silence détecté par la page en ${((reaction.close.at - start) / 1000).toFixed(1)} s, nouvelle tentative native en ${((reaction.retry.at - start) / 1000).toFixed(1)} s (avant tout événement close/error reçu)`);
+      }
+      // Keep the one-way loss in place: a constructor attempt is evidence
+      // of the page's own watchdog even when WebKit's inspector waits for
+      // the swallowed upgrade before emitting its websocket event.
+      await sleep(Math.max(0, 25_000 - (Date.now() - start)));
+    } finally {
+      await phone.proxy.reset();
+    }
     if ((await waitLive(phone, 10_000)) === null || !(await joined(phone))) await restore(phone);
     await invariants("silent");
   },
@@ -1262,16 +1457,21 @@ const scenarios = {
   /** R1: 200 ± 100 ms on every phone, during play. */
   async jitter() {
     if (!phones.length) return skip("R1", "pas de téléphones");
-    for (const p of phones) await p.proxy.delay(200, 100);
-    const stop = monkey();
-    const stopAdvance = advancer(8_000);
-    await sleep(45_000);
-    await stop();
-    await stopAdvance();
-    const stale = phones.filter((p) => !isLive(p, 8_000)).map((p) => p.tab.label);
-    for (const p of phones) await p.proxy.delay(0, 0);
-    if (stale.length) fail("R1", `avec 200 ± 100 ms, plus de nouvelles pour : ${stale.join(", ")}`);
-    else partial("R1", "45 s à 200 ± 100 ms sans perte de connexion (« jouable » se juge au salon)");
+    let stop = async () => {};
+    let stopAdvance = async () => {};
+    try {
+      for (const p of phones) await p.proxy.delay(200, 100);
+      stop = monkey();
+      stopAdvance = advancer(8_000);
+      await sleep(45_000);
+      const stale = phones.filter((p) => !isLive(p, 8_000)).map((p) => p.tab.label);
+      if (stale.length) fail("R1", `avec 200 ± 100 ms, plus de nouvelles pour : ${stale.join(", ")}`);
+      else partial("R1", "45 s à 200 ± 100 ms sans perte de connexion (« jouable » se juge au salon)");
+    } finally {
+      await stopActors(stop, stopAdvance);
+      const reset = await Promise.allSettled(phones.map((p) => p.proxy.delay(0, 0)));
+      for (const outcome of reset) if (outcome.status === "rejected") fail("R1", `le proxy n'a pas pu être remis au calme : ${outcome.reason?.message ?? outcome.reason}`);
+    }
     await invariants("jitter");
   },
 
@@ -1280,25 +1480,53 @@ const scenarios = {
     const duration = args.soak ? 60_000 : 120_000;
     const stop = monkey();
     const stopAdvance = advancer(6_000);
+    // Observe the actual animated game while the eight phones produce real
+    // input traffic. Finish before screenshots/layout perturb the sample;
+    // no navigation, injected freeze, proxy chaos or resizing runs here.
+    const gameplayFrames = (async () => {
+      // Include the ordinary six-second phase advance in the traffic
+      // sample. The first screenshot waits until this window is complete.
+      await sleep(5500);
+      const before = stop.gestures;
+      const sample = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
+      return { ...sample, gestures: stop.gestures - before };
+    })().catch((error) => ({ error: error.message }));
+    let sampled = false;
     const hashes = [];
     const start = Date.now();
     let stuckSince = Date.now();
     let last = null;
-    while (Date.now() - start < duration) {
-      await sleep(5_000);
-      const h = await tvHash().catch(() => null);
-      if (h !== last) stuckSince = Date.now();
-      last = h;
-      hashes.push(h);
-      if (config.advance && Date.now() - stuckSince > 40_000) {
-        fail("D2", "la TV n'a pas changé depuis 40 s alors que la partie avance (touche « advance ») : bloquée ?");
-        writeFileSync(join(outDir, "monkey-tv-stuck.png"), await tv.tab.screenshot());
-        stuckSince = Date.now();
+    try {
+      while (Date.now() - start < duration) {
+        await sleep(5_000);
+        if (!sampled) {
+          const sample = await gameplayFrames;
+          measurements.frames_gameplay.push(sample);
+          sampled = true;
+          if (sample.error) fail("P1", `en jeu sous entrées : ${sample.error}`);
+          else {
+            const failures = frameFailures(sample, config.performance);
+            if (!sample.gestures) failures.push("aucun geste utilisateur n'a traversé la fenêtre mesurée");
+            const line = `en jeu sous entrées : ${sample.frames} images, ${sample.fps.toFixed(1)} images/s, p50 ${sample.p50_ms.toFixed(1)} ms, p95 ${sample.p95_ms.toFixed(1)} ms, maximum ${sample.max_ms.toFixed(1)} ms, ${sample.gestures} gestes pendant l'échantillon`;
+            if (failures.length) fail("P1", `${line} (${failures.join(" ; ")})`);
+            else ok("P1", line);
+          }
+        }
+        const h = await tvHash().catch(() => null);
+        if (h !== last) stuckSince = Date.now();
+        last = h;
+        hashes.push(h);
+        if (config.advance && Date.now() - stuckSince > 40_000) {
+          fail("D2", "la TV n'a pas changé depuis 40 s alors que la partie avance (touche « advance ») : bloquée ?");
+          writeFileSync(join(outDir, "monkey-tv-stuck.png"), await tv.tab.screenshot());
+          stuckSince = Date.now();
+        }
+        await invariants("monkey");
       }
-      await invariants("monkey");
+    } finally {
+      await stopActors(stop, stopAdvance);
     }
-    await stop();
-    await stopAdvance();
+    fixture.check();
     const distinct = new Set(hashes).size;
     ok("E6", `${(duration / 1000).toFixed(0)} s de gestes au hasard sur ${phones.length ? `${phones.length} téléphones` : "la page"}`);
     if (!config.advance) skip("D2", "pas de touche « advance » : la progression se juge au salon");
@@ -1360,7 +1588,7 @@ async function main() {
   await host.start(config.launch, 15 * 60_000);
   log(`prêt (pid ${host.pid ?? "?"}) ; captures dans ${outDir}`);
   toxiproxy = await Toxiproxy.start();
-  browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello" });
+  browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello", identify: (payload) => { const packet = readPacket(payload); return !packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device) ? packet.device : null; }, webkitPhones: Boolean(config.phone) });
   await openTv();
   await sleep(1_500);
   order = ALL.filter((s) => args.only.includes(s));
@@ -1385,8 +1613,14 @@ async function main() {
       log(`▶ ${name}`);
       sampleMemory();
       try {
+        fixture.check();
         await scenarios[name]();
+        fixture.check();
       } catch (error) {
+        if (fixture.failure) {
+          fail("H1", `[${name}] ${fixture.failure.message} ; cas restants non vérifiés : ${order.slice(index + 1).join(", ") || "aucun"}`);
+          throw fixture.failure;
+        }
         fail("E1", `[${name}] le scénario s'est interrompu : ${error.message}`);
         if (!host.alive()) throw error;
       }
@@ -1408,7 +1642,14 @@ async function main() {
       for (const name of ["cut", "freeze", "reload", "hostile", "monkey"]) {
         if (!order.includes(name)) continue;
         sampleMemory();
-        await scenarios[name]().catch((e) => fail("E1", `[${name}] ${e.message}`));
+        try {
+          fixture.check();
+          await scenarios[name]();
+          fixture.check();
+        } catch (error) {
+          if (fixture.failure) throw fixture.failure;
+          fail("E1", `[${name}] ${error.message}`);
+        }
       }
     }
     // What matters is the slope: projected over a 6 h evening, the host's
@@ -1449,14 +1690,18 @@ try {
   await main();
 } catch (error) {
   crashed = error;
-  fail("E1", `arrêt : ${error.message}`);
+  if (error instanceof FixtureFailure) {
+    if (!results.has("H1")) fail("H1", `arrêt du passage : ${error.message} ; les cas suivants ne sont pas vérifiés`);
+  } else fail("E1", `arrêt : ${error.message}`);
 } finally {
   await cleanup();
 }
 
+checkBrowserPanics("fin");
+
 // ---------------------------------------------------------------- summary
 
-const ITEMS = ["C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
+const ITEMS = ["H1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
 const lines = [`# Certification de ${gameDir.split("/").slice(-2).join("/")}`, "", `Graine ${args.seed}, ${((Date.now() - started) / 60_000).toFixed(1)} min. Captures : ${outDir}`, "", "| Item | État | Détail |", "|---|---|---|"];
 let failures = 0;
 for (const item of ITEMS) {
@@ -1472,6 +1717,7 @@ for (const item of ITEMS) {
 }
 lines.push("", "✓ tenu · ✗ cassé · ~ à juger par un humain, ou vérifié en partie · – non applicable", "");
 if (host?.stderr.length) lines.push("Dernières lignes d'erreur de l'hôte :", "", "```", ...host.stderr.slice(-10), "```");
+writeFileSync(join(outDir, "performance.json"), `${JSON.stringify(measurements, null, 2)}\n`);
 writeFileSync(join(outDir, "rapport.md"), lines.join("\n"));
 console.log(`\n${lines.join("\n")}`);
 if (crashed) console.error(crashed.stack);

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "node",
+    "cert.mjs",
+    "/Users/axel2/Projects/build-your-own-game/.chantier-modele",
+    "--only",
+    "join,restart,storage",
+    "--seed",
+    "20261027"
+  ],
+  "exit_code": 0,
+  "harness_sha256": "1cf0847f757a720ac7dba1c4f9f82fc40bc3fee8c52a158a3793308f3a512718",
+  "full_report_harness_sha256": "56b7e391dd9a2465cce1d159364bcaec4095ec36921e7ecdfc062708ee7bca6c",
+  "game_fingerprint": "3dcd08ecfce9b590d2562f8722f596b93176a0320211cc174ffbdc15a46cc12a",
+  "game_source_unchanged_from_full_report": true,
+  "original_run": "/var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/cert-.chantier-modele-2026-10-27T21-56-07-822Z"
+}

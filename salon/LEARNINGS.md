@@ -103,6 +103,31 @@ Les clones ont servi le temps de la lecture ; les références ci-dessous (fichi
 - **La confidentialité du réseau local d'Apple** (TN3179) : l'app iPhone doit demander la permission, et son premier envoi peut échouer avant la réponse. Un hôte macOS lancé depuis le Finder en a besoin aussi ; lancé depuis le Terminal, non.
 - **Les manettes** sont lues par l'hôte natif, pas par la page TV : Chrome en limiterait le nombre (à vérifier), et la page TV n'a pas à relayer.
 
+## Enregistrer et rejouer le même hôte
+
+- **Usage réel, garder.** Le journal reçoit les entrées au moment où le cœur
+  les applique : enregistrer les paquets au bord du réseau ne garderait pas
+  l'ordre retenu par l'hôte. Le writer sature explicitement plutôt que de
+  bloquer la simulation ou de prétendre que le replay est complet. Un
+  checkpoint après chaque lot permet de vérifier un préfixe après un arrêt
+  brutal. Source : l'enregistreur de Sidequest
+  (`games/sidequest/crates/host/src/recording.rs`, avant sa mutualisation),
+  et ses replays de non-régression.
+- **Usage réel, garder.** Le faux réseau doit exécuter la boucle de production,
+  pas une réécriture de celle-ci. `Driver` est donc appelé par la salle réelle
+  et par `simulation::Network`, avec la même priorité entre réseau, ticks et
+  événements. L'horloge et le réseau sont des entrées. Source :
+  [FoundationDB, Simulation and Testing](https://apple.github.io/foundationdb/testing.html).
+- **Runtime et navigateur, garder.** Le panic hook Rust s'exécute avant
+  l'arrêt du runtime, même avec `panic=abort`. Il peut transmettre un beacon
+  et armer un callback natif `location.reload` ; un callback Rust programmé
+  après la panique dépendrait encore du WASM qui vient de s'arrêter. Le
+  beacon ne demande aucun traitement de réponse côté page, et peut finir
+  pendant son remplacement. La borne de rechargements doit survivre au
+  rechargement, donc `sessionStorage`, avec arrêt si ce stockage est refusé.
+  Sources : [Rust, set_hook](https://doc.rust-lang.org/std/panic/fn.set_hook.html),
+  [W3C Beacon](https://www.w3.org/TR/beacon/).
+
 ## Écarts au manifeste
 
 1. **Respecté.** Le cœur est `#![no_std]` : ni horloge, ni threads, ni E/S, ni `HashMap`. Les valeurs du réseau passent par des types validés à leur construction (`Name`, les tailles, les numéros). Chaque état d'attente a une échéance (`Timing`). Aucune file n'est sans borne.
@@ -112,3 +137,4 @@ Les clones ont servi le temps de la lecture ; les références ci-dessous (fichi
 5. **Respecté.** WebRTC en http local, sans serveur internet (voir plus haut, le test Safari).
 6. **Respecté.** Un DataChannel non ordonné et non fiable ; la fiabilité, l'ordre et l'abandon des états périmés sont faits ici, une fois pour tous les jeux.
 7. **À faire.** Mesurer sur le Wi-Fi du salon, avec 15 téléphones : aller-retour, pertes, temps de reconnexion après un iPhone verrouillé.
+8. **Respecté.** Les messages sont les types `Up` et `Down` du jeu, encodés en postcard par `salon-core` : aucun JSON écrit à la main. Les chemins de salon sont nommés une fois (`salon_core::route`), pour l'hôte et la page. La démo calcule sa version depuis ses sources (`version.rs`) ; l'hôte et la page la tiennent de la même bibliothèque, `salon-demo`. Sa page passe par `soiree dom`, QR code compris : l'hôte l'envoie en modules typés (`Qr`), la page le dessine en SVG. Restent en chaînes, chacune lue en un seul endroit et validée à son entrée : l'offre et la réponse WebRTC, au format `RTCSessionDescription` du navigateur (la page l'écrit avec `json!`, l'hôte la lit dans le `SdpOffer` de str0m) ; la clé du jeton dans `localStorage` (sa valeur passe par `unhex` avant de devenir un `Token`) ; les paramètres `?seat=` et `?salon=ws` ; les noms d'événements du navigateur. `cert.json` écrit `/salon/ws` en toutes lettres : le harnais attaque en boîte noire.

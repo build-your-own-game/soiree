@@ -55,11 +55,13 @@ impl Budget {
     }
 
     fn take(&mut self, data: usize) -> bool {
-        let cost = data + PART_OVERHEAD;
-        if cost > self.bytes {
+        let Some(left) = data
+            .checked_add(PART_OVERHEAD)
+            .and_then(|cost| self.bytes.checked_sub(cost))
+        else {
             return false;
-        }
-        self.bytes -= cost;
+        };
+        self.bytes = left;
         true
     }
 }
@@ -275,7 +277,7 @@ impl InEvents {
                 continue;
             }
             if part.count == 0 || part.count > MAX_FRAGMENTS || part.index >= part.count {
-                received.garbage += 1;
+                received.garbage = received.garbage.saturating_add(1);
                 continue;
             }
             let fresh = !matches!(&self.partial, Some((count, _)) if *count == part.count);
@@ -295,7 +297,7 @@ impl InEvents {
             if size > max {
                 // Bigger than allowed: drop it whole, and move past it so the
                 // sender's queue empties instead of resending it forever.
-                received.garbage += 1;
+                received.garbage = received.garbage.saturating_add(1);
                 self.partial = None;
                 self.next = self.next.saturating_add(1);
                 continue;
@@ -447,13 +449,13 @@ impl InState {
     /// ignored, even when they arrive later.
     pub fn receive(&mut self, parts: Vec<StatePart>, max: usize) -> (Option<Vec<u8>>, u32) {
         let mut done = None;
-        let mut garbage = 0;
+        let mut garbage: u32 = 0;
         for part in parts {
             if part.seq <= self.applied {
                 continue;
             }
             if part.count == 0 || part.count > MAX_FRAGMENTS || part.index >= part.count {
-                garbage += 1;
+                garbage = garbage.saturating_add(1);
                 continue;
             }
             let same = matches!(&self.building, Some((seq, count, _)) if *seq == part.seq && *count == part.count);
@@ -476,7 +478,7 @@ impl InState {
             }
             let size: usize = slots.iter().flatten().map(Vec::len).sum();
             if size > max {
-                garbage += 1;
+                garbage = garbage.saturating_add(1);
                 self.building = None;
                 continue;
             }
@@ -542,7 +544,9 @@ impl Peer {
         if rtt > MAX_RTT {
             return None;
         }
-        self.rtt = Some(self.rtt.map_or(rtt, |smooth| (smooth * 9 + rtt) / 10));
+        self.rtt = Some(self.rtt.map_or(rtt, |smooth| {
+            smooth.saturating_mul(9).saturating_add(rtt) / 10
+        }));
         // The other side's clock when this packet left, against ours.
         let theirs = i64::try_from(sent).unwrap_or(i64::MAX);
         let ours = i64::try_from(now.0).unwrap_or(i64::MAX);
@@ -573,7 +577,7 @@ impl Peer {
     /// How long to wait before resending, from the measured round trip.
     pub fn resend(&self, min: u64, max: u64) -> u64 {
         self.rtt
-            .map_or(min.max(250), |rtt| (rtt * 2).clamp(min, max))
+            .map_or(min.max(250), |rtt| rtt.saturating_mul(2).clamp(min, max))
     }
 }
 
@@ -603,8 +607,8 @@ impl Bucket {
             .milli
             .saturating_add(elapsed.saturating_mul(self.per_s))
             .min(self.burst.saturating_mul(1000));
-        if self.milli >= 1000 {
-            self.milli -= 1000;
+        if let Some(left) = self.milli.checked_sub(1000) {
+            self.milli = left;
             true
         } else {
             false

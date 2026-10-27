@@ -5,6 +5,9 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
 
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie : une enum à deux variants, ou deux méthodes.
+max-fn-params-bools = 0
+
 disallowed-types = [
   { path = "std::collections::HashMap", reason = "ordre d'itération aléatoire : utilise BTreeMap ou un hasher à graine fixe" },
   { path = "std::collections::HashSet", reason = "ordre d'itération aléatoire : utilise BTreeSet ou un hasher à graine fixe" },
@@ -64,4 +67,32 @@ disallowed-methods = [
   { path = "f64::hypot", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::cbrt", reason = "résultat différent entre WASM et natif : utilise le crate libm" },
   { path = "f64::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou utilise libm::pow" },
+
+  # Aucune chaîne n'est un contrat (principe 8) : les noms de la page passent par le module de `soiree dom`.
+  { path = "web_sys::Document::get_element_by_id", reason = "un id de la page : `page::id::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Document::query_selector", reason = "un id ou une classe de la page : `page::id::…`, `page::class::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Document::query_selector_all", reason = "une classe de la page : `page::class::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Document::create_element", reason = "une balise de la page : `page::tag::….create()` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::query_selector", reason = "un id ou une classe de la page : `page::id::…`, `page::class::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::query_selector_all", reason = "une classe de la page : `page::class::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::closest", reason = "`page::class::X.closest(…)` ou `page::data::X.closest(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::id", reason = "`page::id::X.is(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::set_id", reason = "`page::id::X.give(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::class_name", reason = "`page::class::X.is_on(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::set_class_name", reason = "`page::class::X.add_to(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::class_list", reason = "`page::class::X.add_to(…)`, `.remove_from(…)`, `.is_on(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::get_attribute", reason = "`page::data::…` ou `page::attr::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::set_attribute", reason = "`page::data::…` ou `page::attr::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::has_attribute", reason = "`page::data::…` ou `page::attr::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::remove_attribute", reason = "`page::data::…` ou `page::attr::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::toggle_attribute", reason = "`page::attr::X.set_present(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::toggle_attribute_with_force", reason = "`page::attr::X.set_present(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::Element::inner_html", reason = "du HTML en chaîne : construis les éléments avec `page::tag::…`", allow-invalid = true },
+  { path = "web_sys::Element::set_inner_html", reason = "du HTML en chaîne : construis les éléments avec `page::tag::…`", allow-invalid = true },
+  { path = "web_sys::Element::set_outer_html", reason = "du HTML en chaîne : construis les éléments avec `page::tag::…`", allow-invalid = true },
+  { path = "web_sys::Element::insert_adjacent_html", reason = "du HTML en chaîne : construis les éléments avec `page::tag::…`", allow-invalid = true },
+  { path = "web_sys::HtmlElement::dataset", reason = "`page::data::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::CssStyleDeclaration::set_property", reason = "une propriété des feuilles de style : `page::prop::X.set(…)` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::CssStyleDeclaration::get_property_value", reason = "une propriété des feuilles de style : `page::prop::…` (soiree dom)", allow-invalid = true },
+  { path = "web_sys::CssStyleDeclaration::remove_property", reason = "`page::prop::X.remove(…)` (soiree dom)", allow-invalid = true },
 ]

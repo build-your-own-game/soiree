@@ -6,8 +6,19 @@
     clippy::indexing_slicing,
     reason = "test helpers outside #[test] functions: phone indices come from add_phone"
 )]
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 
 use std::collections::BTreeSet;
+
+/// Which way a packet travels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Toward {
+    Host,
+    Phone,
+}
 
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, DeviceEvent, Epoch, Host, HostConfig, Kind, Known,
@@ -141,8 +152,8 @@ impl Net {
         self.phones.len() - 1
     }
 
-    fn schedule(&mut self, to_host: bool, link: LinkId, bytes: &[u8]) {
-        if to_host && self.closed_links.contains(&link) {
+    fn schedule(&mut self, toward: Toward, link: LinkId, bytes: &[u8]) {
+        if toward == Toward::Host && self.closed_links.contains(&link) {
             return;
         }
         if self.chance(self.faults.loss) {
@@ -160,10 +171,9 @@ impl Net {
                 0
             };
             let at = self.now.plus(delay);
-            if to_host {
-                self.to_host.push((at, link, bytes.to_vec()));
-            } else {
-                self.to_phone.push((at, link, bytes.to_vec()));
+            match toward {
+                Toward::Host => self.to_host.push((at, link, bytes.to_vec())),
+                Toward::Phone => self.to_phone.push((at, link, bytes.to_vec())),
             }
         }
     }
@@ -267,7 +277,7 @@ impl Net {
                     if let Some(index) = self.phone_of(link)
                         && !self.phones[index].frozen
                     {
-                        self.schedule(false, link, &bytes);
+                        self.schedule(Toward::Phone, link, &bytes);
                     }
                 }
                 Output::Close { link } => {
@@ -303,7 +313,7 @@ impl Net {
                     if let Some(link) = self.phones[index].link
                         && !self.phones[index].frozen
                     {
-                        self.schedule(true, link, &bytes);
+                        self.schedule(Toward::Host, link, &bytes);
                     }
                 }
                 ClientOutput::Disconnect => {
@@ -346,13 +356,18 @@ impl Net {
     pub fn events_from(&self, device: salon_core::DeviceId) -> Vec<Up> {
         self.happened
             .iter()
-            .filter_map(|(_, event)| match event {
-                DeviceEvent::Event {
+            .filter_map(|(_, event)| {
+                if let DeviceEvent::Event {
                     device: from,
                     event,
                     ..
-                } if *from == device => Some(event.clone()),
-                _ => None,
+                } = event
+                    && *from == device
+                {
+                    Some(event.clone())
+                } else {
+                    None
+                }
             })
             .collect()
     }

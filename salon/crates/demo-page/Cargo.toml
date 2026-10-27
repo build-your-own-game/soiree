@@ -12,9 +12,15 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 salon-core.workspace = true
 salon-web = { path = "../web" }
-serde = { version = "1", features = ["derive"] }
+# The demo's messages and version: the same library as its host.
+salon-demo = { path = "../demo" }
 wasm-bindgen = "=0.2.129"
-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "Location", "EventTarget", "Event", "Node"] }
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "Location", "EventTarget", "Event", "Node",
+  "DomTokenList", "CssStyleDeclaration",
+  "HtmlDivElement", "HtmlButtonElement", "HtmlHeadingElement", "HtmlParagraphElement",
+  "HtmlUListElement", "HtmlLiElement",
+] }
 
 [lints]
 workspace = true

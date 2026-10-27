@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 remote-web.workspace = true
 wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlElement", "Event", "EventTarget"] }
+web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlElement", "Event", "EventTarget", "Node", "DomTokenList", "CssStyleDeclaration", "HtmlDivElement", "HtmlButtonElement", "HtmlPreElement"] }
 
 [lints]
 workspace = true

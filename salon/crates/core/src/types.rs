@@ -3,6 +3,7 @@
 //! the code never meets an impossible value.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,24 @@ impl Ms {
     pub fn plus(self, ms: u64) -> Ms {
         Ms(self.0.saturating_add(ms))
     }
+
+    /// The milliseconds as a float, for a page's clock or a statistic.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "exact below 2^53 ms, about 285,000 years of uptime"
+    )]
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
+/// A QR code as its modules, row by row: `width` rows of `width` modules,
+/// `true` for dark. The host makes it (`salon_host::qr`) and the page draws
+/// it (`salon_web::qr`): no markup crosses the wire.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Qr {
+    pub width: u32,
+    pub dark: Vec<bool>,
 }
 
 /// A device's public name, chosen by the host and never given to another

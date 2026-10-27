@@ -1,5 +1,5 @@
 //! « Écarts au manifeste » in `LEARNINGS.md`: each engineering principle
-//! (1 to 7) is respected, or its gap is written with its reason, or it is
+//! (1 to 8) is respected, or its gap is written with its reason, or it is
 //! still to do. Ported from the former shell check.
 
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::report::Report;
 use crate::util;
 
-const PRINCIPLES: u32 = 7;
+const PRINCIPLES: u32 = 8;
 
 pub fn check(dir: &Path, report: &mut Report) {
     let Ok(text) = util::read(&dir.join("LEARNINGS.md")) else {
@@ -16,7 +16,7 @@ pub fn check(dir: &Path, report: &mut Report) {
     };
     let Some(points) = points(&text) else {
         report.error(
-            "LEARNINGS.md : section « ## Écarts au manifeste » absente (un point par principe d'ingénierie, 1 à 7)",
+            "LEARNINGS.md : section « ## Écarts au manifeste » absente (un point par principe d'ingénierie, 1 à 8)",
         );
         return;
     };

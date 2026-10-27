@@ -75,7 +75,10 @@
 //! - **Joining** is one `Hello`, answered by a `Welcome`; repeated until
 //!   answered, and answering twice is harmless. A full room, a closed room,
 //!   another version or a false TV get a typed [`Refusal`], never a silent
-//!   lobby (C8).
+//!   lobby (C8). The game's version ([`HostConfig::game`]) is computed from
+//!   its sources (`version.rs`, at salon's root), so a page left in a
+//!   browser's cache after a change is refused instead of misreading
+//!   messages.
 //! - **One connection per device.** When a second tab or a reconnecting
 //!   phone shows the same token, the newest wins; the old one is told it was
 //!   replaced and does not reconnect on its own, so two tabs never evict each
@@ -147,6 +150,7 @@ extern crate alloc;
 
 mod client;
 mod host;
+pub mod journal;
 mod stream;
 mod types;
 mod wire;
@@ -154,7 +158,20 @@ mod wire;
 pub use client::{Client, ClientConfig, ClientOutput, SendError as ClientSendError, Status};
 pub use host::{DeviceEvent, DeviceInfo, Host, HostConfig, Known, Output, SendError};
 pub use types::{
-    Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Refusal, Timing, Token, TvKey,
-    Why,
+    Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Qr, Refusal, Timing, Token,
+    TvKey, Why,
 };
 pub use wire::PROTOCOL;
+
+/// The paths salon serves next to the game's pages, named once for the host
+/// and the page alike.
+pub mod route {
+    /// `POST`: the page's WebRTC offer, answered with the host's.
+    pub const OFFER: &str = "/salon/offer";
+    /// `GET`: the TV key, given only to the computer running the game.
+    pub const TV_KEY: &str = "/salon/tv";
+    /// `POST`: typed panic diagnostics, accepted only from our own pages.
+    pub const DIAGNOSTIC: &str = "/salon/diagnostic";
+    /// The WebSocket fallback.
+    pub const SOCKET: &str = "/salon/ws";
+}

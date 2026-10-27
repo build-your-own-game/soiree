@@ -158,6 +158,7 @@ fn rust_page(file: &str) -> (&'static str, &'static str, Vec<u8>) {
     let file = if file.is_empty() { "index.html" } else { file };
     let kind = match file.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
         Some("js") => "text/javascript",
         Some("wasm") => "application/wasm",
         _ => "application/octet-stream",
@@ -182,7 +183,7 @@ fn respond(mut stream: TcpStream, status: &str, kind: &str, body: &[u8]) -> Resu
     stream
         .set_read_timeout(Some(Duration::from_millis(50)))
         .map_err(|e| e.to_string())?;
-    let _ = stream.read(&mut request);
+    let _: io::Result<usize> = stream.read(&mut request);
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
         body.len()
@@ -248,7 +249,7 @@ fn phone(stream: TcpStream, state: &State) -> Result<(), String> {
                 });
                 if changed {
                     print!("\r\x1b[2K{name} : {}", describe(&input));
-                    let _ = io::stdout().flush();
+                    let _: io::Result<()> = io::stdout().flush();
                 }
                 last = Some(input);
             }
@@ -304,7 +305,7 @@ fn echo(socket: &UdpSocket) {
     while let Ok((length, from)) = socket.recv_from(&mut buffer) {
         let text = String::from_utf8_lossy(buffer.get(..length).unwrap_or_default()).into_owned();
         println!("\n← datagramme de {from} : {text}");
-        let _ = socket.send_to(format!("écho : {text}").as_bytes(), from);
+        let _: io::Result<usize> = socket.send_to(format!("écho : {text}").as_bytes(), from);
     }
 }
 

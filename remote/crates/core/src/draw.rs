@@ -143,6 +143,7 @@ impl Canvas {
     }
 
     /// A finger landed on the canvas. Returns whether it now draws.
+    #[must_use = "false: the finger is off the canvas or another one draws, and nothing was drawn"]
     pub fn begin(&mut self, touch: u64, point: Point, time: f64) -> bool {
         if self.live.is_some() || !self.rect.contains(point) {
             return false;
@@ -344,7 +345,7 @@ mod tests {
     fn jitter_under_one_and_a_half_points_is_dropped() {
         let mut canvas = canvas();
         let p = middle(&canvas);
-        canvas.begin(1, p, 0.0);
+        assert!(canvas.begin(1, p, 0.0));
         canvas.extend(1, Point::new(p.x + 1.0, p.y), 0.01);
         canvas.extend(1, Point::new(p.x, p.y + 1.0), 0.02);
         canvas.end(1);
@@ -366,7 +367,7 @@ mod tests {
         let mut canvas = canvas();
         let p = middle(&canvas);
         for touch in 0..3 {
-            canvas.begin(touch, p, 0.0);
+            assert!(canvas.begin(touch, p, 0.0));
             canvas.end(touch);
         }
         canvas.act(Action::Undo, 1.0);
@@ -389,7 +390,7 @@ mod tests {
         let mut canvas = canvas();
         canvas.act(Action::Color(0x00FF_D60A), 0.0);
         canvas.act(Action::Size(82), 0.0);
-        canvas.begin(1, middle(&canvas), 0.0);
+        assert!(canvas.begin(1, middle(&canvas), 0.0));
         canvas.end(1);
         assert_eq!(
             (canvas.strokes()[0].color, canvas.strokes()[0].width),
@@ -403,7 +404,7 @@ mod tests {
     fn events_tell_a_game_the_whole_story() {
         let mut canvas = canvas();
         let p = Point::new(canvas.rect().left, canvas.rect().top);
-        canvas.begin(1, p, 0.0);
+        assert!(canvas.begin(1, p, 0.0));
         canvas.extend(1, Point::new(p.x + 20.0, p.y), 0.1);
         canvas.end(1);
         canvas.act(Action::Undo, 1.0);

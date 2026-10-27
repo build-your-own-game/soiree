@@ -43,6 +43,7 @@ pub fn run(dir: &Path) -> ExitCode {
         NODE,
     );
     harness_dependencies(&mut report);
+    webkit(&mut report);
     report.finish()
 }
 
@@ -272,6 +273,32 @@ fn harness_dependencies(report: &mut Report) {
             embedded::VERSION,
             dir.display()
         ));
+    }
+}
+
+/// Playwright pins the `WebKit` binary as precisely as its npm dependency.
+/// An older installed `WebKit` is not evidence that this harness can launch it.
+fn webkit(report: &mut Report) {
+    let Some(dir) = crate::harness::cache_dir() else {
+        return;
+    };
+    if !crate::harness::installed(&dir) {
+        report.info(
+            "WebKit : vérification après le premier soiree certify (installation du harnais)",
+        );
+        return;
+    }
+    let script = "const {createRequire}=require('node:module'); const r=createRequire(process.argv[1]); process.stdout.write(r('playwright-core').webkit.executablePath());";
+    let package = dir.join("package.json");
+    let path = util::stdout_of(&dir, "node", &["-e", script, &package.to_string_lossy()]);
+    match path {
+        Some(path) if Path::new(path.trim()).is_file() => {
+            report.ok(format!("WebKit de Playwright ({})", path.trim()));
+        }
+        Some(_) | None => report.error(format!(
+            "WebKit de cette version absent : dans {}, npx playwright-core install webkit (https://playwright.dev/docs/browsers)",
+            dir.display()
+        )),
     }
 }
 

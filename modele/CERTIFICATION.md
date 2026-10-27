@@ -44,6 +44,11 @@ Exemple (les blocs de code ne sont pas lus) :
 
 | # | Exigence | Test | Origine |
 |---|---|---|---|
+| J1 | Un compteur ne revient jamais à zéro par débordement. | `score_increments_without_wrapping` | |
+| J2 | Un joueur absent ne marque pas et retrouve son score au retour. | `absent_players_cannot_score_and_return_keeps_score` | |
+| J3 | Un replay restitue tout l’état et refuse une empreinte différente. | `a_versioned_journal_replays_the_complete_state` | |
+| J5 | Même des arrivées simultanées ne dépassent pas la capacité du jeu. | `capacity_is_enforced_in_the_simulation`, `simultaneous_arrivals_never_exceed_capacity` | |
+| J4 | Coupures et duplications réseau ne dupliquent ni joueur ni point. | `whole_host_is_deterministic_across_thousands_of_network_seeds` | |
 
 ## Items du catalogue écartés
 

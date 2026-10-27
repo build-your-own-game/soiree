@@ -150,10 +150,12 @@ fn check_lint(group: &str, lint: &str, rule: &Value, actual: Option<&Value>, rep
 
 /// 0 allow, 1 warn, 2 deny, 3 forbid.
 fn level(value: Option<&Value>) -> Option<u8> {
-    let text = match value? {
-        Value::String(s) => s.as_str(),
-        Value::Table(t) => t.get("level")?.as_str()?,
-        _ => return None,
+    let value = value?;
+    // `"deny"` or `{ level = "deny", priority = -1 }`; anything else has none.
+    let text = if let Value::Table(t) = value {
+        t.get("level")?.as_str()?
+    } else {
+        value.as_str()?
     };
     ["allow", "warn", "deny", "forbid"]
         .iter()
@@ -162,9 +164,10 @@ fn level(value: Option<&Value>) -> Option<u8> {
 }
 
 fn rule_text(rule: &Value) -> String {
-    match rule {
-        Value::String(s) => format!("\"{s}\""),
-        other => other.to_string(),
+    if let Value::String(s) = rule {
+        format!("\"{s}\"")
+    } else {
+        rule.to_string()
     }
 }
 
@@ -222,25 +225,21 @@ pub fn check_clippy(dir: &Path, report: &mut Report) {
     let before = report.lines.len();
     for (key, rule) in &rules {
         let actual = project.get(key);
-        match rule {
-            Value::Array(entries) => {
-                let have: Vec<String> = actual
-                    .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(entry_path).collect())
-                    .unwrap_or_default();
-                for wanted in entries.iter().filter_map(entry_path) {
-                    if !have.contains(&wanted) {
-                        report.error(format!("clippy.toml : il manque {wanted} dans {key}"));
-                    }
+        if let Value::Array(entries) = rule {
+            let have: Vec<String> = actual
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(entry_path).collect())
+                .unwrap_or_default();
+            for wanted in entries.iter().filter_map(entry_path) {
+                if !have.contains(&wanted) {
+                    report.error(format!("clippy.toml : il manque {wanted} dans {key}"));
                 }
             }
-            value if actual != Some(value) => {
-                report.error(format!(
-                    "clippy.toml : {key} = {value} attendu, trouvé {}",
-                    shown(actual)
-                ));
-            }
-            _ => {}
+        } else if actual != Some(rule) {
+            report.error(format!(
+                "clippy.toml : {key} = {rule} attendu, trouvé {}",
+                shown(actual)
+            ));
         }
     }
     if report.lines.len() == before {
@@ -250,11 +249,12 @@ pub fn check_clippy(dir: &Path, report: &mut Report) {
 
 /// `"std::collections::HashMap"` or `{ path = "…", reason = "…" }`.
 fn entry_path(entry: &Value) -> Option<String> {
-    match entry {
-        Value::String(s) => Some(s.clone()),
-        Value::Table(t) => t.get("path")?.as_str().map(str::to_owned),
-        _ => None,
-    }
+    let path = if let Value::Table(t) = entry {
+        t.get("path")?.as_str()
+    } else {
+        entry.as_str()
+    };
+    path.map(str::to_owned)
 }
 
 fn strings(value: Option<&Value>) -> Vec<String> {

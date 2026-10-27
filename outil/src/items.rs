@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::catalogue;
+use crate::check::Folder;
 use crate::markdown::{self, Line};
 use crate::report::Report;
 use crate::util;
@@ -32,10 +33,10 @@ pub struct Item {
 }
 
 /// Checks `dir/CERTIFICATION.md`, if this is a game that has one.
-pub fn check(dir: &Path, is_game: bool, report: &mut Report) {
+pub fn check(dir: &Path, folder: Folder, report: &mut Report) {
     let path = dir.join("CERTIFICATION.md");
     let Ok(text) = util::read(&path) else {
-        if is_game {
+        if folder == Folder::Game {
             report.warn("CERTIFICATION.md du jeu absent : les items propres au jeu n'ont nulle part où vivre");
         }
         return;
@@ -103,13 +104,12 @@ pub fn lint(text: &str, file: &str, report: &mut Report) -> Parsed {
 
 /// The lines read under `heading`, up to the next heading of level 1 or 2.
 fn section<'a>(lines: &[Line<'a>], heading: &str) -> Option<Vec<Line<'a>>> {
-    let start = lines
+    let mut after = lines
         .iter()
-        .position(|l| l.read() && l.text.trim_end() == heading)?;
+        .skip_while(|l| !(l.read() && l.text.trim_end() == heading));
+    after.next()?;
     Some(
-        lines
-            .iter()
-            .skip(start + 1)
+        after
             .take_while(|l| !(l.read() && (l.text.starts_with("## ") || l.text.starts_with("# "))))
             .filter(|l| l.read())
             .copied()
@@ -294,7 +294,10 @@ fn function_names(text: &str) -> Vec<String> {
     let mut rest = text;
     while let Some(at) = rest.find("fn ") {
         let before = rest.get(..at).and_then(|b| b.chars().last());
-        let after = rest.get(at + 3..).unwrap_or("");
+        let after = rest
+            .get(at..)
+            .and_then(|r| r.strip_prefix("fn "))
+            .unwrap_or("");
         if before.is_none_or(|c| !(c.is_alphanumeric() || c == '_')) {
             let name: String = after
                 .trim_start()
@@ -335,11 +338,12 @@ mod tests {
     }
 
     #[test]
-    fn the_model_template_is_valid_and_empty() {
+    fn the_model_template_covers_the_playable_starter() {
         let mut report = Report::quiet();
         let parsed = lint(MODEL, "C.md", &mut report);
         assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
-        assert!(parsed.items.is_empty() && parsed.excluded.is_empty());
+        assert_eq!(parsed.items.len(), 5);
+        assert_eq!(parsed.excluded.len(), 0);
     }
 
     #[test]

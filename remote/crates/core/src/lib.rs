@@ -51,6 +51,18 @@ impl Point {
     }
 }
 
+/// Which way the interface is turned, so the motion sensors read the same
+/// in either hand. The remote plays in landscape: anything but
+/// landscape-left is taken as landscape-right, portrait included.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Orientation {
+    /// The device's top points right.
+    #[default]
+    LandscapeLeft,
+    /// The device's top points left.
+    LandscapeRight,
+}
+
 /// Screen size in points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Size {
@@ -136,6 +148,10 @@ pub enum Haptic {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 mod tests {
     use super::{Insets, Point, Rect, Size};
     use crate::controls::Layout;
@@ -263,9 +279,12 @@ mod tests {
             .buttons
             .iter()
             .find(|b| format!("button {}", b.id) == name)
-            .and_then(|b| match b.shape {
-                crate::controls::Shape::Circle { radius } => Some((b.center, radius)),
-                _ => None,
+            .and_then(|b| {
+                if let crate::controls::Shape::Circle { radius } = b.shape {
+                    Some((b.center, radius))
+                } else {
+                    None
+                }
             })
     }
 }

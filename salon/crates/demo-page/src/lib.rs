@@ -1,28 +1,21 @@
 //! The demo's page: the TV at `/`, a phone at `/play`.
 
-#[path = "../../demo/src/protocol.rs"]
-mod protocol;
+pub mod page;
 
 use std::cell::RefCell;
-use std::fmt::Write as _;
 use std::rc::Rc;
 
-use protocol::{Up, VERSION, View};
 use salon_core::{Kind, Refusal, Status};
+use salon_demo::protocol::{Up, VERSION, View};
 use salon_web::{Connection, Happening, Options};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+use web_sys::{Element, Node};
 
 struct Page {
     tv: bool,
     status: Status,
     view: Option<View>,
-}
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 fn status_text(status: Status) -> &'static str {
@@ -40,53 +33,62 @@ fn status_text(status: Status) -> &'static str {
     }
 }
 
-fn render(page: &Page) -> String {
-    let mut html = format!(
-        "<div class=\"{}\"><div class=status>{}</div>",
-        if page.tv { "tv" } else { "phone" },
-        status_text(page.status)
-    );
-    let Some(view) = &page.view else {
-        html.push_str("</div>");
-        return html;
-    };
-    if page.tv {
-        let _ = write!(html, "<h1>{} taps</h1>", view.taps);
-        if let Some((url, qr)) = &view.join {
-            let _ = write!(html, "{qr}<p>{}</p>", escape(url));
+/// A new element of `tag` holding `text`.
+fn text<T: JsCast + AsRef<Node>>(tag: page::Tag<T>, text: &str) -> Result<T, JsValue> {
+    let element = tag.create()?;
+    AsRef::<Node>::as_ref(&element).set_text_content(Some(text));
+    Ok(element)
+}
+
+/// What `page` shows, in place of what `app` held.
+fn render(page: &Page, app: &Element) -> Result<(), JsValue> {
+    let root = page::tag::DIV.create()?;
+    page::class::TV.set(&root, page.tv)?;
+    let status = text(page::tag::DIV, status_text(page.status))?;
+    page::class::STATUS.add_to(&status)?;
+    root.append_child(&status)?;
+    if let Some(view) = &page.view {
+        if page.tv {
+            let taps = text(page::tag::H1, &format!("{} taps", view.taps))?;
+            root.append_child(&taps)?;
+            if let Some(join) = &view.join {
+                let code = salon_web::qr(&join.qr)?;
+                root.append_child(&code)?;
+                let url = text(page::tag::P, &join.url)?;
+                root.append_child(&url)?;
+            }
+        } else {
+            let tap = text(page::tag::BUTTON, "Tap")?;
+            page::id::TAP.give(&tap);
+            root.append_child(&tap)?;
+            let counts = format!("Toi : {} · Tous : {}", view.mine.unwrap_or(0), view.taps);
+            let counts = text(page::tag::P, &counts)?;
+            root.append_child(&counts)?;
         }
-    } else {
-        let _ = write!(
-            html,
-            "<button id=tap>Tap</button><p>Toi : {} · Tous : {}</p>",
-            view.mine.unwrap_or(0),
-            view.taps
-        );
+        let list = page::tag::UL.create()?;
+        // The TV lists who is here; a phone also sees who left.
+        for player in view.players.iter().filter(|player| player.here || !page.tv) {
+            let rtt = player
+                .rtt
+                .map(|rtt| format!(" · {rtt} ms"))
+                .unwrap_or_default();
+            let item = text(
+                page::tag::LI,
+                &format!("{} : {}{rtt}", player.name, player.taps),
+            )?;
+            page::class::AWAY.set(&item, !player.here)?;
+            list.append_child(&item)?;
+        }
+        root.append_child(&list)?;
     }
-    html.push_str("<ul>");
-    // The TV lists who is here; a phone also sees who left.
-    for player in view.players.iter().filter(|player| player.here || !page.tv) {
-        let rtt = player
-            .rtt
-            .map(|rtt| format!(" · {rtt} ms"))
-            .unwrap_or_default();
-        let _ = write!(
-            html,
-            "<li class={}>{} : {}{rtt}</li>",
-            if player.here { "here" } else { "away" },
-            escape(&player.name),
-            player.taps
-        );
-    }
-    html.push_str("</ul></div>");
-    html
+    app.replace_children_with_node_1(&root);
+    Ok(())
 }
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
     let window = web_sys::window().ok_or("no window")?;
-    let document = window.document().ok_or("no document")?;
-    let app = document.get_element_by_id("app").ok_or("no #app")?;
+    let app = page::id::APP.get()?;
     let path = window.location().pathname()?;
     let tv = path == "/";
     let page = Rc::new(RefCell::new(Page {
@@ -106,18 +108,21 @@ pub fn start() -> Result<(), JsValue> {
                 Happening::Reset => page.view = None,
                 Happening::Event(_) => {}
             }
-            target.set_inner_html(&render(&page));
+            // A page that cannot draw has nothing better to do: it waits
+            // for the next state.
+            let _: Result<(), JsValue> = render(&page, &target);
         },
     );
-    app.set_inner_html(&render(&page.borrow()));
+    render(&page.borrow(), &app)?;
     if !tv {
         let tap = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
             let on_button = event
                 .target()
-                .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
-                .is_some_and(|element| element.id() == "tap");
+                .and_then(|target| target.dyn_into::<Element>().ok())
+                .is_some_and(|element| page::id::TAP.is(&element));
             if on_button {
-                let _ = connection.send(&Up::Tap);
+                // Not connected: the tap is lost, like on a remote.
+                let _: Result<(), salon_core::ClientSendError> = connection.send(&Up::Tap);
             }
         });
         app.add_event_listener_with_callback("click", tap.as_ref().unchecked_ref())?;

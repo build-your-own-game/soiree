@@ -21,8 +21,7 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
-# Du bruit dans du code de jeu : conversions entier → flottant partout, documentation d'API publique inutile ici.
-cast_precision_loss = "allow"
+# Du bruit dans du code de jeu : documentation d'API publique inutile ici.
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
@@ -36,6 +35,18 @@ panic = "deny"
 indexing_slicing = "deny"
 dbg_macro = "deny"
 todo = "deny"
+# Un `_ =>` sur une enum avale en silence le variant qu'on ajoutera demain : nomme ceux qu'on ignore.
+wildcard_enum_match_arm = "deny"
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie : une enum, ou deux méthodes (avec max-fn-params-bools = 0 dans clippy.toml).
+fn_params_excessive_bools = "deny"
+# Un entier converti en flottant peut perdre des chiffres : `f64::from`, ou une seule fonction qui dit pourquoi la perte est sans effet.
+cast_precision_loss = "deny"
+# Un dépassement d'entier arrête la partie (overflow-checks) : checked_, saturating_ ou wrapping_, choisi exprès.
+# Le code de rendu et les tests peuvent s'en exempter par un #![expect(..., reason = "…")] en tête de crate ou de module.
+arithmetic_side_effects = "deny"
+# Une valeur qu'on jette dit son type (`let _: T = …`), et `.ok()` ne sert pas à faire taire un Result.
+let_underscore_untyped = "deny"
+unused_result_ok = "deny"
 
 # Un jeu compilé en debug sans optimisation est injouable : on optimise les dépendances même en dev.
 [profile.dev.package."*"]

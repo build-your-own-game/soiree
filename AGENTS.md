@@ -37,6 +37,12 @@ Reprises de `salon/AGENTS.md`, qui reste la référence :
 - Un item commun de `CERTIFICATION.md` a son scénario dans le harnais, ou sa garantie dans salon. Un item sans vérification n'est pas un item : c'est une intention.
 - Le harnais ne connaît un jeu que par son `cert.json`. N'y ajoute pas de cas propre à un jeu.
 
+Les tests de l’outil exercent réellement une petite campagne de mutations du modèle.
+Avant `cargo test` dans `outil/`, installe `cargo-mutants` à la version documentée
+par `soiree mutants --help` (`cargo install --locked cargo-mutants --version 27.1.0`).
+Ce prérequis concerne le développement du commun ; `soiree check` et
+`soiree certify` d’un jeu ne lancent jamais les mutations.
+
 ## Versions
 
 - Une version, c'est une étiquette sur ce dépôt : `v0.1.0`, `v0.2.0`… Elle fige ensemble salon, la télécommande, les règles, le harnais et le modèle.

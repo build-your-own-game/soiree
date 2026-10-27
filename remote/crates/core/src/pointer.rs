@@ -11,7 +11,7 @@
 //! A finger dragged anywhere off the buttons moves it too, for fine aiming
 //! and for phones (or the Simulator) without a gyroscope.
 
-use crate::Point;
+use crate::{Orientation, Point};
 
 /// Turning the phone this many degrees moves the cursor across the TV
 /// (Dolphin uses 25°, JoyShockMapper's default about 45°). Up and down use
@@ -60,7 +60,7 @@ impl Pointer {
         gravity: [f32; 3],
         rotation_rate: [f32; 3],
         time: f64,
-        landscape_left: bool,
+        orientation: Orientation,
     ) {
         self.available = true;
         let dt = self.last_time.map_or(0.0, |last| time - last);
@@ -84,10 +84,9 @@ impl Pointer {
             .sum::<f32>();
         // Aiming up rotates around the long axis, which points right in
         // landscape-left and left in landscape-right.
-        let up = if landscape_left {
-            rotation_rate[1]
-        } else {
-            -rotation_rate[1]
+        let up = match orientation {
+            Orientation::LandscapeLeft => rotation_rate[1],
+            Orientation::LandscapeRight => -rotation_rate[1],
         };
         let raw = (right.to_degrees(), up.to_degrees());
 
@@ -128,6 +127,10 @@ impl Pointer {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 mod tests {
     use super::*;
 
@@ -141,7 +144,12 @@ mod tests {
         let start = pointer.last_time.unwrap_or(0.0);
         let mut step = 0;
         while f64::from(step) * 0.01 <= seconds {
-            pointer.motion(UPRIGHT, rate, start + f64::from(step) * 0.01, true);
+            pointer.motion(
+                UPRIGHT,
+                rate,
+                start + f64::from(step) * 0.01,
+                Orientation::LandscapeLeft,
+            );
             step += 1;
         }
     }
@@ -203,8 +211,8 @@ mod tests {
     #[test]
     fn a_pause_in_samples_does_not_jump() {
         let mut pointer = Pointer::default();
-        pointer.motion(UPRIGHT, [1.0, 0.0, 0.0], 0.0, true);
-        pointer.motion(UPRIGHT, [1.0, 0.0, 0.0], 2.0, true);
+        pointer.motion(UPRIGHT, [1.0, 0.0, 0.0], 0.0, Orientation::LandscapeLeft);
+        pointer.motion(UPRIGHT, [1.0, 0.0, 0.0], 2.0, Orientation::LandscapeLeft);
         assert_eq!(pointer.cursor, Point::new(0.5, 0.5));
     }
 

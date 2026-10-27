@@ -9,6 +9,10 @@
     clippy::panic,
     reason = "test helpers outside #[test] functions: a failed step stops the test with its message"
 )]
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;

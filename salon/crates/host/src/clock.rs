@@ -25,9 +25,9 @@ impl Clock {
         Ms(u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
-    /// The moment `at` stands for.
-    pub fn at(self, at: Ms) -> Instant {
-        self.start + Duration::from_millis(at.0)
+    /// The moment `at` stands for, `None` past what `Instant` can hold.
+    pub fn at(self, at: Ms) -> Option<Instant> {
+        self.start.checked_add(Duration::from_millis(at.0))
     }
 
     /// The `Instant` str0m wants for `now`.

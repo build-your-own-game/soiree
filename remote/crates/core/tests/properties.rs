@@ -5,6 +5,11 @@
 //! `PROPTEST_CASES=5000 cargo test` searches further than the default 256
 //! cases.
 
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
+
 #[path = "../../protocol/tests/strategies/mod.rs"]
 #[expect(
     dead_code,
@@ -16,6 +21,7 @@ use std::fmt::Write as _;
 
 use proptest::collection::vec;
 use proptest::prelude::*;
+use remote_core::Orientation;
 use remote_core::join::target;
 use remote_core::remote::{Motion, Remote};
 use remote_core::session::{Event, Session};
@@ -83,7 +89,7 @@ enum Hand {
     Move(u64, Point),
     Up(u64),
     /// Tilted by an angle, turning at a rate, in landscape-left or right.
-    Motion(f32, f32, bool),
+    Motion(f32, f32, Orientation),
     ReleaseAll,
 }
 
@@ -92,8 +98,15 @@ fn hand() -> impl Strategy<Value = Hand> {
         3 => (0..3_u64, point()).prop_map(|(id, p)| Hand::Down(id, p)),
         4 => (0..3_u64, point()).prop_map(|(id, p)| Hand::Move(id, p)),
         3 => (0..3_u64).prop_map(Hand::Up),
-        1 => (-3.2_f32..3.2, -10.0_f32..10.0, any::<bool>())
-            .prop_map(|(angle, rate, left)| Hand::Motion(angle, rate, left)),
+        1 => (
+            -3.2_f32..3.2,
+            -10.0_f32..10.0,
+            prop_oneof![
+                Just(Orientation::LandscapeLeft),
+                Just(Orientation::LandscapeRight)
+            ],
+        )
+            .prop_map(|(angle, rate, orientation)| Hand::Motion(angle, rate, orientation)),
         1 => Just(Hand::ReleaseAll),
     ]
 }
@@ -113,11 +126,11 @@ fn play(session: &mut Session, hand: &Hand, time: f64) {
         Hand::Up(id) => {
             remote.touch_up(id);
         }
-        Hand::Motion(angle, rate, landscape_left) => remote.motion(Motion {
+        Hand::Motion(angle, rate, orientation) => remote.motion(Motion {
             gravity: [libm::cosf(angle), libm::sinf(angle), 0.0],
             rotation_rate: [rate, rate / 2.0, -rate],
             time,
-            landscape_left,
+            orientation,
         }),
         Hand::ReleaseAll => remote.release_all(),
     }
@@ -331,9 +344,12 @@ proptest! {
                     let messages = sent(&mut session);
                     let states: Vec<&InputState> = messages
                         .iter()
-                        .filter_map(|m| match m {
-                            PhoneMessage::Input(state) => Some(state),
-                            _ => None,
+                        .filter_map(|m| {
+                            if let PhoneMessage::Input(state) = m {
+                                Some(state)
+                            } else {
+                                None
+                            }
                         })
                         .collect();
                     prop_assert!(states.len() <= 1);

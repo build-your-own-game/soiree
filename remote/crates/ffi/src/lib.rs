@@ -10,7 +10,7 @@ use remote_core::draw::{self, Canvas};
 use remote_core::remote::{Motion as CoreMotion, Remote as CoreRemote};
 use remote_core::session::{self, Event};
 use remote_core::{
-    Haptic as CoreHaptic, Insets as CoreInsets, Point as CorePoint, Rect as CoreRect,
+    Haptic as CoreHaptic, Insets as CoreInsets, Orientation, Point as CorePoint, Rect as CoreRect,
     Size as CoreSize,
 };
 use remote_protocol::{self as protocol, Action, Kind, encode};
@@ -335,7 +335,13 @@ impl Session {
                 gravity: [motion.gravity_x, motion.gravity_y, motion.gravity_z],
                 rotation_rate: [motion.rotation_x, motion.rotation_y, motion.rotation_z],
                 time: motion.time,
-                landscape_left: motion.landscape_left,
+                // Swift says only whether it is landscape-left: anything
+                // else plays as landscape-right.
+                orientation: if motion.landscape_left {
+                    Orientation::LandscapeLeft
+                } else {
+                    Orientation::LandscapeRight
+                },
             });
         }
     }

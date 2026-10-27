@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{nom}}</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="status" class="status"></div>
+    <button id="tap" hidden>Tap</button>
+    <div id="view"></div>
+  </div>
+  <script type="module">
+    import init from "/pkg/game.js";
+    await init();
+  </script>
+</body>
+</html>

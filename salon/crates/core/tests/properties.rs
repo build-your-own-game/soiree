@@ -2,6 +2,11 @@
 //! network chaos, invariants checked, failures shrunk to the smallest case.
 //! `PROPTEST_CASES=5000 cargo test` searches further.
 
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
+
 #[expect(
     dead_code,
     reason = "the simulated network is shared with tests/salon.rs, which uses all of it"
@@ -161,7 +166,7 @@ proptest! {
                 DeviceEvent::Back { device } => {
                     prop_assert_eq!(away.insert(*device, false), Some(true), "{} back without leaving", device);
                 }
-                _ => {}
+                DeviceEvent::Event { .. } | DeviceEvent::State { .. } => {}
             }
         }
     }

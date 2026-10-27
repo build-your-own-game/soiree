@@ -3,6 +3,11 @@
 //! or refused, quickly, never with a panic. `PROPTEST_CASES=5000 cargo test`
 //! searches further than the default 256 cases.
 
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
+
 mod strategies;
 
 use std::time::{Duration, Instant};

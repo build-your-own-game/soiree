@@ -1,0 +1,26 @@
+[package]
+name = "{{nom}}-web"
+description = "The demo's TV and phone page"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+salon-core.workspace = true
+salon-web.workspace = true
+# The demo's messages and version: the same library as its host.
+game-core.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = [
+  "Window", "Document", "Element", "HtmlElement", "Location", "EventTarget", "Event", "Node",
+  "DomTokenList", "CssStyleDeclaration",
+  "HtmlDivElement", "HtmlButtonElement", "HtmlHeadingElement", "HtmlParagraphElement",
+  "HtmlUListElement", "HtmlLiElement",
+] }
+
+[lints]
+workspace = true

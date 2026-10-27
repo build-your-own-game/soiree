@@ -90,7 +90,7 @@ fn ios(args: &[String]) -> Result<(), String> {
 }
 
 /// Builds the fake game's Rust page into `target/demo-page`: the WASM, its
-/// generated glue, and the HTML that loads them.
+/// generated glue, and the HTML and CSS that load them.
 fn page() -> Result<(), String> {
     let root = workspace_root();
     let out = root.join("target").join("demo-page");
@@ -108,11 +108,10 @@ fn page() -> Result<(), String> {
         .arg(&wasm)
         .args(["--target", "web", "--no-typescript", "--out-dir"])
         .arg(out.join("pkg")))?;
-    std::fs::copy(
-        root.join("crates/demo-page/web/index.html"),
-        out.join("index.html"),
-    )
-    .map_err(|e| format!("copying index.html: {e}"))?;
+    for file in ["index.html", "style.css"] {
+        std::fs::copy(root.join("crates/demo-page/web").join(file), out.join(file))
+            .map_err(|e| format!("copying {file}: {e}"))?;
+    }
     println!("xtask: page → {}", out.display());
     Ok(())
 }

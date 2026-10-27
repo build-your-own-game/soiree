@@ -6,6 +6,8 @@
 //! the same whether the phone is held upright or flat. Gravity is absolute:
 //! no calibration, nothing drifts.
 
+use crate::Orientation;
+
 /// Tilting this far steers all the way: between SuperTuxKart (19.5°) and
 /// PPSSPP (32°). The TV is the screen, so the phone may tilt far.
 pub const FULL_LOCK_DEGREES: f32 = 25.0;
@@ -27,15 +29,18 @@ pub struct Wheel {
 
 impl Wheel {
     /// `gravity` in g, in the device's axes (x to the right of the portrait
-    /// screen, y to its top, z out of it). `landscape_left`: the interface is
-    /// turned so the device's top points right.
-    pub fn update(&mut self, gravity: [f32; 3], landscape_left: bool) {
+    /// screen, y to its top, z out of it), with the interface turned to
+    /// `orientation`.
+    pub fn update(&mut self, gravity: [f32; 3], orientation: Orientation) {
         let [x, y, z] = gravity;
         self.available = true;
         if libm::hypotf(x, y) < MIN_IN_PLANE {
             return;
         }
-        let sign = if landscape_left { 1.0 } else { -1.0 };
+        let sign = match orientation {
+            Orientation::LandscapeLeft => 1.0,
+            Orientation::LandscapeRight => -1.0,
+        };
         self.angle = libm::atan2f(sign * y, libm::hypotf(x, z)).to_degrees();
         self.steering = steering(self.angle);
     }
@@ -64,35 +69,38 @@ mod tests {
     #[test]
     fn level_goes_straight_and_25_degrees_is_full_lock() {
         let mut wheel = Wheel::default();
-        wheel.update(turned(0.0), true);
+        wheel.update(turned(0.0), Orientation::LandscapeLeft);
         assert_eq!(wheel.steering, 0.0);
-        wheel.update(turned(2.0), true);
+        wheel.update(turned(2.0), Orientation::LandscapeLeft);
         assert_eq!(wheel.steering, 0.0, "inside the dead zone");
-        wheel.update(turned(13.75), true);
+        wheel.update(turned(13.75), Orientation::LandscapeLeft);
         assert!((wheel.steering - 0.5).abs() < 1e-3, "{}", wheel.steering);
-        wheel.update(turned(-40.0), true);
+        wheel.update(turned(-40.0), Orientation::LandscapeLeft);
         assert_eq!(wheel.steering, -1.0);
     }
 
     #[test]
     fn the_other_landscape_steers_the_same_way() {
         let (mut left, mut right) = (Wheel::default(), Wheel::default());
-        left.update(turned(10.0), true);
+        left.update(turned(10.0), Orientation::LandscapeLeft);
         // Turned the other way round, the device's axes point the other way.
         let [x, y, z] = turned(10.0);
-        right.update([-x, -y, z], false);
+        right.update([-x, -y, z], Orientation::LandscapeRight);
         assert!((left.steering - right.steering).abs() < 1e-5);
     }
 
     #[test]
     fn holding_the_phone_flatter_does_not_change_the_steering() {
         let mut upright = Wheel::default();
-        upright.update(turned(10.0), true);
+        upright.update(turned(10.0), Orientation::LandscapeLeft);
         // Same wheel angle, screen tilted 60° back toward the sky.
         let [x, y, _] = turned(10.0);
         let back = 60.0_f32.to_radians();
         let mut flatter = Wheel::default();
-        flatter.update([x * libm::cosf(back), y, x * libm::sinf(back)], true);
+        flatter.update(
+            [x * libm::cosf(back), y, x * libm::sinf(back)],
+            Orientation::LandscapeLeft,
+        );
         assert!(
             (upright.angle - flatter.angle).abs() < 0.01,
             "{} vs {}",
@@ -104,9 +112,9 @@ mod tests {
     #[test]
     fn a_phone_lying_flat_keeps_the_last_steering() {
         let mut wheel = Wheel::default();
-        wheel.update(turned(15.0), true);
+        wheel.update(turned(15.0), Orientation::LandscapeLeft);
         let before = wheel.steering;
-        wheel.update([0.05, 0.1, -1.0], true);
+        wheel.update([0.05, 0.1, -1.0], Orientation::LandscapeLeft);
         assert_eq!(wheel.steering, before);
     }
 }

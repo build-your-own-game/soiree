@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::time::Duration;
 
-use salon_core::{Caps, Host, HostConfig, LinkId, Ms, Output};
+use salon_core::{Caps, HostConfig, LinkId};
+
+use crate::driver::{Driver, Effect, Input};
 
 use crate::Game;
 use crate::clock::Clock;
@@ -20,6 +22,7 @@ pub const OUTBOX: usize = 256;
 const SAVE_EVERY: u64 = 1_000;
 
 pub enum Net {
+    Diagnostic(salon_core::journal::Diagnostic),
     Opened {
         link: LinkId,
         caps: Caps,
@@ -54,14 +57,15 @@ impl Outlet {
     fn send(&self, link: LinkId, bytes: Vec<u8>) {
         // Full means the transport is behind: this packet is lost, like on
         // any network, and salon sends what matters again.
-        let _ = match self {
+        let _: bool = match self {
             Outlet::Ws(outbox) => outbox.try_send(WsOut::Packet(bytes)).is_ok(),
             Outlet::Rtc(outbox) => outbox.try_send(RtcOut::Packet(link, bytes)).is_ok(),
         };
     }
 
     fn close(&self, link: LinkId) {
-        let _ = match self {
+        // Full: the transport closes anyway when the room forgets the link.
+        let _: bool = match self {
             Outlet::Ws(outbox) => outbox.try_send(WsOut::Close).is_ok(),
             Outlet::Rtc(outbox) => outbox.try_send(RtcOut::Close(link)).is_ok(),
         };
@@ -98,59 +102,51 @@ fn wait(inbox: &Receiver<Net>, deadline: std::time::Instant) -> Result<Net, Recv
 
 pub fn run<G: Game>(
     inbox: &Receiver<Net>,
-    mut game: G,
+    game: G,
     config: HostConfig,
     tick: Duration,
     mut store: Store,
     clock: Clock,
 ) {
-    let mut host = Host::<G::Up, G::Down>::new(clock.now(), config);
-    let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
     let tick = u64::try_from(tick.as_millis()).unwrap_or(100).max(1);
+    let mut driver = Driver::new(clock.now(), config, tick, game);
+    let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
     store.save_epoch();
-    game.start(clock.now(), &mut host);
-    let mut next_tick = clock.now();
     let mut next_save = clock.now().plus(SAVE_EVERY);
     loop {
-        let wake = [host.next_deadline(), game.next_deadline(), Some(next_tick)]
-            .into_iter()
-            .flatten()
-            .min()
-            .unwrap_or(next_tick);
-        match wait(inbox, clock.at(wake).min(Clock::instant() + MAX_WAIT)) {
+        let soon = Clock::instant();
+        let soon = soon.checked_add(MAX_WAIT).unwrap_or(soon);
+        let until = clock
+            .at(driver.next_deadline())
+            .map_or(soon, |wake| wake.min(soon));
+        let mut inputs = Vec::new();
+        match wait(inbox, until) {
             Ok(net) => {
-                handle(&mut host, &mut outlets, clock.now(), net);
-                // Take what else is waiting, without letting one flood
-                // starve the timers.
+                handle(&mut inputs, &mut outlets, net);
                 for net in inbox.try_iter().take(INBOX) {
-                    handle(&mut host, &mut outlets, clock.now(), net);
+                    handle(&mut inputs, &mut outlets, net);
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
         let now = clock.now();
-        if now >= next_tick || game.next_deadline().is_some_and(|at| at <= now) {
-            game.tick(now, &mut host);
-            next_tick = next_tick.plus(tick).max(now);
-        }
-        while let Some(output) = host.poll(now) {
-            match output {
-                Output::Transmit { link, bytes } => {
+        for effect in driver.step(now, inputs) {
+            match effect {
+                Effect::Transmit { link, bytes } => {
                     if let Some(outlet) = outlets.get(&link) {
                         outlet.send(link, bytes);
                     }
                 }
-                Output::Close { link } => {
+                Effect::Close { link } => {
                     if let Some(outlet) = outlets.remove(&link) {
                         outlet.close(link);
                     }
                 }
-                Output::Device(event) => game.on(now, event, &mut host),
             }
         }
         if now >= next_save {
-            store.save(host.known());
+            store.save(driver.host().known());
             next_save = now.plus(SAVE_EVERY);
         }
     }
@@ -162,13 +158,9 @@ fn logging() -> bool {
     *ON.get_or_init(|| std::env::var_os("SALON_LOG").is_some())
 }
 
-fn handle<Up: serde::de::DeserializeOwned, Down: serde::Serialize>(
-    host: &mut Host<Up, Down>,
-    outlets: &mut BTreeMap<LinkId, Outlet>,
-    now: Ms,
-    net: Net,
-) {
+fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: Net) {
     match net {
+        Net::Diagnostic(report) => inputs.push(Input::Diagnostic { report }),
         Net::Opened { link, caps, outlet } => {
             if logging() {
                 let transport = if matches!(outlet, Outlet::Rtc(_)) {
@@ -177,31 +169,35 @@ fn handle<Up: serde::de::DeserializeOwned, Down: serde::Serialize>(
                     "WebSocket"
                 };
                 eprintln!(
-                    "salon: link {} opened ({transport}, {} bytes) at {} ms",
-                    link.0, caps.max_packet, now.0
+                    "salon: link {} opened ({transport}, {} bytes)",
+                    link.0, caps.max_packet
                 );
             }
             outlets.insert(link, outlet);
-            host.opened(now, link, caps);
+            inputs.push(Input::Opened { link, caps });
         }
-        Net::Received { link, bytes } => host.received(now, link, &bytes),
+        Net::Received { link, bytes } => inputs.push(Input::Received { link, bytes }),
         Net::Closed { link } => {
             if logging() {
-                eprintln!("salon: link {} closed at {} ms", link.0, now.0);
+                eprintln!("salon: link {} closed", link.0);
             }
             outlets.remove(&link);
-            host.closed(now, link);
+            inputs.push(Input::Closed { link });
         }
     }
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 mod tests {
     use std::sync::mpsc::sync_channel;
     use std::sync::{Arc, Mutex};
     use std::thread;
 
-    use salon_core::{DeviceEvent, Epoch, Limits, Timing, TvKey};
+    use salon_core::{DeviceEvent, Epoch, Host, Limits, Ms, Timing, TvKey};
 
     use super::*;
 
@@ -223,7 +219,8 @@ mod tests {
             if self.next_deadline().is_some_and(|due| due <= now) {
                 self.done += 1;
                 if let Ok(mut seen) = self.seen.lock() {
-                    seen.push(Clock::instant().duration_since(self.start.at(Ms(0))));
+                    let start = self.start.at(Ms(0)).expect("the start itself");
+                    seen.push(Clock::instant().duration_since(start));
                 }
             }
         }

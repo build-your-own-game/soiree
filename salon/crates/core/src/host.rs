@@ -120,6 +120,13 @@ pub struct DeviceInfo {
     pub garbage: u32,
 }
 
+/// What happened to a local device's cable.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Plug {
+    In,
+    Out,
+}
+
 struct Device {
     kind: Kind,
     token: Option<Token>,
@@ -341,7 +348,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         }
         device.garbage = device
             .garbage
-            .saturating_add(received.garbage + state_garbage);
+            .saturating_add(received.garbage.saturating_add(state_garbage));
         let rtt = device.peer.rtt().unwrap_or(0);
         for arrived in received.events {
             match postcard::from_bytes::<Up>(&arrived.data) {
@@ -744,9 +751,14 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         self.phase
     }
 
-    /// Whether unknown devices may join. Known ones always come back.
-    pub fn set_open(&mut self, open: bool) {
-        self.open = open;
+    /// Unknown devices may no longer join. Known ones always come back.
+    pub fn close(&mut self) {
+        self.open = false;
+    }
+
+    /// Unknown devices may join again, as at the start.
+    pub fn open(&mut self) {
+        self.open = true;
     }
 
     /// Removes a device for good. A remote one is told, and its token stops
@@ -818,29 +830,38 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         id
     }
 
-    /// A local device was unplugged (`false`) or plugged back (`true`).
-    pub fn local_present(&mut self, now: Ms, device: DeviceId, present: bool) {
+    /// A local device was unplugged.
+    pub fn local_unplugged(&mut self, now: Ms, device: DeviceId) {
+        self.local_plug(now, device, Plug::Out);
+    }
+
+    /// A local device was plugged back.
+    pub fn local_plugged(&mut self, now: Ms, device: DeviceId) {
+        self.local_plug(now, device, Plug::In);
+    }
+
+    fn local_plug(&mut self, now: Ms, device: DeviceId, plug: Plug) {
         let now = self.advance(now);
         let Some(local) = self.devices.get_mut(&device) else {
             return;
         };
-        if local.kind.is_remote() || (local.presence != Presence::Absent) == present {
+        let plugged = local.presence != Presence::Absent;
+        if local.kind.is_remote() || plugged == (plug == Plug::In) {
             return;
         }
-        local.presence = if present {
-            Presence::Present
-        } else {
-            Presence::Absent
+        let (presence, event) = match plug {
+            Plug::In => (Presence::Present, DeviceEvent::Back { device }),
+            Plug::Out => (
+                Presence::Absent,
+                DeviceEvent::Left {
+                    device,
+                    why: Why::Closed,
+                },
+            ),
         };
+        local.presence = presence;
         local.last_heard = now;
-        self.happened.push_back(if present {
-            DeviceEvent::Back { device }
-        } else {
-            DeviceEvent::Left {
-                device,
-                why: Why::Closed,
-            }
-        });
+        self.happened.push_back(event);
     }
 
     /// An event from a local device.

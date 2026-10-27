@@ -108,7 +108,7 @@ pub fn run(stream: TcpStream, link: LinkId, net: &SyncSender<Net>) {
                 }));
                 let mut buffer = Vec::new();
                 if close.format(&mut buffer).is_ok() {
-                    let _ = write
+                    let _: std::io::Result<()> = write
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .write_all(&buffer);
@@ -120,11 +120,12 @@ pub fn run(stream: TcpStream, link: LinkId, net: &SyncSender<Net>) {
         }
     }
     // Wakes the writer if it is blocked, and tells the room.
-    let _ = write
+    let _: std::io::Result<()> = write
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .shutdown(Shutdown::Both);
-    let _ = net.send(Net::Closed { link });
+    // The room is gone only when the host stops.
+    let _: Result<(), std::sync::mpsc::SendError<Net>> = net.send(Net::Closed { link });
 }
 
 /// Writes what the room sends, one whole frame at a time, until it says
@@ -144,7 +145,7 @@ fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>) {
         }
         let mut stream = write.lock().unwrap_or_else(PoisonError::into_inner);
         if stream.write_all(&buffer).is_err() || last {
-            let _ = stream.shutdown(Shutdown::Both);
+            let _: std::io::Result<()> = stream.shutdown(Shutdown::Both);
             break;
         }
     }
@@ -197,7 +198,8 @@ mod tests {
         assert!(
             matches!(inbox.recv_timeout(Duration::from_secs(5)).unwrap(), Net::Received { bytes, .. } if bytes.len() == 10)
         );
-        let _ = client.send(Message::binary(vec![0_u8; MAX_FRAME + 1]));
+        // The host may cut the connection before the frame is out.
+        let _: tungstenite::Result<()> = client.send(Message::binary(vec![0_u8; MAX_FRAME + 1]));
         let closed = inbox.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(matches!(closed, Net::Closed { link: LinkId(1) }));
         // The client is told why: 1009, message too big.

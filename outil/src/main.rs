@@ -4,6 +4,7 @@ mod catalogue;
 mod certify;
 mod check;
 mod doctor;
+mod dom;
 mod embedded;
 mod gaps;
 mod harness;
@@ -11,6 +12,7 @@ mod host_setup;
 mod items;
 mod lints;
 mod markdown;
+mod mutants;
 mod new;
 mod report;
 mod status;
@@ -30,6 +32,11 @@ const HELP: &str = "soiree : l'outil de la soirée
                                      Clippy natif et WASM, tests (sauf --fast)
   soiree certify [dossier] [--harness H] [-- options du harnais]
                                      le harnais complet ; écrit certification/
+  soiree mutants [dossier] [--in-diff FICHIER] [--re REGEX] [--timeout S]
+                                     mutation du core, à la demande ; rapport diagnostic
+  soiree dom <fichier.rs> [--html H…] [--css C…] [--id ID BALISE…] [--data D…] [--attr A…]
+                                     écrit le module typé des noms d'une page :
+                                     ids, classes, data-*, attributs, propriétés CSS
   soiree upgrade                     passe le jeu à la dernière version (pas encore écrit)
   soiree status [dossier]            dépôts pas commités, pas poussés, sans amont
   soiree host-setup [dossier] [--author P | --all] [--force] [--dry-run] [--source URL]
@@ -108,13 +115,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             Ok(new::run(&name, &parent, &org))
         }
         "certify" => {
-            let (own, extra) = match rest.iter().position(|a| a == "--") {
-                Some(at) => (
-                    rest.get(..at).unwrap_or_default(),
-                    rest.get(at + 1..).unwrap_or_default(),
-                ),
-                None => (rest, &[][..]),
-            };
+            let mut parts = rest.splitn(2, |a| a == "--");
+            let own = parts.next().unwrap_or_default();
+            let extra = parts.next().unwrap_or_default();
             let mut harness: Option<PathBuf> = None;
             let mut dirs = Vec::new();
             let mut own = own.iter();
@@ -135,6 +138,8 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             }
             Ok(certify::run(&one_dir(&dirs)?, harness.as_deref(), extra))
         }
+        "mutants" => Ok(mutants::run(rest)),
+        "dom" => Ok(dom::run(rest)),
         "upgrade" => Ok(upgrade::run()),
         "host-setup" => Ok(host_setup::run(&host_setup_options(rest)?)),
         other => Err(format!("commande inconnue : {other}")),
@@ -200,7 +205,8 @@ mod testdir {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-        let _ = std::fs::remove_dir_all(&dir);
+        // Nothing there yet, most often.
+        let _: std::io::Result<()> = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

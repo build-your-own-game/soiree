@@ -73,8 +73,9 @@ pub fn run(stream: TcpStream, page: &str) {
             Err(_) => break,
         }
     }
-    let _ = socket.close(None);
-    let _ = socket.flush();
+    // The page is gone or done: nothing to do if the goodbye fails.
+    let _: tungstenite::Result<()> = socket.close(None);
+    let _: tungstenite::Result<()> = socket.flush();
 }
 
 #[cfg(test)]

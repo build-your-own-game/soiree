@@ -291,7 +291,7 @@ fn refusals_are_clear_and_final() {
     assert_eq!(net.phones[old].connects, 1);
     assert_eq!(net.happened, Vec::new());
 
-    net.host.set_open(false);
+    net.host.close();
     let late = net.add_phone(phone_config(13, Kind::Phone), Caps::DATAGRAM);
     net.run(2_000);
     assert_eq!(
@@ -406,8 +406,8 @@ fn a_gamepad_is_a_device_like_the_others() {
     let mut net = Net::new(15, Faults::default());
     let pad = net.host.add_local(net.now, Kind::Gamepad, None);
     net.host.local_state(net.now, pad, Up::Pad(1, -1));
-    net.host.local_present(net.now, pad, false);
-    net.host.local_present(net.now, pad, true);
+    net.host.local_unplugged(net.now, pad);
+    net.host.local_plugged(net.now, pad);
     net.pump_host();
     let kinds: Vec<&DeviceEvent<Up>> = net.happened.iter().map(|(_, event)| event).collect();
     assert!(matches!(
@@ -565,12 +565,16 @@ fn a_repeated_hello_changes_nothing() {
     // making a twin client produce it, then feed it on the same link.
     let mut twin: salon_core::Client<Up, Down> =
         salon_core::Client::new(net.now, phone_config(24, Kind::Phone));
-    let _ = twin.poll(net.now);
+    // The first poll asks to connect: the test opens by hand just after.
+    let _: Option<salon_core::ClientOutput<Down>> = twin.poll(net.now);
     twin.opened(net.now, Caps::DATAGRAM);
     let hello = std::iter::from_fn(|| twin.poll(net.now))
-        .find_map(|output| match output {
-            salon_core::ClientOutput::Transmit(bytes) => Some(bytes),
-            _ => None,
+        .find_map(|output| {
+            if let salon_core::ClientOutput::Transmit(bytes) = output {
+                Some(bytes)
+            } else {
+                None
+            }
         })
         .expect("a hello");
     for _ in 0..3 {
@@ -654,12 +658,15 @@ fn a_welcomed_phone_cannot_turn_into_the_tv() {
     let mut as_tv = phone_config(28, Kind::Tv);
     as_tv.tv_key = Some(net::TV_KEY);
     let mut forger: salon_core::Client<Up, Down> = salon_core::Client::new(net.now, as_tv);
-    let _ = forger.poll(net.now);
+    let _: Option<salon_core::ClientOutput<Down>> = forger.poll(net.now);
     forger.opened(net.now, Caps::DATAGRAM);
     let hello = std::iter::from_fn(|| forger.poll(net.now))
-        .find_map(|output| match output {
-            salon_core::ClientOutput::Transmit(bytes) => Some(bytes),
-            _ => None,
+        .find_map(|output| {
+            if let salon_core::ClientOutput::Transmit(bytes) = output {
+                Some(bytes)
+            } else {
+                None
+            }
         })
         .expect("a hello");
     net.host.received(net.now, link, &hello);

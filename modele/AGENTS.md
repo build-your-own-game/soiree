@@ -43,6 +43,8 @@ Ajoute ensuite ce que le catalogue n'a pas : chaque règle de ton jeu qui peut c
 - Le dépôt commun (salon, la télécommande, les règles, le harnais). S'il manque quelque chose à salon, ou si une règle commune gêne sans raison, ouvre une issue sur `https://github.com/{{org}}/soiree` qui explique le besoin et ce que tu as essayé. Si tu ne peux pas ouvrir d'issue toi-même, écris-en le texte pour l'auteur.
 - `rust-toolchain.toml`, `clippy.toml` et les lints de `Cargo.toml` : `soiree` les écrit. Tu peux durcir une règle ; pour en assouplir une, il faut `#[expect(lint, reason = "…")]` à l'endroit précis, jamais `#[allow]`.
 - `.soiree/` : régénéré à chaque `soiree check`.
+- Le module écrit par `soiree dom` (souvent `page.rs`) : il tire du HTML et du CSS de la page les seuls noms que le Rust peut y lire, et les règles interdisent de lire la page par chaîne ailleurs. Change la page, puis relance `soiree dom` suivi du chemin du module.
+- Le `build.rs` copié de salon (`version.rs`) : il calcule depuis les sources la version que salon vérifie ; aucune version à monter à la main. `salon/README.md` dit comment brancher l'un et l'autre.
 
 ## Travailler avec l'auteur
 

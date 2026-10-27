@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use crate::protocol::{Player, Up, VERSION, View};
 use salon_core::{DeviceEvent, DeviceId, Host, Kind, Ms};
+use salon_demo::protocol::{Join, Player, Up, VERSION, View};
 use salon_host::{Game, Options};
 
 /// `SALON_DEMO_PORT` changes it (the certification harness picks its own).
@@ -14,7 +14,7 @@ const PORT: u16 = 8095;
 const MAX_PHONES: usize = 15;
 
 struct Taps {
-    join: (String, String),
+    join: Join,
     tvs: Vec<DeviceId>,
     players: BTreeMap<DeviceId, Player>,
 }
@@ -33,7 +33,8 @@ impl Taps {
                 join: Some(self.join.clone()),
                 mine: None,
             };
-            let _ = host.show(*tv, &view);
+            // A state replaces the last one: a device that missed it gets the next.
+            let _: Result<(), salon_core::SendError> = host.show(*tv, &view);
         }
         for (device, player) in &self.players {
             let view = View {
@@ -42,7 +43,7 @@ impl Taps {
                 join: None,
                 mine: Some(player.taps),
             };
-            let _ = host.show(*device, &view);
+            let _: Result<(), salon_core::SendError> = host.show(*device, &view);
         }
     }
 }
@@ -62,8 +63,8 @@ impl Game for Taps {
                 let name =
                     name.map_or_else(|| format!("Joueur {}", device.0), |name| name.to_string());
                 // The last seat taken: the next phone is turned away clearly.
-                if self.players.len() + 1 >= MAX_PHONES {
-                    host.set_open(false);
+                if self.players.len().saturating_add(1) >= MAX_PHONES {
+                    host.close();
                 }
                 self.players.insert(
                     device,
@@ -86,7 +87,7 @@ impl Game for Taps {
             DeviceEvent::Event { device, event, .. } => {
                 if let Some(player) = self.players.get_mut(&device) {
                     match event {
-                        Up::Tap => player.taps += 1,
+                        Up::Tap => player.taps = player.taps.saturating_add(1),
                         Up::Name(name) => {
                             if let Some(name) = salon_core::Name::new(&name) {
                                 player.name = name.to_string();
@@ -133,8 +134,10 @@ fn build(root: &Path, dist: &Path) -> Result<(), String> {
         return Err("wasm-bindgen failed".to_owned());
     }
     std::fs::create_dir_all(dist).map_err(|error| error.to_string())?;
-    std::fs::copy(root.join("demo-web/index.html"), dist.join("index.html"))
-        .map_err(|error| error.to_string())?;
+    for file in ["index.html", "style.css"] {
+        std::fs::copy(root.join("demo-web").join(file), dist.join(file))
+            .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -152,7 +155,6 @@ pub fn main() -> ExitCode {
         .and_then(|port| port.parse().ok())
         .unwrap_or(PORT);
     let url = salon_host::join_url(port, "/play");
-    let qr = salon_host::qr_svg(&url, "#12131a", "#ffffff").unwrap_or_default();
     println!("  phones:             {url}");
     let mut options = Options::new(port, dist, VERSION, "Salon demo ready");
     options
@@ -165,7 +167,10 @@ pub fn main() -> ExitCode {
     options.app_page = Some("/play".to_owned());
     options.tick = std::time::Duration::from_secs(1);
     let game = Taps {
-        join: (url, qr),
+        join: Join {
+            qr: salon_host::qr(&url).unwrap_or_default(),
+            url,
+        },
         tvs: Vec::new(),
         players: BTreeMap::new(),
     };

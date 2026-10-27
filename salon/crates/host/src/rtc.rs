@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
-use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
+use std::sync::mpsc::{Receiver, SendError, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use salon_core::{Caps, LinkId};
@@ -122,7 +122,7 @@ pub fn run(rtcs: &Rtcs) {
                         if let Some(mut channel) = entry.rtc.channel(id) {
                             // `false`: str0m's buffer is full; the packet is
                             // lost and salon sends it again.
-                            let _ = channel.write(true, &bytes);
+                            let _: Result<bool, str0m::RtcError> = channel.write(true, &bytes);
                         }
                         drive(rtcs, link, entry);
                     }
@@ -151,7 +151,7 @@ pub fn run(rtcs: &Rtcs) {
                 eprintln!("salon: WebRTC link {} dropped (stalled: {stalled})", link.0);
             }
             if !keep && entry.channel.is_some() {
-                let _ = rtcs.net.send(Net::Closed { link });
+                let _: Result<(), SendError<Net>> = rtcs.net.send(Net::Closed { link });
             }
             keep
         });
@@ -211,10 +211,15 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
                 return;
             }
             Ok(Output::Transmit(transmit)) => {
-                let _ = rtcs
+                // UDP: a datagram that does not leave is a lost packet.
+                let _: std::io::Result<usize> = rtcs
                     .socket
                     .send_to(&transmit.contents, transmit.destination);
             }
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "str0m::Event is #[non_exhaustive] and wide: a data-only link ignores every other event"
+            )]
             Ok(Output::Event(event)) => match event {
                 Event::ChannelOpen(id, _) if entry.channel.is_none() => {
                     entry.channel = Some(id);
@@ -228,10 +233,10 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
                         },
                         outlet: Outlet::Rtc(rtcs.outlet.clone()),
                     };
-                    let _ = rtcs.net.send(opened);
+                    let _: Result<(), SendError<Net>> = rtcs.net.send(opened);
                 }
                 Event::ChannelData(data) if Some(data.id) == entry.channel => {
-                    let _ = rtcs.net.send(Net::Received {
+                    let _: Result<(), SendError<Net>> = rtcs.net.send(Net::Received {
                         link,
                         bytes: data.data,
                     });

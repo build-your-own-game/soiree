@@ -54,8 +54,8 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    fn label(self, dry_run: bool) -> &'static str {
-        match (self, dry_run) {
+    fn label(self, options: &Options) -> &'static str {
+        match (self, options.dry_run) {
             (Outcome::Written, false) => "écrit",
             (Outcome::Written, true) => "à écrire",
             (Outcome::Identical, _) => "identique",
@@ -87,11 +87,7 @@ pub fn run(options: &Options) -> ExitCode {
         }
     );
     for (outcome, whats) in groups {
-        println!(
-            "  {} : {}",
-            outcome.label(options.dry_run),
-            whats.join(", ")
-        );
+        println!("  {} : {}", outcome.label(options), whats.join(", "));
     }
     println!("\nEnsuite : soiree status {}", options.dir.display());
     report.finish()
@@ -244,8 +240,9 @@ fn differences(existing: &str, template: &str) -> Vec<String> {
     if lines.is_empty() {
         lines.push("(mêmes lignes, dans un autre ordre ou avec d'autres lignes vides)".to_owned());
     }
-    if lines.len() > SHOWN_LINES {
-        let more = lines.len() - SHOWN_LINES;
+    if let Some(more) = lines.len().checked_sub(SHOWN_LINES)
+        && more > 0
+    {
         lines.truncate(SHOWN_LINES);
         lines.push(format!("… et {more} autre(s) ligne(s)"));
     }
@@ -371,7 +368,7 @@ pub fn read_catalogue(path: &Path) -> Result<Vec<Game>> {
                         format!(
                             "{} : le jeu n° {} n'a pas de {key}",
                             path.display(),
-                            index + 1
+                            index.saturating_add(1)
                         )
                     })
             };

@@ -1,0 +1,8 @@
+{"sequence":0,"line":{"Header":{"format":1,"version":3478277559,"seed":0}}}
+{"sequence":1,"line":{"Entry":{"at":0,"input":{"Join":{"player":1,"name":"Ada"}}}}}
+{"sequence":2,"line":{"Entry":{"at":1,"input":{"Tap":{"player":1}}}}}
+{"sequence":3,"line":{"Entry":{"at":2,"input":{"Presence":{"player":1,"here":false}}}}}
+{"sequence":4,"line":{"Entry":{"at":3,"input":{"Tap":{"player":1}}}}}
+{"sequence":5,"line":{"Entry":{"at":4,"input":{"Presence":{"player":1,"here":true}}}}}
+{"sequence":6,"line":{"Entry":{"at":5,"input":{"Tap":{"player":1}}}}}
+{"sequence":7,"line":{"Final":{"fingerprint":"3f92e287f51465fe5ee4a5ef4625f2f2371d07e0b01ccbc61ca712d6d7c92df5"}}}

@@ -1,0 +1,56 @@
+{
+  "frames_lobby": null,
+  "frames_gameplay": [],
+  "probes": [],
+  "joins": [
+    {
+      "phone": 1,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 506
+    },
+    {
+      "phone": 2,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 326
+    },
+    {
+      "phone": 3,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 439
+    },
+    {
+      "phone": 4,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 323
+    },
+    {
+      "phone": 5,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 430
+    },
+    {
+      "phone": 6,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 313
+    },
+    {
+      "phone": 7,
+      "engine": "webkit",
+      "joined": true,
+      "elapsed_ms": 432
+    },
+    {
+      "phone": 8,
+      "engine": "chromium",
+      "joined": true,
+      "elapsed_ms": 324
+    }
+  ],
+  "browsers": {}
+}

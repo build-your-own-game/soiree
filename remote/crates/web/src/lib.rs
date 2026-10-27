@@ -136,7 +136,8 @@ impl Listener {
             }
         });
         if let Some(window) = web_sys::window() {
-            let _ =
+            // Without it, the event never comes: the same as outside the app.
+            let _: Result<(), JsValue> =
                 window.add_event_listener_with_callback(&event, closure.as_ref().unchecked_ref());
         }
         Self { event, closure }
@@ -146,7 +147,7 @@ impl Listener {
 impl Drop for Listener {
     fn drop(&mut self) {
         if let Some(window) = web_sys::window() {
-            let _ = window.remove_event_listener_with_callback(
+            let _: Result<(), JsValue> = window.remove_event_listener_with_callback(
                 &self.event,
                 self.closure.as_ref().unchecked_ref(),
             );
@@ -178,7 +179,8 @@ fn post(json: &str) {
         return;
     };
     if let Some(post) = post.dyn_ref::<Function>() {
-        let _ = post.call1(&handler, &message);
+        // The app's handler returns nothing worth reading.
+        let _: Result<JsValue, JsValue> = post.call1(&handler, &message);
     }
 }
 

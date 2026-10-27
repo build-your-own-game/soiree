@@ -5,11 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 publish.workspace = true
+# The game's version, from its sources (../../version.rs). The page uses this
+# crate's library, so the host and the page get the same number.
+build = "../../version.rs"
 
 [dependencies]
 salon-core.workspace = true
-salon-host = { path = "../host" }
 serde = { version = "1", features = ["derive"] }
+
+# The host, on the computer; the page (salon-demo-page) only needs the library.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+salon-host = { path = "../host" }
 
 [lints]
 workspace = true

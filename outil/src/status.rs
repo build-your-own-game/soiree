@@ -23,7 +23,9 @@ pub fn run(dir: &Path) -> ExitCode {
     for repository in &repositories {
         repository_status(&dir, repository, &mut report);
     }
-    let pending = report.count(Level::Error) + report.count(Level::Warning);
+    let pending = report
+        .count(Level::Error)
+        .saturating_add(report.count(Level::Warning));
     println!(
         "\n{} dépôt(s), {pending} point(s) en attente",
         repositories.len()
@@ -82,6 +84,7 @@ fn repository_status(base: &Path, repository: &Path, report: &mut Report) {
     let before = report.lines.len();
     let changes: Vec<&str> = lines.collect();
     let untracked = changes.iter().filter(|l| l.starts_with("??")).count();
+    let modified = changes.iter().filter(|l| !l.starts_with("??")).count();
     if !changes.is_empty() {
         let names: Vec<&str> = changes
             .iter()
@@ -91,7 +94,7 @@ fn repository_status(base: &Path, repository: &Path, report: &mut Report) {
         let more = if changes.len() > SHOWN { ", …" } else { "" };
         report.error(format!(
             "pas commité : {} modifié(s), {untracked} non suivi(s) : {}{more}",
-            changes.len() - untracked,
+            modified,
             names.join(", ")
         ));
     }

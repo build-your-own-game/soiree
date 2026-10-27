@@ -53,12 +53,12 @@ pub fn cache_dir() -> Option<PathBuf> {
 
 /// Writes the embedded files that are missing or differ; returns how many.
 pub fn extract(dir: &Path) -> Result<usize> {
-    let mut written = 0;
+    let mut written: usize = 0;
     for (name, contents) in HARNESS {
         let path = dir.join(name);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(*contents) {
             util::write(&path, contents)?;
-            written += 1;
+            written = written.saturating_add(1);
         }
     }
     Ok(written)

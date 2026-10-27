@@ -17,6 +17,10 @@
 //!
 //! The page receives [`Happening`]s, in order, and never sees a socket.
 
+pub mod journal;
+mod recovery;
+pub use recovery::{install_panic_hook, install_tv_diagnostics};
+
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::fmt::Write as _;
@@ -24,8 +28,8 @@ use std::rc::{Rc, Weak};
 
 use js_sys::{Reflect, Uint8Array};
 use salon_core::{
-    Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Refusal,
-    Status, Timing, Token, TvKey,
+    Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
+    Refusal, Status, Timing, Token, TvKey, route,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -128,13 +132,15 @@ impl Transport {
                 ..
             } => {
                 if channel.buffered_amount() < RTC_BACKLOG {
-                    let _ = channel.send_with_u8_array(bytes);
+                    // A failed send is a lost packet: salon sends again.
+                    let _: Result<(), JsValue> = channel.send_with_u8_array(bytes);
                 }
             }
             Transport::Ws { socket, .. } if socket.ready_state() == WebSocket::OPEN => {
-                let _ = socket.send_with_u8_array(bytes);
+                let _: Result<(), JsValue> = socket.send_with_u8_array(bytes);
             }
-            _ => {}
+            // Not open yet, or no longer: salon sends again once it is.
+            Transport::Rtc { .. } | Transport::Ws { .. } => {}
         }
     }
 
@@ -155,7 +161,7 @@ impl Transport {
                 socket.set_onmessage(None);
                 socket.set_onclose(None);
                 socket.set_onerror(None);
-                let _ = socket.close();
+                let _: Result<(), JsValue> = socket.close();
             }
         }
     }
@@ -258,7 +264,8 @@ fn token(kind: Kind, seat: Option<&str>) -> Token {
         [seed; 16]
     });
     if let Some(storage) = storage {
-        let _ = storage.set_item(&key, &hex(&fresh));
+        // Unsaved, the identity lasts as long as the page.
+        let _: Result<(), JsValue> = storage.set_item(&key, &hex(&fresh));
     }
     Token(fresh)
 }
@@ -271,6 +278,10 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         options: Options,
         on: impl FnMut(Happening<Down>) + 'static,
     ) -> Connection<Up, Down> {
+        install_panic_hook();
+        if options.kind == Kind::Tv {
+            install_tv_diagnostics();
+        }
         let shared = Rc::new(Shared {
             inner: RefCell::new(Inner {
                 client: None,
@@ -305,7 +316,7 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         if options.kind == Kind::Tv {
             let weak = Rc::downgrade(&connection.shared);
             spawn_local(async move {
-                let key = fetch_text("/salon/tv", None)
+                let key = fetch_text(route::TV_KEY, None)
                     .await
                     .as_deref()
                     .and_then(unhex);
@@ -345,10 +356,12 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
             }
         });
         let function = wake.as_ref().unchecked_ref();
-        let _ = window.add_event_listener_with_callback("pageshow", function);
-        let _ = window.add_event_listener_with_callback("online", function);
+        // Without these, the tick still wakes the client, only later.
+        let _: Result<(), JsValue> = window.add_event_listener_with_callback("pageshow", function);
+        let _: Result<(), JsValue> = window.add_event_listener_with_callback("online", function);
         if let Some(document) = window.document() {
-            let _ = document.add_event_listener_with_callback("visibilitychange", function);
+            let _: Result<(), JsValue> =
+                document.add_event_listener_with_callback("visibilitychange", function);
         }
         self.shared.wake.borrow_mut().push(wake);
         let shared = Rc::clone(&self.shared);
@@ -497,7 +510,7 @@ fn refresh_tv_key<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         // Until the key comes (the host may be restarting): ask again.
         loop {
             sleep(TV_KEY_RETRY_MS).await;
-            let key = fetch_text("/salon/tv", None)
+            let key = fetch_text(route::TV_KEY, None)
                 .await
                 .as_deref()
                 .and_then(unhex);
@@ -531,10 +544,11 @@ fn refresh_tv_key<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
 async fn sleep(ms: i32) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         if let Some(window) = web_sys::window() {
-            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
+            let _: Result<i32, JsValue> =
+                window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
         }
     });
-    let _ = JsFuture::from(promise).await;
+    let _: Result<JsValue, JsValue> = JsFuture::from(promise).await;
 }
 
 fn schedule<Up: Serialize, Down: DeserializeOwned>(
@@ -615,7 +629,12 @@ fn websocket<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     } else {
         "ws"
     };
-    let socket = WebSocket::new(&format!("{scheme}://{}/salon/ws", location.host().ok()?)).ok()?;
+    let socket = WebSocket::new(&format!(
+        "{scheme}://{}{}",
+        location.host().ok()?,
+        route::SOCKET
+    ))
+    .ok()?;
     socket.set_binary_type(BinaryType::Arraybuffer);
     let weak = Rc::downgrade(shared);
     let opened = Listener::new(move |_| {
@@ -674,7 +693,7 @@ fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         if inner.generation != generation || opened {
             return;
         }
-        inner.rtc_failures += 1;
+        inner.rtc_failures = inner.rtc_failures.saturating_add(1);
         if let Some(old) = inner.transport.take() {
             old.close();
         }
@@ -751,7 +770,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let weak = Rc::downgrade(shared);
     let patience = Closure::once_into_js(move || fall_back(&weak, generation));
     if let Some(window) = web_sys::window() {
-        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        let _: Result<i32, JsValue> = window.set_timeout_with_callback_and_timeout_and_arguments_0(
             patience.unchecked_ref(),
             RTC_PATIENCE_MS,
         );
@@ -776,7 +795,7 @@ async fn negotiate(pc: &RtcPeerConnection) -> Option<()> {
         .await
         .ok()?;
     let body = serde_json::to_string(&serde_json::json!({ "type": "offer", "sdp": sdp })).ok()?;
-    let answer = fetch_text("/salon/offer", Some(&body)).await?;
+    let answer = fetch_text(route::OFFER, Some(&body)).await?;
     let answer: serde_json::Value = serde_json::from_str(&answer).ok()?;
     let remote = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
     remote.set_sdp(answer.get("sdp")?.as_str()?);
@@ -805,4 +824,40 @@ async fn fetch_text(url: &str, body: Option<&str>) -> Option<String> {
         .await
         .ok()?
         .as_string()
+}
+
+const SVG: &str = "http://www.w3.org/2000/svg";
+/// Light modules around a QR code, so a reader finds its edges.
+const QR_QUIET: usize = 4;
+
+/// Draws `qr` (`salon_host::qr`) as an `<svg>` of one path, sized by its
+/// container. Its colors are the page's: `fill` on `path` for the dark
+/// modules, `background` on `svg` for the light ones.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "SVG attributes of a drawing salon makes itself, not names of the game's page"
+)]
+pub fn qr(qr: &Qr) -> Result<web_sys::Element, JsValue> {
+    let document = web_sys::window()
+        .and_then(|window| window.document())
+        .ok_or_else(|| JsValue::from_str("no document"))?;
+    let svg = document.create_element_ns(Some(SVG), "svg")?;
+    let width = usize::try_from(qr.width).unwrap_or(0);
+    let size = width.saturating_add(QR_QUIET.saturating_mul(2));
+    svg.set_attribute("viewBox", &format!("0 0 {size} {size}"))?;
+    svg.set_attribute("shape-rendering", "crispEdges")?;
+    svg.set_attribute("aria-hidden", "true")?;
+    let mut d = String::new();
+    if width > 0 {
+        for (y, row) in qr.dark.chunks(width).enumerate() {
+            for (x, _) in row.iter().enumerate().filter(|(_, dark)| **dark) {
+                let (x, y) = (x.saturating_add(QR_QUIET), y.saturating_add(QR_QUIET));
+                let _: std::fmt::Result = write!(d, "M{x} {y}h1v1h-1z");
+            }
+        }
+    }
+    let path = document.create_element_ns(Some(SVG), "path")?;
+    path.set_attribute("d", &d)?;
+    svg.append_child(&path)?;
+    Ok(svg)
 }

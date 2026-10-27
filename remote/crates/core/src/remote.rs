@@ -13,7 +13,7 @@ use crate::controls::{ButtonId, Layout, Pressed, TouchPad};
 use crate::draw::Canvas;
 use crate::pointer::Pointer;
 use crate::wheel::Wheel;
-use crate::{Haptic, Insets, Point, Rect, Size};
+use crate::{Haptic, Insets, Orientation, Point, Rect, Size};
 
 /// One motion sample from the phone's sensors, in the device's axes (x to
 /// the right of the portrait screen, y to its top, z out of it).
@@ -25,8 +25,8 @@ pub struct Motion {
     pub rotation_rate: [f32; 3],
     /// Seconds, on the same clock as touches.
     pub time: f64,
-    /// The interface is in landscape-left: the device's top points right.
-    pub landscape_left: bool,
+    /// How the interface is turned.
+    pub orientation: Orientation,
 }
 
 #[derive(Clone, Debug)]
@@ -46,9 +46,12 @@ impl Remote {
         let actions = spec
             .controls
             .iter()
-            .filter_map(|c| match c.kind {
-                Kind::Action { action, .. } => Some((c.id, action)),
-                _ => None,
+            .filter_map(|c| {
+                if let Kind::Action { action, .. } = c.kind {
+                    Some((c.id, action))
+                } else {
+                    None
+                }
             })
             .collect();
         Self {
@@ -93,7 +96,7 @@ impl Remote {
                         pointer.recenter();
                     }
                 }
-                tool => {
+                tool @ (Action::Color(_) | Action::Size(_) | Action::Undo | Action::Clear) => {
                     if let Some(canvas) = &mut self.canvas {
                         canvas.act(tool, time);
                     }
@@ -102,7 +105,9 @@ impl Remote {
         }
         if !self.touch.holds(id) {
             if let Some(canvas) = &mut self.canvas {
-                canvas.begin(id, point, time);
+                // Off the canvas, or a second finger: it does not draw, and
+                // `touch_move` asks the canvas whose finger it is.
+                let _: bool = canvas.begin(id, point, time);
             }
             if let Some((_, fingers)) = &mut self.pointer {
                 fingers.insert(id, point);
@@ -141,14 +146,14 @@ impl Remote {
 
     pub fn motion(&mut self, motion: Motion) {
         if let Some(wheel) = &mut self.wheel {
-            wheel.update(motion.gravity, motion.landscape_left);
+            wheel.update(motion.gravity, motion.orientation);
         }
         if let Some((pointer, _)) = &mut self.pointer {
             pointer.motion(
                 motion.gravity,
                 motion.rotation_rate,
                 motion.time,
-                motion.landscape_left,
+                motion.orientation,
             );
         }
     }
@@ -316,7 +321,7 @@ mod tests {
             gravity: [libm::cosf(tilt), libm::sinf(tilt), 0.0],
             rotation_rate: [0.0; 3],
             time: 0.0,
-            landscape_left: true,
+            orientation: Orientation::LandscapeLeft,
         });
         assert_eq!(remote.state(0).tilt, 127);
     }

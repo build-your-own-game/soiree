@@ -92,6 +92,15 @@ enum Link {
     Open(Open),
 }
 
+/// When [`Client::retry`] may try again.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Retry {
+    /// At once, unless an attempt already failed: then after the backoff.
+    Now,
+    /// After the backoff.
+    Later,
+}
+
 struct Open {
     caps: Caps,
     opened: Ms,
@@ -174,11 +183,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         z ^= z >> 31;
         let spread = base / 2;
-        base - base / 4 + if spread == 0 { 0 } else { z % spread }
+        let jitter = z.checked_rem(spread).unwrap_or(0);
+        base.saturating_sub(base / 4).saturating_add(jitter)
     }
 
     /// Drops the current transport and plans the next attempt.
-    fn retry(&mut self, now: Ms, immediately: bool) {
+    fn retry(&mut self, now: Ms, when: Retry) {
         if let Link::Open(open) = &self.link {
             if open.welcomed && now.since(open.opened) >= self.config.timing.healthy {
                 self.attempts = 0;
@@ -187,7 +197,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         } else if matches!(self.link, Link::Connecting { .. }) {
             self.outbox.push_back(ClientOutput::Disconnect);
         }
-        let wait = if immediately && self.attempts == 0 {
+        let wait = if when == Retry::Now && self.attempts == 0 {
             self.attempts = 1;
             0
         } else {
@@ -262,7 +272,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         match &self.link {
             Link::Open(open) if now.since(open.last_heard) >= silent => {
                 self.attempts = 0;
-                self.retry(now, true);
+                self.retry(now, Retry::Now);
             }
             Link::Idle { retry_at: Some(_) } => {
                 self.attempts = 0;
@@ -270,7 +280,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     retry_at: Some(now),
                 };
             }
-            _ => {}
+            Link::Open(_) | Link::Idle { retry_at: None } | Link::Connecting { .. } => {}
         }
     }
 
@@ -295,7 +305,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             }
             Some(Control::Closing) => {
                 self.set_status(Status::HostGone);
-                self.retry(now, false);
+                self.retry(now, Retry::Later);
                 return;
             }
             _ => {}
@@ -385,17 +395,19 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 self.link = Link::Connecting { since: now };
             }
             Link::Connecting { since } if now.since(*since) >= timing.connect => {
-                self.retry(now, false);
+                self.retry(now, Retry::Later);
             }
             Link::Open(open) if !open.welcomed && now.since(open.opened) >= timing.handshake => {
-                self.retry(now, false);
+                self.retry(now, Retry::Later);
             }
             // The page's own watchdog: the browser may never report a dead
             // socket (WebKit 247943), so silence is the only sure sign.
             Link::Open(open) if open.welcomed && now.since(open.last_heard) >= timing.absent => {
-                self.retry(now, true);
+                self.retry(now, Retry::Now);
             }
-            _ => {}
+            // Every state is named, so that a new one without its own
+            // timeout breaks the build here instead of hanging forever.
+            Link::Idle { .. } | Link::Connecting { .. } | Link::Open(_) => {}
         }
     }
 
@@ -424,10 +436,10 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 sent: now.0,
                 ..Packet::default()
             };
-            if open.bye > 0 {
+            if let Some(left) = open.bye.checked_sub(1) {
                 packet.control = Some(Control::Bye);
-                open.bye -= 1;
-                closing = open.bye == 0;
+                open.bye = left;
+                closing = left == 0;
             } else if !open.welcomed {
                 if open.last_sent.is_some_and(|at| now.since(at) < resend) {
                     return;
@@ -545,7 +557,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 open.bye = BYE_COPIES;
                 self.set_status(Status::Quit);
             }
-            _ => self.stop(Status::Quit),
+            Link::Open(_) | Link::Idle { .. } | Link::Connecting { .. } => self.stop(Status::Quit),
         }
     }
 

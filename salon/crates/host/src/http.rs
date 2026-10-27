@@ -6,13 +6,13 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use salon_core::{HostConfig, LinkId, TvKey};
+use salon_core::{HostConfig, LinkId, TvKey, route};
 
 use crate::clock::Clock;
 use crate::room::{self, INBOX, Net, OUTBOX};
@@ -37,7 +37,10 @@ const PROXY_HEADERS: [&str; 6] = [
     "true-client-ip",
 ];
 
+type Diagnostics = crate::journal::Recorder<u32, salon_core::journal::Diagnostic>;
+
 struct Shared {
+    diagnostics: Mutex<Option<Diagnostics>>,
     dist: PathBuf,
     pages: Vec<(String, String)>,
     port: u16,
@@ -106,7 +109,16 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let clock = Clock::start();
     thread::spawn(move || room::run(&inbox, game, config, tick, store, clock));
 
+    let diagnostic_dir = options
+        .data
+        .as_deref()
+        .unwrap_or_else(|| Path::new("data"))
+        .join("journals");
+    let diagnostics = Diagnostics::start(diagnostic_dir, "panics", options.version)
+        .inspect_err(|error| eprintln!("salon: diagnostics unavailable: {error}"))
+        .ok();
     let shared = Arc::new(Shared {
+        diagnostics: Mutex::new(diagnostics),
         dist: options.dist,
         pages: options.pages,
         port,
@@ -121,11 +133,13 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     });
     println!("{}", options.ready);
     println!("  TV (this computer): http://localhost:{port}");
-    let _ = std::io::stdout().flush();
+    // Only the console's echo is lost if stdout is gone.
+    let _: std::io::Result<()> = std::io::stdout().flush();
     for stream in listener.incoming().flatten() {
         let shared = Arc::clone(&shared);
         thread::spawn(move || {
-            let _ = handle(stream, &shared);
+            // A broken request only concerns the browser that sent it.
+            let _: std::io::Result<()> = handle(stream, &shared);
         });
     }
     Ok(())
@@ -214,12 +228,29 @@ fn from_this_computer(peer: SocketAddr, head: &Head, port: u16) -> bool {
     direct && own_page
 }
 
+/// Whether a response carries its body: not for a `HEAD` request.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Payload {
+    Included,
+    Omitted,
+}
+
+impl Payload {
+    fn for_method(method: &str) -> Payload {
+        if method == "HEAD" {
+            Payload::Omitted
+        } else {
+            Payload::Included
+        }
+    }
+}
+
 fn respond(
     stream: &mut TcpStream,
     status: u16,
     kind: &str,
     body: &[u8],
-    head_only: bool,
+    payload: Payload,
 ) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
@@ -240,7 +271,7 @@ fn respond(
         body.len()
     );
     stream.write_all(head.as_bytes())?;
-    if !head_only {
+    if payload == Payload::Included {
         stream.write_all(body)?;
     }
     stream.flush()
@@ -257,7 +288,7 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         .app_page
         .as_deref()
         .filter(|_| head.path == remote_protocol::PATH);
-    if (head.path == "/salon/ws" || app_page.is_some())
+    if (head.path == route::SOCKET || app_page.is_some())
         && let Some(key) = head.header("sec-websocket-key")
     {
         // The client waits for our answer before sending frames, so the
@@ -281,12 +312,94 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         .and_then(|length| length.parse::<usize>().ok())
         .unwrap_or(0);
     if length > MAX_BODY {
-        return respond(&mut stream, 413, "text/plain", b"too large", false);
+        return respond(
+            &mut stream,
+            413,
+            "text/plain",
+            b"too large",
+            Payload::Included,
+        );
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
-    let local = from_this_computer(peer, &head, shared.port);
-    route(&mut stream, shared, &head, body, local)
+    route(&mut stream, shared, &head, body, peer)
+}
+
+/// Diagnostic traffic never enters game input queues untyped. The log
+/// is flushed on this HTTP thread before acknowledging its receipt.
+fn diagnostic(
+    stream: &mut TcpStream,
+    shared: &Shared,
+    head: &Head,
+    body: &[u8],
+) -> std::io::Result<()> {
+    let mut hosts = head.headers("host");
+    let own_page = hosts
+        .next()
+        .is_some_and(|host| head.header("origin") == Some(format!("http://{host}").as_str()))
+        && hosts.next().is_none();
+    if !own_page {
+        return respond(
+            stream,
+            403,
+            "text/plain",
+            b"our pages only",
+            Payload::Included,
+        );
+    }
+    let Ok(report) = serde_json::from_slice::<salon_core::journal::Diagnostic>(body) else {
+        return respond(
+            stream,
+            400,
+            "text/plain",
+            b"invalid diagnostic",
+            Payload::Included,
+        );
+    };
+    if report.message().len() > 16_384 || report.page().len() > 1_024 {
+        return respond(
+            stream,
+            400,
+            "text/plain",
+            b"invalid diagnostic",
+            Payload::Included,
+        );
+    }
+    let saved = shared
+        .diagnostics
+        .lock()
+        .ok()
+        .and_then(|mut recorder| {
+            let recorder = recorder.as_mut()?;
+            recorder.record(report.clone()).ok()?;
+            recorder.checkpoint("diagnostic").ok()?;
+            recorder.flush().ok()
+        })
+        .is_some();
+    if saved {
+        match &report {
+            salon_core::journal::Diagnostic::Panic(panic) => {
+                if let Ok(json) = serde_json::to_string(panic) {
+                    eprintln!("salon: browser panic recorded: {json}");
+                }
+            }
+            salon_core::journal::Diagnostic::Marker { page, .. } => {
+                eprintln!("salon: bug marker recorded: {page}");
+            }
+        }
+        let _: Result<(), _> = shared.net.try_send(Net::Diagnostic(report));
+    }
+    respond(
+        stream,
+        if saved { 200 } else { 503 },
+        "text/plain",
+        if saved {
+            b"recorded"
+        } else {
+            b"diagnostics unavailable"
+        },
+        Payload::Included,
+    )
 }
 
 /// Answers a plain HTTP request: an offer, the TV key, the game's own, or a
@@ -296,11 +409,13 @@ fn route(
     shared: &Shared,
     head: &Head,
     body: Vec<u8>,
-    local: bool,
+    peer: SocketAddr,
 ) -> std::io::Result<()> {
+    let local = from_this_computer(peer, head, shared.port);
     let link = || LinkId(shared.links.fetch_add(1, Ordering::Relaxed));
     match (head.method.as_str(), head.path.as_str()) {
-        ("POST", "/salon/offer") => {
+        ("POST", route::DIAGNOSTIC) => diagnostic(stream, shared, head, &body),
+        ("POST", route::OFFER) => {
             match rtc::answer(&body, shared.rtc_address, &shared.cert).inspect_err(|error| {
                 if std::env::var_os("SALON_LOG").is_some() {
                     eprintln!("salon: offer refused: {error}");
@@ -312,24 +427,36 @@ fn route(
                         .try_send(Signal { link: link(), rtc })
                         .is_ok()
                     {
-                        respond(stream, 200, "application/json", &answer, false)
+                        respond(stream, 200, "application/json", &answer, Payload::Included)
                     } else {
-                        respond(stream, 503, "text/plain", b"busy", false)
+                        respond(stream, 503, "text/plain", b"busy", Payload::Included)
                     }
                 }
-                Err(error) => respond(stream, 400, "text/plain", error.as_bytes(), false),
+                Err(error) => respond(
+                    stream,
+                    400,
+                    "text/plain",
+                    error.as_bytes(),
+                    Payload::Included,
+                ),
             }
         }
-        ("GET", "/salon/tv") => {
+        ("GET", route::TV_KEY) => {
             if local {
-                respond(stream, 200, "text/plain", shared.tv_key.as_bytes(), false)
+                respond(
+                    stream,
+                    200,
+                    "text/plain",
+                    shared.tv_key.as_bytes(),
+                    Payload::Included,
+                )
             } else {
                 respond(
                     stream,
                     403,
                     "text/plain",
                     b"only the computer running the game is the TV",
-                    false,
+                    Payload::Included,
                 )
             }
         }
@@ -351,19 +478,35 @@ fn route(
                     response.status,
                     &response.content_type,
                     &response.body,
-                    method == "HEAD",
+                    Payload::for_method(method),
                 );
             }
             if !matches!(method, "GET" | "HEAD") {
-                return respond(stream, 405, "text/plain", b"method not allowed", false);
+                return respond(
+                    stream,
+                    405,
+                    "text/plain",
+                    b"method not allowed",
+                    Payload::Included,
+                );
             }
             match resolve(&shared.dist, &shared.pages, path)
                 .and_then(|file| fs::read(&file).ok().map(|body| (file, body)))
             {
-                Some((file, body)) => {
-                    respond(stream, 200, content_type(&file), &body, method == "HEAD")
-                }
-                None => respond(stream, 404, "text/plain", b"not found", method == "HEAD"),
+                Some((file, body)) => respond(
+                    stream,
+                    200,
+                    content_type(&file),
+                    &body,
+                    Payload::for_method(method),
+                ),
+                None => respond(
+                    stream,
+                    404,
+                    "text/plain",
+                    b"not found",
+                    Payload::for_method(method),
+                ),
             }
         }
     }
@@ -411,7 +554,7 @@ mod tests {
     fn head(headers: &[(&str, &str)]) -> Head {
         Head {
             method: "GET".to_owned(),
-            path: "/salon/tv".to_owned(),
+            path: route::TV_KEY.to_owned(),
             query: String::new(),
             headers: headers
                 .iter()

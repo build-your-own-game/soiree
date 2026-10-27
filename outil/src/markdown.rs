@@ -46,7 +46,7 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
             comment = false;
         }
         out.push(Line {
-            number: index + 1,
+            number: index.saturating_add(1),
             text,
             fenced,
             commented,
@@ -106,22 +106,28 @@ pub fn catalogue_ids(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut start = 0;
     while start < chars.len() {
-        let boundary = start == 0 || chars.get(start - 1).is_none_or(|c| !c.is_alphanumeric());
+        let boundary = start
+            .checked_sub(1)
+            .and_then(|before| chars.get(before))
+            .is_none_or(|c| !c.is_alphanumeric());
+        // `start` stays below `chars.len()`, and `end` at most 8 past it.
+        let mut next = start.saturating_add(1);
         if boundary {
             for length in (5..=8).rev() {
-                let Some(word) = chars.get(start..start + length) else {
+                let end = start.saturating_add(length);
+                let Some(word) = chars.get(start..end) else {
                     continue;
                 };
-                let after = chars.get(start + length);
+                let after = chars.get(end);
                 let word: String = word.iter().collect();
                 if is_catalogue_id(&word) && after.is_none_or(|c| !c.is_alphanumeric()) {
                     found.push(word);
-                    start += length - 1;
+                    next = end;
                     break;
                 }
             }
         }
-        start += 1;
+        start = next;
     }
     found
 }

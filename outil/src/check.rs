@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 use serde_json::Value as Json;
 
+use crate::dom;
 use crate::embedded::{self, VERSION};
 use crate::report::Report;
 use crate::util::{self, Result};
@@ -42,9 +43,17 @@ pub fn run(dirs: &[PathBuf], options: Options) -> ExitCode {
 }
 
 /// What `soiree.toml` says about this folder.
+/// What a checked folder says it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Folder {
+    /// It has a `soiree.toml`: a game of the soirée, which owes its own files.
+    Game,
+    /// Anything else (salon, the remote): a file it lacks is no fault.
+    Other,
+}
+
 struct Game {
-    /// The folder has a `soiree.toml`: it is a game of the soirée.
-    declared: bool,
+    folder: Folder,
     version: Option<String>,
 }
 
@@ -83,14 +92,15 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
         )),
     }
     check_javascript(dir, report);
+    dom::check(dir, report);
     check_doc_paths(dir, report);
     gaps::check(dir, report);
     if has_catalogue {
         catalogue::check(dir, report);
     } else {
-        items::check(dir, game.declared, report);
+        items::check(dir, game.folder, report);
     }
-    check_cert_json(dir, game.declared, report);
+    check_cert_json(dir, game.folder, report);
     if !options.fast {
         check_commands(dir, options, report);
     }
@@ -103,7 +113,7 @@ fn soiree_toml(dir: &Path, report: &mut Report) -> Option<Game> {
     if !path.is_file() {
         report.info("pas de soiree.toml : pas encore un jeu de soiree (version non vérifiée, .soiree/ non écrit)");
         return Some(Game {
-            declared: false,
+            folder: Folder::Other,
             version: None,
         });
     }
@@ -137,7 +147,7 @@ fn soiree_toml(dir: &Path, report: &mut Report) -> Option<Game> {
         report.warn(".soiree/ n'est pas ignoré par git : ajoute /.soiree à .gitignore");
     }
     Some(Game {
-        declared: true,
+        folder: Folder::Game,
         version: Some(version.to_owned()),
     })
 }
@@ -369,19 +379,21 @@ fn cited_paths(text: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     for line in text.lines() {
         let mut rest = line;
-        while let Some(start) = rest.find('`') {
-            let after = rest.get(start + 1..).unwrap_or("");
+        while let Some((_, after)) = rest.split_once('`') {
             let span: String = after.chars().take_while(|c| allowed(*c)).collect();
-            let closed = after.get(span.len()..).is_some_and(|r| r.starts_with('`'));
+            let closed = after.get(span.len()..).and_then(|r| r.strip_prefix('`'));
             let first_ok = span
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
-            if closed && first_ok && span.contains('/') {
+            if let Some(closed) = closed
+                && first_ok
+                && span.contains('/')
+            {
                 if span.chars().any(|c| c.is_ascii_alphabetic()) {
                     found.insert(span.clone());
                 }
-                rest = after.get(span.len() + 1..).unwrap_or("");
+                rest = closed;
             } else {
                 rest = after;
             }
@@ -391,14 +403,14 @@ fn cited_paths(text: &str) -> BTreeSet<String> {
 }
 
 /// `cert.json`: how the harness launches and joins the game.
-fn check_cert_json(dir: &Path, is_game: bool, report: &mut Report) {
+fn check_cert_json(dir: &Path, folder: Folder, report: &mut Report) {
     let path = dir.join("cert.json");
     let Ok(text) = util::read(&path) else {
         let under_games = dir
             .parent()
             .and_then(Path::file_name)
             .is_some_and(|n| n == "games");
-        if is_game || under_games {
+        if folder == Folder::Game || under_games {
             report.warn(
                 "cert.json absent : le harnais de CERTIFICATION.md ne sait pas lancer ce jeu",
             );

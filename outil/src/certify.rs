@@ -45,6 +45,8 @@ fn certify(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
         ));
     }
     let started = util::now_utc();
+    let harness_before = harness_fingerprint(harness)?;
+    let source_before = fingerprint(dir).ok();
     let mut child = Command::new("node")
         .arg(&script)
         .arg(dir)
@@ -65,6 +67,14 @@ fn certify(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     }
     let status = child.wait().map_err(|error| format!("node : {error}"))?;
 
+    let harness_unchanged = harness_before == harness_fingerprint(harness)?;
+    let source_after = fingerprint(dir);
+    let source_unchanged = source_before
+        .as_ref()
+        .zip(source_after.as_ref().ok())
+        .map(|(before, after)| before.value == after.value);
+    let passed = status.success() && harness_unchanged && source_unchanged.unwrap_or(true);
+
     let out = dir.join("certification");
     let captures = captures(&output);
     if let Some(report) = captures.as_ref().map(|c| c.join("rapport.md"))
@@ -73,22 +83,38 @@ fn certify(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
         let text = util::read(&report)?;
         util::write(&out.join("rapport.md"), &text)?;
     }
+    let performance = captures
+        .as_ref()
+        .map(|c| c.join("performance.json"))
+        .filter(|path| path.is_file())
+        .map(|path| {
+            util::read(&path).and_then(|text| {
+                let value: serde_json::Value =
+                    serde_json::from_str(&text).map_err(|error| error.to_string())?;
+                util::write(&out.join("performance.json"), &text)?;
+                Ok(value)
+            })
+        })
+        .transpose()?;
     let report = json!({
+        "performance": performance,
         "soiree": VERSION,
         "salon": salon_version(dir),
-        // Which harness, without its path: a path names its owner's account.
-        "harness_sha256": std::fs::read(&script).ok().map(|b| hex(&Sha256::digest(&b))),
+        // The observer includes imported modules, configuration and resources.
+        "harness_sha256": harness_before,
+        "harness_unchanged": harness_unchanged,
+        "source_unchanged": source_unchanged,
         "arguments": extra,
         "seed": seed(&output),
         "started": started,
         "finished": util::now_utc(),
-        "passed": status.success(),
+        "passed": passed,
         "exit_code": status.code(),
         "machine": machine(dir),
-        "fingerprint": fingerprint(dir).map_or_else(
+        "fingerprint": source_after.map_or_else(
             |error| json!({ "error": error }),
             |f| json!({
-                "algorithm": "sha256 de « chemin\\0sha256(contenu)\\n » des fichiers suivis par git, triés, hors certification/",
+                "algorithm": "sha256 de « chemin\\0sha256(contenu)\\n » des fichiers suivis ou non ignorés par git, triés, hors certification/",
                 "value": f.value,
                 "files": f.files,
                 "uncommitted": f.uncommitted,
@@ -98,7 +124,31 @@ fn certify(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     let text = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
     util::write(&out.join("rapport.json"), &format!("{text}\n"))?;
     println!("\n{} écrit.", util::shown(&out, dir));
-    Ok(status.success())
+    if !harness_unchanged {
+        eprintln!("le harnais a changé pendant la certification : passage à relancer");
+    }
+    if source_unchanged == Some(false) {
+        eprintln!("les sources ont changé pendant la certification : passage à relancer");
+    }
+    Ok(passed)
+}
+
+/// Fingerprint the observer's executable bundle, not only its entry point.
+fn harness_fingerprint(dir: &Path) -> Result<String> {
+    let mut hash = Sha256::new();
+    for file in util::files_under(
+        dir,
+        &[".mjs", ".js", ".json", ".css", ".html", ".wasm"],
+        &["node_modules", ".git"],
+    ) {
+        let relative = file.strip_prefix(dir).map_err(|error| error.to_string())?;
+        let bytes = std::fs::read(&file).map_err(|error| error.to_string())?;
+        hash.update(relative.to_string_lossy().as_bytes());
+        hash.update(b"\0");
+        hash.update(Sha256::digest(&bytes));
+        hash.update(b"\n");
+    }
+    Ok(hex(&hash.finalize()))
 }
 
 /// The harness prints `graine 12` when it starts and `Graine 12` in its report.
@@ -162,13 +212,22 @@ pub struct Fingerprint {
     pub uncommitted: bool,
 }
 
-/// The files git tracks in `dir`, outside `certification/`, as they are on
+/// The tracked and untracked, nonignored source files in `dir`, outside `certification/`, as they are on
 /// disk now. A tracked file deleted from the disk counts as « deleted ».
 pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
     let listed = util::run(
         dir,
         "git",
-        &["ls-files", "-z", "--", ".", ":!certification"],
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+            ":!certification",
+        ],
     )?;
     if !listed.status.success() {
         return Err(format!(
@@ -231,6 +290,23 @@ mod tests {
     }
 
     #[test]
+    fn imported_observer_modules_change_the_harness_fingerprint() {
+        let dir = crate::testdir::fresh("harness-fingerprint");
+        util::write(&dir.join("cert.mjs"), "import './browser.mjs';").unwrap();
+        util::write(&dir.join("browser.mjs"), "export const version = 1;").unwrap();
+        let before = harness_fingerprint(&dir).unwrap();
+        util::write(&dir.join("browser.mjs"), "export const version = 2;").unwrap();
+        assert_ne!(harness_fingerprint(&dir).unwrap(), before);
+        let before = harness_fingerprint(&dir).unwrap();
+        util::write(
+            &dir.join("node_modules/ignored.js"),
+            "external pinned dependency",
+        )
+        .unwrap();
+        assert_eq!(harness_fingerprint(&dir).unwrap(), before);
+    }
+
+    #[test]
     fn the_fingerprint_follows_the_code_and_ignores_the_report() {
         let dir = crate::testdir::fresh("certify");
         let git = |args: &[&str]| {
@@ -268,5 +344,9 @@ mod tests {
         let after_code = fingerprint(&dir).unwrap();
         assert_ne!(after_code.value, first.value);
         assert!(after_code.uncommitted);
+        util::write(&dir.join("src/new.rs"), "pub fn untracked() {}\n").unwrap();
+        let untracked = fingerprint(&dir).unwrap();
+        assert_ne!(untracked.value, after_code.value);
+        assert_eq!(untracked.files, 2);
     }
 }

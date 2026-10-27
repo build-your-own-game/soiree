@@ -1,0 +1,52 @@
+{
+  "launch": [
+    "cargo",
+    "run",
+    "--release",
+    "-p",
+    "{{nom}}-host"
+  ],
+  "relaunch": [
+    "cargo",
+    "run",
+    "--release",
+    "-p",
+    "{{nom}}-host",
+    "--",
+    "--no-build"
+  ],
+  "env": {
+    "GAME_PORT": "{port}",
+    "GAME_DATA": "{tmp}/data"
+  },
+  "ready": "Game ready",
+  "tv": "/",
+  "phone": "/play",
+  "socket": "/salon/ws",
+  "players": {
+    "min": 2,
+    "max": 8
+  },
+  "join": [],
+  "joined": "document.querySelector(\"#tap:not([hidden])\") !== null",
+  "performance": {
+    "probes": [
+      {
+        "screen": "phone",
+        "phone": 1,
+        "action": {
+          "click": "#tap"
+        },
+        "rendered": "document.querySelector(\"h1\")?.textContent"
+      },
+      {
+        "screen": "phone",
+        "phone": 2,
+        "action": {
+          "click": "#tap"
+        },
+        "rendered": "document.querySelector(\"h1\")?.textContent"
+      }
+    ]
+  }
+}

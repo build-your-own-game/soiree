@@ -206,9 +206,10 @@ fn close(item: Option<Open>, file: &str, report: &mut Report) {
     for field in &item.fields {
         let later = FIELDS
             .iter()
+            .enumerate()
             .skip(next)
-            .position(|f| *f == field.label)
-            .map(|offset| next + offset);
+            .find(|(_, f)| **f == field.label)
+            .map(|(at, _)| at);
         match (later, FIELDS.get(next)) {
             (Some(at), _) => {
                 for missing in FIELDS.get(next..at).unwrap_or_default() {
@@ -217,14 +218,14 @@ fn close(item: Option<Open>, file: &str, report: &mut Report) {
                         field.line, item.id, field.label
                     ));
                 }
-                next = at + 1;
+                next = at.saturating_add(1);
             }
             (None, Some(wanted)) => {
                 report.error(format!(
                     "{file}:{} : {} : champ « {} » ; attendu « {wanted} » à cette place ({expected})",
                     field.line, item.id, field.label
                 ));
-                next += 1;
+                next = next.saturating_add(1);
             }
             (None, None) => report.error(format!(
                 "{file}:{} : {} : champ en trop « {} » ; attendu exactement {expected}",

@@ -115,7 +115,8 @@ impl Store {
             return;
         };
         if let Some(dir) = path.parent() {
-            let _ = fs::create_dir_all(dir);
+            // A failure shows on the write just below.
+            let _: std::io::Result<()> = fs::create_dir_all(dir);
         }
         let partial = path.with_extension("json.partial");
         if fs::write(&partial, bytes).is_ok() && fs::rename(&partial, path).is_ok() {
@@ -132,7 +133,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("salon-store-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _: std::io::Result<()> = fs::remove_dir_all(&dir);
         dir
     }
 
@@ -154,7 +155,7 @@ mod tests {
         assert_eq!(second.tv_key(), [1; 16]);
         assert!(second.epoch() > first.epoch());
         assert_eq!(second.known(), vec![ada]);
-        let _ = fs::remove_dir_all(&dir);
+        let _: std::io::Result<()> = fs::remove_dir_all(&dir);
     }
 
     /// C9 on the host's side: a broken file is a fresh start.
@@ -166,6 +167,6 @@ mod tests {
         let store = Store::open(Some(&dir), 7, [4; 16]);
         assert_eq!(store.tv_key(), [4; 16]);
         assert_eq!(store.known(), Vec::new());
-        let _ = fs::remove_dir_all(&dir);
+        let _: std::io::Result<()> = fs::remove_dir_all(&dir);
     }
 }

@@ -65,15 +65,21 @@ impl Pressed {
     }
 
     /// An id past [`MAX_ID`] has no bit and is ignored.
-    pub fn set(&mut self, id: ButtonId, pressed: bool) {
-        let Some(bit) = 1u32.checked_shl(u32::from(id)) else {
-            return;
-        };
-        if pressed {
+    pub fn press(&mut self, id: ButtonId) {
+        if let Some(bit) = Self::bit(id) {
             self.0 |= bit;
-        } else {
+        }
+    }
+
+    /// An id past [`MAX_ID`] has no bit and is ignored.
+    pub fn release(&mut self, id: ButtonId) {
+        if let Some(bit) = Self::bit(id) {
             self.0 &= !bit;
         }
+    }
+
+    fn bit(id: ButtonId) -> Option<u32> {
+        1u32.checked_shl(u32::from(id))
     }
 
     pub fn is_empty(self) -> bool {
@@ -325,10 +331,10 @@ impl DPadLayout {
             return pressed;
         }
         if offset.x.abs() > TAN_25 * offset.y.abs() {
-            pressed.set(if offset.x > 0.0 { right } else { left }, true);
+            pressed.press(if offset.x > 0.0 { right } else { left });
         }
         if offset.y.abs() > TAN_25 * offset.x.abs() {
-            pressed.set(if offset.y > 0.0 { down } else { up }, true);
+            pressed.press(if offset.y > 0.0 { down } else { up });
         }
         pressed
     }
@@ -405,12 +411,7 @@ impl Layout {
                         });
                     }
                 }
-                Kind::DPad { size } => {
-                    let ids = [control.id, control.id + 1, control.id + 2, control.id + 3];
-                    if size.is_finite() && size > 0.0 && ids.iter().all(|id| *id <= MAX_ID) {
-                        layout.dpads.push(DPadLayout { center, size, ids });
-                    }
-                }
+                Kind::DPad { size } => layout.dpads.extend(dpad(control.id, center, size)),
                 Kind::Stick {
                     travel,
                     knob_radius,
@@ -473,10 +474,10 @@ impl Layout {
         };
         if nearest.chord {
             for (_, b) in within.iter().filter(|(_, b)| b.chord) {
-                pressed.set(b.id, true);
+                pressed.press(b.id);
             }
         } else {
-            pressed.set(nearest.id, true);
+            pressed.press(nearest.id);
         }
         pressed
     }
@@ -701,13 +702,18 @@ impl TouchPad {
     }
 
     fn stick_capture(&self, index: usize) -> Option<(Point, Point)> {
-        self.touches.values().find_map(|capture| match *capture {
-            Capture::Stick {
+        self.touches.values().find_map(|capture| {
+            if let Capture::Stick {
                 stick,
                 origin,
                 position,
-            } if stick == index => Some((origin, position)),
-            _ => None,
+            } = *capture
+                && stick == index
+            {
+                Some((origin, position))
+            } else {
+                None
+            }
         })
     }
 
@@ -757,6 +763,24 @@ impl TouchPad {
     }
 }
 
+/// A D-pad of `size` at `center`, taking four ids from `first` (up, down,
+/// left, right). `None` for a size that is no length, or an id past
+/// [`MAX_ID`].
+fn dpad(first: ButtonId, center: Point, size: f32) -> Option<DPadLayout> {
+    if !(size.is_finite() && size > 0.0) {
+        return None;
+    }
+    let ids = [
+        first,
+        first.checked_add(1)?,
+        first.checked_add(2)?,
+        first.checked_add(3)?,
+    ];
+    ids.iter()
+        .all(|id| *id <= MAX_ID)
+        .then_some(DPadLayout { center, size, ids })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -786,12 +810,12 @@ mod tests {
     #[test]
     fn pressed_lists_its_ids_and_ignores_ids_past_31() {
         let mut pressed = Pressed::default();
-        pressed.set(3, true);
-        pressed.set(31, true);
-        pressed.set(32, true);
-        pressed.set(200, true);
+        pressed.press(3);
+        pressed.press(31);
+        pressed.press(32);
+        pressed.press(200);
         assert_eq!(pressed.ids().collect::<Vec<_>>(), [3, 31]);
-        pressed.set(3, false);
+        pressed.release(3);
         assert!(pressed.contains(31) && !pressed.contains(3) && !pressed.contains(200));
     }
 

@@ -24,7 +24,7 @@ Deux idées viennent des navigateurs. La suite commune web-platform-tests, que C
 | **3. Le salon** | avant la soirée | 15 min | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
 
 - **Étage 1.** Il joue des milliers de suites d'entrées au hasard sur la simulation (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
-- **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones dans le Chrome de l'ordinateur, sans écran, pilotés par Playwright. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Toxiproxy ne porte que du TCP : la TV et les téléphones ouvrent leur page avec `?salon=ws`, qui garde salon sur son WebSocket. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des paquets hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
+- **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones sans écran, pilotés par Playwright : la TV dans le Chrome de l'ordinateur, quatre téléphones dans WebKit et quatre dans Chromium, en alternance. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Toxiproxy ne porte que du TCP : la TV et les téléphones ouvrent leur page avec `?salon=ws`, qui garde salon sur son WebSocket. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des paquets hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
 - **Étage 3.** Ce qu'aucun simulateur ne reproduit : la suspension d'iOS, un vrai Wi-Fi, le recul du canapé, savoir si c'est drôle.
 
 ## La règle du bug trouvé en jouant
@@ -39,7 +39,7 @@ Un test n'est jamais supprimé sans dire ce qui le couvre maintenant : chaque je
 
 ## Lancer le harnais
 
-Le harnais est dans `tools/cert/` du dépôt commun, et l'outil `soiree` l'embarque à sa version. Une fois, sur l'ordinateur, `soiree doctor` dit ce qui manque (Node, Chrome, [Toxiproxy](https://github.com/Shopify/toxiproxy)). Au premier passage, `soiree certify` écrit le harnais dans un cache par version et y lance `npm ci`.
+Le harnais est dans `tools/cert/` du dépôt commun, et l'outil `soiree` l'embarque à sa version. Une fois, sur l'ordinateur, `soiree doctor` dit ce qui manque (Node, Chrome, le WebKit exact de la version de Playwright, [Toxiproxy](https://github.com/Shopify/toxiproxy)). Au premier passage, `soiree certify` écrit le harnais dans un cache par version et y lance `npm ci`. Dans ce dossier de cache indiqué par `soiree doctor`, `npx playwright-core install webkit` installe le WebKit requis. Une autre révision déjà installée ne suffit pas. Ce WebKit attrape les écarts de CSS et d’API, mais ne reproduit pas la suspension d’iOS : l’étage 3 reste nécessaire.
 
 Puis, dans le dossier du jeu (les options après `--` vont au harnais) :
 
@@ -50,7 +50,9 @@ soiree certify -- --seed 12             # rejoue le hasard d'un passage
 soiree certify -- --soak 30             # 30 min d'endurance (R2)
 ```
 
-Les scénarios, dans l'ordre : `join`, `rtc`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après `rtc`. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗. `soiree certify` copie ce rapport dans `certification/rapport.md` du jeu, et écrit à côté `certification/rapport.json` : les versions, la graine, la date, la machine et l'empreinte du code certifié ; les deux se committent avec le code.
+Les scénarios, dans l'ordre : `join`, `rtc`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗. `soiree certify` copie ce rapport dans `certification/rapport.md` du jeu, et écrit à côté `certification/rapport.json` : les versions, la graine, la date, la machine et l'empreinte du code certifié ; les deux se committent avec le code. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
+
+Si le harnais doit fermer de force un contexte après une commande native bloquée, le passage s’arrête avec **H1**, une panne de l’infrastructure de test. Les observations déjà terminées restent dans le rapport ; les scénarios restants sont explicitement non vérifiés. Un contexte détruit ne doit jamais produire ensuite de faux verdicts sur la reconnexion ou le stockage. Le diagnostic conserve l’opération native, son historique récent et l’état observable de la page.
 
 Le harnais garde trois oracles pendant tous les scénarios :
 - aucune exception dans aucune page ;
@@ -88,8 +90,36 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`players.max`** est la taille de la salle (R3).
 - **`layout: false`**, avec **`layout_reason`**, saute la vérification de la zone sûre : une TV dessinée sur un canvas, une page qui n'est pas une TV.
 - Un jeu sans téléphone (`"phone": null`) passe seulement les items qui le concernent : le singe joue alors sur sa page.
+- **`performance.probes`** décrit au moins une action et son effet visible causal sur la TV. Chaque sonde donne **`screen`** (`"phone"` ou `"tv"`), **`phone`** (numéro à partir de 1, par défaut 1), **`action`** (`{ "key": "…" }`, `{ "click": "sélecteur" }`, `{ "fill": "sélecteur", "text": "…" }` ou `{ "tap": [x, y] }`) et **`rendered`**, une expression JavaScript qui lit la valeur affichée concernée. **`prepare`** peut contenir des actions de préparation, exécutées avant le chronomètre. Un changement de cette valeur est observé entre deux occasions de rendu après l’entrée réelle. Les horloges des pages sont alignées par `performance.timeOrigin + performance.now()` ; on ne soustrait jamais les `performance.now()` de deux pages.
+- **`painted`** peut donner une expression qui lit un compteur de présentations réussies, pour l’oracle de l’écran vivant. Le canvas de Sidequest utilise les événements post-rendu capturés par le harnais (`window.__certPaints`) ; un simple `requestAnimationFrame` ne prouve pas que son GPU dessine. Les pages DOM gardent le compteur de disponibilité de la boucle navigateur.
+- **`performance.setup`** peut contenir des étapes `{ "screen": "tv", "action": { "key": "Enter" } }` (ou `screen: "phone"`, avec `phone`) pour afficher la scène avant la mesure. Cette préparation est terminée avant le prélèvement des images et le chronomètre des sondes.
+- Pour **`rendered`**, vise une projection précise de l’effet de l’action (texte d’un élément, position du joueur concerné), jamais une horloge, un compteur d’images ou toute mutation DOM quelconque. Un canvas peut publier cette projection après son dessin ; un état mis à jour seulement dans la simulation ne prouve pas un rendu. Une action sans effet rend la sonde rouge au lieu de produire une latence inventée.
+- Les budgets par défaut sont **33 ms** pour l’image la plus lente, **60 images/s**, **80 ms** du téléphone au rendu et **50 ms** du clavier/souris au rendu. `performance.max_frame_ms`, `performance.min_fps` et `performance.probes[].budget_ms` permettent les ajustements de genre prévus par le manifeste ; leur raison et leurs valeurs se documentent dans « Écarts au manifeste ». Le harnais prélève 3 s d’images après le chargement, puis un second échantillon pendant `monkey`, avec les téléphones qui envoient des gestes réels en jeu ; ce second échantillon précède les captures et ne comprend ni gel injecté ni redimensionnement. Le rapport distingue `frames_lobby` et `frames_gameplay`, et indique le nombre de gestes pendant la fenêtre en jeu. Il mesure la cadence `requestAnimationFrame`, pas le temps GPU ni l’arrivée physique d’un photon sur la TV.
 
-**Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Et l'hôte de salon renonce après le même silence que la page. Le scénario `silent` n'avale donc que ce que l'hôte envoie : l'hôte entend toujours la page et ne ferme rien, et seule une page qui a son propre délai de silence s'en aperçoit (C3).
+Effectue les mesures sur secteur, sans autre certification ou compilation en parallèle.
+Sous 20 % sur batterie, l’économiseur de Chrome peut limiter tous les rendus à
+30 Hz, y compris une page vide ; ce passage ne mesure alors pas les performances
+nominales du jeu. Le budget reste inchangé et la certification doit être relancée
+sur secteur. [Implémentation Chromium](https://raw.githubusercontent.com/chromium/chromium/main/chrome/browser/performance_manager/user_tuning/battery_saver_mode_manager.cc).
+
+Exemple de sonde pour une action qui modifie une valeur affichée :
+
+```json
+"performance": {
+  "probes": [{
+    "screen": "tv",
+    "action": { "click": "#increment" },
+    "rendered": "document.querySelector('#counter').textContent"
+  }]
+}
+```
+
+Le singe ne génère Retour arrière sur un téléphone que lorsqu’un vrai champ texte modifiable a le focus, comme le clavier à l’écran ; sur WebKit cette touche hors champ commande l’historique du navigateur. Le clavier d’un jeu de bureau conserve cette touche.
+
+Les étapes ordinaires (`join`, coupure, silence, rechargement, stockage et onglets concurrents) traversent les deux moteurs. Le gel complet de JavaScript (`freeze`) utilise explicitement un téléphone Chromium, car Playwright n’expose les sessions CDP que pour Chromium. La trajectoire tactile détaillée du singe utilise CDP dans Chromium ; dans WebKit, un tap tactile puis un glisser à la souris exercent les contrôles de pointeur. Ce dernier cas ne prétend pas simuler le toucher d’iOS. Les scripts de stockage sont installés et retirés par l’API Playwright commune aux deux moteurs.
+
+
+**Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Et l'hôte de salon renonce après le même silence que la page. Le scénario `silent` n'avale donc que ce que l'hôte envoie : l'hôte entend toujours la page et ne ferme rien, et seule une page qui a son propre délai de silence s'en aperçoit (C3). Le harnais observe les appels natifs `WebSocket` avant les scripts du jeu : la page doit appeler `close()` sur sa connexion encore `OPEN` avant tout événement natif `close` ou `error`, puis construire une nouvelle connexion vers la même adresse en moins de 20 s. Un contrôle négatif ferme le socket côté serveur et ne satisfait pas cet oracle. Le signal `page.websocket` de l’inspecteur WebKit peut attendre la fin d’un upgrade avalé ; sa date n’est donc pas la date de la tentative de la page.
 
 ## Les exigences
 
@@ -103,6 +133,13 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 
 **Si un item ne s'applique pas** à un jeu, son `LEARNINGS.md` le dit, dans la section « Écarts au manifeste ». Exemple : pas de téléphones dans la tier-list.
 
+### P — Performance mesurée
+
+| # | Exigence | Origine | Vérifié par |
+|---|---|---|---|
+| P1 | La cadence avant partie et pendant le jeu sous entrées tient le budget du genre ; par défaut 60 images/s et aucune image au-delà de 33 ms. Le rapport garde le nombre d’images, les p50/p95 et le maximum. | manifeste, principe 7 | 2 `performance` + `monkey` |
+| P2 | Une entrée réelle produit son effet visible causal sur la TV en moins de 80 ms depuis le téléphone, ou 50 ms depuis le clavier/souris, sauf ajustement documenté du genre. Une action sans effet échoue. | manifeste, principe 7 | 2 `performance`, sondes de `cert.json` |
+
 ### C — Connexion
 
 Jackbox admet que sa reconnexion marche « 90 % du temps », et c'est la première plainte des joueurs. Sur iOS, un téléphone verrouillé perd ses sockets sans que la page le sache (WebKit 247943 : `onclose` n'est jamais appelé). Chez Xbox, ce sont XR-112 (sortie de veille) et XR-115 (manette retirée).
@@ -113,6 +150,7 @@ Jackbox admet que sa reconnexion marche « 90 % du temps », et c'est la premiè
 | C2 | Après une coupure courte (3 s), le téléphone retrouve **sa** place seul, en moins de 10 s, avec son nom, son personnage et son score. | Jackbox, XR-115 | salon, 1, 2 `cut` |
 | C3 | Après une coupure **silencieuse** (rien n'est fermé : la page gèle, les paquets disparaissent), l'hôte constate l'absence en moins de 20 s, et le téléphone se reconnecte au réveil en moins de 10 s. Si le Wi-Fi meurt pendant que la page tourne, la page s'en aperçoit **d'elle-même** en moins de 20 s, sans attendre un `onclose` qui n'arrivera jamais. | iOS (TN2277), WebKit 247943, XR-112 | salon, 2 `freeze` + `silent` |
 | C4 | Recharger la page en pleine manche rend la même place, grâce au jeton. | Jackbox, Kahoot | salon (le retour de C2, sans test à lui), 2 `reload` |
+| C10 | Une panique WASM sur un téléphone est transmise au journal de l’hôte, recharge la page et rend au joueur le même appareil, le même jeton et sa place. Des paniques répétées arrêtent les rechargements avec un message clair. | chantier anti-panique | salon, 2 `panic` (une injection dans chaque moteur), tests du garde de rechargement |
 | C5 | Deux onglets pour le même joueur : le dernier gagne, et l'autre ne se reconnecte pas en boucle. | Sidequest Live (code 4001) | salon, 2 `twin` |
 | C6 | Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance. | Jackbox, AirConsole | 1 |
 | C7 | L'hôte qui redémarre en pleine partie ne laisse aucun écran figé. La TV et les téléphones se reconnectent, ou disent clairement quoi faire. | rocketcrab #70 | salon, 2 `restart` |

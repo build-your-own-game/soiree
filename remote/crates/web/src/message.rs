@@ -105,6 +105,10 @@ pub fn haptic(events: &[HapticEvent]) -> String {
     json!({ "haptic": events.iter().take(64).collect::<Vec<_>>() }).to_string()
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "the bool is the message: sent as is in the JSON the app reads"
+)]
 pub fn motion(on: bool) -> String {
     json!({ "motion": on }).to_string()
 }
@@ -144,6 +148,10 @@ pub fn read_datagram(json: &str) -> Option<(u32, Vec<u8>)> {
 }
 
 /// Standard base64, as the app encodes; `None` if it is not.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "base64 decoding: each `c - b'X'` is in the arm where c >= b'X' and stays below 64; `bits` stays in 0..14, adding 6 and taking 8 only once it holds 8"
+)]
 fn base64(text: &str) -> Option<Vec<u8>> {
     let value = |c: u8| match c {
         b'A'..=b'Z' => Some(c - b'A'),
@@ -154,7 +162,7 @@ fn base64(text: &str) -> Option<Vec<u8>> {
         _ => None,
     };
     let digits = text.trim_end_matches('=').as_bytes();
-    let mut bytes = Vec::with_capacity(digits.len() * 3 / 4);
+    let mut bytes = Vec::with_capacity(digits.len().saturating_mul(3) / 4);
     let (mut buffer, mut bits) = (0u32, 0u32);
     for &c in digits {
         buffer = (buffer << 6) | u32::from(value(c)?);
