@@ -926,12 +926,22 @@ const scenarios = {
     await sleep(2_000);
     host.exitedUnexpectedly = false;
     await host.start(config.relaunch, 120_000);
-    const stale = [];
-    for (const p of [tv, ...phones]) {
-      if ((await waitLive(p, 15_000)) === null) stale.push(p.tab.label);
+    // Every screen gets 15 s from now, together.
+    const waits = await Promise.all([tv, ...phones].map(async (p) => ({ p, back: await waitLive(p, 15_000) })));
+    const frozen = [];
+    const told = [];
+    for (const { p, back } of waits) {
+      if (back !== null) continue;
+      // Silent, but no longer showing the game: it may be telling the player what to do.
+      if (p !== tv && !(await joined(p))) told.push(p);
+      else frozen.push(p.tab.label);
     }
-    if (stale.length) fail("C7", `15 s après le redémarrage de l'hôte, toujours déconnectés : ${stale.join(", ")}`);
-    else ok("C7", "après le redémarrage de l'hôte, la TV et tous les téléphones se sont reconnectés");
+    if (frozen.length) fail("C7", `15 s après le redémarrage de l'hôte, figés sur l'écran de jeu sans plus rien recevoir : ${frozen.join(", ")}`);
+    if (told.length) {
+      const text = (await told[0].tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
+      partial("C7", `${told.length} téléphone(s) ne se reconnectent pas mais ont quitté l'écran de jeu ; ils lisent : « ${text.slice(0, 120)} » (clair ?)`);
+    }
+    if (!frozen.length && !told.length) ok("C7", "après le redémarrage de l'hôte, la TV et tous les téléphones se sont reconnectés");
     const lost = [];
     for (const p of phones) if (!(await joined(p))) lost.push(p);
     if (lost.length) {
