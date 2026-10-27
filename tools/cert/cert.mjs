@@ -210,14 +210,21 @@ class Host {
     }
   }
 
-  /** The host's open TCP connections on its port: one goes when it gives up on a phone. */
+  /** The host's open TCP connections on its port, by peer address: one goes
+   * when the host gives up on a phone. */
   connections() {
     try {
       const out = execFileSync("lsof", ["-nP", "-a", "-p", String(this.pid), "-iTCP", "-sTCP:ESTABLISHED"]).toString();
-      return out.split("\n").filter((line) => line.includes(`:${this.port}->`)).length;
+      return new Set(out.split("\n").flatMap((line) => line.match(new RegExp(`:${this.port}->(\\S+)`))?.slice(1) ?? []));
     } catch {
       return null;
     }
+  }
+
+  /** Whether a connection open in `before` is gone now. */
+  gaveUp(before) {
+    const now = this.connections();
+    return before !== null && now !== null && [...before].some((peer) => !now.has(peer));
   }
 
   /** Resident memory in KiB and thread count, for the soak test. */
@@ -673,17 +680,21 @@ const scenarios = {
   async freeze() {
     if (!phones.length) return skip("C3", "pas de téléphones");
     const phone = phones[Math.min(1, phones.length - 1)];
+    // Connections of earlier scenarios settle first: one closing now would
+    // look like the host giving up.
+    await sleep(3_000);
     const before = host.connections();
     await phone.proxy.blackhole();
     await phone.tab.freeze();
     const asleep = Date.now();
     // The host gives up when one of its connections goes.
     let noticed = null;
+    const sockets = phone.tab.sockets;
     while (Date.now() - asleep < 30_000) {
-      const now = host.connections();
-      if (noticed === null && before !== null && now !== null && now < before) noticed = Date.now() - asleep;
+      if (noticed === null && host.gaveUp(before)) noticed = Date.now() - asleep;
       await sleep(250);
     }
+    if (phone.tab.sockets > sockets) fail("C3", "le téléphone « gelé » a ouvert une connexion : le gel du harnais ne tient pas");
     if (noticed === null) fail("C3", "en 30 s, l'hôte n'a pas remarqué le téléphone endormi (aucun délai de silence)");
     else if (noticed > 20_000) fail("C3", `l'hôte a remarqué le téléphone endormi en ${(noticed / 1000).toFixed(1)} s (> 20 s)`);
     else ok("C3", `l'hôte a remarqué le téléphone endormi en ${(noticed / 1000).toFixed(1)} s`);
@@ -709,22 +720,21 @@ const scenarios = {
     if (phones.length < 5) return skip("C3", "il faut au moins 5 téléphones pour ce scénario");
     const phone = phones[4];
     const sockets = phone.tab.sockets;
-    const before = host.connections();
+    const open = phone.tab.socketTimes.filter((s) => s.closedAt === null);
     await phone.proxy.blackhole();
     const start = Date.now();
     // A page that hears nothing for a while opens a new WebSocket. Toxiproxy
     // passes on the host's own close, which a dead Wi-Fi never would: a page
-    // that only reacts after the host gave up has no silence timeout of its own.
+    // whose old socket closed before it opened a new one only reacted to that.
     let noticed = null;
-    let hostGaveUp = null;
     while (Date.now() - start < 25_000 && noticed === null) {
-      const now = host.connections();
-      if (hostGaveUp === null && before !== null && now !== null && now < before) hostGaveUp = Date.now() - start;
       if (phone.tab.sockets > sockets) noticed = Date.now() - start;
       await sleep(100);
     }
-    if (noticed !== null && hostGaveUp !== null && noticed >= hostGaveUp - 200) {
-      fail("C3", `Wi-Fi mort en silence : la page n'a réagi qu'après la fermeture par l'hôte (${(hostGaveUp / 1000).toFixed(1)} s), qu'un vrai Wi-Fi mort ne transmet pas. Elle croit son WebSocket ouvert (\`readyState\` reste OPEN) : il lui faut son propre délai de silence`);
+    const reopened = phone.tab.socketTimes[sockets]?.openedAt ?? Infinity;
+    const closedFirst = open.find((s) => s.closedAt !== null && s.closedAt <= reopened);
+    if (noticed !== null && closedFirst) {
+      fail("C3", `Wi-Fi mort en silence : la page n'a réagi qu'à la fermeture de son WebSocket (${((closedFirst.closedAt - start) / 1000).toFixed(1)} s), qu'un vrai Wi-Fi mort ne transmet pas. Elle croit son WebSocket ouvert (\`readyState\` reste OPEN) : il lui faut son propre délai de silence`);
     } else if (noticed === null) {
       fail("C3", "Wi-Fi mort en silence pendant 25 s : la page n'a rien tenté. Elle croit son WebSocket ouvert (`readyState` reste OPEN) : il lui faut son propre délai de silence");
     } else if (noticed > 20_000) fail("C3", `Wi-Fi mort en silence : la page s'en est aperçue en ${(noticed / 1000).toFixed(1)} s (> 20 s)`);

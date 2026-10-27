@@ -61,6 +61,8 @@ export class Tab {
     this.lastWsFrame = 0;
     /** WebSockets the page opened: a page that keeps reopening is fighting. */
     this.sockets = 0;
+    /** Each WebSocket's opening and closing times, in order. */
+    this.socketTimes = [];
   }
 
   async attach() {
@@ -75,6 +77,9 @@ export class Tab {
     const payload = (data) => ({ payload: Buffer.isBuffer(data) ? data : Buffer.from(data), binary: Buffer.isBuffer(data) });
     page.on("websocket", (ws) => {
       this.sockets++;
+      const times = { openedAt: Date.now(), closedAt: null };
+      this.socketTimes.push(times);
+      ws.on("close", () => (times.closedAt = Date.now()));
       ws.on("framereceived", ({ payload: data }) => {
         this.lastWsFrame = Date.now();
         if (this.wsReceived.length < 50) this.wsReceived.push(payload(data));
@@ -162,13 +167,17 @@ export class Tab {
     return this.page.setViewportSize({ width, height });
   }
 
-  /** Freezes the page as iOS does when the phone locks: no JavaScript runs. */
-  freeze() {
-    return this.call("Page.setWebLifecycleState", { state: "frozen" });
+  /** Freezes the page as iOS does when the phone locks: no JavaScript runs,
+   * not even timers. The debugger pauses it; `Page.setWebLifecycleState`
+   * leaves a visible page's timers running. */
+  async freeze() {
+    await this.call("Debugger.enable");
+    await this.call("Debugger.pause");
   }
 
-  unfreeze() {
-    return this.call("Page.setWebLifecycleState", { state: "active" });
+  async unfreeze() {
+    await this.call("Debugger.resume").catch(() => {});
+    await this.call("Debugger.disable").catch(() => {});
   }
 
   /** Runs `source` before the page's own scripts, until the returned function is called. */
