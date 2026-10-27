@@ -1019,12 +1019,17 @@ async function main() {
         await scenarios[name]().catch((e) => fail("E1", `[${name}] ${e.message}`));
       }
     }
+    // What matters is the slope: projected over a 6 h evening, the host's
+    // memory must stay well within a laptop's. A ratio means nothing for a
+    // host of a few MiB, where the allocator alone moves it by half.
     const warm = memory.find((m) => m.t - started > 5 * 60_000) ?? memory[0];
     const lastSample = memory[memory.length - 1];
-    if (warm && lastSample) {
-      const growth = (lastSample.rss - warm.rss) / warm.rss;
-      const line = `mémoire ${Math.round(warm.rss / 1024)} → ${Math.round(lastSample.rss / 1024)} Mio, threads ${warm.threads} → ${lastSample.threads}`;
-      if (growth > 0.3 || lastSample.threads > warm.threads + 4) fail("R2", line);
+    if (warm && lastSample && lastSample.t > warm.t) {
+      const perHour = ((lastSample.rss - warm.rss) / 1024) / ((lastSample.t - warm.t) / 3_600_000);
+      const evening = Math.max(0, perHour * 6);
+      const series = memory.map((m) => Math.round(m.rss / 1024)).join(" ");
+      const line = `mémoire ${Math.round(warm.rss / 1024)} → ${Math.round(lastSample.rss / 1024)} Mio, soit +${evening.toFixed(0)} Mio sur une soirée de 6 h ; threads ${warm.threads} → ${lastSample.threads} (série en Mio : ${series})`;
+      if (evening > 256 || lastSample.threads > warm.threads + 4) fail("R2", line);
       else ok("R2", line);
     }
   } else skip("R2", "lance --soak 30 pour l'endurance");

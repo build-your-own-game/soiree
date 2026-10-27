@@ -173,7 +173,7 @@ Avant la sortie de Diablo IV, Blizzard a organisé un « Server Slam » : un wee
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
 | R1 | Avec 200 ms de latence variable (±100 ms) sur chaque téléphone, la partie reste jouable de bout en bout. | AoE, Gaffer on Games | 2 `jitter` |
-| R2 | Pendant 30 min de partie avec du chaos, la mémoire de l'hôte n'enfle pas (moins de 30 % entre la 5ᵉ et la dernière minute), ni son nombre de threads. | Server Slam | 2 `--soak 30` |
+| R2 | Pendant 30 min de partie avec du chaos, la mémoire de l'hôte n'enfle pas : sa pente, de la 5ᵉ à la dernière minute, projetée sur une soirée de 6 h, reste sous 256 Mio. Son nombre de threads ne grandit pas. | Server Slam | 2 `--soak 30` |
 | R3 | La salle pleine (le maximum de joueurs) se joue, et le joueur en trop reçoit un refus clair. | Drawphone #70 | 2 `join` |
 
 ### Étage 3 — Le salon (un humain, de vrais appareils, 15 min)
