@@ -1,0 +1,4 @@
+/target
+/dist
+# Écrit par `soiree check` : les documents du commun, à la version de soiree.toml.
+/.soiree

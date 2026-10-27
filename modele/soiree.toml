@@ -1,0 +1,12 @@
+# Ce jeu, pour l'outil `soiree`.
+#
+# `version` est la version du commun que ce jeu utilise : salon, la
+# télécommande, les règles et le harnais, figés ensemble par une étiquette de
+# https://github.com/{{org}}/soiree. Elle va avec l'étiquette des dépendances
+# de salon dans Cargo.toml. `soiree upgrade` change les deux ensemble ; ne la
+# modifie pas à la main. `soiree check` refuse de tourner avec un autre
+# binaire que celui de cette version, et donne la commande pour l'installer.
+version = "{{version}}"
+
+# Le nom du jeu : celui de son dépôt et le préfixe de ses crates.
+name = "{{nom}}"
