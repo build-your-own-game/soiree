@@ -24,6 +24,7 @@ def sha256(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--suite", choices=("qos", "timer-precision"), default="timer-precision")
     args = parser.parse_args()
     if platform.system() != "Darwin":
         parser.error("this diagnostic requires macOS")
@@ -33,6 +34,7 @@ def main():
     report = {
         "schema": 1,
         "diagnostic_only": True,
+        "suite": args.suite,
         "platform": platform.platform(),
         "samples": [],
         "limitations": [
@@ -43,6 +45,7 @@ def main():
             "Controlled utility/background children demonstrate a mechanism, not the CI job's original policy.",
             "A successful main-thread QoS request does not prove the QoS inherited by the room thread or override a task clamp.",
             "The optional pthread introspection hook records requested QoS at thread START, before the Rust callback; this is not effective QoS or a promise it stays unchanged.",
+            "A Foundation activity token or a successful taskpolicy request is a hint, not proof of effective timer precision.",
         ],
     }
 
@@ -101,6 +104,9 @@ def main():
             "thread_creations": [json.loads(line.removeprefix("SOIREE_MACOS_THREAD_CREATE "))
                                  for line in stderr.decode(errors="replace").splitlines()
                                  if line.startswith("SOIREE_MACOS_THREAD_CREATE ")],
+            "activities": [json.loads(line.removeprefix("SOIREE_MACOS_ACTIVITY "))
+                           for line in stderr.decode(errors="replace").splitlines()
+                           if line.startswith("SOIREE_MACOS_ACTIVITY ")],
         }
         report["samples"].append(sample)
         save()
@@ -120,6 +126,7 @@ def main():
             "RUSTUP_TOOLCHAIN", "CARGO_TARGET_DIR", "RUST_TEST_THREADS") if key in os.environ}
         sources = [Path(__file__).resolve(), root / ".github/scripts/macos-policy.c",
                    root / ".github/scripts/macos-qos-request.c",
+                   root / ".github/scripts/macos-activity.m",
                    root / "salon/crates/host/src/room.rs", root / "salon/Cargo.lock",
                    root / "outil/src/verification/cargo.rs",
                    root / ".github/workflows/macos-scheduling.yml"]
@@ -179,6 +186,11 @@ fn main() {
                                               str(root / ".github/scripts/macos-qos-request.c"), "-o", str(qos_request)],
             isolated_build=True)
         report["controlled_qos_request_sha256"] = sha256(qos_request)
+        activity = output / "controlled-activity.dylib"
+        run("build-controlled-activity", ["xcrun", "clang", "-Wall", "-Wextra", "-Werror", "-dynamiclib", "-fobjc-arc",
+                                          "-framework", "Foundation", str(root / ".github/scripts/macos-activity.m"),
+                                          "-o", str(activity)], isolated_build=True)
+        report["controlled_activity_sha256"] = sha256(activity)
         base = [str(executable), "room::tests::steps_come_on_time", "--exact", "--ignored",
                 "--nocapture", "--test-threads=1"]
         injected = ["/usr/bin/env", f"DYLD_INSERT_LIBRARIES={policy}", *base]
@@ -186,7 +198,7 @@ fn main() {
                           "SOIREE_MACOS_CONTROLLED_QOS=user-initiated", *base]
         observed_threads = ["/usr/bin/env", f"DYLD_INSERT_LIBRARIES={qos_request}",
                             "SOIREE_MACOS_CONTROLLED_QOS=observe-threads", *base]
-        cases = [
+        qos_cases = [
             ("direct", base, 0, 0),
             ("production-launch", [str(launcher), *base], 0, 0),
             ("production-launch-policy", [str(launcher), *injected], 1, 0),
@@ -197,11 +209,52 @@ fn main() {
             ("controlled-threads-user-initiated", [str(launcher), *user_initiated], -1, -1),
             ("controlled-application-threads-user-initiated", [str(launcher), "/usr/sbin/taskpolicy", "-a", *user_initiated], -1, -1),
         ]
+        def activity_case(name, mode, policy_count):
+            command = [str(launcher), "/usr/bin/env", f"DYLD_INSERT_LIBRARIES={qos_request}:{activity}",
+                       "SOIREE_MACOS_CONTROLLED_QOS=user-initiated",
+                       f"SOIREE_MACOS_CONTROLLED_ACTIVITY={mode}", *base]
+            return name, command, policy_count, -1
+
+        precision_cases = [
+            ("direct", base, 0, 0),
+            ("production-launch", [str(launcher), *base], 0, 0),
+            ("production-launch-policy", [str(launcher), *injected], 1, 0),
+            ("precision-qos-baseline", [str(launcher), *user_initiated], -1, -1),
+            activity_case("foundation-without-activity", "observe", -1),
+            activity_case("controlled-user-activity-allow-sleep", "user-initiated-allow-sleep", -1),
+            activity_case("controlled-latency-critical-activity", "latency-critical", -1),
+            ("controlled-latency-tier0", [str(launcher), "/usr/sbin/taskpolicy", "-l", "0", *user_initiated], -1, -1),
+        ]
+        if args.suite == "timer-precision":
+            report["counterfactuals"] = {
+                "common_reference": "USER_INITIATED requested on main and workers, as in the previously unsuccessful QoS counter-test",
+                "controlled-user-activity-allow-sleep": {
+                    "options": ["NSActivityUserInitiatedAllowingIdleSystemSleep"],
+                    "source": "https://developer.apple.com/documentation/foundation/processinfo/activityoptions/userinitiatedallowingidlesystemsleep",
+                },
+                "controlled-latency-critical-activity": {
+                    "options": ["NSActivityUserInitiatedAllowingIdleSystemSleep", "NSActivityLatencyCritical"],
+                    "source": "https://developer.apple.com/documentation/foundation/processinfo/activityoptions/latencycritical",
+                },
+                "controlled-latency-tier0": {
+                    "tier": "LATENCY_QOS_TIER_0", "tier_raw": 0xFF0001,
+                    "source": "https://github.com/apple-oss-distributions/system_cmds/blob/main/taskpolicy/taskpolicy.c",
+                    "limitation": "A task latency override does not clear a task QoS clamp or the latency tier derived from a worker's effective QoS.",
+                },
+            }
+        cases = qos_cases if args.suite == "qos" else precision_cases
         for name, command, policy_count, request_count in cases:
             stdout, sample = run(name, command, cwd=root / "salon", timeout=45)
             if ((policy_count >= 0 and len(sample["policy"]) != policy_count)
                     or (request_count >= 0 and len(sample["qos_requests"]) != request_count)):
                 raise RuntimeError(f"{name}: expected policy reads/QoS requests were not observed (SIP may strip DYLD variables)")
+            if name == "foundation-without-activity":
+                if [value["event"] for value in sample["activities"]] != ["observe"]:
+                    raise RuntimeError(f"{name}: missing read-only Foundation baseline")
+            if name in ("controlled-user-activity-allow-sleep", "controlled-latency-critical-activity"):
+                if ([value["event"] for value in sample["activities"]] != ["begin", "end"]
+                        or not all(value["token_created"] for value in sample["activities"])):
+                    raise RuntimeError(f"{name}: activity token was not retained through normal process exit")
             if policy_count < 0:
                 workers = {value["thread_id"] for value in sample["policy"]
                            if value.get("phase") == "thread-start-before-request"}
