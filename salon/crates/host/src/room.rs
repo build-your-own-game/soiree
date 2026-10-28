@@ -201,12 +201,18 @@ mod tests {
 
     use super::*;
 
-    /// Asks for a step every 1/60 s, like Sidequest, and records when each
-    /// step ran.
+    struct StepSample {
+        at: Duration,
+        due: Duration,
+    }
+
+    /// Asks for a step every 1/60 s, like Sidequest, and records distinct
+    /// wakes. Missed slots are skipped instead of creating catch-up samples
+    /// one millisecond apart after a late wake.
     struct Steps {
         start: Clock,
         done: u64,
-        seen: Arc<Mutex<Vec<std::time::Duration>>>,
+        seen: Arc<Mutex<Vec<StepSample>>>,
     }
 
     impl Game for Steps {
@@ -216,11 +222,14 @@ mod tests {
         fn on(&mut self, _: Ms, _: DeviceEvent<()>, _: &mut Host<(), ()>) {}
 
         fn tick(&mut self, now: Ms, _: &mut Host<(), ()>) {
-            if self.next_deadline().is_some_and(|due| due <= now) {
-                self.done += 1;
+            if let Some(due) = self.next_deadline().filter(|&due| due <= now) {
+                self.done = now.0.saturating_mul(60) / 1000;
                 if let Ok(mut seen) = self.seen.lock() {
                     let start = self.start.at(Ms(0)).expect("the start itself");
-                    seen.push(Clock::instant().duration_since(start));
+                    seen.push(StepSample {
+                        at: Clock::instant().duration_since(start),
+                        due: Duration::from_millis(due.0),
+                    });
                 }
             }
         }
@@ -228,6 +237,30 @@ mod tests {
         fn next_deadline(&self) -> Option<Ms> {
             Some(Ms((self.done + 1).saturating_mul(1000).div_ceil(60)))
         }
+    }
+
+    #[test]
+    fn cadence_probe_skips_missed_slots_instead_of_measuring_catch_up() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let mut game = Steps {
+            start: Clock::start(),
+            done: 0,
+            seen: Arc::clone(&seen),
+        };
+        let config = HostConfig {
+            game: 1,
+            epoch: Epoch(1),
+            tv_key: TvKey([0; 16]),
+            timing: Timing::default(),
+            limits: Limits::default(),
+            known: Vec::new(),
+        };
+        let mut host = Host::new(Ms(0), config);
+        game.tick(Ms(5_051), &mut host);
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        assert_eq!(game.next_deadline(), Some(Ms(5_067)));
+        game.tick(Ms(5_060), &mut host);
+        assert_eq!(seen.lock().unwrap().len(), 1);
     }
 
     #[test]
@@ -258,16 +291,31 @@ mod tests {
         let seen = seen.lock().unwrap();
         let mut gaps: Vec<u128> = seen
             .windows(2)
-            .map(|pair| pair[1].saturating_sub(pair[0]).as_micros())
+            .map(|pair| pair[1].at.saturating_sub(pair[0].at).as_micros())
             .collect();
+        if gaps.is_empty() {
+            println!("{} wakes: too few to measure a cadence", seen.len());
+            return;
+        }
         gaps.sort_unstable();
         let at = |per_mille: usize| gaps[(gaps.len() - 1) * per_mille / 1000];
+        let mut lateness: Vec<u128> = seen
+            .iter()
+            .map(|sample| sample.at.saturating_sub(sample.due).as_micros())
+            .collect();
+        lateness.sort_unstable();
+        let late = |per_mille: usize| lateness[(lateness.len() - 1) * per_mille / 1000];
         println!(
-            "{} steps, gaps µs: p50 {} p99 {} max {}",
+            "{} wakes, gaps µs: p50 {} p95 {} p99 {} max {}; deadline lateness µs: p50 {} p95 {} p99 {} max {}",
             seen.len(),
             at(500),
+            at(950),
             at(990),
-            at(1000)
+            at(1000),
+            late(500),
+            late(950),
+            late(990),
+            late(1000)
         );
     }
 }

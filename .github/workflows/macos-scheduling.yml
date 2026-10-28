@@ -1,0 +1,48 @@
+name: Diagnose macOS host scheduling
+on:
+  push:
+    paths:
+      - '.github/scripts/macos-*'
+      - '.github/workflows/macos-scheduling.yml'
+      - 'salon/crates/host/**'
+      - 'salon/Cargo.lock'
+      - 'outil/src/verification/cargo.rs'
+  pull_request:
+    paths:
+      - '.github/scripts/macos-*'
+      - '.github/workflows/macos-scheduling.yml'
+      - 'salon/crates/host/**'
+      - 'salon/Cargo.lock'
+      - 'outil/src/verification/cargo.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned native toolchain
+        run: rustup toolchain install 1.99 --profile minimal
+      - name: Cache dependencies and compilation only
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+            salon/target/debug
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-scheduling-v1-${{ hashFiles('salon/Cargo.lock', 'remote/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-scheduling-v1-${{ hashFiles('salon/Cargo.lock', 'remote/Cargo.lock') }}-
+      - name: Observe unchanged room code and controlled child policies
+        run: python3 .github/scripts/macos-scheduling.py --output-dir "$RUNNER_TEMP/salon-scheduling"
+      - name: Preserve commands, source hashes, policies and all samples
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-host-scheduling
+          path: ${{ runner.temp }}/salon-scheduling/

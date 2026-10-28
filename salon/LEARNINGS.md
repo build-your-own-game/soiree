@@ -99,6 +99,37 @@ Les clones ont servi le temps de la lecture ; les références ci-dessous (fichi
 - **Le candidat de bouclage.** L'hôte annonce aussi `127.0.0.1` : une page de l'ordinateur même (le harnais, un essai) passe par la boucle locale, que le pare-feu ne filtre pas. Un téléphone ignore ce candidat. Un lien venu de la boucle est local, comme un WebSocket venu de la boucle.
 - **La TV toujours en WebSocket.** Elle est sur l'ordinateur même : un WebSocket local ne perd rien et porte des paquets de 16 Kio, contre 1 100 octets sur un DataChannel. Une TV en WebRTC, avant le candidat de bouclage, était refusée (« seul l'ordinateur du jeu peut être la TV ») et réessayait sans fin.
 - **Le rythme de la salle.** macOS regroupe les minuteries des programmes sans fenêtre : un jeu à 60 Hz voyait des pas espacés de 21 à 28 ms sous charge. La salle dort jusqu'à 2 ms de l'échéance puis attend en cédant la main : sur un essai de 3 s, le 99ᵉ centile passe d'environ 20,9 à 18,8 ms, et le pire de 21–24 à 19,5 ms (`steps_come_on_time`, à lancer à la main).
+- **Le dernier spin ne borne pas un réveil système tardif.** Il ne commence
+  qu'après le retour de `recv_timeout`. Un essai contrôlé le 28/10/2026 sur
+  ce même `room::wait`, sans réseau ni calcul de jeu, montre un effet causal
+  des politiques macOS : sur un échantillon fixe de 3 s par cas, le processus
+  normal donne 180 réveils et des intervalles p95 de 21,8 ms ; un clamp
+  `taskpolicy -c utility`, 58 réveils et 122,7 ms ; `taskpolicy -b`,
+  22 réveils et 211,3 ms. Retirer explicitement ce dernier état dans l'enfant
+  rétablit 180 réveils et 21,9 ms. Les temps CPU des enfants restent entre
+  0,028 et 0,047 s. Ce n'est ni une garantie de latence ni la preuve que le
+  runner GitHub subit l'une de ces politiques.
+
+  Le probe `steps_come_on_time` saute désormais les slots manqués et mesure
+  les réveils distincts ainsi que le retard sur l'échéance ; son ancien jeu
+  de test rattrapait les slots un par un et créait des intervalles artificiels
+  de 1 ms après un retard. Le diagnostic autonome
+  `.github/scripts/macos-scheduling.py` (depuis la racine du commun) compare
+  aussi le lancement direct avec les fonctions de lancement extraites du
+  runner Cargo courant : groupes de processus, pipes, threads lecteurs et
+  polling identiques. Il conserve commandes, empreintes, sorties et politiques
+  lisibles dans un artefact, sans certifier un budget de jeu. Son lecteur natif
+  ne modifie aucune politique ; il observe le processus et le thread principal
+  avant libtest, pas la QoS du thread de salle.
+
+  Une activité Foundation `userInitiated`, même `latencyCritical`, n'a pas
+  annulé l'état d'arrière-plan explicitement imposé lors de ce même essai ;
+  aucune dépendance Foundation n'a été ajoutée au produit. Apple décrit la
+  [QoS comme une indication qui règle aussi la latence des minuteries](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheTaskLevel.html)
+  et réserve [latencyCritical](https://developer.apple.com/documentation/foundation/processinfo/activityoptions/latencycritical)
+  aux rares activités qui ont besoin de la précision maximale. Il faut mesurer
+  la politique et le lieu du retard sur la machine concernée avant de choisir
+  un changement du shell ; augmenter le spin ou les budgets ne l'établirait pas.
 - **Le pare-feu de macOS bloque l'UDP de tout nouveau binaire, en silence.** Constaté le 27/10/2026 : le pare-feu est activé, `salon-demo` n'y était pas autorisé, et pas un seul paquet WebRTC n'est arrivé (la page TV est passée par WebSocket au bout de 3 s). Chaque `cargo build` produit un binaire neuf, que macOS considère comme une nouvelle app. Avant la soirée : lancer chaque jeu une fois et accepter la demande, ou signer les binaires avec un certificat stable. C'est un item du salon.
 - **La confidentialité du réseau local d'Apple** (TN3179) : l'app iPhone doit demander la permission, et son premier envoi peut échouer avant la réponse. Un hôte macOS lancé depuis le Finder en a besoin aussi ; lancé depuis le Terminal, non.
 - **Les manettes** sont lues par l'hôte natif, pas par la page TV : Chrome en limiterait le nombre (à vérifier), et la page TV n'a pas à relayer.
