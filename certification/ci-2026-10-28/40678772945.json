@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "derived_summary_only": true,
+  "not_a_performance_attestation": true,
+  "source_run": "https://github.com/build-your-own-game/soiree/actions/runs/40678772945",
+  "source_report_sha256": "9675f3d6bf8baaf4bfcf5eae6083071cb8a8b5cb7f9ff35be775a98bda0413d9",
+  "commit": "083471492acdfa0087b81d3b296248add830242a",
+  "suite": "qos",
+  "platform": "macOS-15.7.9-arm64-arm-64bit-Mach-O",
+  "source_sha256": {
+    ".github/scripts/macos-scheduling.py": "e00dcc110e7aecc04ad80c9df4ac734fc4062b25cf15ed0a28e498ad6f386d62",
+    ".github/scripts/macos-policy.c": "ef8e1ea611d1122773635fae703e28e0c29da6b0497ee6ea91da946efcbb8054",
+    "salon/crates/host/src/room.rs": "33cadcbd3fb09fb6bcac46b0bee0e1b7e38fd1874d4a619ea78deed5056caca3",
+    "salon/Cargo.lock": "5bc598f06500333128a77237af97ccad8c956e80e9ce1cfc8de169e96e37deec",
+    "outil/src/verification/cargo.rs": "add7dd4a39f869565d1fa7ff3608964773a2127a5c7dfa2f96f4ed6b6ad244a9",
+    ".github/workflows/macos-scheduling.yml": "71b174f9bca827039bf8ef192b019c61ee6ec708a636e0c3c9d9e0975c2f7d78"
+  },
+  "test_executable_sha256": "4a50da0f5362df3fdf2083660f1e5b5a2994726a1666a94238243d2129f60da9",
+  "limitations": [
+    "One fixed three-second sample per case; no statistical certification.",
+    "Injected policy reader observes the process and main thread at startup, not the room thread's QoS.",
+    "Requested QoS and readable base policies do not reveal every effective scheduler constraint.",
+    "An instrumented sample can differ from an uninstrumented sample; both baselines are retained.",
+    "Controlled utility/background children demonstrate a mechanism, not the CI job's original policy."
+  ],
+  "samples": [
+    {
+      "name": "direct",
+      "command": [
+        "/Users/runner/work/soiree/soiree/salon/target/debug/deps/salon_host-f877bfc688153c5e",
+        "room::tests::steps_come_on_time",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/Users/runner/work/soiree/soiree/salon",
+      "exit_code": 0,
+      "controller_timeout": false,
+      "isolated_build_session": false,
+      "elapsed_seconds": 3.033212375000005,
+      "child_cpu_seconds": 0.01800499999999161,
+      "policy": [],
+      "measurement": "116 wakes, gaps µs: p50 22323 p95 60063 p99 62085 max 74986; deadline lateness µs: p50 12448 p95 44779 p99 48117 max 57991",
+      "stdout": "\nrunning 1 test\ntest room::tests::steps_come_on_time ... 116 wakes, gaps µs: p50 22323 p95 60063 p99 62085 max 74986; deadline lateness µs: p50 12448 p95 44779 p99 48117 max 57991\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 3.03s\n\n",
+      "stderr": ""
+    },
+    {
+      "name": "production-launch",
+      "command": [
+        "/Users/runner/work/_temp/salon-scheduling/production-launcher",
+        "/Users/runner/work/soiree/soiree/salon/target/debug/deps/salon_host-f877bfc688153c5e",
+        "room::tests::steps_come_on_time",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/Users/runner/work/soiree/soiree/salon",
+      "exit_code": 0,
+      "controller_timeout": false,
+      "isolated_build_session": false,
+      "elapsed_seconds": 3.0371430000000146,
+      "child_cpu_seconds": 0.028770000000040596,
+      "policy": [],
+      "measurement": "108 wakes, gaps µs: p50 23286 p95 61466 p99 71520 max 82611; deadline lateness µs: p50 11726 p95 48956 p99 55522 max 65636",
+      "stdout": "\nrunning 1 test\ntest room::tests::steps_come_on_time ... 108 wakes, gaps µs: p50 23286 p95 61466 p99 71520 max 82611; deadline lateness µs: p50 11726 p95 48956 p99 55522 max 65636\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 3.01s\n\n",
+      "stderr": ""
+    },
+    {
+      "name": "production-launch-policy",
+      "command": [
+        "/Users/runner/work/_temp/salon-scheduling/production-launcher",
+        "/usr/bin/env",
+        "DYLD_INSERT_LIBRARIES=/Users/runner/work/_temp/salon-scheduling/policy.dylib",
+        "/Users/runner/work/soiree/soiree/salon/target/debug/deps/salon_host-f877bfc688153c5e",
+        "room::tests::steps_come_on_time",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/Users/runner/work/soiree/soiree/salon",
+      "exit_code": 0,
+      "controller_timeout": false,
+      "isolated_build_session": false,
+      "elapsed_seconds": 3.058825374999998,
+      "child_cpu_seconds": 0.036433000000014815,
+      "policy": [
+        {
+          "pid": 2708,
+          "ppid": 2707,
+          "pgid": 2708,
+          "main_thread_requested_qos": 17,
+          "process_background": 0,
+          "process_background_errno": 0,
+          "main_thread_background": 0,
+          "main_thread_background_errno": 0,
+          "task_role": 0,
+          "task_role_status": 0,
+          "base_latency_raw": 0,
+          "base_latency_status": 4,
+          "base_throughput_raw": 0,
+          "base_throughput_status": 4
+        }
+      ],
+      "measurement": "117 wakes, gaps µs: p50 20490 p95 58838 p99 68116 max 79935; deadline lateness µs: p50 10808 p95 44919 p99 51121 max 63325",
+      "stdout": "\nrunning 1 test\ntest room::tests::steps_come_on_time ... 117 wakes, gaps µs: p50 20490 p95 58838 p99 68116 max 79935; deadline lateness µs: p50 10808 p95 44919 p99 51121 max 63325\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 3.02s\n\n",
+      "stderr": "SOIREE_MACOS_POLICY {\"pid\":2708,\"ppid\":2707,\"pgid\":2708,\"main_thread_requested_qos\":17,\"process_background\":0,\"process_background_errno\":0,\"main_thread_background\":0,\"main_thread_background_errno\":0,\"task_role\":0,\"task_role_status\":0,\"base_latency_raw\":0,\"base_latency_status\":4,\"base_throughput_raw\":0,\"base_throughput_status\":4}\n"
+    },
+    {
+      "name": "controlled-utility",
+      "command": [
+        "/Users/runner/work/_temp/salon-scheduling/production-launcher",
+        "/usr/sbin/taskpolicy",
+        "-c",
+        "utility",
+        "/usr/bin/env",
+        "DYLD_INSERT_LIBRARIES=/Users/runner/work/_temp/salon-scheduling/policy.dylib",
+        "/Users/runner/work/soiree/soiree/salon/target/debug/deps/salon_host-f877bfc688153c5e",
+        "room::tests::steps_come_on_time",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/Users/runner/work/soiree/soiree/salon",
+      "exit_code": 0,
+      "controller_timeout": false,
+      "isolated_build_session": false,
+      "elapsed_seconds": 3.1664114589999883,
+      "child_cpu_seconds": 0.03636399999994744,
+      "policy": [
+        {
+          "pid": 2802,
+          "ppid": 2800,
+          "pgid": 2802,
+          "main_thread_requested_qos": 17,
+          "process_background": 0,
+          "process_background_errno": 0,
+          "main_thread_background": 0,
+          "main_thread_background_errno": 0,
+          "task_role": 0,
+          "task_role_status": 0,
+          "base_latency_raw": 0,
+          "base_latency_status": 4,
+          "base_throughput_raw": 0,
+          "base_throughput_status": 4
+        }
+      ],
+      "measurement": "112 wakes, gaps µs: p50 22422 p95 71289 p99 74763 max 76900; deadline lateness µs: p50 12067 p95 54882 p99 58021 max 60659",
+      "stdout": "\nrunning 1 test\ntest room::tests::steps_come_on_time ... 112 wakes, gaps µs: p50 22422 p95 71289 p99 74763 max 76900; deadline lateness µs: p50 12067 p95 54882 p99 58021 max 60659\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 3.04s\n\n",
+      "stderr": "SOIREE_MACOS_POLICY {\"pid\":2802,\"ppid\":2800,\"pgid\":2802,\"main_thread_requested_qos\":17,\"process_background\":0,\"process_background_errno\":0,\"main_thread_background\":0,\"main_thread_background_errno\":0,\"task_role\":0,\"task_role_status\":0,\"base_latency_raw\":0,\"base_latency_status\":4,\"base_throughput_raw\":0,\"base_throughput_status\":4}\n"
+    },
+    {
+      "name": "controlled-background",
+      "command": [
+        "/Users/runner/work/_temp/salon-scheduling/production-launcher",
+        "/usr/sbin/taskpolicy",
+        "-b",
+        "/usr/bin/env",
+        "DYLD_INSERT_LIBRARIES=/Users/runner/work/_temp/salon-scheduling/policy.dylib",
+        "/Users/runner/work/soiree/soiree/salon/target/debug/deps/salon_host-f877bfc688153c5e",
+        "room::tests::steps_come_on_time",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/Users/runner/work/soiree/soiree/salon",
+      "exit_code": 0,
+      "controller_timeout": false,
+      "isolated_build_session": false,
+      "elapsed_seconds": 3.1374979169999904,
+      "child_cpu_seconds": 0.02717799999996906,
+      "policy": [
+        {
+          "pid": 2840,
+          "ppid": 2839,
+          "pgid": 2840,
+          "main_thread_requested_qos": 17,
+          "process_background": 1,
+          "process_background_errno": 0,
+          "main_thread_background": 0,
+          "main_thread_background_errno": 0,
+          "task_role": 0,
+          "task_role_status": 0,
+          "base_latency_raw": 0,
+          "base_latency_status": 4,
+          "base_throughput_raw": 0,
+          "base_throughput_status": 4
+        }
+      ],
+      "measurement": "57 wakes, gaps µs: p50 45017 p95 106789 p99 112039 max 116952; deadline lateness µs: p50 34595 p95 95396 p99 102223 max 104239",
+      "stdout": "\nrunning 1 test\ntest room::tests::steps_come_on_time ... 57 wakes, gaps µs: p50 45017 p95 106789 p99 112039 max 116952; deadline lateness µs: p50 34595 p95 95396 p99 102223 max 104239\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 3.10s\n\n",
+      "stderr": "SOIREE_MACOS_POLICY {\"pid\":2840,\"ppid\":2839,\"pgid\":2840,\"main_thread_requested_qos\":17,\"process_background\":1,\"process_background_errno\":0,\"main_thread_background\":0,\"main_thread_background_errno\":0,\"task_role\":0,\"task_role_status\":0,\"base_latency_raw\":0,\"base_latency_status\":4,\"base_throughput_raw\":0,\"base_throughput_status\":4}\n"
+    }
+  ]
+}
