@@ -1,0 +1,41 @@
+verification results:: 10 verified, 1 errors
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/not-run-is-success/lib.rs:87:1
+   |
+87 | pub fn assess(facts: Facts) -> (result: Verdict)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+   --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/not-run-is-success/lib.rs:89:9
+    |
+ 89 |           (result == Verdict::Satisfied) == success_is_justified(facts),
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+109 | /     match facts.applicability {
+110 | |         Applicability::Excluded => Verdict::NotApplicable,
+111 | |         Applicability::Unknown => Verdict::Incomplete,
+112 | |         Applicability::Applies => {
+...   |
+123 | |         },
+124 | |     }
+    | |_____- at the end of the function body
+
+error: postcondition not satisfied
+   --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/not-run-is-success/lib.rs:105:9
+    |
+105 | /         facts.applicability == Applicability::Applies
+106 | |             && (facts.execution == Execution::NotRun || facts.execution == Execution::Ignored)
+107 | |             ==> result == Verdict::Incomplete,
+    | |_____________________________________________^ failed this postcondition
+108 |   {
+109 | /     match facts.applicability {
+110 | |         Applicability::Excluded => Verdict::NotApplicable,
+111 | |         Applicability::Unknown => Verdict::Incomplete,
+112 | |         Applicability::Applies => {
+...   |
+123 | |         },
+124 | |     }
+    | |_____- at the end of the function body
+
+error: aborting due to 2 previous errors
+

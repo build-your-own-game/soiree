@@ -4,8 +4,63 @@
 // JavaScript freeze scenario deliberately uses a Chromium phone.
 
 import { chromium, webkit } from "playwright-core";
+import http from "node:http";
+import { FixtureFailure } from "./performance.mjs";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A document could not be obtained, distinct from a failed UI assertion. */
+export class NavigationFailure extends FixtureFailure {
+  constructor({ kind, phase, url, status = null, timeoutMs, reason, cause }) {
+    super(`${phase} ${url} : ${status === null ? reason : `HTTP ${status}`}`);
+    this.name = "NavigationFailure";
+    Object.assign(this, { kind, phase, url, status, timeoutMs, cause });
+  }
+
+  toJSON() {
+    return { kind: this.kind, phase: this.phase, url: this.url, status: this.status, timeout_ms: this.timeoutMs, message: this.message };
+  }
+}
+
+/** No automatic loopback fallback: the declared mode stays visible. */
+export function phoneTransport(config, lan) {
+  const mode = config.phone_upstream ?? "lan";
+  if (mode !== "lan" && mode !== "loopback") throw new FixtureFailure("phone_upstream doit être lan ou loopback");
+  return config.phone
+    ? { mode, upstream: mode === "loopback" ? "127.0.0.1" : lan, explicit: config.phone_upstream !== undefined }
+    : { mode: "none", upstream: null, explicit: false };
+}
+
+/** The LAN must answer HTTP before browser scenarios start. This proves
+ * reachability only; document/resources still load through Tab.goto. */
+export function preflightPhoneUpstream(url, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    let request;
+    let timer;
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      request?.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    const unavailable = (reason, cause) => new NavigationFailure({ kind: "infrastructure", phase: "phone-upstream", url, timeoutMs, reason, cause });
+    try {
+      request = http.get(url, (response) => {
+        response.on("error", (error) => finish(unavailable(error.message, error)));
+        const status = response.statusCode;
+        if (status >= 400) finish(new NavigationFailure({ kind: "product", phase: "phone-upstream", url, status, timeoutMs }));
+        else if (status >= 200) finish(null, { url, status });
+        else finish(unavailable(`réponse HTTP invalide : ${status}`));
+      });
+      request.on("error", (error) => finish(unavailable(error.message, error)));
+      timer = setTimeout(() => finish(unavailable(`aucune réponse HTTP après ${timeoutMs} ms`)), timeoutMs);
+    } catch (error) {
+      finish(unavailable(error.message, error));
+    }
+  });
+}
 
 const IPHONE = {
   viewport: { width: 390, height: 844 },
@@ -108,9 +163,14 @@ export async function launchBrowser({ live = () => true, remember = () => false,
       }
       const actualEngine = ctx.browser().browserType().name();
       const tab = new Tab(ctx, await ctx.newPage(), mobile, live, remember, actualEngine, identify);
-      await tab.attach();
-      if (url) await tab.goto(url);
-      return tab;
+      try {
+        await tab.attach();
+        if (url) await tab.goto(url);
+        return tab;
+      } catch (error) {
+        if (!context) await ctx.close().catch(() => {});
+        throw error;
+      }
     },
     close: async () => { await Promise.all([chrome.close(), safari?.close()]); },
   };
@@ -191,8 +251,27 @@ export class Tab {
     return this.cdp.send(method, params);
   }
 
-  async goto(url) {
-    await this.page.goto(url, { waitUntil: "load", timeout: 15_000 }).catch(() => {});
+  async goto(url, { timeoutMs = 15_000 } = {}) {
+    let servedFailure = null;
+    const responseSeen = (response) => {
+      if (response.status() >= 400 && response.request().isNavigationRequest()
+          && response.frame() === this.page.mainFrame()) {
+        servedFailure = new NavigationFailure({ kind: "product", phase: "initial-navigation", url: response.url(), status: response.status(), timeoutMs });
+      }
+    };
+    this.page.on("response", responseSeen);
+    try {
+      return await this.input("navigation.goto", async () => {
+        const response = await this.page.goto(url, { waitUntil: "load", timeout: timeoutMs });
+        if (response?.status() >= 400) throw new NavigationFailure({ kind: "product", phase: "initial-navigation", url, status: response.status(), timeoutMs });
+        if (!response && /^https?:/.test(url)) throw new NavigationFailure({ kind: "infrastructure", phase: "initial-navigation", url, timeoutMs, reason: "aucune réponse HTTP" });
+        return response;
+      }, { target: url, waitUntil: "load", timeoutMs });
+    } catch (error) {
+      const failure = error instanceof NavigationFailure ? error : servedFailure ?? new NavigationFailure({ kind: "infrastructure", phase: "initial-navigation", url, timeoutMs, reason: error.message, cause: error });
+      this.lastNavigationFailure = failure.toJSON();
+      throw failure;
+    } finally { this.page.off("response", responseSeen); }
   }
 
   async reload() {

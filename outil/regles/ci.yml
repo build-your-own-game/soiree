@@ -12,14 +12,60 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install the pinned common version
+      - name: Prepare the pinned toolchain and SDK source
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install {{channel}} --component rustfmt,clippy --target wasm32-unknown-unknown
           git clone --depth 1 --branch v{{version}} https://github.com/build-your-own-game/soiree "$RUNNER_TEMP/soiree"
-          cargo +{{channel}} install --locked --path "$RUNNER_TEMP/soiree/outil"
-          cargo +{{channel}} install --locked wasm-bindgen-cli --version 0.2.129
+      - name: Cache Cargo downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-sdk-{{version}}-cargo-downloads-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-sdk-{{version}}-cargo-downloads-v1-
+      - name: Cache Rust compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/debug
+            target/release
+            target/wasm32-unknown-unknown
+            ${{ runner.temp }}/soiree/outil/target/release
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-sdk-{{version}}-build-v1-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-sdk-{{version}}-build-v1-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-sdk-{{version}}-build-v1-
+      - name: Cache immutable CLI tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.tool_cache }}/soiree-tools/soiree-{{version}}
+            ${{ runner.tool_cache }}/soiree-tools/wasm-bindgen-0.2.129
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-{{channel}}-cli-soiree-{{version}}-wasm-bindgen-0.2.129-v1
+      - name: Install or verify the exact CLI versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_cli="$RUNNER_TOOL_CACHE/soiree-tools/soiree-{{version}}"
+          wasm_cli="$RUNNER_TOOL_CACHE/soiree-tools/wasm-bindgen-0.2.129"
+          if ! sdk_version="$("$sdk_cli/bin/soiree" version 2>/dev/null)" || [ "$sdk_version" != 'soiree {{version}}' ]; then
+            cargo +{{channel}} install --locked --force --path "$RUNNER_TEMP/soiree/outil" --root "$sdk_cli" --target-dir "$RUNNER_TEMP/soiree/outil/target"
+          fi
+          sdk_version="$("$sdk_cli/bin/soiree" version)"
+          test "$sdk_version" = 'soiree {{version}}'
+          if ! wasm_version="$("$wasm_cli/bin/wasm-bindgen" --version 2>/dev/null)" || [ "$wasm_version" != 'wasm-bindgen 0.2.129' ]; then
+            cargo +{{channel}} install --locked --force wasm-bindgen-cli --version 0.2.129 --root "$wasm_cli"
+          fi
+          wasm_version="$("$wasm_cli/bin/wasm-bindgen" --version)"
+          test "$wasm_version" = 'wasm-bindgen 0.2.129'
+          printf '%s\n' "$sdk_cli/bin" "$wasm_cli/bin" >> "$GITHUB_PATH"
       - name: Check the standalone game
         run: soiree check --locked --published
       - name: Install the browser harness

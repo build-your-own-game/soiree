@@ -5,6 +5,48 @@ import { spawn } from "node:child_process";
 
 export const UI_CATEGORIES = ["editing", "effects", "lifecycle", "async"];
 
+const WAIT_TIMEOUT_MS = 5000;
+const WAIT_POLL_MS = 20;
+
+function commandTimeout(check) {
+  const timeout = check.timeout_ms === undefined ? 120_000 : check.timeout_ms;
+  if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 2_147_483_647) throw new Error("ui.checks[].timeout_ms doit être un entier positif fini compatible avec un délai Node");
+  return timeout;
+}
+
+async function waitForObservation(page, expression, name) {
+  const expiresAt = performance.now() + WAIT_TIMEOUT_MS;
+  const timeoutError = () => new Error(`ui « ${name} » : attente non satisfaite après ${WAIT_TIMEOUT_MS} ms : ${expression}`);
+  let active = true;
+  let deadline;
+  let pollTimer;
+  const timeout = new Promise((_, reject) => {
+    deadline = setTimeout(() => {
+      active = false;
+      reject(timeoutError());
+    }, WAIT_TIMEOUT_MS);
+  });
+  const poll = async () => {
+    while (active) {
+      if (performance.now() >= expiresAt) throw timeoutError();
+      // page.evaluate resolves the predicate's Promise before returning its
+      // boolean. A Promise object itself must never satisfy the observation.
+      const passed = await page.evaluate(async (source) => Boolean(await (0, eval)(source)), expression);
+      if (!active) return;
+      if (performance.now() >= expiresAt) throw timeoutError();
+      if (passed === true) return;
+      await new Promise((resolve) => { pollTimer = setTimeout(resolve, WAIT_POLL_MS); });
+    }
+  };
+  try {
+    await Promise.race([poll(), timeout]);
+  } finally {
+    active = false;
+    clearTimeout(deadline);
+    clearTimeout(pollTimer);
+  }
+}
+
 function successPattern(check) {
   if (check.success === undefined) return null;
   if (typeof check.success !== "string" || !check.success.trim()) throw new Error("ui.checks[].success doit être une expression régulière non vide");
@@ -26,6 +68,7 @@ export function validateUi(ui) {
   }
   for (const check of ui.checks ?? []) {
     successPattern(check);
+    commandTimeout(check);
     if (!check.name || !Array.isArray(check.command) || !check.command.length || check.command.some((arg) => typeof arg !== "string" || !arg)) throw new Error("ui.checks : name et command requis");
     if (!Array.isArray(check.covers) || !check.covers.length) throw new Error("ui.checks[].covers absent");
     for (const category of check.covers) {
@@ -44,6 +87,7 @@ export function validateUi(ui) {
  * and terminating their entire process group, including on timeout. */
 export async function runUiCommand(check, { cwd, url, tmp }) {
   const success = successPattern(check);
+  const timeout = commandTimeout(check);
   const command = check.command.map((argument) => argument.replaceAll("{url}", url));
   const child = spawn(command[0], command.slice(1), {
     cwd, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
@@ -63,7 +107,7 @@ export async function runUiCommand(check, { cwd, url, tmp }) {
     expired = true;
     kill("SIGTERM");
     hardStop = setTimeout(() => kill("SIGKILL"), 1000);
-  }, check.timeout_ms ?? 120_000);
+  }, timeout);
   try {
     const code = await new Promise((resolve, reject) => {
       child.once("error", reject);
@@ -85,7 +129,7 @@ export async function runUiScenario(tab, scenario) {
   try {
     for (const step of scenario.steps) {
       if (step.wait) {
-        await page.waitForFunction(async (expression) => Boolean(await (0, eval)(expression)), step.wait, { timeout: 5000 });
+        await waitForObservation(page, step.wait, scenario.name);
       } else if (step.focus) {
         await page.locator(step.focus).focus({ timeout: 3000 });
       } else if (step.select) {
@@ -141,6 +185,14 @@ export async function runUiScenario(tab, scenario) {
       }
     }
   } finally {
-    await page.evaluate(() => { delete window.__certUiRemembered; }).catch(() => {});
+    // A stopped page must not turn an observation deadline into an unbounded
+    // wait while cleaning up the observer's own bookkeeping.
+    let cleanupTimer;
+    try {
+      await Promise.race([
+        page.evaluate(() => { delete window.__certUiRemembered; }).catch(() => {}),
+        new Promise((resolve) => { cleanupTimer = setTimeout(resolve, 500); }),
+      ]);
+    } finally { clearTimeout(cleanupTimer); }
   }
 }

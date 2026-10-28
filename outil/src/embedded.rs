@@ -29,6 +29,7 @@ pub mod rules {
 
 /// The documents written to a game's `.soiree/`, at their path there.
 pub const DOCS: &[(&str, &str)] = &[
+    ("VERIFICATION.md", include_str!("../../VERIFICATION.md")),
     ("CHANGELOG.md", include_str!("../../CHANGELOG.md")),
     ("MANIFESTE.md", include_str!("../../MANIFESTE.md")),
     ("CERTIFICATION.md", include_str!("../../CERTIFICATION.md")),
@@ -44,6 +45,10 @@ include!(concat!(env!("OUT_DIR"), "/catalogue.rs"));
 /// certify` into a cache per version, then `npm ci` installs its one
 /// dependency there.
 pub const HARNESS: &[(&str, &str)] = &[
+    (
+        "navigation.test.mjs",
+        include_str!("../../tools/cert/navigation.test.mjs"),
+    ),
     ("cert.mjs", include_str!("../../tools/cert/cert.mjs")),
     ("browser.mjs", include_str!("../../tools/cert/browser.mjs")),
     (
@@ -101,6 +106,10 @@ pub const HOST_FOLDER: &[(&str, &str)] = &[
 /// The model a new game starts from, at its path in the game. `{{nom}}`,
 /// `{{org}}` and `{{version}}` are replaced when it is written.
 pub const MODEL: &[(&str, &str)] = &[
+    (
+        "verification.toml",
+        include_str!("../../modele/verification.toml"),
+    ),
     ("AGENTS.md", include_str!("../../modele/AGENTS.md")),
     (
         "tools/press-check.mjs",
@@ -230,6 +239,7 @@ mod tests {
             if Path::new(path).extension().is_some_and(|e| e == "toml") {
                 let filled = contents
                     .replace("{{nom}}", "essai")
+                    .replace("{{crate}}", "essai")
                     .replace("{{org}}", "org")
                     .replace("{{version}}", VERSION);
                 util::parse_toml(&filled, path).unwrap();

@@ -1,7 +1,17 @@
-# Certification
+# Résultats de vérification
 
-Le dernier rapport de `soiree certify`, committé avec le code qu'il certifie :
-- `rapport.md` : le tableau par item ;
-- `rapport.json` : les versions, la graine, la date, la machine et l'empreinte du code.
+Les fichiers produits sont des observations datées liées à leurs entrées :
 
-Ne modifie pas ces fichiers à la main : relance `soiree certify`.
+- `check-fast.json` / `check-fast.md` : contrôles statiques demandés ;
+- `check.json` / `check.md` : contrôles du code et exécution des tests ;
+- `verification.json` / `verification.md` : périmètre du harnais et évaluation ;
+- `harness-observations.json` / `harness-observations.md` : observations brutes ;
+- `harness-performance.json` : mesures du passage navigateur.
+
+Les anciens `rapport.json`, `rapport.md` et `performance.json`, lorsqu’ils
+existent, restent des pièces historiques. Ils ne sont pas réétiquetés comme
+preuves du code présent. Les passages séparés ne sont pas fusionnés en une
+certification globale. Un résultat non attesté ou à examiner reste explicite.
+
+Les engagements viennent de `verification.toml` ; `CERTIFICATION.md` en est la
+vue. Ne modifie pas les résultats à la main : relance le contrôle concerné.

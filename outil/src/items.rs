@@ -1,15 +1,10 @@
-//! A game's own `CERTIFICATION.md` (the model's template is the reference):
-//! the format of its items and of the catalogue items it sets aside, and
-//! that every test it names exists in the code.
+//! Legacy Markdown parser used only by the explicit one-way migration.
+//! Names in this format are declarations, never execution evidence.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
-use crate::catalogue;
-use crate::check::Folder;
 use crate::markdown::{self, Line};
 use crate::report::Report;
-use crate::util;
 
 pub const ITEMS: &str = "## Les items";
 pub const EXCLUDED: &str = "## Items du catalogue écartés";
@@ -30,59 +25,6 @@ pub struct Item {
     pub retired: bool,
     pub tests: Vec<String>,
     pub origin: Option<String>,
-}
-
-/// Checks `dir/CERTIFICATION.md`, if this is a game that has one.
-pub fn check(dir: &Path, folder: Folder, report: &mut Report) {
-    let path = dir.join("CERTIFICATION.md");
-    let Ok(text) = util::read(&path) else {
-        if folder == Folder::Game {
-            report.warn("CERTIFICATION.md du jeu absent : les items propres au jeu n'ont nulle part où vivre");
-        }
-        return;
-    };
-    let before = report.lines.len();
-    let parsed = lint(&text, "CERTIFICATION.md", report);
-
-    let functions = functions_in(dir);
-    for item in parsed.items.iter().filter(|i| !i.retired) {
-        for test in &item.tests {
-            if !functions.contains(test) {
-                report.error(format!(
-                    "CERTIFICATION.md:{} : {} nomme le test `{test}`, introuvable (attendu : une `fn {test}` dans le code)",
-                    item.line, item.id
-                ));
-            }
-        }
-    }
-
-    let catalogue_dir = dir.join(".soiree").join("certifications");
-    if catalogue_dir.is_dir() {
-        let known = catalogue::ids_in(&catalogue_dir);
-        let origins = parsed
-            .items
-            .iter()
-            .filter_map(|i| i.origin.as_ref().map(|o| (i.line, o.clone())));
-        for (line, id) in origins.chain(parsed.excluded.iter().cloned()) {
-            if !known.contains(&id) {
-                report.warn(format!(
-                    "CERTIFICATION.md:{line} : {id} n'est pas dans le catalogue (.soiree/certifications/)"
-                ));
-            }
-        }
-    }
-
-    if report.lines.len() == before {
-        let live = parsed.items.iter().filter(|i| !i.retired).count();
-        if live == 0 {
-            report.info("CERTIFICATION.md du jeu : aucun item pour l'instant");
-        } else {
-            report.ok(format!(
-                "CERTIFICATION.md du jeu : {live} item(s), chaque test nommé existe ; {} item(s) du catalogue écarté(s)",
-                parsed.excluded.len()
-            ));
-        }
-    }
 }
 
 /// The format of the file. Errors name `file:line` and what is expected.
@@ -274,51 +216,12 @@ fn lint_excluded(lines: &[Line<'_>], file: &str, report: &mut Report, parsed: &m
     }
 }
 
-/// Every `fn name` in the Rust files of `dir`, outside build outputs.
-fn functions_in(dir: &Path) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    for file in util::files_under(
-        dir,
-        &[".rs"],
-        &["target", ".git", ".soiree", "node_modules"],
-    ) {
-        if let Ok(text) = util::read(&file) {
-            names.extend(function_names(&text));
-        }
-    }
-    names
-}
-
-fn function_names(text: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut rest = text;
-    while let Some(at) = rest.find("fn ") {
-        let before = rest.get(..at).and_then(|b| b.chars().last());
-        let after = rest
-            .get(at..)
-            .and_then(|r| r.strip_prefix("fn "))
-            .unwrap_or("");
-        if before.is_none_or(|c| !(c.is_alphanumeric() || c == '_')) {
-            let name: String = after
-                .trim_start()
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty() {
-                names.push(name);
-            }
-        }
-        rest = after;
-    }
-    names
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::report::Level;
 
-    const MODEL: &str = include_str!("../../modele/CERTIFICATION.md");
+    const MODEL: &str = include_str!("../tests/fixtures/legacy-certification.md");
 
     fn errors(text: &str) -> Vec<String> {
         let mut report = Report::quiet();
@@ -338,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn the_model_template_covers_the_playable_starter() {
+    fn a_historical_template_remains_migratable() {
         let mut report = Report::quiet();
         let parsed = lint(MODEL, "C.md", &mut report);
         assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
@@ -420,13 +323,5 @@ mod tests {
         let without_origin =
             "## Les items\n\n| # | Exigence | Test |\n|---|---|---|\n| J1 | a | `t` |\n";
         assert_eq!(errors(without_origin), Vec::<String>::new());
-    }
-
-    #[test]
-    fn function_names_are_found() {
-        let names = function_names(
-            "fn a() {}\n proptest! { #[test] fn late_vote(x in 0..3) {} }\nlet fnord = 1; pub(crate) fn  b<T>() {}",
-        );
-        assert_eq!(names, vec!["a", "late_vote", "b"]);
     }
 }

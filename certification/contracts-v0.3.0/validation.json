@@ -1,0 +1,429 @@
+{
+  "schema": 1,
+  "candidate": "0.3.0",
+  "published": false,
+  "generated": "2026-10-28T04:57:39.828372+00:00",
+  "tool_tests": {
+    "rust_cli": 108,
+    "node": 38,
+    "kernel_rust": 5,
+    "verus_verified_functions": 11,
+    "mutations_rejected": 3
+  },
+  "checks": [
+    {
+      "name": "modele",
+      "exit": 0,
+      "seconds": 4.253,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "punchline",
+      "exit": 0,
+      "seconds": 12.847,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "sidequest",
+      "exit": 0,
+      "seconds": 33.622,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "tier-list",
+      "exit": 0,
+      "seconds": 5.415,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "salon",
+      "exit": 0,
+      "seconds": 3.421,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "remote",
+      "exit": 0,
+      "seconds": 6.444,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    },
+    {
+      "name": "catalogue",
+      "exit": 0,
+      "seconds": 1.123,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "unpassed": []
+    }
+  ],
+  "fast": [
+    {
+      "name": "punchline",
+      "exit": 0,
+      "seconds": 1.309
+    },
+    {
+      "name": "sidequest",
+      "exit": 0,
+      "seconds": 3.317
+    },
+    {
+      "name": "tier-list",
+      "exit": 0,
+      "seconds": 0.936
+    }
+  ],
+  "browser_full": [
+    {
+      "name": "punchline",
+      "exit": 1,
+      "seconds": 313.142,
+      "selected": false,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": [
+        {
+          "id": "harness:join:C8",
+          "outcome": "review-required"
+        },
+        {
+          "id": "harness:jitter:R1",
+          "outcome": "review-required"
+        },
+        {
+          "id": "harness:monkey:T2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:restart:C7",
+          "outcome": "review-required"
+        }
+      ]
+    },
+    {
+      "name": "sidequest",
+      "exit": 1,
+      "seconds": 299.241,
+      "selected": false,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": [
+        {
+          "id": "harness:join:C8",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:R3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:jitter:R1",
+          "outcome": "review-required"
+        },
+        {
+          "id": "harness:monkey:T2",
+          "outcome": "not-run"
+        }
+      ]
+    },
+    {
+      "name": "tier-list-full",
+      "exit": 1,
+      "seconds": 147.894,
+      "selected": false,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": [
+        {
+          "id": "harness:panic:C10",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:C1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:C8",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:R3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:cut:C2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:freeze:C3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:silent:C3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:reload:C4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:twin:C5",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:rtc:C1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:jitter:R1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:monkey:T2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:monkey:D2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:restart:C7",
+          "outcome": "not-run"
+        }
+      ]
+    }
+  ],
+  "browser_targeted": [
+    {
+      "name": "modele-ui-panic",
+      "exit": 0,
+      "seconds": 8.594,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": []
+    },
+    {
+      "name": "punchline-ui-panic",
+      "exit": 0,
+      "seconds": 22.387,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": []
+    },
+    {
+      "name": "sidequest-ui-panic",
+      "exit": 0,
+      "seconds": 18.201,
+      "selected": true,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": []
+    },
+    {
+      "name": "tier-list-full",
+      "exit": 1,
+      "seconds": 147.894,
+      "selected": false,
+      "identity_errors": [],
+      "diagnostics": [],
+      "controller_exit": 0,
+      "failures": [],
+      "review_or_missing": [
+        {
+          "id": "harness:panic:C10",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:C1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:C8",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:join:R3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:layout:T4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:cut:C2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:freeze:C3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:silent:C3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:reload:C4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:twin:C5",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:rtc:C1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E3",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:hostile:E4",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:jitter:R1",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:monkey:T2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:monkey:D2",
+          "outcome": "not-run"
+        },
+        {
+          "id": "harness:restart:C7",
+          "outcome": "not-run"
+        }
+      ]
+    }
+  ],
+  "model_transport": "loopback",
+  "model_lan": {
+    "exit": 1,
+    "seconds": 4.727,
+    "selected": false,
+    "identity_errors": [],
+    "observations": [
+      {
+        "id": "harness:ui:U1",
+        "outcome": "not-run",
+        "detail": ""
+      },
+      {
+        "id": "harness:panic:C10",
+        "outcome": "not-run",
+        "detail": ""
+      },
+      {
+        "id": "harness:health",
+        "outcome": "infrastructure-error",
+        "detail": "exit=Some(2) ; contrôleur incomplet : Some(\"phone-upstream http://172.20.10.4:64930/play?salon=ws : aucune réponse HTTP après 2000 ms\") ; H1 : arrêt du passage : phone-upstream http://172.20.10.4:64930/play?salon=ws : aucune réponse HTTP après 2000 ms ; les cas suivants ne sont pas vérifiés"
+      }
+    ]
+  },
+  "legacy_sha256": {
+    "punchline": {
+      "rapport.json": "32f50b9062b5c74229598bbba9180c8366dd65eebbb7f36269927eb6e3794441",
+      "rapport.md": "9805cab2f1ec5294f4afa78e7230bebf751dec5e813e0176f53c6fcf65e048f7",
+      "performance.json": "27b4339a980ea56c6018e25740273e9b9bbff3b8e41fa43c6494e4fd7affa3cb"
+    },
+    "sidequest": {
+      "rapport.json": "5e101a70bdbb164af9cda99be0c88548b6033ba0fee5e2c069d6507c6894e138",
+      "rapport.md": "99cb05bde5cbf973034fb752eb41dcd1e8f4a052c12cd993bc6b356b12c0b4f6",
+      "performance.json": "9f0e12a966ee78ece45dd70a2a1ec263c34fff23f88d22cb2ad2fab859c6783c"
+    },
+    "tier-list": {
+      "rapport.json": "e23a04e727c5abf5d54ba3a0fd96adc1d223c8e501176f0b5a6040e22873da20",
+      "rapport.md": "17ad17b4134a9c534270a28685e9eeae6bf993752a0b0e79db0a51f4a67f661f",
+      "performance.json": "a36986ea037f630df48f4a356903ce468ed51bb39dc1392ae4dafa9cd4fbab79"
+    }
+  },
+  "global_certification": "not asserted",
+  "notes": [
+    "Les passages séparés ne sont pas fusionnés en une certification globale.",
+    "Les campagnes complètes Punchline et Sidequest précèdent uniquement la séparation des noms de fichiers de mesures et les clarifications documentaires finales ; leurs rapports conservent le binaire exact identifié. Les passages ciblés suivants et tous les contrôles du code utilisent le binaire final.",
+    "Tier list a été rejoué complètement après correction de sa racine de données.",
+    "Les exigences communes Unbound, les décisions de catalogue non revues, les critères partiels et la répétition sur appareils réels restent non attestés.",
+    "Les configurations de cache CI sont contrôlées localement ; les jobs GitHub n’ont pas été exécutés depuis ce changement non poussé."
+  ]
+}

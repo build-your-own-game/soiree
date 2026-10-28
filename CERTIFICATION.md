@@ -17,15 +17,40 @@ Deux idées viennent des navigateurs. La suite commune web-platform-tests, que C
 
 ## Trois étages
 
-| Étage | Quand | Durée | Qui vérifie | Commande |
+| Étage | Quand | Périmètre | Qui vérifie | Commande |
 |---|---|---|---|---|
-| **1. Propriétés** | à chaque commit | secondes | `cargo test` | `cargo test` ; `PROPTEST_CASES=5000 cargo test` pour chercher plus loin |
-| **2. Certification** | avant de déclarer une étape finie | minutes | le harnais, en boîte noire | `soiree certify`, dans le dossier du jeu |
-| **3. Le salon** | avant la soirée | 15 min | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
+| **1. Propriétés** | pendant le développement | logique du jeu sans écran | Cargo/libtest et les oracles écrits pour le jeu | `soiree check` ; `PROPTEST_CASES=5000 soiree check` pour élargir les campagnes qui utilisent ce paramètre |
+| **2. Certification** | pour éprouver le jeu réel | scénarios et mesures demandés | le harnais, en boîte noire | `soiree certify`, dans le dossier du jeu |
+| **3. Le salon** | avant la soirée | appareils, perception et plaisir de jeu | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
 
 - **Étage 1.** Il joue des milliers de suites d'entrées au hasard sur la simulation (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
 - **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones sans écran, pilotés par Playwright : la TV dans le Chrome de l'ordinateur, quatre téléphones dans WebKit et quatre dans Chromium, en alternance. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Toxiproxy ne porte que du TCP : la TV et les téléphones ouvrent leur page avec `?salon=ws`, qui garde salon sur son WebSocket. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des paquets hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
 - **Étage 3.** Ce qu'aucun simulateur ne reproduit : la suspension d'iOS, un vrai Wi-Fi, le recul du canapé, savoir si c'est drôle.
+
+## Le contrat et les observations
+
+Depuis 0.3.0, les engagements propres au jeu vivent dans `verification.toml`.
+`soiree contracts` les combine avec les contrôles communs pour produire le plan ;
+`soiree contracts --write-view` actualise leur vue dans le `CERTIFICATION.md` du
+jeu. Ce document commun reste la description du socle, pas un rapport de passage.
+Le format, la migration et les limites sont dans
+[`VERIFICATION.md`](VERIFICATION.md), aussi distribué dans `.soiree/`.
+
+Les méthodes et les résultats restent séparés : un test, une mesure, une preuve
+et une justification ne répondent pas aux mêmes questions. Un contrôle absent,
+ignoré, partiel ou périmé ne devient pas réussi. Une panne du contrôleur se
+distingue d’un bug du jeu. Le code de sortie porte sur les contrôles demandés :
+`check --fast` et `certify -- --only …` peuvent réussir pour leur périmètre tout
+en laissant le reste en attente. Les passages distincts ne sont pas fusionnés
+automatiquement en une certification globale.
+
+La couverture reste à examiner. La liste textuelle ci-dessous, les obligations
+résolues par l’outil et les propriétés propres au jeu ne sont pas trois listes
+automatiquement équivalentes. Un rapport décrit ce que son plan et ses oracles
+ont effectivement vérifié ; il ne démontre pas l’exhaustivité des déclarations.
+Les 97 items du catalogue sont des enseignements à examiner : ceux sans décision
+explicite restent non revus, sans être déclarés tous applicables ou tous écartés.
+Les jugements sur appareils réels gardent leur statut de revue humaine.
 
 ## La règle du bug trouvé en jouant
 
@@ -44,13 +69,13 @@ Le harnais est dans `tools/cert/` du dépôt commun, et l'outil `soiree` l'embar
 Puis, dans le dossier du jeu (les options après `--` vont au harnais) :
 
 ```sh
-soiree certify                          # tous les scénarios (5 à 8 min)
+soiree certify                          # scénarios ordinaires, sans endurance R2
 soiree certify -- --only cut,freeze     # quelques scénarios
 soiree certify -- --seed 12             # rejoue le hasard d'un passage
 soiree certify -- --soak 30             # 30 min d'endurance (R2)
 ```
 
-Les scénarios, dans l'ordre : `join`, `rtc`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais sort en erreur si un item est ✗. `soiree certify` copie ce rapport dans `certification/rapport.md` du jeu, et écrit à côté `certification/rapport.json` : les versions, la graine, la date, la machine et l'empreinte du code certifié ; les deux se committent avec le code. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
+Les scénarios, dans l'ordre : `join`, `rtc`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais conserve ses observations, mais l’évaluateur commun décide si le périmètre demandé est satisfait. `soiree certify` écrit `certification/verification.json` et `certification/verification.md` : plan, sélection, observations, hypothèses et provenance des entrées. Le détail brut reste dans `certification/harness-observations.json` et, lorsqu’il est produit, `certification/harness-observations.md`. Ces rapports datés accompagnent le code ; aucun ancien rapport n’est repris comme une observation fraîche. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
 
 Si le harnais doit fermer de force un contexte après une commande native bloquée, le passage s’arrête avec **H1**, une panne de l’infrastructure de test. Les observations déjà terminées restent dans le rapport ; les scénarios restants sont explicitement non vérifiés. Un contexte détruit ne doit jamais produire ensuite de faux verdicts sur la reconnexion ou le stockage. Le diagnostic conserve l’opération native, son historique récent et l’état observable de la page.
 
@@ -207,7 +232,12 @@ bloqué restent inchangés.
 
 **salon** dans cette colonne : la garantie est celle de la couche réseau commune (`salon/crates/core`), qu'aucun jeu ne réécrit. Elle est jouée par `salon/crates/core/tests/` sur un faux réseau à graine, qui perd, retarde, double et coupe ; le harnais la vérifie encore jeu par jeu.
 
-**Si un item ne s'applique pas** à un jeu, son `LEARNINGS.md` le dit, dans la section « Écarts au manifeste ». Exemple : pas de téléphones dans la tier-list.
+**Si un item ne s'applique pas**, la raison doit être explicite et cohérente avec
+le jeu. Les décisions du catalogue vivent dans `verification.toml` ; leurs
+enseignements et les écarts au manifeste se détaillent dans `LEARNINGS.md`.
+L’applicabilité d’un minimum commun reste résolue par la politique de l’outil,
+notamment depuis `cert.json`. Une phrase d’exclusion ne peut pas retirer ce
+minimum. Un cas qui n’est pas encore établi reste inconnu ou à revoir.
 
 ### P — Performance mesurée
 
@@ -272,7 +302,7 @@ Age of Empires appelait la désynchronisation « le bug têtu », jusqu'à la so
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| D1 | La même graine et les mêmes entrées donnent la même partie, écran par écran. | manifeste (principe 3) | 1 |
+| D1 | Le même état initial, les mêmes contenus et versions, la même graine et les mêmes entrées externes datées et ordonnées donnent les mêmes états et effets logiques. Le rendu au pixel près et les délais physiques demandent des contrôles distincts. | manifeste (principe 3) | 1 |
 | D2 | Une partie se termine toujours, quelles que soient les entrées, les absences et les déconnexions : aucun état ne bloque. | Drawphone #70 | 1, 2 `monkey` |
 | D3 | Les invariants du jeu tiennent après chaque pas. Exemples : scores cohérents, un joueur par place, chaque consigne attribuée. Le jeu les énumère dans son test. | Sea of Thieves (tests d'acteurs) | 1 |
 | D4 | Pour une simulation en temps réel, le hash de l'état est le même en natif et en WASM sur un replay. | Factorio, Fiedler, League of Legends | 1 |

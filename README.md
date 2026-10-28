@@ -8,6 +8,11 @@ Ce dépôt est le commun : les idées, la couche réseau, la télécommande, l'o
 
 Tu ne codes pas ? Commence par [`REJOINDRE.md`](REJOINDRE.md) : donne-le à ton assistant IA, il te guidera.
 
+La version **0.3.0** introduit les contrats de vérification exécutables.
+Leur portée et leurs limites sont décrites dans [`VERIFICATION.md`](VERIFICATION.md) ;
+les [résultats de validation](certification/contracts-v0.3.0/README.md) distinguent
+les contrôles satisfaits des garanties qui restent non attestées.
+
 ## Commencer un jeu
 
 Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance dans un terminal.
@@ -15,7 +20,7 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
 1. **Installer Rust**, avec rustup : suis https://rustup.rs. Ferme puis rouvre le terminal.
 2. **Installer l'outil `soiree`**, à la version de la soirée :
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.2.0 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree
    ```
    La première installation prend quelques minutes.
 3. **Vérifier l'ordinateur** :
@@ -46,19 +51,28 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 
 ## Les commandes
 
-| Commande | Quand | Durée | Ce qu'elle fait |
-|---|---|---|---|
-| `soiree doctor` | à l'installation | secondes | vérifie l'ordinateur et dit quoi installer |
-| `soiree new <nom>` | une fois par jeu | secondes | crée le jeu depuis `modele/` |
-| `soiree check` | après chaque changement | secondes à minutes | formatage, Clippy, tests, règles communes, items du jeu reliés à leur test |
-| `soiree check --fast` | en boucle serrée | secondes | les mêmes contrôles, sans formatage, Clippy ni tests |
-| `soiree mutants` | à la demande | variable | vérifie que les tests détectent des mutations ; rapports sans bloquer check/certify |
-| `soiree certify` | à la fin d'une étape | 5 à 10 min | le harnais complet ; écrit `certification/` |
-| `soiree upgrade` | quand tu veux | secondes à minutes | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
-| `soiree status` | chez l'hôte | secondes | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
-| `soiree host-setup` | chez l'hôte, une fois par machine | secondes à minutes | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |
+| Commande | Quand | Ce qu'elle fait |
+|---|---|---|
+| `soiree doctor` | à l'installation | vérifie l'ordinateur et dit quoi installer |
+| `soiree new <nom>` | une fois par jeu | crée le jeu depuis `modele/` |
+| `soiree contracts` | avant de vérifier | résout les engagements de `verification.toml` et les minima communs en plan |
+| `soiree contracts --write-view` | après un changement d’engagement | actualise la vue dans `CERTIFICATION.md` |
+| `soiree check --fast` | en boucle serrée | contrôle les déclarations et le socle statique ; les tests restent non attestés |
+| `soiree check` | avant de valider le code | ajoute formatage, Clippy natif/WASM, tests réellement découverts par Cargo/libtest et doctests |
+| `soiree mutants` | à la demande | vérifie que les tests détectent des mutations ; rapports séparés |
+| `soiree certify` | pour éprouver le jeu réel | exécute les scénarios ordinaires du harnais ; écrit les observations et leur évaluation dans `certification/` |
+| `soiree certify -- --only ui,panic` | pour un retour ciblé | atteste uniquement les scénarios demandés et la santé du contrôleur |
+| `soiree upgrade` | après une publication | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
+| `soiree status` | chez l'hôte | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
+| `soiree host-setup` | chez l'hôte, une fois par machine | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |
 
 `soiree help` les rappelle.
+
+Le code de sortie dit si le **périmètre demandé** a passé. Un passage rapide ou
+un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
+méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
+un test passé. Les durées et les gains dans la boucle d’itération restent à
+mesurer. Le format et la migration sont dans [`VERIFICATION.md`](VERIFICATION.md).
 
 ## Où trouver le reste
 
@@ -66,6 +80,7 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 |---|---|
 | les idées, le niveau d'exigence, les principes d'ingénierie | [`MANIFESTE.md`](MANIFESTE.md) |
 | ce que chaque jeu tient le soir même | [`CERTIFICATION.md`](CERTIFICATION.md) |
+| les contrats exécutables, les rapports et leurs limites | [`VERIFICATION.md`](VERIFICATION.md) |
 | brancher un jeu sur la TV et les téléphones | [`salon/README.md`](salon/README.md) |
 | l'app iPhone qui sert de manette | [`remote/CONTRAT.md`](remote/CONTRAT.md) |
 | les jeux de la soirée | [`catalogue.toml`](catalogue.toml) |

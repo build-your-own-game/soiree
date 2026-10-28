@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "arguments": {
+    "dir": "/private/tmp/soiree-v03-model-fixture/soiree-model/ci-model",
+    "only": [
+      "ui",
+      "panic"
+    ],
+    "phones": 8,
+    "soak": 0,
+    "seed": 6839,
+    "prepareOnly": false
+  },
+  "completed": true,
+  "infrastructure_error": null,
+  "navigation_failure": null,
+  "transport": {
+    "mode": "loopback",
+    "upstream": "127.0.0.1",
+    "explicit": true,
+    "preflight": {
+      "status": "not-run"
+    }
+  },
+  "records": [
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "Le bouton reste le même après une mise à jour (webkit) : lifecycle",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "Le bouton reste le même après une mise à jour (chromium) : lifecycle",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "editing : Le modèle ne propose aucun champ de saisie. Ajouter un parcours editing dès qu’un éditeur est ajouté.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "effects : Le modèle projette des compteurs ; aucun son ni vibration déclenché par une vue.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "async : Aucun import, export ou chargement asynchrone propre au jeu ; le transport commun est exercé séparément.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "panic",
+      "item": "C10",
+      "status": "ok",
+      "note": "webkit : après une vraie panique WASM, même appareil 2, même jeton et même place",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "panic",
+      "item": "C10",
+      "status": "ok",
+      "note": "chromium : après une vraie panique WASM, même appareil 3, même jeton et même place",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "soak",
+      "item": "R2",
+      "status": "skip",
+      "note": "lance --soak 30 pour l'endurance",
+      "explicit_exclusion": false
+    }
+  ]
+}

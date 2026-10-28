@@ -1,0 +1,13 @@
+verification results:: 10 verified, 1 errors
+error: postcondition not satisfied
+  --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/stale-evidence/lib.rs:78:13
+   |
+78 |       ensures valid == context_is_valid(facts),
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+79 |   {
+80 | /     matches!((facts.method_match, facts.scope_match, facts.freshness),
+81 | |         (Match::Matches, Match::Matches, Freshness::Current | Freshness::Stale))
+   | |________________________________________________________________________________- at the end of the function body
+
+error: aborting due to 1 previous error
+

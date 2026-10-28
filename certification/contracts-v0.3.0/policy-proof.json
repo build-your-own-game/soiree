@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "property": "soiree.verification-policy",
+  "method": "verus",
+  "expected_verus_release": "0.2026.10.26.d17fbd0",
+  "source": "/Users/axel2/Projects/build-your-own-game/soiree/outil/verification-kernel/src/lib.rs",
+  "source_sha256": "c0d4a79adfd9c9494206e6e36e4ba3fadd298eeb27aa59471a190c62bf3f65ff",
+  "inputs": {
+    "src/lib.rs": "c0d4a79adfd9c9494206e6e36e4ba3fadd298eeb27aa59471a190c62bf3f65ff",
+    "Cargo.toml": "62b957da0df676aa553b19444e3188e4b1a4a813a9ebd73cb59e3f96431ac913",
+    "Cargo.lock": "95ee6a9f65ef467c61e3e0b44df046895d8789a6b3d1810a50f31cbd7e3268a0"
+  },
+  "runner_sha256": "9030a8586bed3a0d3e58cc68a3b9a2a74c385dffc64b34658de4b9d314e7b3ad",
+  "unchecked_kernel_annotations": [],
+  "trust_boundary": [
+    "The caller resolves applicability and constructs faithful Facts.",
+    "The caller compares required methods, scopes and actual input fingerprints.",
+    "The verifier, its solver, vstd, Rust compilation and execution platform are trusted.",
+    "The theorem covers policy decisions, not game rules or the truth of external observations."
+  ],
+  "cases": [
+    {
+      "case": "production",
+      "expected": "verified",
+      "command": [
+        "/tmp/soiree-verus-0.2026.10.26.d17fbd0/verus-arm64-macos/verus",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "verification_kernel",
+        "/Users/axel2/Projects/build-your-own-game/soiree/outil/verification-kernel/src/lib.rs"
+      ],
+      "source_sha256": "c0d4a79adfd9c9494206e6e36e4ba3fadd298eeb27aa59471a190c62bf3f65ff",
+      "exit_code": 0,
+      "verified_functions": 11,
+      "verification_errors": 0,
+      "infrastructure_error": null,
+      "passed": true,
+      "elapsed_ms": 640,
+      "log": "/Users/axel2/Projects/build-your-own-game/soiree/target/verification-policy/production.log"
+    },
+    {
+      "case": "stale-evidence",
+      "expected": "rejected",
+      "command": [
+        "/tmp/soiree-verus-0.2026.10.26.d17fbd0/verus-arm64-macos/verus",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "verification_kernel",
+        "/var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/stale-evidence/lib.rs"
+      ],
+      "source_sha256": "9eb336e983fa70b62a88c77c957d5d504d4853fc569119d6df8758d987ce628c",
+      "exit_code": 1,
+      "verified_functions": 10,
+      "verification_errors": 1,
+      "infrastructure_error": null,
+      "passed": true,
+      "elapsed_ms": 311,
+      "log": "/Users/axel2/Projects/build-your-own-game/soiree/target/verification-policy/stale-evidence.log",
+      "mutation": "Accept stale evidence without changing its specification."
+    },
+    {
+      "case": "not-run-is-success",
+      "expected": "rejected",
+      "command": [
+        "/tmp/soiree-verus-0.2026.10.26.d17fbd0/verus-arm64-macos/verus",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "verification_kernel",
+        "/var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/not-run-is-success/lib.rs"
+      ],
+      "source_sha256": "9688aa6ab1db14093246be091eeb7f4fbd4fd76071ab9f8516c056e127c3ca49",
+      "exit_code": 1,
+      "verified_functions": 10,
+      "verification_errors": 1,
+      "infrastructure_error": null,
+      "passed": true,
+      "elapsed_ms": 250,
+      "log": "/Users/axel2/Projects/build-your-own-game/soiree/target/verification-policy/not-run-is-success.log",
+      "mutation": "Treat an unexecuted or ignored test as success."
+    },
+    {
+      "case": "aggregation-hides-pending",
+      "expected": "rejected",
+      "command": [
+        "/tmp/soiree-verus-0.2026.10.26.d17fbd0/verus-arm64-macos/verus",
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        "verification_kernel",
+        "/var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/aggregation-hides-pending/lib.rs"
+      ],
+      "source_sha256": "3e3a4ed8ed4547c447cba821244bdf4f21daf86b99f6a8189f1e652db21f325a",
+      "exit_code": 1,
+      "verified_functions": 10,
+      "verification_errors": 1,
+      "infrastructure_error": null,
+      "passed": true,
+      "elapsed_ms": 245,
+      "log": "/Users/axel2/Projects/build-your-own-game/soiree/target/verification-policy/aggregation-hides-pending.log",
+      "mutation": "Lose an unresolved right-hand obligation during aggregation."
+    }
+  ],
+  "passed": true,
+  "verus_version": "Verus\n  Version: 0.2026.10.26.d17fbd0\n  Profile: release\n  Platform: macos_aarch64\n  Toolchain: 1.99.1-aarch64-apple-darwin (overridden by environment variable RUSTUP_TOOLCHAIN)\n\n",
+  "verus_binary_sha256": "483703c79cf57530a9864de2e69326740ee69162dd98b853aedb8273c74a06f6",
+  "source_unchanged": true,
+  "inputs_unchanged": true
+}

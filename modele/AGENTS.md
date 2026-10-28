@@ -12,9 +12,11 @@ Lis, dans `.soiree/` (écrit par `soiree`, à la version de `soiree.toml`) :
 
 Si `.soiree/` manque, lance `soiree check` : il le recrée. Si `soiree` manque, lance `soiree doctor` après l'avoir installé (voir le README du dépôt commun).
 
-## Deux boucles, deux vitesses
+## Vérifier pendant le développement
 
-**La boucle rapide, après chaque changement : `soiree check`.** Quelques secondes : formatage, Clippy avec les règles communes, tests, contrôles du manifeste. Elle doit rester verte. Ne lance rien de plus lourd pendant que tu itères.
+**Après chaque changement : `soiree check --fast`.** Ce passage immédiat ne porte que sur les contrôles statiques et signale le reste comme non attesté. Il ne certifie ni les tests natifs ni le comportement de l'interface.
+
+**Avant de valider une étape : `soiree check`.** Il exécute les suites natives, les doctests, Clippy natif/WASM et les contrôles des garanties J. Le passage rapide ne le remplace pas.
 
 La CI fournie est liée à cette version du commun ; ne la retirer ni
 l’assouplir. Mettre à niveau avec `soiree upgrade` depuis l’outil de la
@@ -24,27 +26,33 @@ périmées invalidées, identité et composition des champs préservées, effets
 ponctuels identifiés. Une catégorie non applicable cesse de l’être dès que
 sa mécanique apparaît.
 
-**La boucle lourde, à la fin d'une étape : `soiree certify`.** 5 à 10 minutes : le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles, endurance. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige chaque ✗, relance, puis committe `certification/` avec le code. Un ~ ou un – n'est pas un échec : lis le détail.
+**La boucle lourde, à la fin d'une étape : `soiree certify`.** 5 à 10 minutes : le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles, endurance. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige les échecs produit et les pannes du contrôleur, puis relance le périmètre concerné. Un résultat de revue ou non attesté reste visible et peut rendre le code de sortie non nul : il demande une décision, une observation ou un contrôle manquant, pas une relance pour obtenir artificiellement du vert. Documente ces limites et committe `certification/` avec le code. Un passage ciblé réussi ne valide pas les autres scénarios.
 
 Entre les deux, joue : lance le jeu (`cargo run --release -p {{nom}}-host`), ouvre la TV et des téléphones (`/play?seat=1`, `/play?seat=2`…), regarde des captures. Si ton environnement a un navigateur ou un simulateur iOS, sers-t'en.
 
 ## La certification propre à ce jeu
 
-`CERTIFICATION.md` à la racine liste ce que **ce jeu-ci** doit tenir, en plus des items communs. Chaque item nomme son test de propriétés ; `soiree check` vérifie que chaque test nommé existe et passe.
+`verification.toml` à la racine déclare ce que **ce jeu-ci** doit tenir, en plus des exigences communes. `CERTIFICATION.md` en présente une vue lisible générée : change le contrat source, pas son bloc généré.
+
+`soiree contracts` valide le contrat et imprime son plan JSON sans exécuter les contrôles ; `soiree contracts --write-view` met à jour la vue lisible. Ces commandes ne produisent pas une réussite de test.
+
+Chaque garantie garde un identifiant stable, une exigence observable et des références à des contrôles. Un contrôle `cargo-test` identifie exactement son paquet, sa catégorie et son nom de cible Cargo, puis le nom complet du test, modules compris. Un helper n'est pas un test : nomme le test qui l'exécute et conserve son rôle dans `assumptions`. Les hypothèses et limites restent explicites ; le texte d'une garantie ne prouve pas qu'elle est tenue.
 
 Ne pars pas d'une page blanche : `.soiree/certifications/` est un catalogue d'items rangés par mécanique (physique, vote, tour par tour, score…), chacun tiré d'un vrai bug de jeu.
 1. Repère les mécaniques de ton jeu et lis les fichiers correspondants.
-2. Prends **tous** les items qui s'appliquent, adapte-les à ton jeu, et note `origine: <ID>`.
-3. Un item que tu écartes alors que sa mécanique est dans ton jeu : dis pourquoi en une ligne, dans `CERTIFICATION.md`.
+2. Prends **tous** les items qui s'appliquent, adapte-les à ton jeu, et garde leur identifiant dans `origins`. Déclare leur décision `adopted` avec une raison dans `catalogue_decisions`.
+3. Un item que tu écartes alors que sa mécanique est dans ton jeu : déclare `not-applicable` avec sa raison dans `catalogue_decisions`. Sans décision explicite, l'item reste non revu ; il ne devient ni satisfait ni non applicable.
 4. Refais ce tri quand le jeu gagne une mécanique.
 
 Ajoute ensuite ce que le catalogue n'a pas : chaque règle de ton jeu qui peut casser devient un item. Bons items : ce qu'un joueur pressé, un téléphone en retard ou une égalité peuvent casser.
+
+Ne réutilise jamais un ancien rapport comme résultat courant, et ne déduis pas une réussite de la seule présence d'un test. Les contrôles UI et leurs catégories restent déclarés dans `cert.json.ui` ; ils ne remplacent pas les garanties propres au jeu. Un item retiré conserve son identifiant avec `retired = true`, et `LEARNINGS.md` explique ce qui le couvre désormais.
 
 ## Un bug trouvé en jouant
 
 1. Reproduis-le : une suite d'entrées ou un replay, qui devient un test.
 2. Écris dans `LEARNINGS.md` pourquoi aucun item ne l'a vu.
-3. Ajoute ou durcis un item dans le `CERTIFICATION.md` du jeu. Si la faille n'est pas propre à ton jeu, propose-la au catalogue, sans attendre qu'on te le demande : ouvre une pull request sur le dépôt commun qui ajoute l'item au bon fichier de `certifications/`, au format du catalogue, avec un lien vers le test de ton jeu qui l'a trouvée. L'hôte décide de l'ajouter ou non ; en attendant, l'item reste dans le `CERTIFICATION.md` de ton jeu. Si tu ne peux pas ouvrir de pull request toi-même, écris-en le contenu pour l'auteur.
+3. Ajoute ou durcis une garantie et son contrôle dans le `verification.toml` du jeu. Si la faille n'est pas propre à ton jeu, propose-la au catalogue, sans attendre qu'on te le demande : ouvre une pull request sur le dépôt commun qui ajoute l'item au bon fichier de `certifications/`, au format du catalogue, avec un lien vers le test de ton jeu qui l'a trouvée. L'hôte décide de l'ajouter ou non ; en attendant, la garantie reste dans le `verification.toml` du jeu. Si tu ne peux pas ouvrir de pull request toi-même, écris-en le contenu pour l'auteur.
 
 ## Ce que tu ne modifies pas
 

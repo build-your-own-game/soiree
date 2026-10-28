@@ -11,14 +11,74 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install the pinned toolchain and tools
+      - name: Prepare the pinned toolchain and identify the SDK
+        id: versions
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.99 --component rustfmt,clippy --target wasm32-unknown-unknown,aarch64-apple-ios-sim
-          cargo +1.99 install --locked cargo-mutants --version 27.1.0
-          cargo +1.99 install --locked wasm-bindgen-cli --version 0.2.129
-          cargo +1.99 install --locked --path outil
+          sdk_version="$(python3 -c 'import pathlib,re; text=pathlib.Path("outil/Cargo.toml").read_text().split("[package]",1)[1].split("\n[",1)[0]; print(re.search(r"(?m)^version = \"([^\"]+)\"$",text).group(1))')"
+          printf 'sdk=%s\n' "$sdk_version" >> "$GITHUB_OUTPUT"
+      - name: Cache Cargo downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-cargo-downloads-v1-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-cargo-downloads-v1-
+      - name: Cache Rust compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            outil/target/debug
+            outil/target/release
+            outil/verification-kernel/target/debug
+            salon/target/debug
+            salon/target/release
+            salon/target/wasm32-unknown-unknown
+            remote/target/debug
+            remote/target/release
+            remote/target/wasm32-unknown-unknown
+            remote/target/aarch64-apple-ios-sim
+            ${{ runner.temp }}/soiree-model-target/debug
+            ${{ runner.temp }}/soiree-model-target/release
+            ${{ runner.temp }}/soiree-model-target/wasm32-unknown-unknown
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-
+      - name: Cache immutable external CLI tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.tool_cache }}/soiree-tools/wasm-bindgen-0.2.129
+            ${{ runner.tool_cache }}/soiree-tools/cargo-mutants-27.1.0
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-cli-wasm-bindgen-0.2.129-mutants-27.1.0-v1
+      - name: Verify pinned tools and build the current checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm_cli="$RUNNER_TOOL_CACHE/soiree-tools/wasm-bindgen-0.2.129"
+          mutants_cli="$RUNNER_TOOL_CACHE/soiree-tools/cargo-mutants-27.1.0"
+          if ! wasm_version="$("$wasm_cli/bin/wasm-bindgen" --version 2>/dev/null)" || [ "$wasm_version" != 'wasm-bindgen 0.2.129' ]; then
+            cargo +1.99 install --locked --force wasm-bindgen-cli --version 0.2.129 --root "$wasm_cli"
+          fi
+          wasm_version="$("$wasm_cli/bin/wasm-bindgen" --version)"
+          test "$wasm_version" = 'wasm-bindgen 0.2.129'
+          if ! mutants_version="$("$mutants_cli/bin/cargo-mutants" mutants --version 2>/dev/null)" || [ "$mutants_version" != 'cargo-mutants 27.1.0' ]; then
+            cargo +1.99 install --locked --force cargo-mutants --version 27.1.0 --root "$mutants_cli"
+          fi
+          mutants_version="$("$mutants_cli/bin/cargo-mutants" mutants --version)"
+          test "$mutants_version" = 'cargo-mutants 27.1.0'
+          printf '%s\n' "$wasm_cli/bin" "$mutants_cli/bin" >> "$GITHUB_PATH"
+          cargo +1.99 install --locked --force --path outil --target-dir outil/target
+          checkout_version="$(soiree version)"
+          test "$checkout_version" = 'soiree ${{ steps.versions.outputs.sdk }}'
           brew install toxiproxy
           if [ ! -x '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' ]; then
             brew install --cask google-chrome
@@ -30,6 +90,9 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test --locked
+      - name: Build the actual iPhone app
+        working-directory: remote
+        run: xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check the shared crates and real Swift ABI
         run: soiree check --locked salon remote .
       - name: Exercise the browser harness
@@ -46,9 +109,6 @@ jobs:
         run: cargo xtask web-contract-browser
       - name: Exercise remote capability lifetimes
         run: node remote/tests/web-lifecycle-browser.mjs
-      - name: Build the actual iPhone app
-        working-directory: remote
-        run: xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check and exercise a freshly generated game
         env:
           SOIREE_HARNESS: ${{ github.workspace }}/tools/cert
@@ -58,3 +118,59 @@ jobs:
         with:
           name: model-certification
           path: ${{ runner.temp }}/soiree-model/ci-model/certification/
+  verification-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchains
+        id: versions
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99 --component rustfmt,clippy
+          rustup toolchain install 1.99.1
+          sdk_version="$(python3 -c 'import pathlib,re; text=pathlib.Path("outil/Cargo.toml").read_text().split("[package]",1)[1].split("\n[",1)[0]; print(re.search(r"(?m)^version = \"([^\"]+)\"$",text).group(1))')"
+          printf 'sdk=%s\n' "$sdk_version" >> "$GITHUB_OUTPUT"
+      - name: Cache policy Cargo downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-downloads-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-downloads-v1-
+      - name: Cache policy compilation
+        uses: actions/cache@v4
+        with:
+          path: outil/verification-kernel/target/debug
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-
+      - name: Check the production policy and exhaustive finite cases
+        run: |
+          set -euo pipefail
+          cargo +1.99 fmt --manifest-path outil/verification-kernel/Cargo.toml --check
+          cargo +1.99 clippy --manifest-path outil/verification-kernel/Cargo.toml --all-targets --locked -- -D warnings
+          cargo +1.99 test --manifest-path outil/verification-kernel/Cargo.toml --locked
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}/soiree-verus
+          key: verus-0.2026.10.26.d17fbd0-${{ runner.os }}-${{ runner.arch }}-archive-v1
+      - name: Install the authenticated official Verus release
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy_verus="$(python3 .github/scripts/install-verus.py "$RUNNER_TOOL_CACHE/soiree-verus")"
+          echo "SOIREE_VERUS=$policy_verus" >> "$GITHUB_ENV"
+      - name: Verify the production source and reject bad policy mutations
+        run: tools/verify-policy.sh --mutations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-policy
+          path: target/verification-policy/

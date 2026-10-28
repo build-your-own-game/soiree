@@ -20,6 +20,7 @@ mod status;
 mod ui_contract;
 mod upgrade;
 mod util;
+mod verification;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -32,6 +33,8 @@ const HELP: &str = "soiree : l'outil de la soirée
   soiree check [--fast] [--locked] [--published] [dossier…]
                                      règles, manifeste, certifications ; puis fmt,
                                      Clippy natif et WASM, tests (sauf --fast)
+  soiree contracts [--write-view] [--migrate REFERENCES.json] [dossier]
+                                     plan JSON ; vue lisible ou migration explicite
   soiree certify [dossier] [--harness H] [-- options du harnais]
                                      le harnais complet ; écrit certification/
   soiree mutants [dossier] [--in-diff FICHIER] [--re REGEX] [--timeout S]
@@ -95,6 +98,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             Ok(check::run(&dirs, options))
         }
         "status" => Ok(status::run(&one_dir(rest)?)),
+        "contracts" => contracts(rest),
         "doctor" => Ok(doctor::run(&one_dir(rest)?)),
         "new" => {
             let mut name = None;
@@ -147,6 +151,48 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         "host-setup" => Ok(host_setup::run(&host_setup_options(rest)?)),
         other => Err(format!("commande inconnue : {other}")),
     }
+}
+
+fn contracts(args: &[String]) -> Result<ExitCode, String> {
+    let mut write = false;
+    let mut migration = None;
+    let mut dirs = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--write-view" => write = true,
+            "--migrate" => {
+                migration = Some(PathBuf::from(
+                    args.next().ok_or("--migrate attend REFERENCES.json")?,
+                ));
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!("contracts : option inconnue {flag}"));
+            }
+            dir => dirs.push(dir.to_owned()),
+        }
+    }
+    let dir = one_dir(&dirs)?;
+    if let Some(references) = migration {
+        let count = verification::migrate::run(&dir, &references)?;
+        println!("{count} engagements migrés ; aucune exécution importée");
+    }
+    let contract = verification::load(&dir)?;
+    if write {
+        verification::render::write_view(&dir, &contract)?;
+    }
+    let config = util::read(&dir.join("cert.json"))?;
+    let config = serde_json::from_str(&config).map_err(|e| e.to_string())?;
+    let plan = verification::resolve::resolve(&contract, &config);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&plan).map_err(|e| e.to_string())?
+    );
+    Ok(if plan.diagnostics.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }
 
 fn host_setup_options(args: &[String]) -> Result<host_setup::Options, String> {

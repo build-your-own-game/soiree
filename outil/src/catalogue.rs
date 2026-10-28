@@ -83,13 +83,13 @@ pub fn check(dir: &Path, report: &mut Report) {
     }
 }
 
-/// The identifiers of a catalogue folder, without judging its format.
-pub fn ids_in(folder: &Path) -> BTreeSet<String> {
+/// The versioned identifiers carried by this tool, independent of a game's files.
+pub fn ids() -> BTreeSet<String> {
     let mut quiet = Report::quiet();
-    catalogue_files(folder)
+    crate::embedded::CATALOGUE
         .iter()
-        .filter_map(|path| util::read(path).ok())
-        .flat_map(|text| lint_file(&text, "", &mut quiet))
+        .filter(|(name, _)| *name != "README.md")
+        .flat_map(|(name, text)| lint_file(text, name, &mut quiet))
         .map(|entry| entry.id)
         .collect()
 }
@@ -401,7 +401,7 @@ mod tests {
                 .any(|m| m.contains("README.md:3 : cite VOTE-09"))
         );
         assert!(found.iter().any(|m| m.contains("ne liste pas PHY-02")));
-        assert_eq!(ids_in(&dir.join("certifications")).len(), 2);
+        assert!(!ids().is_empty());
     }
 
     /// A shared repository with `certifications/`, in a fresh temporary folder.

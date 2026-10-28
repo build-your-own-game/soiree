@@ -105,6 +105,23 @@ fn plan(dir: &Path) -> Result<Plan> {
     let mut repositories = BTreeSet::new();
     let mut packages = BTreeSet::new();
     dependencies(cargo.as_item_mut(), &mut repositories, &mut packages);
+    let mut members = Vec::new();
+    if cargo.contains_key("workspace") {
+        for path in workspace_manifests(dir)? {
+            if path == dir.join("Cargo.toml") {
+                continue;
+            }
+            let original = util::read(&path)?;
+            let mut member: DocumentMut = original
+                .parse()
+                .map_err(|error| format!("{} : {error}", path.display()))?;
+            dependencies(member.as_item_mut(), &mut repositories, &mut packages);
+            let updated = member.to_string();
+            if updated != original {
+                members.push((path, updated));
+            }
+        }
+    }
     let expected: DocumentMut = rules::CARGO
         .parse()
         .map_err(|e| format!("règles Cargo : {e}"))?;
@@ -145,17 +162,84 @@ fn plan(dir: &Path) -> Result<Plan> {
             workflow.display()
         ));
     }
+    let mut files = vec![
+        (dir.join("soiree.toml"), version.to_string()),
+        (dir.join("Cargo.toml"), cargo.to_string()),
+        (dir.join("clippy.toml"), clippy.to_string()),
+        (dir.join("rust-toolchain.toml"), toolchain.to_string()),
+        (workflow, crate::ci::workflow()?),
+    ];
+    files.extend(members);
     Ok(Plan {
-        files: vec![
-            (dir.join("soiree.toml"), version.to_string()),
-            (dir.join("Cargo.toml"), cargo.to_string()),
-            (dir.join("clippy.toml"), clippy.to_string()),
-            (dir.join("rust-toolchain.toml"), toolchain.to_string()),
-            (workflow, crate::ci::workflow()?),
-        ],
+        files,
         repositories,
         packages,
     })
+}
+
+/// Cargo expands workspace globs and inherited membership for us. `--no-deps`
+/// does not resolve dependencies; `--offline --locked` also forbids fetching
+/// or changing a lockfile during planning, including before its first lock.
+fn workspace_manifests(dir: &Path) -> Result<BTreeSet<PathBuf>> {
+    let output = util::run(
+        dir,
+        "cargo",
+        &[
+            "metadata",
+            "--no-deps",
+            "--offline",
+            "--locked",
+            "--format-version",
+            "1",
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "upgrade : découverte du workspace par cargo metadata --no-deps : {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("upgrade : métadonnées du workspace illisibles : {error}"))?;
+    let members: BTreeSet<_> = metadata
+        .get("workspace_members")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("upgrade : workspace_members absent des métadonnées Cargo")?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect::<Option<_>>()
+        .ok_or("upgrade : identifiant de membre illisible dans les métadonnées Cargo")?;
+    let mut manifests = BTreeSet::new();
+    for package in metadata
+        .get("packages")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("upgrade : packages absent des métadonnées Cargo")?
+        .iter()
+        .filter(|package| {
+            package
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| members.contains(id))
+        })
+    {
+        let manifest = package
+            .get("manifest_path")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("upgrade : manifest_path absent d'un membre du workspace")?;
+        let path = std::fs::canonicalize(manifest)
+            .map_err(|error| format!("upgrade : {manifest} : {error}"))?;
+        if !path.starts_with(dir) {
+            return Err(format!(
+                "upgrade : membre du workspace hors du dossier du jeu : {} ; aucun fichier modifié",
+                path.display()
+            ));
+        }
+        manifests.insert(path);
+    }
+    if manifests.len() != members.len() {
+        return Err("upgrade : manifestes des membres du workspace incomplets".into());
+    }
+    Ok(manifests)
 }
 
 fn optional(dir: &Path, name: &str) -> Result<DocumentMut> {

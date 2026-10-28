@@ -2,53 +2,24 @@
 
 > Ce que **ce jeu-ci** doit tenir, en plus des items communs de `.soiree/CERTIFICATION.md`. L'agent du jeu écrit ces items au fil des règles (voir `AGENTS.md`).
 
-## Format
+Les engagements, leurs références exactes de tests et les décisions du catalogue
+ont leur source dans `verification.toml`. Le bloc ci-dessous est une vue générée ;
+il se met à jour depuis ce contrat. Un item du catalogue sans décision explicite
+reste non revu, et un rapport ancien ne vaut pas résultat courant.
 
-`soiree check` lit deux sections de ce fichier, « Les items » et « Items du catalogue écartés », et refuse ce qui n'a pas leur format. Le reste du fichier est libre. Les blocs de code et les commentaires HTML ne sont pas lus.
-
-**« Les items »** contient un seul tableau, avec ces colonnes, dans cet ordre :
-
-| Colonne | Contenu | Obligatoire |
-|---|---|---|
-| `#` | l'identifiant : `J` suivi d'un numéro (`J1`, `J2`…), unique, jamais réutilisé | oui |
-| `Exigence` | une phrase qui dit ce que le joueur constate, pas comment le code le fait | oui |
-| `Test` | le nom du test de propriétés qui la vérifie, entre accents graves : `` `late_vote_is_ignored` ``. Le chemin du module est permis (`` `tests::late_vote_is_ignored` ``) ; seul le dernier segment est cherché. Plusieurs tests : séparés par des virgules. | oui |
-| `Origine` | l'identifiant de l'item du catalogue commun dont celui-ci est une adaptation, entre accents graves : `` `VOTE-03` `` (2 à 5 majuscules, un tiret, 2 chiffres). Vide si l'item est propre au jeu. La colonne elle-même est facultative. | non |
-
-**« Items du catalogue écartés »** est facultative. Elle liste les items du catalogue commun (`.soiree/certifications/`) qui visent une mécanique de ce jeu mais ne s'y appliquent pas, un par ligne, avec sa raison : `- VOTE-02 : on vote à main levée, il n'y a pas de vote secret.`
-
-`soiree check` vérifie :
-- chaque identifiant est unique et chaque champ obligatoire est rempli ;
-- chaque test nommé existe dans le code (`fn late_vote_is_ignored`) ; `cargo test`, qu'il lance aussi, vérifie qu'il passe ;
-- chaque origine et chaque item écarté a le format d'un identifiant du catalogue ; si `.soiree/certifications/` existe, il doit y être (un avertissement, pour l'instant).
-
-Un item retiré n'est pas effacé : barre son identifiant (`~~J3~~`) et dis dans `LEARNINGS.md` ce qui le couvre maintenant. Son test n'est plus cherché.
-
-Exemple (les blocs de code ne sont pas lus) :
-
-```markdown
-## Les items
-
-| # | Exigence | Test | Origine |
-|---|---|---|---|
-| J1 | Un vote arrivé après la fin du tour ne compte pas. | `late_vote_is_ignored` | `VOTE-03` |
-| J2 | Une réponse identique à celle d'un autre joueur est refusée, accents et casse compris. | `duplicate_answer_is_refused` | |
-| J3 | Deux joueurs qui sautent sur la même plateforme à la même image ne se traversent pas. | `same_frame_jumps_collide`, `collision_is_symmetric` | `PHY-01` |
-
-## Items du catalogue écartés
-
-- VOTE-02 : on vote à main levée devant la TV, il n'y a pas de vote secret.
-```
+<!-- soiree:guarantees:start -->
 
 ## Les items
 
-| # | Exigence | Test | Origine |
+| # | Exigence | Contrôles | Origine |
 |---|---|---|---|
-| J1 | Un compteur ne revient jamais à zéro par débordement. | `score_increments_without_wrapping` | |
-| J2 | Un joueur absent ne marque pas et retrouve son score au retour. | `absent_players_cannot_score_and_return_keeps_score` | |
-| J3 | Un replay restitue tout l’état et refuse une empreinte différente. | `a_versioned_journal_replays_the_complete_state` | |
-| J5 | Même des arrivées simultanées ne dépassent pas la capacité du jeu. | `capacity_is_enforced_in_the_simulation`, `simultaneous_arrivals_never_exceed_capacity` | |
-| J4 | Coupures et duplications réseau ne dupliquent ni joueur ni point. | `whole_host_is_deterministic_across_thousands_of_network_seeds` | |
+| J1 | Un compteur ne revient jamais à zéro par débordement. | `score_increments_without_wrapping` |  |
+| J2 | Un joueur absent ne marque pas et retrouve son score au retour. | `absent_players_cannot_score_and_return_keeps_score` |  |
+| J3 | Un replay restitue tout l’état et refuse une empreinte différente. | `a_versioned_journal_replays_the_complete_state` |  |
+| J5 | Même des arrivées simultanées ne dépassent pas la capacité du jeu. | `capacity_is_enforced_in_the_simulation`, `simultaneous_arrivals_never_exceed_capacity` |  |
+| J4 | Coupures et duplications réseau ne dupliquent ni joueur ni point. | `whole_host_is_deterministic_across_thousands_of_network_seeds` |  |
 
-## Items du catalogue écartés
+## Décisions du catalogue
 
+
+<!-- soiree:guarantees:end -->

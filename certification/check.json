@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-28T09:59:32Z",
+  "finished": "2026-10-28T09:59:33Z",
+  "selection": [
+    "static:common"
+  ],
+  "controller_exit_code": null,
+  "identity_before": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+  "identity_after": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+  "identity_errors": [],
+  "provenance": {
+    "value": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+    "source_roots": [
+      "/Users/axel2/Projects/build-your-own-game/soiree"
+    ],
+    "files": 6800,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      }
+    ],
+    "controls": [
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      }
+    ],
+    "catalogue": [],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "static:common",
+      "method": "static",
+      "scope": "static:common",
+      "outcome": "passed",
+      "input_identity": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+      "detail": "[(Info, \"pas de Cargo.toml : seulement le catalogue des certifications\"), (Ok, \"catalogue : 97 item(s) dans 10 fichier(s), README.md à jour\")]",
+      "command": [],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "static:common",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": true,
+    "complete": true,
+    "diagnostics": []
+  }
+}

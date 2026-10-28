@@ -23,6 +23,15 @@ page est généré depuis les fichiers de `web/`. Le réseau reste dans salon.
 
 Lis `AGENTS.md`, puis les documents de `.soiree/`, avant de modifier le jeu.
 
+`verification.toml` déclare les garanties propres au jeu, les références exactes
+des tests qui les contrôlent et les décisions motivées du catalogue.
+`CERTIFICATION.md` en est la vue lisible générée. Les contrôles d’interface
+restent dans `cert.json.ui` ; les rapports enregistrent des résultats datés,
+sans transformer les items du catalogue non revus en garanties acquises.
+`soiree contracts` valide le contrat et affiche son plan JSON sans exécution ;
+`soiree contracts --write-view` actualise la vue. `soiree check --fast` sert
+pendant l'itération : il ne contrôle que le statique et laisse le reste non attesté.
+
 La CI `.github/workflows/soiree.yml` est liée à la version `{{version}}` du
 commun. Elle vérifie les dépendances publiées avec
 `soiree check --locked --published`, puis exerce `ui` et la récupération

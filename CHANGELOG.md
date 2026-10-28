@@ -2,6 +2,79 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
+## v0.3.0 — 2026-10-28
+
+Les engagements propres au jeu passent de tableaux Markdown à
+`verification.toml`. L’outil résout leurs obligations et les contrôles communs,
+exécute les contrôleurs, puis évalue des observations rattachées à leurs entrées.
+`CERTIFICATION.md` devient une vue des engagements ; les rapports datés restent
+séparés. Cette rupture demande une migration explicite des identités de tests :
+un nom de fonction trouvé dans le texte ou un ancien rapport ne suffit plus.
+
+Cargo fournit les cibles et libtest les tests réellement découverts et exécutés.
+Paquet, genre de cible, cible, nom complet, features, features par défaut et
+profil distinguent les identités. Tests ignorés, zéro sélection et compilation
+échouée ne satisfont aucun engagement. Le noyau de décision de production est
+vérifié avec une version figée de Verus ; les adaptateurs, oracles et décisions
+d’applicabilité restent hors de cette preuve.
+
+`check --fast` et `certify -- --only …` rendent leur périmètre explicite.
+`certify` échoue si un contrôle demandé est absent, sauté, partiel ou si le
+contrôleur tombe en panne ; un simple code de sortie Node réussi ne suffit plus.
+Un passage ciblé réussi laisse les autres obligations non attestées. Les items
+du catalogue sans décision restent non revus et les gestes sur appareils réels
+restent des jugements humains. Les coûts d’itération et de CI restent à mesurer.
+
+La CI conserve les téléchargements Cargo, les compilations et les outils figés,
+avec contrôle exact de leurs versions. Le binaire du commun est toujours
+reconstruit depuis son checkout. Aucun rapport n’est restauré comme résultat
+valide ; le gain de temps de ces caches reste à mesurer.
+
+Les attentes UI attendent désormais la valeur résolue de leur expression : une
+promesse qui résout `false` ne franchit pas l’attente. Les expressions régulières
+et les délais sont validés avant l’exécution des contrôles UI. Le transport de
+test est inscrit dans le périmètre ; un passage `phone_upstream: "loopback"`
+laisse les garanties d’accès au réseau local non attestées. Les fichiers servis
+sont préparés avant leur empreinte.
+
+`soiree upgrade` met aussi à niveau les dépendances communes déclarées
+directement dans les manifestes des membres du workspace. En 0.2.0, seules
+celles du manifeste racine étaient alignées ; Sidequest conservait ainsi
+`remote-web` et `remote-protocol` à l’ancienne étiquette dans ses membres.
+Les commentaires et les dépendances de développement, de construction et
+propres à une cible restent préservés. La découverte Cargo fonctionne
+avant le premier lockfile et ne le crée ni ne le modifie ; un membre hors
+du dossier du jeu ou une étiquette absente arrête la commande avant toute
+écriture.
+
+Le lock du projet fuzz de la télécommande et sa cible `phone_session` sont remis en état :
+le booléen du corpus est converti vers `Orientation` au bord de l’entrée,
+sans changer les octets des corpus.
+
+### Passer à cette version
+
+1. Installer l’outil avec
+   `cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree`.
+2. À la racine du jeu, lancer `soiree upgrade --dry-run`, puis
+   `soiree upgrade`. La commande aligne le manifeste racine, les membres
+   du workspace, les règles et la CI sur cette étiquette publiée. Un
+   sous-projet indépendant, tel qu’un workspace `fuzz/`, garde son propre
+   lockfile : le résoudre aussi après la migration s’il dépend du jeu.
+3. Préparer `references.json` : pour chaque référence historique active, donner
+   son paquet Cargo, son genre de cible (`lib`, `bin` ou `test`), sa cible,
+   son nom complet libtest et sa configuration. Une redirection de helper ou
+   de nom doit être expliquée. Le format exact est dans `VERIFICATION.md`.
+4. Lancer `soiree contracts --migrate references.json`, relire les engagements,
+   hypothèses et décisions importés, puis `soiree contracts --write-view`.
+   L’original est conservé dans `CERTIFICATION.legacy.md` ; aucun résultat
+   historique n’est importé comme réussi. Un jeu qui possède déjà un contrat
+   structuré l’édite directement, sans relancer cette migration.
+5. Lancer `soiree check`, les scénarios nécessaires avec `soiree certify`, puis
+   le passage `soiree check --locked --published` depuis un clone sans patch
+   local. Examiner les contrôles en attente et les limites du rapport avant
+   de déclarer le périmètre validé. Les crates communes du SDK gardent leur
+   version de paquet 0.2.0 ; l’étiquette Git v0.3.0 fige l’ensemble distribué.
+
 ## v0.2.0 — 2026-10-28
 
 Le contrat entre une page libre et l’app iPhone est défini dans

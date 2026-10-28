@@ -13,7 +13,7 @@ use crate::dom;
 use crate::embedded::{self, VERSION};
 use crate::report::Report;
 use crate::util::{self, Result};
-use crate::{catalogue, gaps, items, lints};
+use crate::{catalogue, gaps, lints};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
@@ -55,11 +55,16 @@ const SHARED_PACKAGES: [&str; 12] = [
 ];
 
 pub fn run(dirs: &[PathBuf], options: Options) -> ExitCode {
-    let mut report = Report::new();
+    let mut passed = true;
     for dir in dirs {
-        check_project(&util::absolute(dir), options, &mut report);
+        let dir = util::absolute(dir);
+        passed &= crate::verification::check::run(&dir, options);
     }
-    report.finish()
+    if passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// What `soiree.toml` says about this folder.
@@ -77,6 +82,7 @@ struct Game {
     version: Option<String>,
 }
 
+/// Static controller only: the structured evaluator decides the check result.
 pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
     report.section(&dir.display().to_string());
     if options.published
@@ -131,13 +137,10 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
     gaps::check(dir, report);
     if has_catalogue {
         catalogue::check(dir, report);
-    } else {
-        items::check(dir, game.folder, report);
+    } else if game.folder == Folder::Game {
+        crate::verification::validate_declaration(dir, report);
     }
     check_cert_json(dir, game.folder, report);
-    if !options.fast {
-        check_commands(dir, options, report);
-    }
 }
 
 /// Reads `soiree.toml`, refuses another version, and writes `.soiree/`.
@@ -492,7 +495,9 @@ fn check_cert_json(dir: &Path, folder: Folder, report: &mut Report) {
                 report.error(format!("cert.json : il manque {}", missing.join(", ")));
             }
             if folder == Folder::Game || config.get("ui").is_some() {
-                match crate::ui_contract::validate(&config) {
+                match crate::ui_contract::validate(&config)
+                    .and_then(|()| crate::ui_contract::validate_patterns(dir, &config))
+                {
                     Ok(()) => report.ok(
                         "contrats de vérification UI : couverture ou non-applicabilité explicite",
                     ),
@@ -530,81 +535,6 @@ fn cert_json_missing(config: &Json) -> Vec<&'static str> {
     missing
 }
 
-/// The four commands the manifesto requires before a step is done.
-fn check_commands(dir: &Path, options: Options, report: &mut Report) {
-    let locked: &[&str] = if options.locked { &["--locked"] } else { &[] };
-    let mut runs: Vec<(&str, Vec<&str>)> = vec![
-        ("cargo fmt --check", vec!["fmt", "--check"]),
-        (
-            "cargo clippy --all-targets",
-            [
-                &["clippy", "--all-targets", "--message-format=short"],
-                locked,
-                &["--", "-D", "warnings"],
-            ]
-            .concat(),
-        ),
-        (
-            "cargo clippy --target wasm32-unknown-unknown",
-            [
-                &[
-                    "clippy",
-                    "--target",
-                    "wasm32-unknown-unknown",
-                    "--message-format=short",
-                ],
-                locked,
-                &["--", "-D", "warnings"],
-            ]
-            .concat(),
-        ),
-        ("cargo test", [&["test"], locked].concat()),
-    ];
-    if dir.join("ios/Remote.xcodeproj").is_dir() {
-        if cfg!(target_os = "macos") {
-            runs.push((
-                "contrat Swift/Rust/JavaScript",
-                vec!["xtask", "web-contract"],
-            ));
-        } else {
-            report.warn(
-                "contrat Swift/Rust/JavaScript non exécuté : macOS et Swift sont nécessaires",
-            );
-        }
-    }
-    for (label, args) in runs {
-        match util::run(dir, "cargo", &args) {
-            Ok(output) if output.status.success() => report.ok(label),
-            Ok(output) => {
-                report.error(label);
-                let text = format!(
-                    "{}{}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                for line in text.lines().filter(|l| notable(l)).take(8) {
-                    report.detail(line);
-                }
-            }
-            Err(error) => report.error(format!("{label} : {error}")),
-        }
-    }
-}
-
-/// The lines of a failed command worth showing (the filter of the former shell check).
-fn notable(line: &str) -> bool {
-    if line.contains("could not compile") {
-        return false;
-    }
-    let diagnostic = ["error:", "error[", "warning:", "warning["]
-        .iter()
-        .any(|d| line.starts_with(d) || line.contains(&format!(": {d}")));
-    diagnostic
-        || line.starts_with("Diff in")
-        || (line.starts_with("test ") && line.contains(" FAILED"))
-        || (line.starts_with("thread ") && line.contains(" panicked"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,17 +568,6 @@ mod tests {
             cert_json_missing(&none),
             vec!["launch", "ready", "tv", "phone (null sans téléphones)"]
         );
-    }
-
-    #[test]
-    fn notable_lines_are_diagnostics_and_failures() {
-        assert!(notable("src/lib.rs:3:5: error[E0425]: cannot find value"));
-        assert!(notable("warning: unused import"));
-        assert!(notable("Diff in /x/src/lib.rs:1:"));
-        assert!(notable("test tests::a ... FAILED"));
-        assert!(notable("thread 'main' panicked at src/x.rs"));
-        assert!(!notable("error: could not compile `x`"));
-        assert!(!notable("   Compiling x v0.1.0"));
     }
 
     #[test]

@@ -28,7 +28,7 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launchBrowser, sleep, silenceReaction } from "./browser.mjs";
+import { launchBrowser, sleep, silenceReaction, NavigationFailure, phoneTransport, preflightPhoneUpstream } from "./browser.mjs";
 import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
 import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
@@ -46,13 +46,14 @@ let order = ALL;
 // ---------------------------------------------------------------- arguments
 
 function parseArgs(argv) {
-  const args = { dir: null, only: ALL, phones: 8, soak: 0, seed: Date.now() % 100000 };
+  const args = { dir: null, only: ALL, phones: 8, soak: 0, seed: Date.now() % 100000, prepareOnly: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--only") args.only = argv[++i].split(",");
     else if (a === "--phones") args.phones = Number(argv[++i]);
     else if (a === "--soak") args.soak = Number(argv[++i]);
     else if (a === "--seed") args.seed = Number(argv[++i]);
+    else if (a === "--prepare-only") args.prepareOnly = true;
     else if (a === "-h" || a === "--help") args.help = true;
     else args.dir = a;
   }
@@ -188,12 +189,21 @@ function deviceOf(tab) {
  * every note an item received, each with its own outcome, the same note
  * once with how many times it came (a soak repeats them). */
 const results = new Map();
-const RANK = { skip: 0, ok: 1, partial: 2, fail: 3 };
+// Ordering is only for the readable presentation, never a strength ordering of evidence.
+const PRESENTATION_ORDER = { skip: 0, ok: 1, partial: 2, fail: 3 };
 const MARK = { ok: "✓", fail: "✗", partial: "~", skip: "–" };
-function record(item, status, note) {
+let activeScenario = "setup";
+const evidence = { schema: 1, arguments: args, completed: false, infrastructure_error: null, navigation_failure: null, transport: null, records: [] };
+const evidencePath = process.env.SOIREE_OBSERVATIONS_PATH ?? join(outDir, "observations.json");
+const persistEvidence = () => writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+persistEvidence();
+console.log(`Observations : ${evidencePath}`);
+function record(item, status, note, explicitExclusion = false) {
+  evidence.records.push({ scenario: activeScenario, item, status, note: note ?? "", explicit_exclusion: explicitExclusion });
+  persistEvidence();
   // The worst outcome wins; "not applicable" only stands alone.
   const entry = results.get(item) ?? { status, notes: [] };
-  if (RANK[status] > RANK[entry.status]) entry.status = status;
+  if (PRESENTATION_ORDER[status] > PRESENTATION_ORDER[entry.status]) entry.status = status;
   if (note) {
     const same = entry.notes.find((n) => n.status === status && n.text === note);
     if (same) same.count++;
@@ -206,6 +216,7 @@ const ok = (item, note) => record(item, "ok", note);
 const fail = (item, note) => record(item, "fail", note);
 const partial = (item, note) => record(item, "partial", note);
 const skip = (item, note) => record(item, "skip", note);
+const excludedCategory = (item, note) => record(item, "skip", note, true);
 
 const started = Date.now();
 function log(line) {
@@ -379,6 +390,7 @@ function networkMoved() {
   return lan && now !== lan ? ` (l'adresse réseau de l'ordinateur a changé pendant le passage, ${lan} → ${now ?? "aucune"} : les téléphones et ce scénario passent par l'ancienne, l'échec peut venir de là)` : "";
 }
 let host;
+let transport;
 let browser;
 let toxiproxy;
 let tv;
@@ -418,7 +430,7 @@ function phoneUrl(phone) {
 
 async function openPhone(index, { webrtc = false } = {}) {
   // A phone reaches the game from the network, as a real phone would.
-  const proxy = await toxiproxy.proxy(config.phone_upstream === "loopback" || !lan ? "127.0.0.1" : lan, host.port);
+  const proxy = await toxiproxy.proxy(transport.upstream, host.port);
   const phone = { index, name: null, proxy, webrtc, openedAt: Date.now() };
   phone.url = phoneUrl(phone);
   phone.tab = await browser.open(phone.url, { width: 390, height: 844, mobile: true, engine: index % 2 === 1 ? "webkit" : "chromium" });
@@ -798,7 +810,7 @@ const scenarios = {
         }
       }
     }
-    for (const [category, reason] of Object.entries(config.ui.not_applicable ?? {})) skip("U1", `${category} : ${reason}`);
+    for (const [category, reason] of Object.entries(config.ui.not_applicable ?? {})) excludedCategory("U1", `${category} : ${reason}`);
   },
   /** Presentation cadence, then controlled actions with causal render oracles. */
   async performance() {
@@ -1620,6 +1632,26 @@ async function main() {
   log(`${gameDir} : lancement (${config.launch.join(" ")}) sur le port ${host.port}, graine ${args.seed}`);
   await host.start(config.launch, 15 * 60_000);
   log(`prêt (pid ${host.pid ?? "?"}) ; captures dans ${outDir}`);
+  transport = phoneTransport(config, lan);
+  evidence.transport = { ...transport, preflight: { status: "not-run" } };
+  log(`transport téléphones : ${transport.mode}${transport.upstream ? ` (${transport.upstream})` : ""}${transport.mode === "loopback" ? " ; LAN non attesté" : ""}`);
+  persistEvidence();
+  if (args.prepareOnly) {
+    log("préparation terminée ; aucun contrôle de certification exécuté");
+    return;
+  }
+  if (transport.mode === "lan") {
+    if (!transport.upstream) throw new NavigationFailure({ kind: "infrastructure", phase: "phone-upstream", url: "LAN", timeoutMs: 2000, reason: "aucune adresse LAN disponible ; aucun repli automatique sur loopback" });
+    const url = `http://${transport.upstream}:${host.port}${withSalonWs(host.path(config.phone))}`;
+    try {
+      const response = await preflightPhoneUpstream(url);
+      evidence.transport.preflight = { status: "passed", response };
+      log(`préflight LAN : HTTP ${response.status}`);
+    } catch (error) {
+      evidence.transport.preflight = { status: "failed", failure: error instanceof NavigationFailure ? error.toJSON() : { message: error.message } };
+      throw error;
+    } finally { persistEvidence(); }
+  }
   toxiproxy = await Toxiproxy.start();
   browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello", identify: (payload) => { const packet = readPacket(payload); return !packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device) ? packet.device : null; }, webkitPhones: Boolean(config.phone) || args.only.includes("ui") });
   await openTv();
@@ -1644,12 +1676,15 @@ async function main() {
     for (const [index, name] of order.entries()) {
       if (name === "join" && phones.length) continue;
       log(`▶ ${name}`);
+      activeScenario = name;
       sampleMemory();
       try {
         fixture.check();
         await scenarios[name]();
         fixture.check();
       } catch (error) {
+        if (error instanceof NavigationFailure && error.kind === "product" && !fixture.failure) throw error;
+        if (error instanceof FixtureFailure) fixture.failure ??= error;
         if (fixture.failure) {
           fail("H1", `[${name}] ${fixture.failure.message} ; cas restants non vérifiés : ${order.slice(index + 1).join(", ") || "aucun"}`);
           throw fixture.failure;
@@ -1675,11 +1710,14 @@ async function main() {
       for (const name of ["cut", "freeze", "reload", "hostile", "monkey"]) {
         if (!order.includes(name)) continue;
         sampleMemory();
+        activeScenario = name;
         try {
           fixture.check();
           await scenarios[name]();
           fixture.check();
         } catch (error) {
+          if (error instanceof NavigationFailure && error.kind === "product" && !fixture.failure) throw error;
+          if (error instanceof FixtureFailure) fixture.failure ??= error;
           if (fixture.failure) throw fixture.failure;
           fail("E1", `[${name}] ${error.message}`);
         }
@@ -1695,10 +1733,11 @@ async function main() {
       const evening = Math.max(0, perHour * 6);
       const series = memory.map((m) => Math.round(m.rss / 1024)).join(" ");
       const line = `mémoire ${Math.round(warm.rss / 1024)} → ${Math.round(lastSample.rss / 1024)} Mio, soit +${evening.toFixed(0)} Mio sur une soirée de 6 h ; threads ${warm.threads} → ${lastSample.threads} (série en Mio : ${series})`;
+      activeScenario = "soak";
       if (evening > 256 || lastSample.threads > warm.threads + 4) fail("R2", line);
       else ok("R2", line);
     }
-  } else skip("R2", "lance --soak 30 pour l'endurance");
+  } else { activeScenario = "soak"; skip("R2", "lance --soak 30 pour l'endurance"); }
 }
 
 /** Stops what the harness started: nothing may outlive it, even on Ctrl-C. */
@@ -1723,19 +1762,37 @@ try {
   await main();
 } catch (error) {
   crashed = error;
-  if (error instanceof FixtureFailure) {
-    if (!results.has("H1")) fail("H1", `arrêt du passage : ${error.message} ; les cas suivants ne sont pas vérifiés`);
-  } else fail("E1", `arrêt : ${error.message}`);
+  const productNavigation = error instanceof NavigationFailure && error.kind === "product";
+  evidence.navigation_failure = error instanceof NavigationFailure ? error.toJSON() : null;
+  evidence.infrastructure_error = args.prepareOnly || (error instanceof FixtureFailure && !productNavigation) ? error.message : null;
+  // Preparing assets is not a scenario and produces no item verdict.
+  if (!args.prepareOnly) {
+    if (productNavigation) fail("HTTP", error.message);
+    else if (error instanceof FixtureFailure) {
+      if (!results.has("H1")) fail("H1", `arrêt du passage : ${error.message} ; les cas suivants ne sont pas vérifiés`);
+    } else fail("E1", `arrêt : ${error.message}`);
+  }
 } finally {
   await cleanup();
 }
 
+if (args.prepareOnly) {
+  // `completed` belongs to certification. Preparation must never be usable as
+  // evidence that a selected set of controls ran, even if it ended normally.
+  evidence.prepared = crashed === null;
+  persistEvidence();
+  if (crashed) console.error(crashed.stack);
+  process.exit(crashed ? 2 : 0);
+}
+
 checkBrowserPanics("fin");
+evidence.completed = true;
+persistEvidence();
 
 // ---------------------------------------------------------------- summary
 
-const ITEMS = ["H1", "U1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
-const lines = [`# Certification de ${gameDir.split("/").slice(-2).join("/")}`, "", `Graine ${args.seed}, ${((Date.now() - started) / 60_000).toFixed(1)} min. Captures : ${outDir}`, "", "| Item | État | Détail |", "|---|---|---|"];
+const ITEMS = ["H1", "HTTP", "U1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
+const lines = [`# Observations du harnais de ${gameDir.split("/").slice(-2).join("/")}`, "", `Graine ${args.seed}, ${((Date.now() - started) / 60_000).toFixed(1)} min. Captures : ${outDir}`, "", "| Item | État | Détail |", "|---|---|---|"];
 let failures = 0;
 for (const item of ITEMS) {
   const r = results.get(item);
@@ -1743,15 +1800,15 @@ for (const item of ITEMS) {
   if (r.status === "fail") failures++;
   // Every note, the worst first, in the order they came within an outcome.
   // When an item mixes outcomes, each line says its own.
-  const notes = [...r.notes].sort((a, b) => RANK[b.status] - RANK[a.status]);
+  const notes = [...r.notes].sort((a, b) => PRESENTATION_ORDER[b.status] - PRESENTATION_ORDER[a.status]);
   const mixed = new Set(notes.map((n) => n.status)).size > 1;
   const text = notes.map((n) => `${mixed ? `${MARK[n.status]} ` : ""}${n.text.replace(/\s*\n\s*/g, " ")}${n.count > 1 ? ` (×${n.count})` : ""}`);
   lines.push(`| ${item} | ${MARK[r.status]} | ${text.join("<br>").replaceAll("|", "\\|")} |`);
 }
-lines.push("", "✓ tenu · ✗ cassé · ~ à juger par un humain, ou vérifié en partie · – non applicable", "");
+lines.push("", "✓ observé · ✗ échec · ~ à juger par un humain, ou vérifié en partie · – non exécuté ou exclusion explicitée", "");
 if (host?.stderr.length) lines.push("Dernières lignes d'erreur de l'hôte :", "", "```", ...host.stderr.slice(-10), "```");
 writeFileSync(join(outDir, "performance.json"), `${JSON.stringify(measurements, null, 2)}\n`);
 writeFileSync(join(outDir, "rapport.md"), lines.join("\n"));
 console.log(`\n${lines.join("\n")}`);
 if (crashed) console.error(crashed.stack);
-process.exit(failures || crashed ? 1 : 0);
+process.exit(crashed ? (crashed instanceof NavigationFailure && crashed.kind === "product" ? 1 : 2) : failures ? 1 : 0);

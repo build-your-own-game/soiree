@@ -1,0 +1,369 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-28T09:59:19Z",
+  "finished": "2026-10-28T09:59:24Z",
+  "selection": [
+    "cargo:suite",
+    "command:clippy-native",
+    "command:clippy-wasm",
+    "command:doctests",
+    "command:fmt",
+    "static:common"
+  ],
+  "controller_exit_code": null,
+  "identity_before": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+  "identity_after": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+  "identity_errors": [],
+  "provenance": {
+    "value": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+    "source_roots": [
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/demo",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/demo-page",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web"
+    ],
+    "files": 123,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:fmt"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-native"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-wasm"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "cargo:suite"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:doctests"
+        ],
+        "owner": "common",
+        "assumptions": []
+      }
+    ],
+    "controls": [
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      },
+      {
+        "id": "command:fmt",
+        "method": "static",
+        "scope": "command:fmt",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "fmt",
+            "--check"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-native",
+        "method": "static",
+        "scope": "command:clippy-native",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-wasm",
+        "method": "static",
+        "scope": "command:clippy-wasm",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "cargo:suite",
+        "method": "test",
+        "scope": "cargo:suite",
+        "execution": {
+          "kind": "static",
+          "name": "cargo:suite"
+        }
+      },
+      {
+        "id": "command:doctests",
+        "method": "test",
+        "scope": "command:doctests",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "test",
+            "--workspace",
+            "--doc"
+          ]
+        }
+      }
+    ],
+    "catalogue": [],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "static:common",
+      "method": "static",
+      "scope": "static:common",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "[(Info, \"pas de soiree.toml : pas encore un jeu de soiree (version non vérifiée, .soiree/ non écrit)\"), (Ok, \"toolchain 1.99 des règles, avec rustfmt, clippy, wasm32-unknown-unknown\"), (Ok, \"édition, lints et profils des règles\"), (Ok, \"types et méthodes interdits des règles\"), (Ok, \"salon-core ne dépend ni du navigateur ni du GPU\"), (Info, \"remote-protocol : chemins locaux dans ce même dépôt\"), (Ok, \"noms des pages à jour (1 module(s) soiree dom)\"), (Warning, \"principe 7 à faire : Mesurer sur le Wi-Fi du salon, avec 15 téléphones : aller-retour, pertes, temps de reconnexion après un iPhone\"), (Ok, \"cert.json lisible par le harnais (soiree certify)\"), (Ok, \"contrats de vérification UI : couverture ou non-applicabilité explicite\")]",
+      "command": [],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:fmt",
+      "method": "static",
+      "scope": "command:fmt",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-native",
+      "method": "static",
+      "scope": "command:clippy-native",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "    Blocking waiting for file lock on package cache\nwarning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-wasm",
+      "method": "static",
+      "scope": "command:clippy-wasm",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "    Blocking waiting for file lock on package cache\nwarning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:doctests",
+      "method": "test",
+      "scope": "command:doctests",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 2 tests\ntest crates/web/src/lib.rs - style (line 883) - compile fail ... ok\ntest crates/web/src/lib.rs - style (line 877) - compile fail ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s\n\n    Blocking waiting for file lock on package cache\nwarning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s\n   Doc-tests salon_core\n   Doc-tests salon_crypto\n   Doc-tests salon_demo\n   Doc-tests salon_demo_page\n   Doc-tests salon_host\n   Doc-tests salon_web\n",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--doc",
+        "--locked"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "cargo:suite",
+      "method": "test",
+      "scope": "cargo:suite",
+      "outcome": "passed",
+      "input_identity": "8fd2483c9e3e52e19ace363026d5032a99fafb1651b1acca6fa5f55cc94ad072",
+      "detail": "[SuiteExecution { package: \"salon-core\", target_kind: \"lib\", target: \"salon_core\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_core-84a8f6e774f722e5\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest codec::tests::framed_messages_reject_valid_prefixes_and_incomplete_payloads ... ok\\ntest wire::framing_tests::packet_boundary_does_not_accept_a_valid_prefix ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"salon-core\", target_kind: \"test\", target: \"properties\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/properties-5df0c3f116f277d5\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 3 tests\\ntest garbage_from_a_phone_is_ignored ... ok\\ntest garbage_never_reaches_the_game ... ok\\ntest chaos_never_loses_or_doubles_an_event ... ok\\n\\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s\\n\\n\", discovered: 3, executed: 3 }, SuiteExecution { package: \"salon-core\", target_kind: \"test\", target: \"salon\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon-36cb05bc4e03796e\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 30 tests\\ntest a_gamepad_is_a_device_like_the_others ... ok\\ntest a_graceful_shutdown_tells_the_phones ... ok\\ntest a_reloaded_page_gets_its_device_back ... ok\\ntest a_phone_joins_and_both_sides_talk ... ok\\ntest a_repeated_hello_changes_nothing ... ok\\ntest a_cut_phone_comes_back_as_itself_without_losing_an_event ... ok\\ntest a_phone_token_never_becomes_the_tv ... ok\\ntest a_page_that_wakes_up_reconnects_at_once ... ok\\ntest a_tv_refused_for_an_old_key_comes_back_with_the_new_one ... ok\\ntest a_welcomed_phone_cannot_turn_into_the_tv ... ok\\ntest an_event_carries_the_phase_its_sender_saw ... ok\\ntest a_held_state_is_known_to_be_held ... ok\\ntest events_sent_before_the_first_welcome_count ... ok\\ntest framing::client_rejects_suffixed_inner_events_and_states_then_accepts_complete_messages ... ok\\ntest framing::host_rejects_suffixed_inner_events_and_states_then_accepts_complete_messages ... ok\\ntest a_restarted_host_gets_its_phones_back ... ok\\ntest a_restart_without_memory_makes_new_devices ... ok\\ntest refusals_are_clear_and_final ... ok\\ntest a_player_who_quits_leaves_for_that_reason ... ok\\ntest round_trips_and_the_host_clock_are_measured ... ok\\ntest the_tv_joins_with_its_key ... ok\\ntest the_tv_token_never_becomes_a_phone ... ok\\ntest time_never_goes_back ... ok\\ntest silence_is_noticed_on_both_sides ... ok\\ntest a_second_tab_takes_over_and_the_first_stays_put ... ok\\ntest events_arrive_once_and_in_order_through_a_bad_network ... ok\\ntest a_phone_without_host_keeps_trying_ever_more_calmly ... ok\\ntest a_flooding_phone_does_not_slow_down_the_others ... ok\\ntest the_latest_state_wins_and_a_big_one_is_cut_to_fit ... ok\\ntest the_room_has_a_limit ... ok\\n\\ntest result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s\\n\\n\", discovered: 30, executed: 30 }, SuiteExecution { package: \"salon-crypto\", target_kind: \"lib\", target: \"salon_crypto\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_crypto-21a4772aab664a27\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"salon-crypto\", target_kind: \"test\", target: \"handshake\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/handshake-6e25f56430cc7ea5\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 3 tests\\ntest the_certificate_may_sign_and_is_no_authority ... ok\\ntest every_certificate_is_new_and_well_formed ... ok\\ntest a_page_and_the_host_talk_over_dtls_with_salons_certificates ... ok\\n\\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\\n\\n\", discovered: 3, executed: 3 }, SuiteExecution { package: \"salon-demo\", target_kind: \"bin\", target: \"salon-demo\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_demo-648b33d0b6c44ba3\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"salon-demo\", target_kind: \"lib\", target: \"salon_demo\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_demo-636f5d7b78f13473\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"salon-demo-page\", target_kind: \"lib\", target: \"salon_demo_page\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_demo_page-83decf1c01ea3abb\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"salon-host\", target_kind: \"lib\", target: \"salon_host\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_host-f94347b494c89d02\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 21 tests\\ntest http::tests::files_never_leave_dist ... ok\\ntest http::tests::a_request_line_splits_path_and_query ... ok\\ntest driver::tests::late_wakes_skip_missed_periodic_slots_without_double_ticking ... ok\\ntest http::tests::only_this_computer_is_the_tv ... ok\\ntest app::tests::the_app_is_sent_to_the_phone_page ... ok\\ntest room::tests::steps_come_on_time ... ignored, a timing measurement: run it on an idle machine\\ntest journal::tests::corruption_missing_lines_and_unfinished_batches_are_not_certified ... ok\\ntest journal::tests::a_cut_physical_tail_recovers_only_the_previous_verified_checkpoint ... ok\\ntest journal::tests::complete_and_interrupted_sessions_have_the_last_verified_state ... ok\\ntest journal::tests::native_writer_flushes_typed_entries_and_never_overwrites ... ok\\ntest journal::tests::retention_preserves_recent_files_and_other_extensions ... ok\\ntest store::tests::a_broken_file_is_a_fresh_start ... ok\\ntest store::tests::a_restart_keeps_the_tv_key_and_the_devices ... ok\\ntest journal::tests::browser_sink_validates_types_and_local_authority_before_writing ... ok\\ntest journal::tests::paused_chunk_transfer_resumes_until_explicit_replacement_or_final ... ok\\ntest ws::tests::an_oversized_frame_closes_its_link ... ok\\ntest tests::a_qr_code_is_a_square_of_modules ... ok\\ntest simulation::tests::event_driven_steps_match_a_one_millisecond_reference ... ok\\ntest journal::tests::browser_reloads_replace_old_sessions_but_long_idle_does_not_expire_them ... ok\\ntest journal::tests::large_browser_lines_are_assembled_typed_and_missing_pieces_are_refused ... ok\\ntest simulation::tests::repeated_seed_replays_whole_game_network_and_timing ... ok\\n\\ntest result: ok. 20 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.30s\\n\\n\", discovered: 21, executed: 20 }, SuiteExecution { package: \"salon-web\", target_kind: \"lib\", target: \"salon_web\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/salon/target/debug/deps/salon_web-e77ce0dcabfd341e\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 10 tests\\ntest recovery::tests::reload_guard_stops_a_storm_and_resets_after_quiet ... ok\\ntest ui::guards::tests::composition_state_is_shared_by_handlers_and_ends_explicitly ... ok\\ntest ui::guards::tests::dropped_tasks_cancel_without_invalidating_their_replacement ... ok\\ntest ui::guards::tests::replaced_cancelled_and_dropped_owners_reject_late_success_or_error ... ok\\ntest ui::guards::tests::independent_tasks_coexist_but_reset_or_owner_destruction_cancels_all ... ok\\ntest style::tests::values_preserve_units_and_refuse_non_finite_layout ... ok\\ntest recovery::tests::fault_injection_nonce_is_explicit_and_safe_for_one_line_correlation ... ok\\ntest style::tests::image_strings_cannot_escape_their_css_url ... ok\\ntest ui::guards::tests::effects_reject_duplicates_and_old_messages_with_one_watermark ... ok\\ntest journal::tests::serialization_obeys_the_byte_budget_including_json_escapes ... ok\\n\\ntest result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 10, executed: 10 }]",
+      "command": [
+        "Cargo/libtest"
+      ],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "static:common",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:fmt",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-native",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-wasm",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "cargo:suite",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:doctests",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": true,
+    "complete": true,
+    "diagnostics": []
+  }
+}

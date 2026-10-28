@@ -1,0 +1,105 @@
+# Source des engagements et de leurs contrôles exécutables.
+# CERTIFICATION.md en est la vue lisible ; les rapports restent des résultats datés.
+# Un item du catalogue sans décision explicite reste non revu.
+schema = 1
+
+[[guarantees]]
+id = "J1"
+claim = "Un compteur ne revient jamais à zéro par débordement."
+checks = ["score_increments_without_wrapping"]
+origins = []
+assumptions = []
+
+[[guarantees]]
+id = "J2"
+claim = "Un joueur absent ne marque pas et retrouve son score au retour."
+checks = ["absent_players_cannot_score_and_return_keeps_score"]
+origins = []
+assumptions = []
+
+[[guarantees]]
+id = "J3"
+claim = "Un replay restitue tout l’état et refuse une empreinte différente."
+checks = ["a_versioned_journal_replays_the_complete_state"]
+origins = []
+assumptions = []
+
+[[guarantees]]
+id = "J5"
+claim = "Même des arrivées simultanées ne dépassent pas la capacité du jeu."
+checks = ["capacity_is_enforced_in_the_simulation", "simultaneous_arrivals_never_exceed_capacity"]
+origins = []
+assumptions = []
+
+[[guarantees]]
+id = "J4"
+claim = "Coupures et duplications réseau ne dupliquent ni joueur ni point."
+checks = ["whole_host_is_deterministic_across_thousands_of_network_seeds"]
+origins = []
+assumptions = []
+
+[[checks]]
+id = "score_increments_without_wrapping"
+kind = "cargo-test"
+package = "{{nom}}-core"
+target_kind = "lib"
+target = "{{crate}}_core"
+name = "tests::score_increments_without_wrapping"
+features = []
+default_features = true
+profile = "dev"
+
+[[checks]]
+id = "absent_players_cannot_score_and_return_keeps_score"
+kind = "cargo-test"
+package = "{{nom}}-core"
+target_kind = "lib"
+target = "{{crate}}_core"
+name = "tests::absent_players_cannot_score_and_return_keeps_score"
+features = []
+default_features = true
+profile = "dev"
+
+[[checks]]
+id = "a_versioned_journal_replays_the_complete_state"
+kind = "cargo-test"
+package = "{{nom}}-host"
+target_kind = "bin"
+target = "{{nom}}-host"
+name = "native::tests::a_versioned_journal_replays_the_complete_state"
+features = []
+default_features = true
+profile = "dev"
+
+[[checks]]
+id = "capacity_is_enforced_in_the_simulation"
+kind = "cargo-test"
+package = "{{nom}}-core"
+target_kind = "lib"
+target = "{{crate}}_core"
+name = "tests::capacity_is_enforced_in_the_simulation"
+features = []
+default_features = true
+profile = "dev"
+
+[[checks]]
+id = "simultaneous_arrivals_never_exceed_capacity"
+kind = "cargo-test"
+package = "{{nom}}-host"
+target_kind = "bin"
+target = "{{nom}}-host"
+name = "native::tests::simultaneous_arrivals_never_exceed_capacity"
+features = []
+default_features = true
+profile = "dev"
+
+[[checks]]
+id = "whole_host_is_deterministic_across_thousands_of_network_seeds"
+kind = "cargo-test"
+package = "{{nom}}-host"
+target_kind = "bin"
+target = "{{nom}}-host"
+name = "native::tests::whole_host_is_deterministic_across_thousands_of_network_seeds"
+features = []
+default_features = true
+profile = "dev"

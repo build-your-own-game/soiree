@@ -1,0 +1,2664 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-28T04:52:05Z",
+  "finished": "2026-10-28T04:52:14Z",
+  "selection": [
+    "harness:health",
+    "harness:panic:C10",
+    "harness:ui:U1"
+  ],
+  "controller_exit_code": 0,
+  "identity_before": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+  "identity_after": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+  "identity_errors": [],
+  "provenance": {
+    "value": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+    "source_roots": [
+      "/Users/axel2/Library/Caches/soiree/0.3.0/cert",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web",
+      "/private/tmp/soiree-v03-model-fixture/soiree-model/ci-model",
+      "/private/tmp/soiree-v03-model-fixture/soiree-model/ci-model/crates/core",
+      "/private/tmp/soiree-v03-model-fixture/soiree-model/ci-model/crates/host",
+      "/private/tmp/soiree-v03-model-fixture/soiree-model/ci-model/crates/web"
+    ],
+    "files": 113,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Un compteur ne revient jamais à zéro par débordement.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:score_increments_without_wrapping"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J2",
+        "claim": "Un joueur absent ne marque pas et retrouve son score au retour.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:absent_players_cannot_score_and_return_keeps_score"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J3",
+        "claim": "Un replay restitue tout l’état et refuse une empreinte différente.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_versioned_journal_replays_the_complete_state"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "Même des arrivées simultanées ne dépassent pas la capacité du jeu.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:capacity_is_enforced_in_the_simulation",
+          "game:simultaneous_arrivals_never_exceed_capacity"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Coupures et duplications réseau ne dupliquent ni joueur ni point.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:whole_host_is_deterministic_across_thousands_of_network_seeds"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:fmt"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-native"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-wasm"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "cargo:suite"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:doctests"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence de phases avec échéance et de joueurs pouvant partir dépend du jeu."
+        },
+        "controls": [
+          "unbound:C6"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:E5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Les champs de texte et la répartition page/hôte dépendent du jeu."
+        },
+        "controls": [
+          "unbound:T1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D3"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence d’une simulation en temps réel et son exécution en natif et en WASM doivent être déclarées."
+        },
+        "controls": [
+          "unbound:D4"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Le sens d’une nouvelle partie dépend du jeu ; un éditeur continu ne possède pas nécessairement ce cycle."
+        },
+        "controls": [
+          "unbound:D5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:health"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:join:C1",
+          "harness:rtc:C1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:panic:C10"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:cut:C2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:freeze:C3",
+          "harness:silent:C3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:reload:C4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:twin:C5"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:restart:C7"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:join:C8"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:storage:C9"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La terminaison dépend du genre ; aucune progression observable n’est déclarée"
+        },
+        "controls": [
+          "harness:monkey:D2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:hostile:E1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:hostile:E2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:hostile:E3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:hostile:E4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:E6"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P1",
+          "harness:monkey:P1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:jitter:R1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:soak:R2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
+        },
+        "controls": [
+          "harness:join:R3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:T2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:layout:T3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:layout:T4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:ui:U1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S1"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S2"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S3"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S4"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S5"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S6"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S7"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S8"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S9"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S10"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "controls": [
+      {
+        "id": "game:score_increments_without_wrapping",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-core\", target_kind: \"lib\", target: \"ci_model_core\", name: \"tests::score_increments_without_wrapping\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-core",
+            "target_kind": "lib",
+            "target": "ci_model_core",
+            "name": "tests::score_increments_without_wrapping",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:absent_players_cannot_score_and_return_keeps_score",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-core\", target_kind: \"lib\", target: \"ci_model_core\", name: \"tests::absent_players_cannot_score_and_return_keeps_score\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-core",
+            "target_kind": "lib",
+            "target": "ci_model_core",
+            "name": "tests::absent_players_cannot_score_and_return_keeps_score",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_versioned_journal_replays_the_complete_state",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-host\", target_kind: \"bin\", target: \"ci-model-host\", name: \"native::tests::a_versioned_journal_replays_the_complete_state\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-host",
+            "target_kind": "bin",
+            "target": "ci-model-host",
+            "name": "native::tests::a_versioned_journal_replays_the_complete_state",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:capacity_is_enforced_in_the_simulation",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-core\", target_kind: \"lib\", target: \"ci_model_core\", name: \"tests::capacity_is_enforced_in_the_simulation\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-core",
+            "target_kind": "lib",
+            "target": "ci_model_core",
+            "name": "tests::capacity_is_enforced_in_the_simulation",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:simultaneous_arrivals_never_exceed_capacity",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-host\", target_kind: \"bin\", target: \"ci-model-host\", name: \"native::tests::simultaneous_arrivals_never_exceed_capacity\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-host",
+            "target_kind": "bin",
+            "target": "ci-model-host",
+            "name": "native::tests::simultaneous_arrivals_never_exceed_capacity",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:whole_host_is_deterministic_across_thousands_of_network_seeds",
+        "method": "test",
+        "scope": "TestRef { package: \"ci-model-host\", target_kind: \"bin\", target: \"ci-model-host\", name: \"native::tests::whole_host_is_deterministic_across_thousands_of_network_seeds\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "ci-model-host",
+            "target_kind": "bin",
+            "target": "ci-model-host",
+            "name": "native::tests::whole_host_is_deterministic_across_thousands_of_network_seeds",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      },
+      {
+        "id": "command:fmt",
+        "method": "static",
+        "scope": "command:fmt",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "fmt",
+            "--check"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-native",
+        "method": "static",
+        "scope": "command:clippy-native",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-wasm",
+        "method": "static",
+        "scope": "command:clippy-wasm",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "cargo:suite",
+        "method": "test",
+        "scope": "cargo:suite",
+        "execution": {
+          "kind": "static",
+          "name": "cargo:suite"
+        }
+      },
+      {
+        "id": "command:doctests",
+        "method": "test",
+        "scope": "command:doctests",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "test",
+            "--workspace",
+            "--doc"
+          ]
+        }
+      },
+      {
+        "id": "unbound:C6",
+        "method": "test",
+        "scope": "unbound:C6",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:E5",
+        "method": "test",
+        "scope": "unbound:E5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:T1",
+        "method": "test",
+        "scope": "unbound:T1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D1",
+        "method": "test",
+        "scope": "unbound:D1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D3",
+        "method": "test",
+        "scope": "unbound:D3",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D4",
+        "method": "test",
+        "scope": "unbound:D4",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D5",
+        "method": "test",
+        "scope": "unbound:D5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "harness:health",
+        "method": "test",
+        "scope": "harness:health",
+        "execution": {
+          "kind": "static",
+          "name": "harness:health"
+        }
+      },
+      {
+        "id": "harness:ui:U1",
+        "method": "test",
+        "scope": "harness:ui:U1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "ui",
+          "item": "U1"
+        }
+      },
+      {
+        "id": "harness:performance:P1",
+        "method": "measure",
+        "scope": "harness:performance:P1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:performance:P2",
+        "method": "measure",
+        "scope": "harness:performance:P2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P2"
+        }
+      },
+      {
+        "id": "harness:panic:C10",
+        "method": "test",
+        "scope": "harness:panic:C10;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "panic",
+          "item": "C10"
+        }
+      },
+      {
+        "id": "harness:join:C1",
+        "method": "test",
+        "scope": "harness:join:C1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:join:C8",
+        "method": "test",
+        "scope": "harness:join:C8;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C8"
+        }
+      },
+      {
+        "id": "harness:join:R3",
+        "method": "test",
+        "scope": "harness:join:R3;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "R3"
+        }
+      },
+      {
+        "id": "harness:layout:T3",
+        "method": "test",
+        "scope": "harness:layout:T3;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T3"
+        }
+      },
+      {
+        "id": "harness:layout:T4",
+        "method": "test",
+        "scope": "harness:layout:T4;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T4"
+        }
+      },
+      {
+        "id": "harness:storage:C9",
+        "method": "test",
+        "scope": "harness:storage:C9;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "storage",
+          "item": "C9"
+        }
+      },
+      {
+        "id": "harness:cut:C2",
+        "method": "test",
+        "scope": "harness:cut:C2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "cut",
+          "item": "C2"
+        }
+      },
+      {
+        "id": "harness:freeze:C3",
+        "method": "test",
+        "scope": "harness:freeze:C3;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "freeze",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:silent:C3",
+        "method": "test",
+        "scope": "harness:silent:C3;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "silent",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:reload:C4",
+        "method": "test",
+        "scope": "harness:reload:C4;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "reload",
+          "item": "C4"
+        }
+      },
+      {
+        "id": "harness:twin:C5",
+        "method": "test",
+        "scope": "harness:twin:C5;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "twin",
+          "item": "C5"
+        }
+      },
+      {
+        "id": "harness:rtc:C1",
+        "method": "test",
+        "scope": "harness:rtc:C1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "rtc",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:hostile:E1",
+        "method": "test",
+        "scope": "harness:hostile:E1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E1"
+        }
+      },
+      {
+        "id": "harness:hostile:E2",
+        "method": "test",
+        "scope": "harness:hostile:E2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E2"
+        }
+      },
+      {
+        "id": "harness:hostile:E3",
+        "method": "test",
+        "scope": "harness:hostile:E3;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E3"
+        }
+      },
+      {
+        "id": "harness:hostile:E4",
+        "method": "test",
+        "scope": "harness:hostile:E4;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E4"
+        }
+      },
+      {
+        "id": "harness:jitter:R1",
+        "method": "test",
+        "scope": "harness:jitter:R1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "jitter",
+          "item": "R1"
+        }
+      },
+      {
+        "id": "harness:monkey:E6",
+        "method": "test",
+        "scope": "harness:monkey:E6;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "E6"
+        }
+      },
+      {
+        "id": "harness:monkey:T2",
+        "method": "test",
+        "scope": "harness:monkey:T2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "T2"
+        }
+      },
+      {
+        "id": "harness:monkey:D2",
+        "method": "test",
+        "scope": "harness:monkey:D2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "D2"
+        }
+      },
+      {
+        "id": "harness:monkey:P1",
+        "method": "measure",
+        "scope": "harness:monkey:P1;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:restart:C7",
+        "method": "test",
+        "scope": "harness:restart:C7;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "restart",
+          "item": "C7"
+        }
+      },
+      {
+        "id": "harness:soak:R2",
+        "method": "measure",
+        "scope": "harness:soak:R2;phone_upstream=loopback",
+        "execution": {
+          "kind": "harness",
+          "scenario": "soak",
+          "item": "R2"
+        }
+      },
+      {
+        "id": "S1",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S2",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S3",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S4",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S5",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S6",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S7",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S8",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S9",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S10",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      }
+    ],
+    "catalogue": [
+      {
+        "id": "AFF-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-12",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-12",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      }
+    ],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "harness:ui:U1",
+      "method": "test",
+      "scope": "harness:ui:U1;phone_upstream=loopback",
+      "outcome": "passed",
+      "input_identity": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+      "detail": "Le bouton reste le même après une mise à jour (webkit) : lifecycle\nLe bouton reste le même après une mise à jour (chromium) : lifecycle",
+      "command": [
+        "--only",
+        "ui,panic",
+        "--seed",
+        "6839"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "harness:panic:C10",
+      "method": "test",
+      "scope": "harness:panic:C10;phone_upstream=loopback",
+      "outcome": "passed",
+      "input_identity": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+      "detail": "webkit : après une vraie panique WASM, même appareil 2, même jeton et même place\nchromium : après une vraie panique WASM, même appareil 3, même jeton et même place",
+      "command": [
+        "--only",
+        "ui,panic",
+        "--seed",
+        "6839"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "harness:health",
+      "method": "test",
+      "scope": "harness:health",
+      "outcome": "passed",
+      "input_identity": "1395fdfca959a13124c3e9164425bcb21f71f7052a3227ecfe5bdb37055d3556",
+      "detail": "exit=Some(0)",
+      "command": [
+        "--only",
+        "ui,panic",
+        "--seed",
+        "6839"
+      ],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Un compteur ne revient jamais à zéro par débordement.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "game:score_increments_without_wrapping",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J2",
+        "claim": "Un joueur absent ne marque pas et retrouve son score au retour.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "game:absent_players_cannot_score_and_return_keeps_score",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J3",
+        "claim": "Un replay restitue tout l’état et refuse une empreinte différente.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "game:a_versioned_journal_replays_the_complete_state",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "Même des arrivées simultanées ne dépassent pas la capacité du jeu.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "game:capacity_is_enforced_in_the_simulation",
+            "pending"
+          ],
+          [
+            "game:simultaneous_arrivals_never_exceed_capacity",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Coupures et duplications réseau ne dupliquent ni joueur ni point.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "game:whole_host_is_deterministic_across_thousands_of_network_seeds",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "pending",
+        "controls": [
+          [
+            "static:common",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "assessment": "pending",
+        "controls": [
+          [
+            "command:fmt",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "assessment": "pending",
+        "controls": [
+          [
+            "command:clippy-native",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "assessment": "pending",
+        "controls": [
+          [
+            "command:clippy-wasm",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "assessment": "pending",
+        "controls": [
+          [
+            "cargo:suite",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "assessment": "pending",
+        "controls": [
+          [
+            "command:doctests",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:C6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:E5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:T1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "harness:health",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:C1",
+            "pending"
+          ],
+          [
+            "harness:rtc:C1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "harness:panic:C10",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:cut:C2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:freeze:C3",
+            "pending"
+          ],
+          [
+            "harness:silent:C3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:reload:C4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:twin:C5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:restart:C7",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:C8",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:storage:C9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:D2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:E6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P1",
+            "pending"
+          ],
+          [
+            "harness:monkey:P1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:jitter:R1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:soak:R2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:R3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:T2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:layout:T3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:layout:T4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "harness:ui:U1",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S7",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S8",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S10",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  }
+}

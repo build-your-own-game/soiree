@@ -9,7 +9,7 @@ use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use remote_core::remote::Motion;
 use remote_core::session::{Event, Session};
-use remote_core::{Insets, Point, Size};
+use remote_core::{Insets, Orientation, Point, Size};
 use remote_protocol::{DrawEvent, GameMessage, PhoneMessage, Remote, decode, encode, presets};
 
 #[derive(Arbitrary, Debug)]
@@ -108,7 +108,11 @@ fuzz_target!(|ops: Vec<Op>| {
                         gravity,
                         rotation_rate,
                         time: now,
-                        landscape_left,
+                        orientation: if landscape_left {
+                            Orientation::LandscapeLeft
+                        } else {
+                            Orientation::LandscapeRight
+                        },
                     });
                 }
             }

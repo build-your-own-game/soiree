@@ -1,0 +1,423 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-28T09:59:24Z",
+  "finished": "2026-10-28T09:59:32Z",
+  "selection": [
+    "cargo:suite",
+    "command:clippy-native",
+    "command:clippy-wasm",
+    "command:doctests",
+    "command:fmt",
+    "command:web-contract",
+    "static:common"
+  ],
+  "controller_exit_code": null,
+  "identity_before": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+  "identity_after": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+  "identity_errors": [],
+  "provenance": {
+    "value": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+    "source_roots": [
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/demo",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/demo-page",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/ffi",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/xtask",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web"
+    ],
+    "files": 6677,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:fmt"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-native"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-wasm"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "cargo:suite"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:doctests"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:web-contract",
+        "claim": "Le contrat Swift/Rust/JavaScript est exercé par les vraies liaisons",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:web-contract"
+        ],
+        "owner": "common",
+        "assumptions": []
+      }
+    ],
+    "controls": [
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      },
+      {
+        "id": "command:fmt",
+        "method": "static",
+        "scope": "command:fmt",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "fmt",
+            "--check"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-native",
+        "method": "static",
+        "scope": "command:clippy-native",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-wasm",
+        "method": "static",
+        "scope": "command:clippy-wasm",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "cargo:suite",
+        "method": "test",
+        "scope": "cargo:suite",
+        "execution": {
+          "kind": "static",
+          "name": "cargo:suite"
+        }
+      },
+      {
+        "id": "command:doctests",
+        "method": "test",
+        "scope": "command:doctests",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "test",
+            "--workspace",
+            "--doc"
+          ]
+        }
+      },
+      {
+        "id": "command:web-contract",
+        "method": "test",
+        "scope": "command:web-contract",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "xtask",
+            "web-contract"
+          ]
+        }
+      }
+    ],
+    "catalogue": [],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "static:common",
+      "method": "static",
+      "scope": "static:common",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "[(Info, \"pas de soiree.toml : pas encore un jeu de soiree (version non vérifiée, .soiree/ non écrit)\"), (Ok, \"toolchain 1.99 des règles, avec rustfmt, clippy, wasm32-unknown-unknown\"), (Ok, \"édition, lints et profils des règles\"), (Ok, \"types et méthodes interdits des règles\"), (Ok, \"remote-core ne dépend ni du navigateur ni du GPU\"), (Info, \"salon-core, salon-web : chemins locaux dans ce même dépôt\"), (Ok, \"noms des pages à jour (1 module(s) soiree dom)\"), (Warning, \"principe 1 à faire : Le clippy du manifeste passe, sans `unwrap` ni index qui peut paniquer, et ce qui vient d'un jeu est validé av\"), (Warning, \"principe 7 à faire : La latence entre le toucher, l'envoi et la TV n'est pas mesurée (voir « Vibrations et iOS »).\")]",
+      "command": [],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:fmt",
+      "method": "static",
+      "scope": "command:fmt",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-native",
+      "method": "static",
+      "scope": "command:clippy-native",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "warning: patch `salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-wasm",
+      "method": "static",
+      "scope": "command:clippy-wasm",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "warning: patch `salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:doctests",
+      "method": "test",
+      "scope": "command:doctests",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 1 test\ntest crates/web/src/lib.rs - (line 10) ... ignored\n\ntest result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nall doctests ran in 0.62s; merged doctests compilation took 0.34s\nwarning: patch `salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s\n   Doc-tests remote_core\n   Doc-tests remote_demo_page\n   Doc-tests remote_ffi\n   Doc-tests remote_protocol\n   Doc-tests remote_web\n",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--doc",
+        "--locked"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:web-contract",
+      "method": "test",
+      "scope": "command:web-contract",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "Generated Swift / Rust / JavaScript contract: all compatibility and validation checks passed.\nwarning: patch `salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s\n",
+      "command": [
+        "cargo",
+        "xtask",
+        "web-contract"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "cargo:suite",
+      "method": "test",
+      "scope": "cargo:suite",
+      "outcome": "passed",
+      "input_identity": "733d32299a1009f0bdfe77dae2469d669f9624f20f31a1cd1a47ba5748d81c98",
+      "detail": "[SuiteExecution { package: \"remote-core\", target_kind: \"lib\", target: \"remote_core\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_core-ef95ef7b5d25bac8\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 55 tests\\ntest controls::tests::round_gate_reaches_one_in_every_direction ... ok\\ntest controls::tests::rounded_rect_distance_is_zero_on_its_edge ... ok\\ntest draw::tests::jitter_under_one_and_a_half_points_is_dropped ... ok\\ntest draw::tests::events_tell_a_game_the_whole_story ... ok\\ntest draw::tests::a_second_finger_does_not_draw ... ok\\ntest controls::tests::a_malformed_layout_is_left_out_not_trusted ... ok\\ntest controls::tests::pressed_lists_its_ids_and_ignores_ids_past_31 ... ok\\ntest draw::tests::color_and_width_apply_to_the_next_line ... ok\\ntest draw::tests::a_line_follows_the_finger_and_ends_on_its_last_point ... ok\\ntest draw::tests::the_canvas_is_16_by_9_between_the_tool_columns ... ok\\ntest draw::tests::undo_removes_the_last_line_and_clear_needs_two_taps ... ok\\ntest feel::a_held_button_keeps_a_wider_margin ... ok\\ntest feel::a_new_layout_lets_go_of_everything ... ok\\ntest feel::a_second_thumb_on_the_stick_side_is_ignored ... ok\\ntest feel::a_thumb_that_leaves_the_stick_keeps_steering_and_presses_nothing ... ok\\ntest controls::tests::two_sticks_one_per_half ... ok\\ntest feel::a_thumb_landing_far_from_the_stick_already_pushes_it ... ok\\ntest feel::diagonal_rim_is_further_than_the_axis_rim ... ok\\ntest feel::dpad_favors_straight_directions ... ok\\ntest feel::minor_buttons_take_no_touch_beyond_their_drawing ... ok\\ntest feel::one_thumb_between_a_and_b_presses_both ... ok\\ntest feel::one_thumb_between_two_c_buttons_presses_one ... ok\\ntest feel::rim_haptic_fires_once_until_the_stick_comes_back ... ok\\ntest feel::stick_centers_where_the_thumb_lands_near_its_rest ... ok\\ntest feel::stick_dead_zone_only_filters_jitter ... ok\\ntest feel::stick_reads_up_as_positive_and_stops_in_the_n64_gate ... ok\\ntest feel::sliding_from_b_to_a_rolls_through_both ... ok\\ntest feel::the_buzzer_answers_anywhere ... ok\\ntest feel::the_whole_left_half_takes_the_stick ... ok\\ntest feel::touches_on_empty_space_do_nothing ... ok\\ntest feel::two_thumbs_hold_two_buttons_and_lifting_one_keeps_the_other ... ok\\ntest join::tests::a_game_page_leads_to_its_remote_socket_with_the_same_query ... ok\\ntest join::tests::anything_else_is_not_a_game ... ok\\ntest pointer::tests::a_finger_moves_it_too_and_center_brings_it_back ... ok\\ntest pointer::tests::a_pause_in_samples_does_not_jump ... ok\\ntest join::tests::the_app_link_carries_the_page ... ok\\ntest pointer::tests::aiming_up_moves_the_cursor_up ... ok\\ntest pointer::tests::hand_tremor_is_damped_but_a_real_move_is_not ... ok\\ntest pointer::tests::turning_15_degrees_right_crosses_half_the_tv ... ok\\ntest remote::tests::a_finger_off_the_pointer_buttons_drags_the_cursor_and_center_brings_it_back ... ok\\ntest remote::tests::a_new_size_keeps_the_drawing ... ok\\ntest feel::every_button_is_pressed_alone_at_its_center ... ok\\ntest pointer::tests::the_cursor_stops_at_the_edge_and_comes_back_at_once ... ok\\ntest remote::tests::the_wheel_steers_from_motion ... ok\\ntest remote::tests::drawing_on_the_canvas_with_the_tools_beside_it ... ok\\ntest remote::tests::every_preset_lays_out_and_answers_touches ... ok\\ntest feel::every_preset_fits_every_phone ... ok\\ntest session::tests::a_state_goes_out_on_change_at_most_60_times_a_second_and_every_250_ms ... ok\\ntest session::tests::hello_again_after_each_reconnection_with_the_same_player ... ok\\ntest session::tests::drawing_steps_all_go_in_order_before_the_state ... ok\\ntest wheel::tests::a_phone_lying_flat_keeps_the_last_steering ... ok\\ntest session::tests::the_game_picks_the_remote_and_can_change_it ... ok\\ntest wheel::tests::holding_the_phone_flatter_does_not_change_the_steering ... ok\\ntest wheel::tests::level_goes_straight_and_25_degrees_is_full_lock ... ok\\ntest wheel::tests::the_other_landscape_steers_the_same_way ... ok\\n\\ntest result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 55, executed: 55 }, SuiteExecution { package: \"remote-core\", target_kind: \"test\", target: \"properties\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/properties-ef41004b929851ae\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 7 tests\\ntest a_stroke_cut_by_a_new_remote_still_ends ... ok\\ntest any_scanned_text_is_a_game_or_not ... ok\\ntest a_game_page_and_its_app_link_lead_to_the_same_socket ... ok\\ntest a_phone_comes_back_as_itself_and_keeps_its_rhythm ... ok\\ntest a_hostile_layout_draws_its_knobs_at_finite_points ... ok\\ntest a_hostile_layout_keeps_only_safe_controls ... ok\\ntest any_frame_from_the_game_is_acted_on_or_ignored ... ok\\n\\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s\\n\\n\", discovered: 7, executed: 7 }, SuiteExecution { package: \"remote-demo\", target_kind: \"bin\", target: \"remote-demo\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_demo-28a703589e96cfe1\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest tests::a_state_reads_as_one_line ... ok\\ntest tests::the_join_link_carries_the_page_encoded ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"remote-demo-page\", target_kind: \"lib\", target: \"remote_demo_page\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_demo_page-5d48399184b5f23c\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"remote-ffi\", target_kind: \"lib\", target: \"remote_ffi\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_ffi-9790ec568d3a0b33\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest web::tests::native_identity_and_script_escaping_share_the_page_decoder ... ok\\ntest web::tests::page_messages_are_decoded_by_the_native_app_contract ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"remote-protocol\", target_kind: \"lib\", target: \"remote_protocol\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_protocol-1f98f2a5390d190a\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 12 tests\\ntest tests::garbage_is_an_error_not_a_crash ... ok\\ntest presets::tests::labels_and_colors_can_be_changed ... ok\\ntest tests::a_state_reads_back_in_units ... ok\\ntest tests::every_message_survives_the_wire ... ok\\ntest web::tests::base64_reads_every_padding ... ok\\ntest tests::public_decoders_reject_concatenated_or_extended_frames ... ok\\ntest presets::tests::ids_are_unique_and_fit_in_the_pressed_bits ... ok\\ntest web::tests::what_the_app_sends_reads_back ... ok\\ntest web::tests::messages_have_the_documented_shapes ... ok\\ntest web::tests::a_pattern_is_cut_at_64_events ... ok\\ntest web::tests::native_commands_keep_legacy_batches_defaults_and_bounds ... ok\\ntest web::tests::identities_and_datagrams_are_validated_before_becoming_types ... ok\\n\\ntest result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s\\n\\n\", discovered: 12, executed: 12 }, SuiteExecution { package: \"remote-protocol\", target_kind: \"test\", target: \"properties\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/properties-6da5c6ccad64d116\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 5 tests\\ntest any_bytes_are_a_message_or_refused ... ok\\ntest every_phone_message_survives_the_wire ... ok\\ntest a_huge_length_fails_at_once ... ok\\ntest every_game_message_survives_the_wire ... ok\\ntest damaged_frames_are_a_message_or_refused ... ok\\n\\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s\\n\\n\", discovered: 5, executed: 5 }, SuiteExecution { package: \"remote-web\", target_kind: \"lib\", target: \"remote_web\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/remote_web-856573af1ebf9714\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"xtask\", target_kind: \"bin\", target: \"xtask\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/soiree/remote/target/debug/deps/xtask-e8b240644527a666\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }]",
+      "command": [
+        "Cargo/libtest"
+      ],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "static:common",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:fmt",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-native",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-wasm",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "cargo:suite",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:doctests",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:web-contract",
+        "claim": "Le contrat Swift/Rust/JavaScript est exercé par les vraies liaisons",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:web-contract",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": true,
+    "complete": true,
+    "diagnostics": []
+  }
+}

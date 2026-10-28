@@ -1,24 +1,27 @@
 # L'outil `soiree`. Il embarque, depuis ce dépôt, les règles, le modèle, le
 # catalogue, les documents et le harnais de sa version. Il s'installe avec :
-#   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.1.0 soiree
+#   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree
 # ou, depuis un clone : cargo install --locked --path outil
 [package]
 name = "soiree"
 description = "L'outil de la soirée : vérifier, certifier, créer et suivre les jeux."
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.99"
 publish = false
 
 # Son propre workspace : rien au-dessus ne l'englobe.
 [workspace]
+exclude = ["verification-kernel"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 semver = "1"
 serde_json = "1"
 sha2 = "0.10"
 toml = "1"
 toml_edit = "0.25"
+verification-kernel = { path = "verification-kernel" }
 
 [lints.rust]
 unsafe_code = "deny"

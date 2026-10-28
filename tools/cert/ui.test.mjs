@@ -26,3 +26,48 @@ test("success evidence rejects invalid patterns and zero-test green exits", asyn
     assert.throws(() => validateUi({ checks: [{ ...check, success }], not_applicable: { editing: "no input", lifecycle: "page lifetime", async: "no tasks" } }), /success/);
   }
 });
+
+test("UI waits keep polling resolved false values until a later observation is true", async () => {
+  let polls = 0;
+  let assertion = false;
+  const page = {
+    evaluate: async (_callback, expression) => {
+      if (expression === "eventual condition") return ++polls >= 3;
+      if (expression === "following assertion") { assertion = polls >= 3; return assertion; }
+    },
+  };
+  await runUiScenario({ page }, { name: "eventually true", steps: [{ wait: "eventual condition" }, { assert: "following assertion" }] });
+  assert.equal(polls, 3);
+  assert.equal(assertion, true);
+});
+
+test("UI command timeouts must be finite positive timer values", async () => {
+  const check = { name: "bounded", covers: ["effects"], command: [process.execPath, "-e", "process.exit(0)"] };
+  const declaration = (timeout_ms) => ({ checks: [{ ...check, timeout_ms }], not_applicable: { editing: "no input", lifecycle: "page lifetime", async: "no tasks" } });
+  validateUi(declaration(120_000));
+  for (const timeout_ms of [0, -1, NaN, Infinity, null, "20", 2_147_483_648]) {
+    assert.throws(() => validateUi(declaration(timeout_ms)), /timeout_ms/);
+    await assert.rejects(runUiCommand({ ...check, timeout_ms }, { cwd: process.cwd(), url: "http://localhost/" }), /timeout_ms/);
+  }
+});
+
+test("a true result arriving after the UI deadline cannot beat a delayed timer", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const page = {
+    evaluate: async (_callback, expression) => {
+      if (expression === "late true") { now = 5001; return true; }
+    },
+  };
+  await assert.rejects(runUiScenario({ page }, { name: "late true", steps: [{ wait: "late true" }] }), /attente non satisfaite après 5000 ms/);
+});
+
+test("a stopped page cannot hide an assertion failure behind observer cleanup", { timeout: 2000 }, async () => {
+  const page = {
+    evaluate: async (callback, expression) => {
+      if (expression === "false") return false;
+      if (String(callback).includes("delete window.__certUiRemembered")) return new Promise(() => {});
+    },
+  };
+  await assert.rejects(runUiScenario({ page }, { name: "stopped cleanup", steps: [{ assert: "false" }] }), /assertion fausse/);
+});

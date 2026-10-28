@@ -1,0 +1,27 @@
+verification results:: 10 verified, 1 errors
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+   --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/aggregation-hides-pending/lib.rs:159:1
+    |
+159 | pub fn combine(left: Verdict, right: Verdict) -> (result: Verdict)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+   --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/aggregation-hides-pending/lib.rs:161:9
+    |
+161 |         result == combined(left, right),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+173 |     if priority(left) >= priority(right) { left } else { left }
+    |     ----------------------------------------------------------- at the end of the function body
+
+error: postcondition not satisfied
+   --> /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/soiree-policy-mutants-xtevee7l/aggregation-hides-pending/lib.rs:164:9
+    |
+164 |         priority_spec(result) >= priority_spec(right),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+173 |     if priority(left) >= priority(right) { left } else { left }
+    |     ----------------------------------------------------------- at the end of the function body
+
+error: aborting due to 2 previous errors
+

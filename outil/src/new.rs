@@ -46,6 +46,7 @@ pub fn create(name: &str, parent: &Path, org: &str) -> Result<PathBuf> {
     for (path, contents) in MODEL {
         let filled = contents
             .replace("{{nom}}", name)
+            .replace("{{crate}}", &name.replace('-', "_"))
             .replace("{{org}}", org)
             .replace("{{version}}", VERSION);
         util::write(&dir.join(path), &filled)?;
@@ -121,7 +122,7 @@ mod tests {
         lints::check_clippy(&dir, &mut report);
         crate::ci::check(&dir, &mut report);
         crate::gaps::check(&dir, &mut report);
-        crate::items::check(&dir, crate::check::Folder::Game, &mut report);
+        crate::verification::validate_declaration(&dir, &mut report);
         assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
 
         assert!(create("canards", &parent, "amis").is_err());
