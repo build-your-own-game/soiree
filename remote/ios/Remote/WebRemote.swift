@@ -61,7 +61,7 @@ struct WebRemote: UIViewRepresentable {
     /// Messages from the page, and what goes back to it.
     @MainActor
     final class Bridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
-        static let name = "telecommande"
+        static let name = webHandlerName()
 
         weak var web: WKWebView?
         /// The game's host: datagrams go there, and only its pages get the
@@ -70,7 +70,7 @@ struct WebRemote: UIViewRepresentable {
         private let haptics = Haptics()
         private var engine: CHHapticEngine?
         private var motion: MotionReader?
-        private var sockets: [Int: NWConnection] = [:]
+        private var sockets: [UInt32: NWConnection] = [:]
 
         init(host: String) {
             self.host = host
@@ -80,40 +80,44 @@ struct WebRemote: UIViewRepresentable {
         /// scripts. `window.telecommande` says the page runs in the app, who
         /// plays and how the phone is turned.
         static func script(player: Data, name: String) -> String {
-            let info: [String: String] = [
-                "player": player.map { String(format: "%02x", $0) }.joined(),
-                "name": name,
-                "orientation": Orientation.current,
-            ]
-            let json = (try? JSONSerialization.data(withJSONObject: info)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-            return "window.telecommande = \(json);"
+            webBootstrap(player: player, name: name, orientation: Orientation.current) ?? ""
         }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any] else { return }
-            if let kind = body["vibrate"] as? String {
-                haptics.play(Self.haptic(kind))
-            }
-            if let events = body["haptic"] as? [[String: Any]] {
-                playPattern(events)
-            }
-            if let on = body["motion"] as? Bool {
-                if on, motion == nil {
-                    motion = MotionReader { [weak self] sample in self?.send(sample) }
-                } else if !on {
-                    motion?.stop()
-                    motion = nil
+            // WebKit supplies an untyped JavaScript object. Rust validates
+            // it into the same contract used by the page, before any effect.
+            guard JSONSerialization.isValidJSONObject(message.body),
+                let data = try? JSONSerialization.data(withJSONObject: message.body),
+                let json = String(data: data, encoding: .utf8)
+            else { return }
+            for command in webCommands(json: json) {
+                switch command {
+                case .vibrate(let haptic): haptics.play(haptic)
+                case .haptic(let events): playPattern(events)
+                case .motion(let enabled):
+                    if enabled, motion == nil {
+                        motion = MotionReader { [weak self] sample in self?.send(sample) }
+                    } else if !enabled {
+                        motion?.stop()
+                        motion = nil
+                    }
+                case .orientation(let allowed):
+                    switch allowed {
+                    case .portrait: Orientation.allow(.portrait)
+                    case .landscape: Orientation.allow(.landscape)
+                    case .any: Orientation.allow(.allButUpsideDown)
+                    }
+                case .openDatagram(let id, let port):
+                    guard sockets[id] == nil, sockets.count < 8,
+                        let port = NWEndpoint.Port(rawValue: port) else { continue }
+                    let socket = NWConnection(host: NWEndpoint.Host(host), port: port, using: .udp)
+                    sockets[id] = socket
+                    socket.start(queue: .main)
+                    receive(on: socket, id: id)
+                case .sendDatagram(let id, let data):
+                    sockets[id]?.send(content: data, completion: .idempotent)
+                case .closeDatagram(let id): sockets.removeValue(forKey: id)?.cancel()
                 }
-            }
-            if let which = body["orientation"] as? String {
-                switch which {
-                case "portrait": Orientation.allow(.portrait)
-                case "any": Orientation.allow(.allButUpsideDown)
-                default: Orientation.allow(.landscape)
-                }
-            }
-            if let datagram = body["datagram"] as? [String: Any] {
-                handleDatagram(datagram)
             }
         }
 
@@ -146,42 +150,30 @@ struct WebRemote: UIViewRepresentable {
         /// The orientation changed: the page learns it before its next
         /// motion sample.
         func orientationChanged() {
-            let orientation = Self.quoted(Orientation.current)
-            call("if (window.telecommande) window.telecommande.orientation = \(orientation);")
-            dispatch("orientation", detail: orientation)
+            call(webOrientation(orientation: Orientation.current))
         }
 
         private func send(_ sample: CMDeviceMotion) {
-            let list = { (values: [Double]) in values.map { String(format: "%.4f", $0) }.joined(separator: ",") }
             let q = sample.attitude.quaternion
-            let fields = [
-                "gravity:[\(list([sample.gravity.x, sample.gravity.y, sample.gravity.z]))]",
-                "rotation:[\(list([sample.rotationRate.x, sample.rotationRate.y, sample.rotationRate.z]))]",
-                "acceleration:[\(list([sample.userAcceleration.x, sample.userAcceleration.y, sample.userAcceleration.z]))]",
-                "attitude:[\(list([q.x, q.y, q.z, q.w]))]",
-                "time:\(String(format: "%.4f", sample.timestamp))",
-            ]
-            dispatch("motion", detail: "{\(fields.joined(separator: ","))}")
+            call(webMotion(sample: WebMotion(
+                gravity: WebVector3(x: sample.gravity.x, y: sample.gravity.y, z: sample.gravity.z),
+                rotation: WebVector3(x: sample.rotationRate.x, y: sample.rotationRate.y, z: sample.rotationRate.z),
+                acceleration: WebVector3(x: sample.userAcceleration.x, y: sample.userAcceleration.y, z: sample.userAcceleration.z),
+                attitude: WebQuaternion(x: q.x, y: q.y, z: q.z, w: q.w),
+                time: sample.timestamp)))
         }
 
         /// A page's haptic pattern, with every value kept in range: it comes
         /// from the network.
-        private func playPattern(_ events: [[String: Any]]) {
+        private func playPattern(_ events: [WebHapticEvent]) {
             guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
-            let number = { (event: [String: Any], key: String, fallback: Double) in
-                let value = (event[key] as? NSNumber)?.doubleValue ?? fallback
-                return value.isFinite ? value : fallback
-            }
-            let pattern = events.prefix(64).map { event in
-                let duration = min(max(number(event, "duration", 0), 0), 5)
-                return CHHapticEvent(
-                    eventType: duration > 0 ? .hapticContinuous : .hapticTransient,
+            let pattern = events.map { event in
+                CHHapticEvent(
+                    eventType: event.duration > 0 ? .hapticContinuous : .hapticTransient,
                     parameters: [
-                        CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(min(max(number(event, "intensity", 1), 0), 1))),
-                        CHHapticEventParameter(parameterID: .hapticSharpness, value: Float(min(max(number(event, "sharpness", 0.5), 0), 1))),
-                    ],
-                    relativeTime: min(max(number(event, "time", 0), 0), 10),
-                    duration: duration)
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(event.intensity)),
+                        CHHapticEventParameter(parameterID: .hapticSharpness, value: Float(event.sharpness)),
+                    ], relativeTime: event.time, duration: event.duration)
             }
             do {
                 let engine = try self.engine ?? makeEngine()
@@ -204,35 +196,12 @@ struct WebRemote: UIViewRepresentable {
             return engine
         }
 
-        private func handleDatagram(_ message: [String: Any]) {
-            guard let id = (message["id"] as? NSNumber)?.intValue, let op = message["op"] as? String else { return }
-            switch op {
-            case "open":
-                guard sockets[id] == nil, sockets.count < 8,
-                    let port = (message["port"] as? NSNumber).flatMap({ NWEndpoint.Port(rawValue: $0.uint16Value) })
-                else { return }
-                let socket = NWConnection(host: NWEndpoint.Host(host), port: port, using: .udp)
-                sockets[id] = socket
-                socket.start(queue: .main)
-                receive(on: socket, id: id)
-            case "send":
-                guard let socket = sockets[id], let bytes = message["data"] as? [NSNumber], bytes.count <= 65_507 else {
-                    return
-                }
-                socket.send(content: Data(bytes.map(\.uint8Value)), completion: .idempotent)
-            case "close":
-                sockets.removeValue(forKey: id)?.cancel()
-            default:
-                break
-            }
-        }
-
-        private func receive(on socket: NWConnection, id: Int) {
+        private func receive(on socket: NWConnection, id: UInt32) {
             socket.receiveMessage { [weak self] data, _, _, error in
                 MainActor.assumeIsolated {
                     guard let self, self.sockets[id] === socket else { return }
                     if let data {
-                        self.dispatch("datagram", detail: "{id:\(id),data:\(Self.quoted(data.base64EncodedString()))}")
+                        self.call(webDatagram(id: id, data: data))
                     }
                     if error == nil {
                         self.receive(on: socket, id: id)
@@ -241,29 +210,11 @@ struct WebRemote: UIViewRepresentable {
             }
         }
 
-        /// A `telecommande:<name>` event on `window`, with `detail` given as a
-        /// JavaScript expression.
-        private func dispatch(_ name: String, detail: String) {
-            call("window.dispatchEvent(new CustomEvent(\"telecommande:\(name)\", { detail: \(detail) }))")
-        }
-
-        private func call(_ script: String) {
+        private func call(_ script: String?) {
+            guard let script else { return }
             web?.evaluateJavaScript(script, completionHandler: nil)
         }
 
-        private static func quoted(_ text: String) -> String {
-            "\"\(text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
-        }
-
-        private static func haptic(_ kind: String) -> Haptic? {
-            switch kind {
-            case "press": .press
-            case "release": .release
-            case "success": .success
-            case "warning": .warning
-            default: nil
-            }
-        }
     }
 }
 
@@ -288,12 +239,12 @@ final class RemoteWebView: WKWebView {
 enum Orientation {
     private(set) static var allowed = UIInterfaceOrientationMask.landscape
 
-    static var current: String {
+    static var current: WebOrientation {
         let scene = UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene
         switch scene?.effectiveGeometry.interfaceOrientation {
-        case .portrait, .portraitUpsideDown: return "portrait"
-        case .landscapeRight: return "landscapeRight"
-        default: return "landscapeLeft"
+        case .portrait, .portraitUpsideDown: return .portrait
+        case .landscapeRight: return .landscapeRight
+        default: return .landscapeLeft
         }
     }
 

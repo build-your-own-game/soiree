@@ -31,15 +31,16 @@ import { fileURLToPath } from "node:url";
 import { launchBrowser, sleep, silenceReaction } from "./browser.mjs";
 import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
+import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NASTY = JSON.parse(readFileSync(join(HERE, "nasty.json"), "utf8")).texts;
 NASTY.push("é".repeat(500));
 
-const ALL = ["join", "rtc", "performance", "panic", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "monkey", "restart", "storage"];
+const ALL = ["join", "rtc", "ui", "performance", "panic", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "monkey", "restart", "storage"];
 // Scenarios that run in the lobby, before the TV presses `start`: a new
 // player may still join there.
-const LOBBY = ["join", "rtc", "performance", "panic"];
+const LOBBY = ["join", "rtc", "ui", "performance", "panic"];
 let order = ALL;
 
 // ---------------------------------------------------------------- arguments
@@ -679,10 +680,11 @@ function monkey(busy = new Set()) {
         last_input: phone.tab.lastInput,
         input_history: phone.tab.inputHistory,
         operation: phone.tab.pendingInput?.operation ?? "gesture",
+        pending_input: phone.tab.pendingInput,
         elapsed_ms: phone.tab.pendingInput ? Date.now() - phone.tab.pendingInput.started : null,
       }));
       await Promise.allSettled(actors.map(async (phone, index) => {
-        blocked[index].state = await phone.tab.evaluate("({ ready: document.readyState, frames: window.__certFrames, paints: window.__certPaints })", 200).catch((error) => ({ error: error.message }));
+        blocked[index].state = await phone.tab.evaluate("({ ready: document.readyState, frames: window.__certFrames, paints: window.__certPaints, visibility: document.visibilityState, active: document.activeElement && {tag: document.activeElement.tagName, id: document.activeElement.id, type: document.activeElement.type}, selection: String(window.getSelection()).slice(0,256), scroll: [scrollX,scrollY], viewport: [innerWidth,innerHeight,window.visualViewport?.scale] })", 200).catch((error) => ({ error: error.message }));
       }));
       await Promise.allSettled(actors.map((phone) => phone.tab.context.close()));
     });
@@ -767,6 +769,37 @@ async function storageOfPage(page) {
 }
 
 const scenarios = {
+  async ui() {
+    validateUi(config.ui);
+    for (const check of config.ui.checks ?? []) {
+      const output = await runUiCommand(check, { cwd: gameDir, url: tv.tab.page.url(), tmp: outDir });
+      if (output) log(`    ${output.split("\n").join("\n    ")}`);
+      ok("U1", `${check.name} : ${check.covers.join(", ")}`);
+    }
+    for (const scenario of config.ui.scenarios ?? []) {
+      for (const engine of ["webkit", "chromium"]) {
+        let tab;
+        let owned = false;
+        if (scenario.screen === "phone" && !scenario.url) {
+          const phone = phones.filter((phone) => phone.tab.engine === engine)[(scenario.phone ?? 1) - 1];
+          if (!phone) throw new Error(`ui : aucun téléphone ${engine}`);
+          tab = phone.tab;
+        } else {
+          const path = scenario.url ?? config.tv;
+          tab = await browser.open(new URL(withSalonWs(host.path(path)), tv.tab.page.url()).href, { engine, mobile: scenario.screen === "phone" });
+          owned = true;
+        }
+        try {
+          await runUiScenario(tab, scenario);
+          if (tab.errors.length) throw new Error(tab.errors.join(" ; "));
+          ok("U1", `${scenario.name} (${engine}) : ${scenario.covers.join(", ")}`);
+        } finally {
+          if (owned) await tab.context.close();
+        }
+      }
+    }
+    for (const [category, reason] of Object.entries(config.ui.not_applicable ?? {})) skip("U1", `${category} : ${reason}`);
+  },
   /** Presentation cadence, then controlled actions with causal render oracles. */
   async performance() {
     for (const setup of config.performance?.setup ?? []) {
@@ -1588,7 +1621,7 @@ async function main() {
   await host.start(config.launch, 15 * 60_000);
   log(`prêt (pid ${host.pid ?? "?"}) ; captures dans ${outDir}`);
   toxiproxy = await Toxiproxy.start();
-  browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello", identify: (payload) => { const packet = readPacket(payload); return !packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device) ? packet.device : null; }, webkitPhones: Boolean(config.phone) });
+  browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello", identify: (payload) => { const packet = readPacket(payload); return !packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device) ? packet.device : null; }, webkitPhones: Boolean(config.phone) || args.only.includes("ui") });
   await openTv();
   await sleep(1_500);
   order = ALL.filter((s) => args.only.includes(s));
@@ -1621,7 +1654,7 @@ async function main() {
           fail("H1", `[${name}] ${fixture.failure.message} ; cas restants non vérifiés : ${order.slice(index + 1).join(", ") || "aucun"}`);
           throw fixture.failure;
         }
-        fail("E1", `[${name}] le scénario s'est interrompu : ${error.message}`);
+        fail(name === "ui" ? "U1" : "E1", `[${name}] le scénario s'est interrompu : ${error.message}`);
         if (!host.alive()) throw error;
       }
       if (index === lastLobby && config.start && !gameStarted) {
@@ -1701,7 +1734,7 @@ checkBrowserPanics("fin");
 
 // ---------------------------------------------------------------- summary
 
-const ITEMS = ["H1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
+const ITEMS = ["H1", "U1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
 const lines = [`# Certification de ${gameDir.split("/").slice(-2).join("/")}`, "", `Graine ${args.seed}, ${((Date.now() - started) / 60_000).toFixed(1)} min. Captures : ${outDir}`, "", "| Item | État | Détail |", "|---|---|---|"];
 let failures = 0;
 for (const item of ITEMS) {

@@ -16,6 +16,14 @@ Si `.soiree/` manque, lance `soiree check` : il le recrée. Si `soiree` manque, 
 
 **La boucle rapide, après chaque changement : `soiree check`.** Quelques secondes : formatage, Clippy avec les règles communes, tests, contrôles du manifeste. Elle doit rester verte. Ne lance rien de plus lourd pendant que tu itères.
 
+La CI fournie est liée à cette version du commun ; ne la retirer ni
+l’assouplir. Mettre à niveau avec `soiree upgrade` depuis l’outil de la
+version cible. Pour une interface nouvelle, utiliser `salon_web::ui` et
+déclarer les contrôles de `cert.json.ui` : ressources possédées, tâches
+périmées invalidées, identité et composition des champs préservées, effets
+ponctuels identifiés. Une catégorie non applicable cesse de l’être dès que
+sa mécanique apparaît.
+
 **La boucle lourde, à la fin d'une étape : `soiree certify`.** 5 à 10 minutes : le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles, endurance. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige chaque ✗, relance, puis committe `certification/` avec le code. Un ~ ou un – n'est pas un échec : lis le détail.
 
 Entre les deux, joue : lance le jeu (`cargo run --release -p {{nom}}-host`), ouvre la TV et des téléphones (`/play?seat=1`, `/play?seat=2`…), regarde des captures. Si ton environnement a un navigateur ou un simulateur iOS, sers-t'en.
@@ -40,7 +48,7 @@ Ajoute ensuite ce que le catalogue n'a pas : chaque règle de ton jeu qui peut c
 
 ## Ce que tu ne modifies pas
 
-- Le dépôt commun (salon, la télécommande, les règles, le harnais). S'il manque quelque chose à salon, ou si une règle commune gêne sans raison, ouvre une issue sur `https://github.com/{{org}}/soiree` qui explique le besoin et ce que tu as essayé. Si tu ne peux pas ouvrir d'issue toi-même, écris-en le texte pour l'auteur.
+- Le dépôt commun (salon, la télécommande, les règles, le harnais). S'il manque quelque chose à salon, ou si une règle commune gêne sans raison, ouvre une issue sur `https://github.com/build-your-own-game/soiree` qui explique le besoin et ce que tu as essayé. Si tu ne peux pas ouvrir d'issue toi-même, écris-en le texte pour l'auteur.
 - `rust-toolchain.toml`, `clippy.toml` et les lints de `Cargo.toml` : `soiree` les écrit. Tu peux durcir une règle ; pour en assouplir une, il faut `#[expect(lint, reason = "…")]` à l'endroit précis, jamais `#[allow]`.
 - `.soiree/` : régénéré à chaque `soiree check`.
 - Le module écrit par `soiree dom` (souvent `page.rs`) : il tire du HTML et du CSS de la page les seuls noms que le Rust peut y lire, et les règles interdisent de lire la page par chaîne ailleurs. Change la page, puis relance `soiree dom` suivi du chemin du module.

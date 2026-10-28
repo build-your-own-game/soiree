@@ -149,6 +149,7 @@
 extern crate alloc;
 
 mod client;
+pub mod codec;
 mod host;
 pub mod journal;
 mod stream;

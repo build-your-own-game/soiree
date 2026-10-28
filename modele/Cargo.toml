@@ -12,9 +12,9 @@ publish = false
 # Salon, la couche réseau commune (.soiree/salon/README.md), à la version de
 # soiree.toml. `soiree upgrade` change l'étiquette ; chez l'hôte, le [patch] de
 # son dossier la remplace par sa copie locale.
-salon-core = { git = "https://github.com/{{org}}/soiree", tag = "v{{version}}" }
-salon-host = { git = "https://github.com/{{org}}/soiree", tag = "v{{version}}" }
-salon-web = { git = "https://github.com/{{org}}/soiree", tag = "v{{version}}" }
+salon-core = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
+salon-host = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
+salon-web = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
 game-core = { package = "{{nom}}-core", path = "crates/core" }
 serde = { version = "1", features = ["derive"] }
 # Doit être exactement la version du wasm-bindgen-cli installé (`soiree doctor`).

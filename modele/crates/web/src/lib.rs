@@ -12,6 +12,16 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{Element, Node};
 
+thread_local! {
+    static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
+}
+
+struct Runtime {
+    _page: Rc<RefCell<Page>>,
+    _connection: Connection<Up, View>,
+    _listeners: salon_web::ui::Listeners,
+}
+
 struct Page {
     tv: bool,
     status: Status,
@@ -96,11 +106,14 @@ pub fn start() -> Result<(), JsValue> {
         status: Status::Connecting,
         view: None,
     }));
-    let shown = Rc::clone(&page);
+    let shown = Rc::downgrade(&page);
     let target = app.clone();
     let connection: Connection<Up, View> = Connection::open(
         Options::for_page(VERSION, if tv { Kind::Tv } else { Kind::Phone }),
         move |happening| {
+            let Some(shown) = shown.upgrade() else {
+                return;
+            };
             let mut page = shown.borrow_mut();
             match happening {
                 Happening::Status(status) => page.status = status,
@@ -114,19 +127,26 @@ pub fn start() -> Result<(), JsValue> {
         },
     );
     render(&page.borrow(), &app)?;
+    let listeners = salon_web::ui::Listeners::default();
     if !tv {
-        let tap = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+        let link = connection.clone();
+        listeners.listen(&app, "click", move |event: web_sys::Event| {
             let on_button = event
                 .target()
                 .and_then(|target| target.dyn_into::<Element>().ok())
                 .is_some_and(|element| page::id::TAP.is(&element));
             if on_button {
                 // Not connected: the tap is lost, like on a remote.
-                let _: Result<(), salon_core::ClientSendError> = connection.send(&Up::Tap);
+                let _: Result<(), salon_core::ClientSendError> = link.send(&Up::Tap);
             }
-        });
-        app.add_event_listener_with_callback("click", tap.as_ref().unchecked_ref())?;
-        tap.forget();
+        })?;
     }
+    RUNTIME.with(|runtime| {
+        runtime.replace(Some(Runtime {
+            _page: page,
+            _connection: connection,
+            _listeners: listeners,
+        }))
+    });
     Ok(())
 }

@@ -5,14 +5,14 @@ use js_sys::{Function, Reflect};
 use salon_core::journal::{Diagnostic, PanicReport};
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 const KEY: &str = "salon.panic-recovery.v1";
 const WINDOW: u64 = 60_000;
 const LIMIT: u8 = 3;
 thread_local! { static INSTALLED: Cell<bool> = const { Cell::new(false) };
-static TV_INSTALLED: Cell<bool> = const { Cell::new(false) }; }
+static TV_INSTALLED: Cell<bool> = const { Cell::new(false) };
+static LISTENERS: crate::ui::Listeners = crate::ui::Listeners::default(); }
 
 #[derive(Default, Serialize, Deserialize)]
 struct Attempts {
@@ -55,6 +55,10 @@ fn wall_ms() -> u64 {
     js_sys::Date::now().max(0.0) as u64
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "panic recovery must invoke a native JS reload after the Rust runtime has trapped"
+)]
 fn recover(message: String) {
     let Some(window) = web_sys::window() else {
         return;
@@ -116,8 +120,8 @@ pub fn install_tv_diagnostics() {
     let Some(window) = web_sys::window() else {
         return;
     };
-    let callback =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|event: web_sys::KeyboardEvent| {
+    let _: Result<(), JsValue> = LISTENERS.with(|listeners| {
+        listeners.listen::<web_sys::KeyboardEvent>(&window, "keydown", |event| {
             if event.key() == "F8" && !event.repeat() {
                 event.prevent_default();
                 let page = web_sys::window()
@@ -129,13 +133,8 @@ pub fn install_tv_diagnostics() {
                     note: "Bug marqué depuis la TV (F8)".to_owned(),
                 });
             }
-        });
-    if window
-        .add_event_listener_with_callback("keydown", callback.as_ref().unchecked_ref())
-        .is_ok()
-    {
-        callback.forget();
-    }
+        })
+    });
 }
 
 /// The harness must exercise an actual WASM panic. Registering the trigger
@@ -156,13 +155,11 @@ fn install_test_trigger() {
     let Some(document) = window.document() else {
         return;
     };
-    let callback = Closure::<dyn FnMut()>::new(move || panic!("salon certification panic {nonce}"));
-    if document
-        .add_event_listener_with_callback("salon:test-panic", callback.as_ref().unchecked_ref())
-        .is_ok()
-    {
-        callback.forget();
-    }
+    let _: Result<(), JsValue> = LISTENERS.with(|listeners| {
+        listeners.listen::<web_sys::Event>(&document, "salon:test-panic", move |_| {
+            panic!("salon certification panic {nonce}")
+        })
+    });
 }
 
 fn test_nonce(search: &str) -> Option<&str> {

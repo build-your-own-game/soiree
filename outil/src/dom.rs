@@ -48,6 +48,8 @@ pub struct Names {
     pub attrs: BTreeSet<String>,
     /// CSS properties, custom ones (`--hue`) included.
     pub props: BTreeSet<String>,
+    /// Value categories explicitly declared by the owning stylesheet.
+    pub prop_types: BTreeMap<String, BTreeSet<String>>,
     /// Tags of the page's HTML elements.
     pub tags: BTreeSet<String>,
     /// Ids a CSS selector names, checked against `ids`.
@@ -403,6 +405,27 @@ fn split_tag(inside: &str) -> (String, Vec<(String, String)>) {
 
 /// Reads class, id and attribute selectors, and declared properties, from CSS.
 pub fn scan_css(css: &str, names: &mut Names) {
+    for line in css.lines() {
+        if let Some(declaration) = line
+            .trim()
+            .strip_prefix("/* soiree-type:")
+            .and_then(|s| s.strip_suffix("*/"))
+        {
+            let words: Vec<_> = declaration.split_whitespace().collect();
+            if let [name, kind] = words.as_slice() {
+                names
+                    .prop_types
+                    .entry((*name).to_owned())
+                    .or_default()
+                    .insert((*kind).to_owned());
+            } else {
+                names
+                    .prop_types
+                    .entry(declaration.trim().to_owned())
+                    .or_default();
+            }
+        }
+    }
     let css = strip_comments(css);
     let mut prelude = String::new();
     // For each open block: whether it holds declarations.
@@ -717,18 +740,7 @@ fn module(recipe: &Recipe, names: &Names) -> Result<String> {
             )
         }),
     )?;
-    constants(
-        &mut out,
-        "prop",
-        "The CSS properties the stylesheets declare, custom ones included.",
-        names.props.iter().map(|p| {
-            (
-                p.as_str(),
-                "super::Prop".to_owned(),
-                format!("super::Prop({p:?})"),
-            )
-        }),
-    )?;
+    properties(&mut out, names)?;
     constants(
         &mut out,
         "tag",
@@ -745,6 +757,74 @@ fn module(recipe: &Recipe, names: &Names) -> Result<String> {
     Ok(out)
 }
 
+fn properties(out: &mut String, names: &Names) -> Result<()> {
+    for name in names.prop_types.keys() {
+        if !names.props.contains(name) {
+            return Err(format!("soiree-type : propriété CSS {name} absente"));
+        }
+    }
+    let properties = names
+        .props
+        .iter()
+        .map(|p| {
+            let kind = property_type(p, names.prop_types.get(p))?;
+            Ok((
+                p.as_str(),
+                format!("super::Prop<{kind}>"),
+                format!("super::Prop::new({p:?})"),
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    constants(
+        out,
+        "prop",
+        "The CSS properties the stylesheets declare, custom ones included.",
+        properties.into_iter(),
+    )
+}
+
+fn property_type(name: &str, declared: Option<&BTreeSet<String>>) -> Result<String> {
+    let standard = match name {
+        "color" | "background-color" => Some("color"),
+        "left" | "right" | "top" | "bottom" | "width" | "height" => Some("length"),
+        "opacity" | "flex-grow" | "flex-shrink" => Some("number"),
+        "animation-delay" | "animation-duration" | "transition-delay" | "transition-duration" => {
+            Some("time")
+        }
+        "background-image" => Some("image"),
+        _ => None,
+    };
+    let explicit = if let Some(kinds) = declared {
+        if kinds.len() != 1 {
+            return Err(format!("soiree-type : types contradictoires pour {name}"));
+        }
+        kinds.first().map(String::as_str)
+    } else {
+        None
+    };
+    if let (Some(standard), Some(explicit)) = (standard, explicit)
+        && standard != explicit
+    {
+        return Err(format!(
+            "soiree-type : {name} attend {standard}, pas {explicit}"
+        ));
+    }
+    let kind = match explicit.or(standard) {
+        Some("color") => "Color",
+        Some("length") => "Length",
+        Some("number") => "Number",
+        Some("time") => "Time",
+        Some("image") => "Image",
+        Some(other) => {
+            return Err(format!(
+                "soiree-type : catégorie inconnue {other} pour {name}"
+            ));
+        }
+        None => return Ok("()".into()),
+    };
+    Ok(format!("salon_web::style::{kind}"))
+}
+
 /// The typed accessors every generated module carries.
 const RUNTIME: &str = r##"
 #![expect(
@@ -757,7 +837,7 @@ use core::marker::PhantomData;
 use core::str::FromStr;
 
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{Document, Element, HtmlElement};
+use web_sys::{Document, Element};
 
 pub fn document() -> Result<Document, JsValue> {
     web_sys::window()
@@ -922,19 +1002,9 @@ impl Attr {
     }
 }
 
-/// A CSS property the stylesheets declare.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Prop(&'static str);
-
-impl Prop {
-    pub fn set(self, element: &HtmlElement, value: &str) -> Result<(), JsValue> {
-        element.style().set_property(self.0, value)
-    }
-
-    pub fn remove(self, element: &HtmlElement) -> Result<(), JsValue> {
-        element.style().remove_property(self.0).map(|_| ())
-    }
-}
+/// A stylesheet property with its declared value category. Undeclared
+/// categories have no setter; annotate them in CSS with `soiree-type`.
+pub type Prop<V = ()> = salon_web::style::Property<V>;
 
 /// An element the Rust side may create, with its type.
 pub struct Tag<T> {
@@ -972,6 +1042,43 @@ impl<T: JsCast> Tag<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stylesheet_value_contracts_reject_drift_and_generate_typed_properties() {
+        let mut names = Names::default();
+        scan_css(
+            "/* soiree-type: --accent color */\n.box { --accent: #fff; left: 0; color: red; background-image: none; animation-delay: 0s; }",
+            &mut names,
+        );
+        let output = module(&Recipe::default(), &names).unwrap();
+        for expected in [
+            "VAR_ACCENT: super::Prop<salon_web::style::Color>",
+            "LEFT: super::Prop<salon_web::style::Length>",
+            "COLOR: super::Prop<salon_web::style::Color>",
+            "BACKGROUND_IMAGE: super::Prop<salon_web::style::Image>",
+            "ANIMATION_DELAY: super::Prop<salon_web::style::Time>",
+        ] {
+            assert!(output.contains(expected), "missing {expected}");
+        }
+        scan_css("/* soiree-type: --accent length */", &mut names);
+        assert!(
+            module(&Recipe::default(), &names).is_err(),
+            "contradictory declarations passed"
+        );
+        for source in [
+            "/* soiree-type: --missing color */",
+            "/* soiree-type: color length */\n.box {color:red}",
+            "/* soiree-type: --a invented */\n.box {--a:0}",
+            "/* soiree-type: bad */",
+        ] {
+            let mut names = Names::default();
+            scan_css(source, &mut names);
+            assert!(
+                module(&Recipe::default(), &names).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
 
     #[test]
     fn html_gives_ids_classes_and_attributes() {

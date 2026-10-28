@@ -11,6 +11,14 @@ disallowed-types = [
   { path = "std::collections::HashSet", reason = "ordre d'itération aléatoire : utilise BTreeSet ou un hasher à graine fixe" },
 ]
 disallowed-methods = [
+  { path = "web_sys::Window::request_animation_frame", reason = "une boucle possède sa durée de vie : salon_web::ui::AnimationLoop", allow-invalid = true },
+  { path = "postcard::from_bytes", reason = "refuser les octets restants : salon_core::codec::decode", allow-invalid = true },
+  { path = "web_sys::EventTarget::add_event_listener_with_callback", reason = "un listener possède sa durée de vie : salon_web::ui::Listener", allow-invalid = true },
+  { path = "web_sys::Window::set_timeout_with_callback_and_timeout_and_arguments_0", reason = "un timer possède sa durée de vie : salon_web::ui::Timer", allow-invalid = true },
+  { path = "web_sys::Window::set_interval_with_callback_and_timeout_and_arguments_0", reason = "un timer possède sa durée de vie : salon_web::ui::Timer", allow-invalid = true },
+  { path = "web_sys::CssStyleDeclaration::set_property_with_priority", reason = "les valeurs CSS passent par les propriétés typées de soiree dom", allow-invalid = true },
+  { path = "web_sys::CssStyleDeclaration::set_css_text", reason = "les valeurs CSS passent par les propriétés typées de soiree dom", allow-invalid = true },
+  { path = "salon_web::style::Property::new", reason = "le nom et la catégorie CSS viennent du module généré par soiree dom", allow-invalid = true },
   { path = "std::time::Instant::now", reason = "panique sur wasm32-unknown-unknown ; le temps entre dans la simulation comme une entrée" },
   { path = "std::time::SystemTime::now", reason = "le temps entre dans la simulation comme une entrée" },
   { path = "f32::sin", reason = "résultat différent entre WASM et natif : utilise le crate libm" },

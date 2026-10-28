@@ -15,6 +15,7 @@ pub fn run(name: &str, parent: &Path, org: &str) -> ExitCode {
             println!();
             println!("Ensuite :");
             println!("  cd {name}");
+            println!("  soiree check  # vérifie le jeu et crée Cargo.lock avant le premier commit");
             println!("  git init -b main && git add -A && git commit -m \"Le jeu de départ\"");
             println!("  gh repo create {org}/{name} --private --source . --push");
             println!("puis lis AGENTS.md.");
@@ -28,6 +29,11 @@ pub fn run(name: &str, parent: &Path, org: &str) -> ExitCode {
 }
 
 pub fn create(name: &str, parent: &Path, org: &str) -> Result<PathBuf> {
+    if matches!(name, "salon" | "remote") {
+        return Err(format!(
+            "« {name} » : nom réservé au commun ; choisis un nom de jeu distinct (salon-arcade, remote-aventure…)"
+        ));
+    }
     if !valid_name(name) {
         return Err(format!(
             "« {name} » : attendu des minuscules, des chiffres et des tirets, en commençant par une lettre (course-de-canards)"
@@ -45,6 +51,7 @@ pub fn create(name: &str, parent: &Path, org: &str) -> Result<PathBuf> {
         util::write(&dir.join(path), &filled)?;
     }
     embedded::write_docs(&dir)?;
+    crate::ci::write(&dir)?;
     Ok(dir)
 }
 
@@ -74,6 +81,19 @@ mod tests {
     }
 
     #[test]
+    fn canonical_common_names_are_reserved_before_writing_a_game() {
+        let parent = crate::testdir::fresh("reserved-game-names");
+        for name in ["salon", "remote"] {
+            let error = create(name, &parent, "amis").unwrap_err();
+            assert!(error.contains("nom réservé au commun"), "{error}");
+            assert!(!parent.join(name).exists(), "reserved name wrote a game");
+        }
+        for name in ["salon-arcade", "remote-aventure"] {
+            assert!(create(name, &parent, "amis").is_ok(), "{name}");
+        }
+    }
+
+    #[test]
     fn a_new_game_is_filled_and_follows_the_rules() {
         let parent = crate::testdir::fresh("new");
         let dir = create("canards", &parent, "amis").unwrap();
@@ -84,7 +104,9 @@ mod tests {
         assert!(
             util::read(&dir.join("Cargo.toml"))
                 .unwrap()
-                .contains("github.com/amis/soiree\", tag = \"v0.1.0\"")
+                .contains(&format!(
+                    "github.com/build-your-own-game/soiree\", tag = \"v{VERSION}\""
+                ))
         );
         assert!(dir.join(".soiree/salon/README.md").is_file());
         assert_eq!(
@@ -97,6 +119,7 @@ mod tests {
         let project = util::parse_toml(&util::read(&dir.join("Cargo.toml")).unwrap(), "c").unwrap();
         lints::check_cargo(&project, &mut report);
         lints::check_clippy(&dir, &mut report);
+        crate::ci::check(&dir, &mut report);
         crate::gaps::check(&dir, &mut report);
         crate::items::check(&dir, crate::check::Folder::Game, &mut report);
         assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);

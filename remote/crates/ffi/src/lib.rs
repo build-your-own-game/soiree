@@ -17,6 +17,9 @@ use remote_protocol::{self as protocol, Action, Kind, encode};
 
 uniffi::setup_scaffolding!();
 
+mod web;
+pub use web::*;
+
 #[derive(uniffi::Record)]
 pub struct Point {
     pub x: f32,

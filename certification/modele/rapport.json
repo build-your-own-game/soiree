@@ -1,22 +1,22 @@
 {
   "arguments": [
     "--seed",
-    "20261027"
+    "6839"
   ],
   "exit_code": 0,
   "fingerprint": {
     "algorithm": "sha256 de « chemin\\0sha256(contenu)\\n » des fichiers suivis ou non ignorés par git, triés, hors certification/",
-    "files": 27,
+    "files": 28,
     "uncommitted": true,
-    "value": "3dcd08ecfce9b590d2562f8722f596b93176a0320211cc174ffbdc15a46cc12a"
+    "value": "1d156d78c1b9ece7918e1e32b943d8331ecffb662d6974c5034a54d7c025157e"
   },
-  "finished": "2026-10-27T21:44:10Z",
-  "harness_sha256": "56b7e391dd9a2465cce1d159364bcaec4095ec36921e7ecdfc062708ee7bca6c",
+  "finished": "2026-10-28T02:24:15Z",
+  "harness_sha256": "f33beed61e5356fbf86744ca84f9245c6d40fe3e76e20cb68763071ff6f7cd49",
   "harness_unchanged": true,
   "machine": {
     "arch": "aarch64",
     "cpus": 10,
-    "node": "v22.23.4",
+    "node": "v26.12.1",
     "os": "macos",
     "os_version": "25.6.0",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
@@ -32,7 +32,7 @@
         "duration_ms": 3016.545000000013,
         "fps": 60.0024199871042,
         "frames": 181,
-        "gestures": 49,
+        "gestures": 52,
         "max_ms": 16.670000000012806,
         "observer": "raf",
         "p50_ms": 16.66500000000815,
@@ -41,8 +41,8 @@
       }
     ],
     "frames_lobby": {
-      "duration_ms": 3016.539999999999,
-      "fps": 60.00251944280535,
+      "duration_ms": 3016.545,
+      "fps": 60.00241998710445,
       "frames": 181,
       "max_ms": 16.670000000000073,
       "observer": "raf",
@@ -52,49 +52,49 @@
     },
     "joins": [
       {
-        "elapsed_ms": 597,
+        "elapsed_ms": 535,
         "engine": "webkit",
         "joined": true,
         "phone": 1
       },
       {
-        "elapsed_ms": 321,
+        "elapsed_ms": 326,
         "engine": "chromium",
         "joined": true,
         "phone": 2
       },
       {
-        "elapsed_ms": 419,
+        "elapsed_ms": 427,
         "engine": "webkit",
         "joined": true,
         "phone": 3
       },
       {
-        "elapsed_ms": 316,
+        "elapsed_ms": 321,
         "engine": "chromium",
         "joined": true,
         "phone": 4
       },
       {
-        "elapsed_ms": 431,
+        "elapsed_ms": 427,
         "engine": "webkit",
         "joined": true,
         "phone": 5
       },
       {
-        "elapsed_ms": 420,
+        "elapsed_ms": 305,
         "engine": "chromium",
         "joined": true,
         "phone": 6
       },
       {
-        "elapsed_ms": 446,
+        "elapsed_ms": 418,
         "engine": "webkit",
         "joined": true,
         "phone": 7
       },
       {
-        "elapsed_ms": 343,
+        "elapsed_ms": 307,
         "engine": "chromium",
         "joined": true,
         "phone": 8
@@ -102,31 +102,31 @@
     ],
     "probes": [
       {
-        "baseline": "\"0 taps\"",
+        "baseline": "\"2 taps\"",
         "budget_ms": 80,
         "engine": "webkit",
         "index": 1,
-        "latency_ms": 25.409912109375,
-        "rendered": "\"1 taps\"",
+        "latency_ms": 18.169921875,
+        "rendered": "\"3 taps\"",
         "screen": "phone"
       },
       {
-        "baseline": "\"1 taps\"",
+        "baseline": "\"3 taps\"",
         "budget_ms": 80,
         "engine": "chromium",
         "index": 2,
-        "latency_ms": 23.510009765625,
-        "rendered": "\"2 taps\"",
+        "latency_ms": 23.27001953125,
+        "rendered": "\"4 taps\"",
         "screen": "phone"
       }
     ]
   },
   "salon": {
     "source": "chemin local",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
-  "seed": 20261027,
-  "soiree": "0.1.0",
+  "seed": 6839,
+  "soiree": "0.2.0",
   "source_unchanged": true,
-  "started": "2026-10-27T21:39:19Z"
+  "started": "2026-10-28T02:19:24Z"
 }

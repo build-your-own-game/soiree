@@ -15,7 +15,7 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
 1. **Installer Rust**, avec rustup : suis https://rustup.rs. Ferme puis rouvre le terminal.
 2. **Installer l'outil `soiree`**, à la version de la soirée :
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.1.0 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.2.0 soiree
    ```
    La première installation prend quelques minutes.
 3. **Vérifier l'ordinateur** :
@@ -29,8 +29,11 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    cd mon-jeu
    ```
    Le nom : des minuscules, des chiffres et des tirets, comme `course-de-canards`.
-5. **Créer son dépôt dans l'organisation et pousser.** Avec [GitHub CLI](https://cli.github.com) :
+5. **Vérifier le jeu, créer son dépôt dans l'organisation et pousser.**
+   Le premier contrôle crée aussi `Cargo.lock`, nécessaire à la CI.
+   Avec [GitHub CLI](https://cli.github.com) :
    ```sh
+   soiree check
    git init -b main
    git add -A
    git commit -m "Le jeu de départ"
@@ -51,7 +54,7 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 | `soiree check --fast` | en boucle serrée | secondes | les mêmes contrôles, sans formatage, Clippy ni tests |
 | `soiree mutants` | à la demande | variable | vérifie que les tests détectent des mutations ; rapports sans bloquer check/certify |
 | `soiree certify` | à la fin d'une étape | 5 à 10 min | le harnais complet ; écrit `certification/` |
-| `soiree upgrade` | quand tu veux | secondes | passe le jeu à la dernière version du commun |
+| `soiree upgrade` | quand tu veux | secondes à minutes | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
 | `soiree status` | chez l'hôte | secondes | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
 | `soiree host-setup` | chez l'hôte, une fois par machine | secondes à minutes | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |
 

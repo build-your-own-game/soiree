@@ -1,0 +1,60 @@
+name: Common guarantees
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  common:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the pinned toolchain and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99 --component rustfmt,clippy --target wasm32-unknown-unknown,aarch64-apple-ios-sim
+          cargo +1.99 install --locked cargo-mutants --version 27.1.0
+          cargo +1.99 install --locked wasm-bindgen-cli --version 0.2.129
+          cargo +1.99 install --locked --path outil
+          brew install toxiproxy
+          if [ ! -x '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' ]; then
+            brew install --cask google-chrome
+          fi
+      - name: Check tooling and its negative controls
+        working-directory: outil
+        run: |
+          set -euo pipefail
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --locked
+      - name: Check the shared crates and real Swift ABI
+        run: soiree check --locked salon remote .
+      - name: Exercise the browser harness
+        working-directory: tools/cert
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npx playwright-core install webkit
+          npm test
+      - name: Exercise shared UI lifetimes in real browsers
+        run: node salon/tests/ui-browser.mjs
+      - name: Exercise the Swift to WASM bridge
+        working-directory: remote
+        run: cargo xtask web-contract-browser
+      - name: Exercise remote capability lifetimes
+        run: node remote/tests/web-lifecycle-browser.mjs
+      - name: Build the actual iPhone app
+        working-directory: remote
+        run: xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+      - name: Check and exercise a freshly generated game
+        env:
+          SOIREE_HARNESS: ${{ github.workspace }}/tools/cert
+        run: python3 .github/scripts/model-ci.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model-certification
+          path: ${{ runner.temp }}/soiree-model/ci-model/certification/

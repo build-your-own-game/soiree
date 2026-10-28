@@ -3,6 +3,7 @@
 mod catalogue;
 mod certify;
 mod check;
+mod ci;
 mod doctor;
 mod dom;
 mod embedded;
@@ -16,6 +17,7 @@ mod mutants;
 mod new;
 mod report;
 mod status;
+mod ui_contract;
 mod upgrade;
 mod util;
 
@@ -27,7 +29,7 @@ const HELP: &str = "soiree : l'outil de la soirée
   soiree doctor [dossier]            ce qui manque à cet ordinateur ; n'installe rien
   soiree new <nom> [--org O] [--dans D]
                                      crée un jeu depuis le modèle
-  soiree check [--fast] [--locked] [dossier…]
+  soiree check [--fast] [--locked] [--published] [dossier…]
                                      règles, manifeste, certifications ; puis fmt,
                                      Clippy natif et WASM, tests (sauf --fast)
   soiree certify [dossier] [--harness H] [-- options du harnais]
@@ -37,7 +39,7 @@ const HELP: &str = "soiree : l'outil de la soirée
   soiree dom <fichier.rs> [--html H…] [--css C…] [--id ID BALISE…] [--data D…] [--attr A…]
                                      écrit le module typé des noms d'une page :
                                      ids, classes, data-*, attributs, propriétés CSS
-  soiree upgrade                     passe le jeu à la dernière version (pas encore écrit)
+  soiree upgrade [--dry-run] [dossier] aligne le jeu sur la version de ce binaire
   soiree status [dossier]            dépôts pas commités, pas poussés, sans amont
   soiree host-setup [dossier] [--author P | --all] [--force] [--dry-run] [--source URL]
                                      installe le dossier de l'hôte : AGENTS.md,
@@ -80,6 +82,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 match arg.as_str() {
                     "--fast" => options.fast = true,
                     "--locked" => options.locked = true,
+                    "--published" => options.published = true,
                     flag if flag.starts_with('-') => {
                         return Err(format!("check : option inconnue {flag}"));
                     }
@@ -140,7 +143,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         }
         "mutants" => Ok(mutants::run(rest)),
         "dom" => Ok(dom::run(rest)),
-        "upgrade" => Ok(upgrade::run()),
+        "upgrade" => upgrade::run(rest),
         "host-setup" => Ok(host_setup::run(&host_setup_options(rest)?)),
         other => Err(format!("commande inconnue : {other}")),
     }

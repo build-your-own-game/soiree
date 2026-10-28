@@ -90,6 +90,10 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`players.max`** est la taille de la salle (R3).
 - **`layout: false`**, avec **`layout_reason`**, saute la vérification de la zone sûre : une TV dessinée sur un canvas, une page qui n'est pas une TV.
 - Un jeu sans téléphone (`"phone": null`) passe seulement les items qui le concernent : le singe joue alors sur sa page.
+- **`ui`** décrit les contrôles d’interface U1 ci-dessous. Chaque catégorie
+  `editing`, `lifecycle`, `async`, `effects` est couverte par un scénario ou
+  une commande de test, ou porte une raison précise dans `not_applicable`.
+  Une absence de test n’est pas une non-applicabilité.
 - **`performance.probes`** décrit au moins une action et son effet visible causal sur la TV. Chaque sonde donne **`screen`** (`"phone"` ou `"tv"`), **`phone`** (numéro à partir de 1, par défaut 1), **`action`** (`{ "key": "…" }`, `{ "click": "sélecteur" }`, `{ "fill": "sélecteur", "text": "…" }` ou `{ "tap": [x, y] }`) et **`rendered`**, une expression JavaScript qui lit la valeur affichée concernée. **`prepare`** peut contenir des actions de préparation, exécutées avant le chronomètre. Un changement de cette valeur est observé entre deux occasions de rendu après l’entrée réelle. Les horloges des pages sont alignées par `performance.timeOrigin + performance.now()` ; on ne soustrait jamais les `performance.now()` de deux pages.
 - **`painted`** peut donner une expression qui lit un compteur de présentations réussies, pour l’oracle de l’écran vivant. Le canvas de Sidequest utilise les événements post-rendu capturés par le harnais (`window.__certPaints`) ; un simple `requestAnimationFrame` ne prouve pas que son GPU dessine. Les pages DOM gardent le compteur de disponibilité de la boucle navigateur.
 - **`performance.setup`** peut contenir des étapes `{ "screen": "tv", "action": { "key": "Enter" } }` (ou `screen: "phone"`, avec `phone`) pour afficher la scène avant la mesure. Cette préparation est terminée avant le prélèvement des images et le chronomètre des sondes.
@@ -116,7 +120,79 @@ Exemple de sonde pour une action qui modifie une valeur affichée :
 
 Le singe ne génère Retour arrière sur un téléphone que lorsqu’un vrai champ texte modifiable a le focus, comme le clavier à l’écran ; sur WebKit cette touche hors champ commande l’historique du navigateur. Le clavier d’un jeu de bureau conserve cette touche.
 
-Les étapes ordinaires (`join`, coupure, silence, rechargement, stockage et onglets concurrents) traversent les deux moteurs. Le gel complet de JavaScript (`freeze`) utilise explicitement un téléphone Chromium, car Playwright n’expose les sessions CDP que pour Chromium. La trajectoire tactile détaillée du singe utilise CDP dans Chromium ; dans WebKit, un tap tactile puis un glisser à la souris exercent les contrôles de pointeur. Ce dernier cas ne prétend pas simuler le toucher d’iOS. Les scripts de stockage sont installés et retirés par l’API Playwright commune aux deux moteurs.
+### Contrôles d’interface U1
+
+`soiree certify -- --only ui` exécute U1 avant le début de partie. Les
+scénarios déclaratifs tournent dans WebKit et Chromium ; leurs assertions
+observent le jeu en boîte noire. Exemple :
+
+```json
+"ui": {
+  "scenarios": [{
+    "name": "Un message reçu conserve le champ en cours d’édition",
+    "screen": "phone",
+    "covers": ["editing"],
+    "steps": [
+      {"wait": "document.querySelector('#name') !== null"},
+      {"focus": "#name"},
+      {"remember": "field", "read": "document.querySelector('#name')"},
+      {"fill": "#name", "text": "é🙂"},
+      {"select": "#name", "start": 1, "end": 3},
+      {"composition": "#name", "phase": "start"},
+      {"composing_key": "#name", "key": "Enter"},
+      {"unchanged": "field", "read": "document.querySelector('#name')"},
+      {"composition": "#name", "phase": "end", "text": "é🙂"}
+    ]
+  }],
+  "checks": [{
+    "name": "Fins d’import dans l’ordre inverse",
+    "covers": ["async", "lifecycle", "effects"],
+    "command": ["node", "tools/ui-check.mjs", "{url}"]
+  }],
+  "not_applicable": {}
+}
+```
+
+`screen` vaut `tv` ou `phone` ; `phone` choisit le numéro dans chaque moteur.
+Un `url` ouvre une page indépendante. `focus`, `select`, `composition`
+(`start`, `update`, `end`), `composing_key`, `dispatch` (`click`, `input`,
+`change`, `blur`), `remember`/`read`, `unchanged`/`read`, `assert` et `wait`
+complètent les gestes ordinaires. Les valeurs mémorisées restent dans la
+page : on peut comparer l’identité d’un vrai nœud DOM, pas seulement son
+texte. Les assertions lisent des observations indépendantes ; elles ne
+doivent pas remplacer la logique du jeu par un faux état de test.
+
+Une commande de `checks` tourne depuis le dépôt du jeu, avec une durée
+bornée. `{url}` est l’URL de la TV lancée. `SOIREE_CERT_BROWSER_MODULE`
+contient l’URL du module navigateur du harnais installé, importable avec
+`await import(process.env.SOIREE_CERT_BROWSER_MODULE)` ; le jeu n’a pas à
+chercher un dépôt voisin ni à installer une autre version de Playwright.
+`SOIREE_CERT_TMP` fournit le dossier de captures. Une erreur, un signal ou
+une expiration fait échouer U1 même si la commande a imprimé un succès.
+`success` peut exiger une expression régulière dans la sortie combinée,
+par exemple `"success":"test result: ok\\. 1 passed"` pour un test Rust
+nommé : un filtre qui ne sélectionne plus aucun test ne donne pas de vert.
+
+Une catégorie absente du jeu se justifie par exemple avec
+`"not_applicable":{"editing":"aucun champ éditable"}`. Pour les catégories
+présentes, tester le nettoyage à la destruction, les réponses périmées
+(succès et erreur), l’identité et la sélection pendant l’édition, la
+composition et l’absence d’effets ponctuels dupliqués lors d’un réaffichage.
+Les événements de composition synthétiques éprouvent les handlers ; les
+vrais claviers IME et iPhone restent vérifiés au salon.
+
+Les étapes ordinaires (`join`, coupure, silence, rechargement, stockage et onglets concurrents) traversent les deux moteurs. Le gel complet de JavaScript (`freeze`) utilise explicitement un téléphone Chromium, car Playwright n’expose les sessions CDP que pour Chromium. La trajectoire tactile détaillée du singe utilise CDP dans Chromium ; dans WebKit, les taps restent tactiles et les glissements utilisent un seul drag natif à la souris, faute d’API publique de déplacement tactile. Aucun tap parasite ne précède ce drag. Ce dernier cas exerce les contrôles de pointeur et ne prétend pas simuler le toucher d’iOS. Les scripts de stockage sont installés et retirés par l’API Playwright commune aux deux moteurs.
+
+WebKit peut différer l’accusé de réception d’un survol jusqu’à une occasion
+de rendu. Le début d’un drag envoie donc le mouvement initial puis l’appui
+dans l’ordre du transport, avant d’attendre **les deux** accusés ; l’appui
+libère le survol différé. Un test natif retient une feuille CSS : l’ancien
+enchaînement attend son chargement, tandis que le drag complet doit finir
+avant de la libérer, avec ses événements de pointeur et souris dans l’ordre.
+Les erreurs de chaque appel et du relâchement restent des échecs. Ce contrôle
+établit ce piège du protocole ; il ne prouve pas que chaque blocage historique
+du pilote avait cette cause. Les délais et l’échec H1/E6 d’un geste réellement
+bloqué restent inchangés.
 
 
 **Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Et l'hôte de salon renonce après le même silence que la page. Le scénario `silent` n'avale donc que ce que l'hôte envoie : l'hôte entend toujours la page et ne ferme rien, et seule une page qui a son propre délai de silence s'en aperçoit (C3). Le harnais observe les appels natifs `WebSocket` avant les scripts du jeu : la page doit appeler `close()` sur sa connexion encore `OPEN` avant tout événement natif `close` ou `error`, puis construire une nouvelle connexion vers la même adresse en moins de 20 s. Un contrôle négatif ferme le socket côté serveur et ne satisfait pas cet oracle. Le signal `page.websocket` de l’inspecteur WebKit peut attendre la fin d’un upgrade avalé ; sa date n’est donc pas la date de la tentative de la page.

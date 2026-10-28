@@ -4,6 +4,17 @@ L'app iPhone de `remote/` sert de télécommande à tous les jeux. Le joueur n'y
 
 ## Rejoindre
 
+Les décodeurs binaires du protocole refusent les octets restants après un
+message complet. Dans le SDK de page, garder les objets `Listener`,
+`Motions` et `Datagram` tant qu’ils servent : leur destruction libère la
+ressource. Les abonnements `Motions` partagent le capteur ; la destruction
+du dernier abonnement seulement l’arrête. La libération ne dépend pas du
+nombre de vues affichées ou de rappels déjà reçus.
+Les callbacks de `on_orientation`, `motion` et `Datagram::on_message` sont
+`Fn` : les événements DOM peuvent revenir synchroniquement. Placer l’état
+mutable dans un `Cell` ou `RefCell` du propriétaire et libérer les emprunts
+avant un appel susceptible de déclencher un autre événement.
+
 - Ton hôte sert un WebSocket au chemin `/remote` (`remote_protocol::PATH`), sur la même adresse et le même port que ta page téléphone.
 - Le joueur scanne le QR de la TV depuis l'app. Pour une adresse `http://hôte:port/chemin?requête`, l'app se connecte à `ws://hôte:port/remote?requête`. La requête (code de salle…) passe telle quelle : ton QR actuel suffit.
 - Scanné avec l'appareil photo de l'iPhone, le QR ouvre ta page web. Elle peut proposer un lien `telecommande://join?url=<adresse de la page, encodée>`, qui ouvre l'app sur ton jeu.
@@ -51,6 +62,12 @@ Des frames WebSocket binaires, un message par frame, encodés par le crate `remo
 
 ## Ce que l'app ajoute à ta page
 
+Les types et la sérialisation de cette frontière sont définis une seule fois
+dans `remote-protocol::web`. Le SDK WASM les réutilise et l’app les appelle par
+les liaisons Swift générées de `remote-ffi`. Le JSON ci-dessous reste le contrat
+public des pages JavaScript. `cargo xtask web-contract` vérifie les deux côtés
+avec les vraies liaisons Swift et le moteur JavaScriptCore.
+
 Dans l'app, ta page peut faire ce qu'un navigateur ne permet pas. Hors de l'app, rien de tout cela n'existe : garde ta page jouable dans un navigateur.
 
 ### En Rust (page compilée en WASM)
@@ -59,7 +76,7 @@ Ajoute `remote-web = { git = "https://github.com/build-your-own-game/soiree", ta
 
 | Capacité | Appel |
 |---|---|
-| Savoir si la page tourne dans l'app, et qui joue | `remote_web::info()` : `player` (32 chiffres hexadécimaux, les mêmes dans tous les jeux), `name` (le prénom saisi dans l'app), `orientation` ; `None` hors de l'app |
+| Savoir si la page tourne dans l'app, et qui joue | `remote_web::info()` : `player` (`PlayerId` validé, seize octets, affichable en 32 chiffres hexadécimaux, les mêmes dans tous les jeux), `name` (le prénom saisi dans l'app), `orientation` ; `None` hors de l'app |
 | Vibrations toutes faites | `vibrate(Vibration::Press)`, `Release`, `Success`, `Warning` |
 | Vibrations sur mesure | `haptic(&[HapticEvent { time, duration, intensity, sharpness }])` : secondes, et valeurs de 0 à 1. Une `duration` nulle fait une tape. 64 événements au plus. |
 | Capteurs, sans demande de permission | `let _m = motion(\|s\| …)` : à chaque image, `gravity` et `acceleration` en g, `rotation` en radians par seconde, `attitude` en quaternion `[x, y, z, w]`, `time` en secondes, dans les axes de l'appareil (x à droite de l'écran tenu en portrait, y vers son haut, z vers toi). S'arrête quand `_m` est libéré. |
@@ -127,3 +144,18 @@ cargo run -p remote-demo
 ```
 
 Il affiche son QR, imprime les entrées reçues et passe d'une télécommande à l'autre au clavier. Son code (`crates/demo/src/main.rs`) est aussi un exemple complet de serveur `/remote`.
+
+## Validation des entrées
+
+L’app convertit l’objet fourni par WebKit en commandes Rust typées avant de
+produire un effet. Les commandes combinées dans un objet conservent l’ordre
+vibration, motif, capteurs, orientation, datagramme. Un objet mal typé est
+refusé sans effet partiel. Les identifiants de socket sont des entiers u32,
+les ports vont de 1 à 65535 et les datagrammes contiennent au plus 65507 octets
+dans 0..255. Les motifs gardent au plus 64 événements ; temps, durée, intensité
+et netteté sont bornés comme auparavant. Les valeurs absentes d’un événement
+valent respectivement 0, 0, 1 et 0,5. Les capteurs doivent être finis.
+
+Le SDK valide l’identité avant de fournir `Info`. `info.player.bytes()` donne
+les seize octets ; `info.player.to_string()` donne leur forme hexadécimale.
+Les datagrammes reçus de l’app utilisent un base64 canonique et complet.

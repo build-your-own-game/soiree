@@ -332,13 +332,13 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = self.down.receive(packet.events, max, || true);
         for arrived in received.events {
-            if let Ok(event) = postcard::from_bytes::<Down>(&arrived.data) {
+            if let Ok(event) = crate::codec::decode::<Down>(&arrived.data) {
                 self.outbox.push_back(ClientOutput::Event(event));
             }
         }
         let (state, _) = self.in_state.receive(packet.state, max);
         if let Some(data) = state
-            && let Ok(state) = postcard::from_bytes::<Down>(&data)
+            && let Ok(state) = crate::codec::decode::<Down>(&data)
         {
             self.outbox.push_back(ClientOutput::State(state));
         }

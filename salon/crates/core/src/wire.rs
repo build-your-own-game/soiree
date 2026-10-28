@@ -121,7 +121,7 @@ pub(crate) fn encode(packet: &Packet) -> Option<Vec<u8>> {
 }
 
 pub(crate) fn decode(bytes: &[u8]) -> Option<Packet> {
-    postcard::from_bytes(bytes).ok()
+    crate::codec::decode(bytes).ok()
 }
 
 /// Encodes `packet`, dropping its last fragments until it fits `max`. The
@@ -137,5 +137,19 @@ pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
             // Headers alone do not fit: nothing sensible to send.
             return None;
         }
+    }
+}
+
+#[cfg(test)]
+mod framing_tests {
+    use super::*;
+
+    #[test]
+    fn packet_boundary_does_not_accept_a_valid_prefix() {
+        let packet = Packet::default();
+        let mut bytes = encode(&packet).unwrap();
+        assert_eq!(decode(&bytes), Some(packet));
+        bytes.push(0);
+        assert!(decode(&bytes).is_none());
     }
 }

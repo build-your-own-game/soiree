@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use page::Id;
 use remote_web::{Allowed, Datagram, HapticEvent, Listener, Motions, Orientation, Vibration};
 use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::{Closure, JsValue, wasm_bindgen};
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 use web_sys::{EventTarget, HtmlElement};
 
 /// The game's UDP port: the same as its web page.
@@ -26,6 +26,7 @@ struct Page {
 }
 
 thread_local! {
+    static LISTENERS: salon_web::ui::Listeners = salon_web::ui::Listeners::default();
     static PAGE: RefCell<Option<Page>> = const { RefCell::new(None) };
 }
 
@@ -36,7 +37,7 @@ pub fn start() {
         &match remote_web::info() {
             Some(info) => format!(
                 "joueur {}…\nprénom « {} »\n{:?}",
-                info.player.get(..8).unwrap_or_default(),
+                info.player.to_string().get(..8).unwrap_or_default(),
                 info.name,
                 info.orientation
             ),
@@ -116,10 +117,7 @@ fn on<T: JsCast + AsRef<EventTarget>>(id: Id<T>, event: &str, action: fn()) {
     let Ok(element) = id.get() else {
         return;
     };
-    let closure = Closure::<dyn FnMut()>::new(action);
     let target: &EventTarget = element.as_ref();
-    let _: Result<(), JsValue> =
-        target.add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
-    // The page never removes its buttons: the listener lives as long as it.
-    closure.forget();
+    let _: Result<(), JsValue> = LISTENERS
+        .with(|listeners| listeners.listen(target, event, move |_: web_sys::Event| action()));
 }

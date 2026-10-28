@@ -351,7 +351,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             .saturating_add(received.garbage.saturating_add(state_garbage));
         let rtt = device.peer.rtt().unwrap_or(0);
         for arrived in received.events {
-            match postcard::from_bytes::<Up>(&arrived.data) {
+            match crate::codec::decode::<Up>(&arrived.data) {
                 Ok(event) => {
                     let earliest = Ms(now.0.saturating_sub(rtt));
                     let at = arrived.at.map_or(now, |at| Ms(at).clamp(earliest, now));
@@ -367,7 +367,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         }
         if let Some(data) = state {
             device.held_at = Some(now);
-            match postcard::from_bytes::<Up>(&data) {
+            match crate::codec::decode::<Up>(&data) {
                 Ok(state) => self
                     .happened
                     .push_back(DeviceEvent::State { device: id, state }),

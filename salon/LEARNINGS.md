@@ -128,6 +128,116 @@ Les clones ont servi le temps de la lecture ; les références ci-dessous (fichi
   Sources : [Rust, set_hook](https://doc.rust-lang.org/std/panic/fn.set_hook.html),
   [W3C Beacon](https://www.w3.org/TR/beacon/).
 
+## Bibliothèques web Rust : pistes à éprouver
+
+Revue du 27 octobre 2026. Sources : documentation, implémentations et
+correctifs de Gloo, Leptos, Yew et Dioxus. Les applications ci-dessous sont
+nos déductions ; ce tableau ne déclare aucune nouvelle garantie acquise.
+
+| Leçon et source | Catégorie | Situation ici et vérification proposée |
+|---|---|---|
+| Toute ressource navigateur a un propriétaire et une fin : un listener ou un timer doit être désarmé avec sa portée. [Gloo EventListener, implémentation de Drop](https://docs.rs/gloo-events/0.3.0/src/gloo_events/lib.rs.html), [Gloo Timeout](https://docs.rs/gloo-timers/latest/gloo_timers/callback/struct.Timeout.html), [Leptos, cycle de vie](https://book.leptos.dev/appendix_life_cycle.html). | Usage réel, garder ; RAII est une réponse Rust. | `remote-web::Listener` et les timers de la manette Sidequest ont déjà un `Drop`. Plusieurs callbacks sont conservés par `forget` : ce choix peut être correct pour toute la durée de la page, mais pas pour une vue recréée. Tester des créations/destructions répétées, le nombre d'abonnements et l'absence de callbacks après destruction ; ne pas conclure à une fuite sur la seule présence de `forget`. |
+| Une tâche asynchrone appartient à une opération précise ; sa réponse ne devient pas valable simplement parce que l'écran a retrouvé le même état. Leptos [annule les tâches avec leur propriétaire](https://docs.rs/leptos/0.8.22/leptos/task/fn.spawn_local_scoped_with_cancellation.html). Ses [correctifs de concurrence #4853](https://github.com/leptos-rs/leptos/pull/4853) montrent aussi comment perdre une notification entre lecture et abonnement. | Usage réel, garder ; les verrous SSR précis ne se transposent pas au navigateur. | Salon protège déjà les callbacks réseau par une génération. Étendre l'analyse aux imports, exports et décodages d'images. Dans tier-list, `media::export` reconnaît une exportation encore attendue par `Modal::Export(None)` ; fermer puis rouvrir une exportation retrouve ce même état. C'est un cas à reproduire, pas un défaut confirmé par un test. Tester A/B terminés dans l'ordre inverse, fermeture/réouverture et erreur tardive ; utiliser une identité d'opération et, si possible, l'annulation. |
+| L'identité d'un élément de liste ne doit pas dépendre de sa position. [Yew, listes avec clés](https://yew.rs/docs/concepts/html/lists). | Usage réel, garder. | Les identités de joueurs et de tuiles existent ; il faut encore vérifier leur projection DOM. Réordonner ou supprimer des éléments pendant une édition et contrôler que texte, sélection et focus restent attachés au bon objet. Une clé Rust ne prouve pas à elle seule ce comportement du navigateur. |
+| Une saisie n'est pas une suite de touches : composition, collage et `contenteditable` ont leurs propres données et timings. Dioxus [#5581](https://github.com/DioxusLabs/dioxus/pull/5581) ajoute `beforeinput`, `is_composing` et des tests de composition Unicode ; le correctif aligne aussi la lecture de `contenteditable` entre renderers. | Navigateur et usage réel, garder. | Ajouter des parcours de saisie et de mise à jour reçue pendant l'édition. Tester composition, sélection, collage et absence de validation prématurée dans WebKit et Chromium. Les événements synthétiques vérifient nos handlers ; ils ne remplacent pas un essai avec un vrai clavier IME ou le clavier iPhone. |
+| Un type désérialisable peut accepter le mauvais sens : une enum `untagged` et des champs tous optionnels ou par défaut peuvent reconnaître plusieurs formes. Dioxus [#5582](https://github.com/DioxusLabs/dioxus/issues/5582) documente un événement de souris décodé silencieusement comme une annulation vide ; le chemin principal correct ne protégeait pas l'autre API publique. | Représentation et usage réel, garder ; aucun besoin de reprendre leur architecture. | Préférer un discriminant explicite pour nos messages et examiner toutes les portes publiques de décodage, dont les replays. Ajouter des entrées mal formées et ambiguës avec des attentes indépendantes. La passe page/app possède déjà des tests négatifs sur les tableaux à la place d'objets, les identités, ports, octets et base64 ; elle ne constitue pas un audit de tous nos décodeurs. |
+| Un état dérivé se calcule ; les effets synchronisent avec le monde extérieur. [Leptos, effets et valeurs dérivées](https://book.leptos.dev/reactivity/14_create_effect.html). | Architecture, garder ; le graphe réactif est un choix d'implémentation. | Cela conforte les vues pures et l'état faisant autorité du manifeste. Éviter de recopier scores, présence ou sélection dans plusieurs états mutables. Tester qu'une même vue reçue peut être projetée plusieurs fois sans nouvelle action de jeu ni effet externe dupliqué ; les effets ponctuels demandent leur identité propre. |
+| Il faut éprouver le vérificateur et la propagation de ses erreurs. Leptos [#4840](https://github.com/leptos-rs/leptos/pull/4840) rapporte trois tests échoués alors que la CI restait verte ; le correctif rétablit notamment la propagation des erreurs des scripts. | Outillage et usage réel, garder. | La petite campagne de mutants de l'outil est déjà un contrôle de sensibilité. Compléter par des fixtures volontairement invalides traversant les vraies commandes et wrappers : type CSS incorrect, module DOM périmé, échec navigateur et échec de sous-processus doivent tous donner une sortie non nulle. Une nouvelle tentative réussie doit conserver la trace de l'échec initial. |
+
+Priorité proposée : cycle de vie des ressources, identité des opérations
+asynchrones, puis continuité de saisie. Pour chaque piste, commencer par un
+cas qui met notre code en défaut, puis mutualiser dans `salon-web` seulement
+ce qui sert effectivement à plusieurs jeux. Les mécanismes de SSR,
+d'hydratation, de SEO ou de routage général ne sont pas des exigences de nos
+jeux ; leurs détails ne sont à reprendre que si un besoin réel apparaît.
+
+## Mise en œuvre des leçons web (28 octobre 2026)
+
+Les pistes précédentes ont donné des protections exécutées, avec des portées
+séparées : primitives communes, intégration des jeux et tests du vérificateur.
+
+- **Ressources.** `salon_web::ui::{Listener, Listeners, Timer, AnimationLoop}`
+  ont une durée de vie possédée et sont `must_use`. La dernière copie de
+  `Connection` ferme le transport. Le modèle conserve explicitement ses
+  ressources, avec un callback faible pour éviter un cycle. Le test
+  `salon/tests/ui-browser.mjs` observe les vrais abonnements et fermetures
+  dans WebKit et Chromium : cent créations/destructions, absence de rappel
+  tardif, annulation pendant un callback, copies de connexion.
+- **Asynchrone.** `OperationSlot` remplace une opération ; `OperationScope`
+  laisse coexister des opérations indépendantes. Détruire ou annuler leur
+  propriétaire invalide les tickets. Tier-list possède les cas réels
+  d'export périmé, d'erreur tardive et d'import après réinitialisation ;
+  Punchline protège les demandes de wake lock. Le navigateur peut encore
+  terminer sa Promise : ses résultats natifs périmés sont aussi libérés.
+- **Édition.** `Composition` protège les nouvelles validations et raccourcis,
+  tout en laissant passer les relâchements d'une commande tenue. Tier-list
+  conserve ses lignes éditées ; Punchline conserve les formulaires de la
+  même tâche ; Sidequest possède ses listeners avec ses vues. Les suites
+  U1 comparent de vrais nœuds, valeurs, sélections et effets observables.
+  Une composition synthétique ne certifie pas un clavier IME physique.
+- **Décodage.** `codec::decode` exige que tous les octets du cadre soient
+  consommés. Salon l'utilise pour les paquets et messages du jeu ; remote
+  et le décodeur public de Sidequest le réutilisent. Les tests
+  `core/tests/framing/mod.rs` traversent les vrais Host/Client dans les deux
+  directions. Remplacer le décodeur par celui qui ignore les suffixes, dans
+  une copie isolée, fait effectivement échouer les deux tests. Les enums
+  JSON non étiquetées encore utilisées pour nombre/nom de flottant ont des
+  formes disjointes ; aucune interdiction aveugle de toute enum `untagged`.
+- **Effets.** `OnceEffects` est un watermark borné pour un flux d'identités
+  ordonnées, remis à zéro avec sa session. Il ne décide pas quels effets
+  sont voulus. La répétition d'une vue de résultats Sidequest est vérifiée
+  sans nouvelle action ni feedback, avec un contrôle de test réellement
+  exécuté. Les jeux dépourvus d'effet ponctuel justifient cette absence.
+- **Vérificateurs et héritage.** Les cas négatifs traversent les commandes
+  publiques : sous-processus en erreur, DOM périmé, mauvaise catégorie CSS,
+  assertion navigateur fausse, expiration et test sélectionné absent ne
+  peuvent donner du vert. `new` et `upgrade` fournissent la CI versionnée ;
+  `check --published` refuse les dépendances communes locales ou d'une
+  autre étiquette. `cert.json.ui` décrit les contrôles ou les raisons de
+  non-applicabilité, et les commandes complémentaires utilisent le module
+  navigateur du harnais installé, sans dépôt voisin.
+
+Un contrôle négatif supplémentaire du harnais a révélé qu'un glissement
+WebKit commençait par un tap complet puis un drag : un seul geste fabriquait
+deux activations d'un bouton. La branche WebKit utilise désormais un seul
+drag de pointeur natif, vérifié par les événements réels `isTrusted` ; les
+taps tactiles restent exercés séparément. La limite sur les déplacements
+tactiles WebKit est explicite, sans événement synthétique présenté comme
+un geste natif. Cette correction ne prouve pas à elle seule la cause de
+chaque blocage du pilote ; un contexte fermé pour geste bloqué reste un
+échec du moyen de vérification, jamais une certification verte.
+
+Un second contrôle causal a isolé une barrière du pilote : WebKit diffère
+l’accusé d’un mouvement sans bouton jusqu’à une mise à jour de rendu ;
+un événement non-mouvement force sa libération. C’est explicite dans
+[`WebPage::mouseEvent`](https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebKit/WebProcess/WebPage/WebPage.cpp#L4001)
+et [`WebPageProxy::handleMouseEvent`](https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebKit/UIProcess/WebPageProxy.cpp#L4577),
+au commit figé par
+[Playwright 1.64.0](https://github.com/microsoft/playwright/blob/v1.64.0/browser_patches/webkit/UPSTREAM_CONFIG.sh).
+Sur une page native dont la CSS reste retenue, le mouvement est reçu mais
+son accusé attend ; envoyer l’appui le libère immédiatement, avant la CSS.
+Le harnais envoie désormais mouvement puis appui sans attendre ce premier
+accusé, attend les deux résultats, puis poursuit le drag et relâche toujours
+le bouton. Le test conserve aussi les erreurs concurrentes et celles du
+relâchement. Ce résultat prouve un défaut de notre ancien enchaînement ; il
+ne permet pas d’attribuer rétroactivement tous les blocages de certification
+à cette seule cause.
+
+La certification de Tier-list a aussi exercé un vrai clic qui ouvre le
+sélecteur de fichiers en cliquant son `input` : ce second clic réentre
+synchroniquement dans le listener du document. Le nouvel adaptateur
+`Closure<dyn FnMut(Event)>` l’interdisait avant même que la politique
+d’événements du jeu puisse intervenir. Les listeners utilisent désormais
+`Closure<dyn Fn(Event)>` et des handlers `Fn` ; les captures mutables restent
+explicites chez leur propriétaire (`Cell` ou `RefCell`, sans emprunt gardé
+pendant un appel DOM réentrant). Cette distinction est celle de
+[`wasm-bindgen::Closure`](https://github.com/wasm-bindgen/wasm-bindgen/blob/0.2.129/src/closure.rs).
+Un test WASM dans les deux moteurs redispatche le même événement pendant
+son callback, avec un garde de récursion fourni par l’appelant : les deux
+invocations doivent être livrées immédiatement et la destruction doit
+désabonner exactement ce callback. L’ancienne closure `FnMut` rend ce
+contrôle rouge ; aucun événement n’est mis en file ni perdu par le helper.
+
 ## Écarts au manifeste
 
 1. **Respecté.** Le cœur est `#![no_std]` : ni horloge, ni threads, ni E/S, ni `HashMap`. Les valeurs du réseau passent par des types validés à leur construction (`Name`, les tailles, les numéros). Chaque état d'attente a une échéance (`Timing`). Aucune file n'est sans borne.

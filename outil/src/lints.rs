@@ -225,6 +225,9 @@ pub fn check_clippy(dir: &Path, report: &mut Report) {
     let before = report.lines.len();
     for (key, rule) in &rules {
         let actual = project.get(key);
+        if stricter_permission(key, actual.and_then(Value::as_bool), rule.as_bool()) {
+            continue;
+        }
         if let Value::Array(entries) = rule {
             let have: Vec<String> = actual
                 .and_then(Value::as_array)
@@ -245,6 +248,17 @@ pub fn check_clippy(dir: &Path, report: &mut Report) {
     if report.lines.len() == before {
         report.ok("types et méthodes interdits des règles");
     }
+}
+
+pub fn stricter_permission(key: &str, actual: Option<bool>, expected: Option<bool>) -> bool {
+    matches!(
+        key,
+        "allow-unwrap-in-tests"
+            | "allow-expect-in-tests"
+            | "allow-panic-in-tests"
+            | "allow-indexing-slicing-in-tests"
+    ) && actual == Some(false)
+        && expected == Some(true)
 }
 
 /// `"std::collections::HashMap"` or `{ path = "…", reason = "…" }`.
@@ -284,6 +298,22 @@ fn shown(value: Option<&Value>) -> String {
 mod tests {
     use super::*;
     use crate::report::Level;
+
+    #[test]
+    fn stricter_test_permissions_are_accepted_by_the_actual_rule_checker() {
+        let dir = crate::testdir::fresh("strict-test-permissions");
+        util::write(
+            &dir.join("clippy.toml"),
+            &rules::CLIPPY.replace(
+                "allow-unwrap-in-tests = true",
+                "allow-unwrap-in-tests = false",
+            ),
+        )
+        .unwrap();
+        let mut report = Report::quiet();
+        check_clippy(&dir, &mut report);
+        assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
+    }
 
     fn errors(report: &Report) -> Vec<String> {
         report

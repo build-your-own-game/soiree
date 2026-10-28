@@ -21,6 +21,8 @@ pub struct Options {
     pub fast: bool,
     /// Passes `--locked` to Cargo: never rewrites a `Cargo.lock`.
     pub locked: bool,
+    /// Reject local patches or mismatched tags, as required in standalone CI.
+    pub published: bool,
 }
 
 /// Crates that have nothing to do in a simulation that runs without a screen.
@@ -32,6 +34,24 @@ const SCREEN_CRATES: [&str; 7] = [
     "wgpu",
     "winit",
     "web-time",
+];
+
+/// Canonical packages shipped by the common repository. A game cannot
+/// vendor one as a workspace member to bypass its published provenance.
+/// A game's own prefixed packages (e.g. salon-arcade-core) remain its own.
+const SHARED_PACKAGES: [&str; 12] = [
+    "salon-core",
+    "salon-crypto",
+    "salon-host",
+    "salon-web",
+    "salon-demo",
+    "salon-demo-page",
+    "remote-protocol",
+    "remote-core",
+    "remote-ffi",
+    "remote-web",
+    "remote-demo",
+    "remote-demo-page",
 ];
 
 pub fn run(dirs: &[PathBuf], options: Options) -> ExitCode {
@@ -59,6 +79,14 @@ struct Game {
 
 pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
     report.section(&dir.display().to_string());
+    if options.published
+        && (!dir.join("Cargo.toml").is_file() || !dir.join("soiree.toml").is_file())
+    {
+        report.error(
+            "check --published attend un jeu versionné : Cargo.toml et soiree.toml sont requis",
+        );
+        return;
+    }
     let has_catalogue = dir.join("certifications").join("README.md").is_file();
     if !dir.join("Cargo.toml").is_file() {
         if has_catalogue {
@@ -84,9 +112,15 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
         Err(error) => report.error(error.clone()),
     }
     lints::check_clippy(dir, report);
+    if game.folder == Folder::Game {
+        crate::ci::check(dir, report);
+    }
     check_headless_core(dir, options, report);
     match &metadata {
-        Ok(metadata) => check_sources(dir, metadata, game.version.as_deref(), report),
+        Ok(metadata) => check_sources(dir, metadata, game.version.as_deref(), options, report),
+        Err(error) if options.published => {
+            report.error(format!("provenance du commun non vérifiée : {error}"));
+        }
         Err(error) => report.warn(format!(
             "cargo metadata a échoué, provenance de salon non vérifiée : {error}"
         )),
@@ -156,6 +190,9 @@ fn cargo_metadata(dir: &Path, options: Options) -> Result<Json> {
     let mut args = vec!["metadata", "--format-version", "1"];
     if options.locked {
         args.push("--locked");
+    }
+    if options.published {
+        args.push("--all-features");
     }
     let output = util::run(dir, "cargo", &args)?;
     if !output.status.success() {
@@ -277,7 +314,20 @@ fn check_headless_core(dir: &Path, options: Options, report: &mut Report) {
 
 /// Where salon and the remote come from. A local path outside this game's
 /// repository is a salon nobody else has: warn before it gets pushed.
-fn check_sources(dir: &Path, metadata: &Json, version: Option<&str>, report: &mut Report) {
+fn check_sources(
+    dir: &Path,
+    metadata: &Json,
+    version: Option<&str>,
+    options: Options,
+    report: &mut Report,
+) {
+    let problem = |report: &mut Report, message: String| {
+        if options.published {
+            report.error(message);
+        } else {
+            report.warn(message);
+        }
+    };
     let members = workspace_member_ids(metadata);
     let repository =
         util::stdout_of(dir, "git", &["rev-parse", "--show-toplevel"]).map(PathBuf::from);
@@ -288,7 +338,11 @@ fn check_sources(dir: &Path, metadata: &Json, version: Option<&str>, report: &mu
         let (Some(name), Some(id)) = (package["name"].as_str(), package["id"].as_str()) else {
             continue;
         };
-        if !(name.starts_with("salon-") || name.starts_with("remote-")) || members.contains(id) {
+        let vendored_common =
+            options.published && version.is_some() && SHARED_PACKAGES.contains(&name);
+        if !(name.starts_with("salon-") || name.starts_with("remote-"))
+            || (members.contains(id) && !vendored_common)
+        {
             continue;
         }
         match package["source"].as_str() {
@@ -302,7 +356,7 @@ fn check_sources(dir: &Path, metadata: &Json, version: Option<&str>, report: &mu
                     || path.starts_with(dir),
                     |repo| path.starts_with(util::absolute(repo)),
                 );
-                if inside {
+                if inside && !(options.published && version.is_some()) {
                     same_repo.push(name.to_owned());
                 } else {
                     outside.push(format!("{name} ({})", path.display()));
@@ -313,23 +367,35 @@ fn check_sources(dir: &Path, metadata: &Json, version: Option<&str>, report: &mu
                     .split_once("tag=")
                     .map(|(_, rest)| rest.split(['#', '&']).next().unwrap_or(rest));
                 match (tag, version) {
-                    (None, _) => report.warn(format!("{name} vient de git sans étiquette ({source}) : attendu tag = \"v…\"")),
-                    (Some(tag), Some(version)) if tag != format!("v{version}") => report.warn(format!(
-                        "{name} est à l'étiquette {tag}, mais soiree.toml dit {version} : `soiree upgrade` les accorde"
-                    )),
+                    (None, _) => problem(
+                        report,
+                        format!(
+                            "{name} vient de git sans étiquette ({source}) : attendu tag = \"v…\""
+                        ),
+                    ),
+                    (Some(tag), Some(version)) if tag != format!("v{version}") => problem(
+                        report,
+                        format!(
+                            "{name} est à l'étiquette {tag}, mais soiree.toml dit {version} : `soiree upgrade` les accorde"
+                        ),
+                    ),
                     (Some(tag), _) => tagged.push(format!("{name} {tag}")),
                 }
             }
-            Some(source) => report.warn(format!(
-                "{name} vient de {source} : attendu une étiquette git du dépôt commun"
-            )),
+            Some(source) => problem(
+                report,
+                format!("{name} vient de {source} : attendu une étiquette git du dépôt commun"),
+            ),
         }
     }
     if !outside.is_empty() {
-        report.warn(format!(
-            "viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : {}. Ce jeu ne compile qu'ici ; ne le pousse pas tant que ce salon n'est pas étiqueté",
-            outside.join(", ")
-        ));
+        problem(
+            report,
+            format!(
+                "viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : {}. Ce jeu ne compile qu'ici ; ne le pousse pas tant que ce salon n'est pas étiqueté",
+                outside.join(", ")
+            ),
+        );
     }
     if !same_repo.is_empty() {
         report.info(format!(
@@ -425,6 +491,14 @@ fn check_cert_json(dir: &Path, folder: Folder, report: &mut Report) {
             } else {
                 report.error(format!("cert.json : il manque {}", missing.join(", ")));
             }
+            if folder == Folder::Game || config.get("ui").is_some() {
+                match crate::ui_contract::validate(&config) {
+                    Ok(()) => report.ok(
+                        "contrats de vérification UI : couverture ou non-applicabilité explicite",
+                    ),
+                    Err(error) => report.error(format!("cert.json : {error}")),
+                }
+            }
         }
         Err(error) => report.error(format!("cert.json : {error}")),
     }
@@ -459,7 +533,7 @@ fn cert_json_missing(config: &Json) -> Vec<&'static str> {
 /// The four commands the manifesto requires before a step is done.
 fn check_commands(dir: &Path, options: Options, report: &mut Report) {
     let locked: &[&str] = if options.locked { &["--locked"] } else { &[] };
-    let runs: [(&str, Vec<&str>); 4] = [
+    let mut runs: Vec<(&str, Vec<&str>)> = vec![
         ("cargo fmt --check", vec!["fmt", "--check"]),
         (
             "cargo clippy --all-targets",
@@ -486,6 +560,18 @@ fn check_commands(dir: &Path, options: Options, report: &mut Report) {
         ),
         ("cargo test", [&["test"], locked].concat()),
     ];
+    if dir.join("ios/Remote.xcodeproj").is_dir() {
+        if cfg!(target_os = "macos") {
+            runs.push((
+                "contrat Swift/Rust/JavaScript",
+                vec!["xtask", "web-contract"],
+            ));
+        } else {
+            report.warn(
+                "contrat Swift/Rust/JavaScript non exécuté : macOS et Swift sont nécessaires",
+            );
+        }
+    }
     for (label, args) in runs {
         match util::run(dir, "cargo", &args) {
             Ok(output) if output.status.success() => report.ok(label),
@@ -563,5 +649,79 @@ mod tests {
         assert!(notable("thread 'main' panicked at src/x.rs"));
         assert!(!notable("error: could not compile `x`"));
         assert!(!notable("   Compiling x v0.1.0"));
+    }
+
+    #[test]
+    fn published_provenance_rejects_bad_tags_and_all_local_common_dependencies() {
+        use crate::report::Level;
+        for source in [
+            Json::String(format!(
+                "git+https://github.com/build-your-own-game/soiree?tag=v{VERSION}#0123456789"
+            )),
+            Json::String(format!(
+                "git+https://github.com/build-your-own-game/soiree?tag=v{VERSION}-garbage#0123456789"
+            )),
+            Json::String(
+                "git+https://github.com/build-your-own-game/soiree?branch=main#0123456789".into(),
+            ),
+            Json::Null,
+        ] {
+            let dir = crate::testdir::fresh("published-provenance");
+            let metadata = serde_json::json!({"workspace_members":[],"packages":[{"id":"common","name":"salon-core","source":source,"manifest_path":dir.join("vendor/salon/Cargo.toml")} ]});
+            let mut report = Report::quiet();
+            check_sources(
+                &dir,
+                &metadata,
+                Some(VERSION),
+                Options {
+                    published: true,
+                    ..Options::default()
+                },
+                &mut report,
+            );
+            assert_eq!(
+                report.count(Level::Error) == 0,
+                source
+                    .as_str()
+                    .is_some_and(|s| s.contains(&format!("tag=v{VERSION}#"))),
+                "{:?}",
+                report.lines
+            );
+        }
+    }
+
+    #[test]
+    fn published_common_cannot_hide_as_a_game_workspace_member() {
+        use crate::report::Level;
+        for (name, common) in [
+            ("salon-core", true),
+            ("remote-web", true),
+            ("salon-arcade-core", false),
+            ("salon-arcade-web", false),
+        ] {
+            let dir = crate::testdir::fresh("published-workspace-member");
+            let metadata = serde_json::json!({"workspace_members":["member"],"packages":[{"id":"member","name":name,"source":null,"manifest_path":dir.join("crates/member/Cargo.toml")}]});
+            for (published, version) in
+                [(true, Some(VERSION)), (false, Some(VERSION)), (true, None)]
+            {
+                let mut report = Report::quiet();
+                check_sources(
+                    &dir,
+                    &metadata,
+                    version,
+                    Options {
+                        published,
+                        ..Options::default()
+                    },
+                    &mut report,
+                );
+                assert_eq!(
+                    report.count(Level::Error) > 0,
+                    published && version.is_some() && common,
+                    "{name}: {:?}",
+                    report.lines
+                );
+            }
+        }
     }
 }

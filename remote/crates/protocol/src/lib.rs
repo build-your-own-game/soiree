@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 mod layout;
 pub mod presets;
+pub mod web;
 
 pub use layout::{
     Action, Anchor, Control, Direction, Gate, Kind, Label, Layout, MAX_ID, Place, Shape,
@@ -189,12 +190,24 @@ pub fn encode<T: Serialize>(message: &T) -> Vec<u8> {
 }
 
 pub fn decode<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> Result<T, DecodeError> {
-    postcard::from_bytes(frame)
+    salon_core::codec::decode(frame)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_decoders_reject_concatenated_or_extended_frames() {
+        let mut phone = encode(&PhoneMessage::Input(InputState::default()));
+        phone.extend(encode(&PhoneMessage::Draw(DrawEvent::Clear)));
+        assert!(decode::<PhoneMessage>(&phone).is_err());
+        let mut game = encode(&GameMessage::Refuse {
+            reason: "full".into(),
+        });
+        game.push(0);
+        assert!(decode::<GameMessage>(&game).is_err());
+    }
 
     #[test]
     fn every_message_survives_the_wire() {

@@ -230,3 +230,85 @@ ajoute un appareil, `run` et `run_until` avancent le temps virtuel,
 `freeze` et `wake` éprouvent les reconnexions. `Faults` règle pertes,
 duplications et gigue. Les tests d'un jeu fournissent sa vraie salle comme
 `Game`, envoient ses vrais `Up` par les clients et comparent son état complet.
+
+## Valeurs d’interface typées
+
+`salon_web::style` fournit `Color`, `Length`, `Number`, `Time` et `Image`.
+Les champs sont privés : les constructeurs refusent les nombres non finis,
+les couleurs hexadécimales invalides et les caractères de contrôle dans les
+URLs d’image. Les guillemets et antislashs des URLs sont échappés à la sortie.
+
+`soiree dom` produit des propriétés de la catégorie correspondante :
+
+```rust,ignore
+use salon_web::style::{Color, Length};
+page::prop::COLOR.set(&element, &Color::rgb(255, 0, 0))?;
+page::prop::LEFT.set(&element, &Length::px(x)?)?;
+```
+
+Les noms standards utilisés ont leur catégorie connue. Les autres propriétés,
+notamment les variables du jeu, se déclarent dans la feuille qui les possède :
+
+```css
+/* soiree-type: --accent color */
+.avatar { --accent: #ffffff; color: var(--accent); }
+```
+
+Catégories admises : `color`, `length`, `number`, `time`, `image`.
+Une propriété sans catégorie reste nommée mais n’a pas de setter Rust ; les
+déclarations inconnues, contradictoires ou sans propriété sont refusées à la
+régénération et au check. Les constructeurs de noms sont réservés au code
+généré par les règles Clippy. Les tests de compilation négatifs démontrent
+qu’une longueur ou une chaîne libre ne peuvent pas être passées à une couleur.
+Le code CSS déclaratif, les tracés SVG et les attributs standard restent une
+syntaxe de navigateur ; ce mécanisme type les valeurs que le jeu écrit.
+
+## Ressources, opérations et édition
+
+Les ressources de `salon_web::ui` sont conservées par leur propriétaire :
+
+- `Listener::new` et `Listeners::listen` désabonnent leurs closures à leur
+  destruction. Une vue possède son bag `Listeners` ; les abonnements de
+  page appartiennent au runtime de page. Le handler est `Fn(E)` : un clic
+  déclenché par un autre clic, ou un changement de focus, peut le rappeler
+  synchroniquement. Conserver l’état mutable dans un `Cell` ou `RefCell`
+  du propriétaire, et libérer tout emprunt mutable avant un appel DOM qui
+  peut déclencher un événement. Le helper livre les événements réentrants
+  directement ; les règles de l’application décident de leur traitement.
+- `Timer::after`, `Timer::every` et `AnimationLoop::new` annulent leur travail
+  à la destruction, même si elle survient dans leur propre callback.
+- `OperationSlot::begin(&mut self)` remplace la tâche précédente. Son ticket
+  `Operation` ne peut appliquer son résultat que si `finish()` rend `true`.
+  Annuler le slot ou détruire son propriétaire invalide aussi le ticket.
+- `OperationScope::begin(&self)` permet plusieurs tâches indépendantes.
+  `cancel(&mut self)` invalide tous leurs tickets et ouvre une nouvelle
+  portée, sans conserver un historique de tâches.
+- `Composition` se raccorde à `compositionstart` et `compositionend`.
+  `blocks_key` tient aussi compte d’`isComposing` et du code IME 229.
+  Bloquer une nouvelle pression ne doit pas perdre le relâchement d’une
+  commande déjà tenue.
+- `OnceEffects<Id>` conserve un seul identifiant ordonné. `claim(id)` refuse
+  les doublons et les identifiants plus anciens. Les identités augmentent
+  dans un flux faisant autorité ; `reset()` appartient au changement de
+  session. Ce type ne déduplique pas des événements désordonnés arbitraires.
+
+Un ticket protège l’application du résultat, sans prétendre annuler une
+Promise native déjà lancée. Les ressources natives qu’un résultat périmé
+rapporte doivent aussi être libérées. La dernière copie d’une `Connection`
+détruite ferme le transport : conserver celle-ci dans le runtime et éviter
+les callbacks qui capturent fortement leur propriétaire.
+
+Les éditeurs restent attachés au DOM tant que leur identité logique existe.
+Recopier le texte après recréation ne préserve pas le focus, le curseur ou
+la composition. Une nouvelle tâche remplace volontairement son éditeur.
+`cert.json.ui` éprouve l’intégration ; `node salon/tests/ui-browser.mjs`
+éprouve les primitives en WASM dans WebKit et Chromium.
+
+## Frontières de décodage
+
+`salon_core::codec::decode` lit exactement un message postcard et refuse
+tout octet restant. Salon l’applique aux paquets, événements et états des
+jeux ; la télécommande réutilise la même frontière. Un message valide suivi
+d’un second objet ou d’un suffixe n’est pas une trame valide. Pour les JSON
+du jeu, examiner toutes les entrées publiques et les formes ambiguës : un
+simple aller-retour du sérialiseur ne teste pas un autre producteur.

@@ -19,8 +19,10 @@ fn main() -> ExitCode {
     let result = match args.split_first() {
         Some((command, rest)) if command == "ios" => ios(rest),
         Some((command, _)) if command == "page" => page(),
+        Some((command, _)) if command == "web-contract" => web_contract(),
+        Some((command, _)) if command == "web-contract-browser" => web_contract_browser(),
         _ => {
-            Err("usage: cargo xtask ios [--target <triple>] [--release] | cargo xtask page".into())
+            Err("usage: cargo xtask ios [--target <triple>] [--release] | cargo xtask page | cargo xtask web-contract | cargo xtask web-contract-browser".into())
         }
     };
     match result {
@@ -66,12 +68,23 @@ fn ios(args: &[String]) -> Result<(), String> {
     };
     let library = root.join("target").join(target).join(profile).join(LIBRARY);
     let out_dir = root.join("ios").join("Generated");
+    bindings(&library, &out_dir)?;
+    println!(
+        "xtask: {} for {} → {}",
+        LIBRARY,
+        targets.join(", "),
+        out_dir.display()
+    );
+    Ok(())
+}
+
+fn bindings(library: &Path, out_dir: &Path) -> Result<(), String> {
     generate_swift_bindings(SwiftBindingsOptions {
         generate_swift_sources: true,
         generate_headers: true,
         generate_modulemap: true,
-        source: utf8(&library)?,
-        out_dir: utf8(&out_dir)?,
+        source: utf8(library)?,
+        out_dir: utf8(out_dir)?,
         xcframework: false,
         module_name: Some("remote_ffiFFI".into()),
         modulemap_filename: Some("module.modulemap".into()),
@@ -80,13 +93,50 @@ fn ios(args: &[String]) -> Result<(), String> {
         config: None,
     })
     .map_err(|e| format!("generating Swift bindings: {e:#}"))?;
-    println!(
-        "xtask: {} for {} → {}",
-        LIBRARY,
-        targets.join(", "),
-        out_dir.display()
-    );
     Ok(())
+}
+
+/// Compile and execute the real generated Swift ABI, then evaluate the
+/// native producer's JavaScript with `JavaScriptCore`. No iPhone is required.
+fn web_contract() -> Result<(), String> {
+    let root = workspace_root();
+    run(Command::new(env!("CARGO"))
+        .current_dir(&root)
+        .env_remove("CARGO_BUILD_TARGET")
+        .args(["build", "--lib", "-p", CRATE, "--target-dir"])
+        .arg(root.join("target")))?;
+    let out = root.join("target/web-contract");
+    let generated = out.join("generated");
+    std::fs::create_dir_all(&generated).map_err(|e| e.to_string())?;
+    bindings(&root.join("target/debug").join(LIBRARY), &generated)?;
+    let executable = out.join("check");
+    run(Command::new("swiftc")
+        .current_dir(&root)
+        .args(["-swift-version", "6", "-I"])
+        .arg(&generated)
+        .arg(generated.join("remote_ffi.swift"))
+        .arg(root.join("tests/WebContract.swift"))
+        .arg("-L")
+        .arg(root.join("target/debug"))
+        .args([
+            "-lremote_ffi",
+            "-Xlinker",
+            "-liconv",
+            "-framework",
+            "JavaScriptCore",
+            "-o",
+        ])
+        .arg(&executable))?;
+    run(Command::new(&executable).arg(out.join("native-fixtures.json")))
+}
+
+/// Exercise the compiled WASM SDK against the native producer's fixtures.
+fn web_contract_browser() -> Result<(), String> {
+    web_contract()?;
+    page()?;
+    run(Command::new("node")
+        .current_dir(workspace_root())
+        .arg("tests/web-contract-browser.mjs"))
 }
 
 /// Builds the fake game's Rust page into `target/demo-page`: the WASM, its

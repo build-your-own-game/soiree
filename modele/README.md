@@ -23,6 +23,19 @@ page est généré depuis les fichiers de `web/`. Le réseau reste dans salon.
 
 Lis `AGENTS.md`, puis les documents de `.soiree/`, avant de modifier le jeu.
 
+La CI `.github/workflows/soiree.yml` est liée à la version `{{version}}` du
+commun. Elle vérifie les dépendances publiées avec
+`soiree check --locked --published`, puis exerce `ui` et la récupération
+après panique. `soiree upgrade --dry-run` montre le passage à la version de
+l’outil installé ; `soiree upgrade` l’applique après vérification de son
+étiquette publiée. Adapter ensuite le code signalé par les contrôles.
+
+Pour ajouter des interfaces, conserver `Listeners`, `Timer` et
+`AnimationLoop` avec leur vue ; protéger les tâches par `OperationSlot` ou
+`OperationScope` et préserver les éditeurs et leur composition. Décrire les
+contrôles dans `cert.json.ui`. Le modèle n’a pas d’éditeur ni d’import :
+remplacer leurs raisons de non-applicabilité dès que ces fonctions existent.
+
 Après une modification de l’interface, sur un hôte de test frais :
 `node tools/press-check.mjs http://localhost:8090 <dossier-du-harnais>`.
 Ce test réutilise le navigateur du harnais et vérifie qu’un appui en cours

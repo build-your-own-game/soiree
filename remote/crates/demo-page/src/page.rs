@@ -13,7 +13,7 @@ use core::marker::PhantomData;
 use core::str::FromStr;
 
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{Document, Element, HtmlElement};
+use web_sys::{Document, Element};
 
 pub fn document() -> Result<Document, JsValue> {
     web_sys::window()
@@ -178,19 +178,9 @@ impl Attr {
     }
 }
 
-/// A CSS property the stylesheets declare.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Prop(&'static str);
-
-impl Prop {
-    pub fn set(self, element: &HtmlElement, value: &str) -> Result<(), JsValue> {
-        element.style().set_property(self.0, value)
-    }
-
-    pub fn remove(self, element: &HtmlElement) -> Result<(), JsValue> {
-        element.style().remove_property(self.0).map(|_| ())
-    }
-}
+/// A stylesheet property with its declared value category. Undeclared
+/// categories have no setter; annotate them in CSS with `soiree-type`.
+pub type Prop<V = ()> = salon_web::style::Property<V>;
 
 /// An element the Rust side may create, with its type.
 pub struct Tag<T> {
@@ -253,30 +243,30 @@ pub mod attr {
 
 /// The CSS properties the stylesheets declare, custom ones included.
 pub mod prop {
-    pub const _WEBKIT_USER_SELECT: super::Prop = super::Prop("-webkit-user-select");
-    pub const ALIGN_ITEMS: super::Prop = super::Prop("align-items");
-    pub const BACKGROUND: super::Prop = super::Prop("background");
-    pub const BORDER: super::Prop = super::Prop("border");
-    pub const BORDER_RADIUS: super::Prop = super::Prop("border-radius");
-    pub const BOX_SHADOW: super::Prop = super::Prop("box-shadow");
-    pub const BOX_SIZING: super::Prop = super::Prop("box-sizing");
-    pub const COLOR: super::Prop = super::Prop("color");
-    pub const DISPLAY: super::Prop = super::Prop("display");
-    pub const FILTER: super::Prop = super::Prop("filter");
-    pub const FONT: super::Prop = super::Prop("font");
-    pub const FONT_SIZE: super::Prop = super::Prop("font-size");
-    pub const GAP: super::Prop = super::Prop("gap");
-    pub const GRID_TEMPLATE_COLUMNS: super::Prop = super::Prop("grid-template-columns");
-    pub const HEIGHT: super::Prop = super::Prop("height");
-    pub const MARGIN: super::Prop = super::Prop("margin");
-    pub const OPACITY: super::Prop = super::Prop("opacity");
-    pub const PADDING: super::Prop = super::Prop("padding");
-    pub const PLACE_ITEMS: super::Prop = super::Prop("place-items");
-    pub const TOUCH_ACTION: super::Prop = super::Prop("touch-action");
-    pub const TRANSFORM: super::Prop = super::Prop("transform");
-    pub const USER_SELECT: super::Prop = super::Prop("user-select");
-    pub const WHITE_SPACE: super::Prop = super::Prop("white-space");
-    pub const WIDTH: super::Prop = super::Prop("width");
+    pub const _WEBKIT_USER_SELECT: super::Prop<()> = super::Prop::new("-webkit-user-select");
+    pub const ALIGN_ITEMS: super::Prop<()> = super::Prop::new("align-items");
+    pub const BACKGROUND: super::Prop<()> = super::Prop::new("background");
+    pub const BORDER: super::Prop<()> = super::Prop::new("border");
+    pub const BORDER_RADIUS: super::Prop<()> = super::Prop::new("border-radius");
+    pub const BOX_SHADOW: super::Prop<()> = super::Prop::new("box-shadow");
+    pub const BOX_SIZING: super::Prop<()> = super::Prop::new("box-sizing");
+    pub const COLOR: super::Prop<salon_web::style::Color> = super::Prop::new("color");
+    pub const DISPLAY: super::Prop<()> = super::Prop::new("display");
+    pub const FILTER: super::Prop<()> = super::Prop::new("filter");
+    pub const FONT: super::Prop<()> = super::Prop::new("font");
+    pub const FONT_SIZE: super::Prop<()> = super::Prop::new("font-size");
+    pub const GAP: super::Prop<()> = super::Prop::new("gap");
+    pub const GRID_TEMPLATE_COLUMNS: super::Prop<()> = super::Prop::new("grid-template-columns");
+    pub const HEIGHT: super::Prop<salon_web::style::Length> = super::Prop::new("height");
+    pub const MARGIN: super::Prop<()> = super::Prop::new("margin");
+    pub const OPACITY: super::Prop<salon_web::style::Number> = super::Prop::new("opacity");
+    pub const PADDING: super::Prop<()> = super::Prop::new("padding");
+    pub const PLACE_ITEMS: super::Prop<()> = super::Prop::new("place-items");
+    pub const TOUCH_ACTION: super::Prop<()> = super::Prop::new("touch-action");
+    pub const TRANSFORM: super::Prop<()> = super::Prop::new("transform");
+    pub const USER_SELECT: super::Prop<()> = super::Prop::new("user-select");
+    pub const WHITE_SPACE: super::Prop<()> = super::Prop::new("white-space");
+    pub const WIDTH: super::Prop<salon_web::style::Length> = super::Prop::new("width");
 }
 
 /// The elements the Rust side may create.

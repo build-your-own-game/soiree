@@ -15,7 +15,7 @@ use core::marker::PhantomData;
 use core::str::FromStr;
 
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{Document, Element, HtmlElement};
+use web_sys::{Document, Element};
 
 pub fn document() -> Result<Document, JsValue> {
     web_sys::window()
@@ -180,19 +180,9 @@ impl Attr {
     }
 }
 
-/// A CSS property the stylesheets declare.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Prop(&'static str);
-
-impl Prop {
-    pub fn set(self, element: &HtmlElement, value: &str) -> Result<(), JsValue> {
-        element.style().set_property(self.0, value)
-    }
-
-    pub fn remove(self, element: &HtmlElement) -> Result<(), JsValue> {
-        element.style().remove_property(self.0).map(|_| ())
-    }
-}
+/// A stylesheet property with its declared value category. Undeclared
+/// categories have no setter; annotate them in CSS with `soiree-type`.
+pub type Prop<V = ()> = salon_web::style::Property<V>;
 
 /// An element the Rust side may create, with its type.
 pub struct Tag<T> {
@@ -255,21 +245,21 @@ pub mod attr {
 
 /// The CSS properties the stylesheets declare, custom ones included.
 pub mod prop {
-    pub const BACKGROUND: super::Prop = super::Prop("background");
-    pub const BORDER: super::Prop = super::Prop("border");
-    pub const BORDER_RADIUS: super::Prop = super::Prop("border-radius");
-    pub const COLOR: super::Prop = super::Prop("color");
-    pub const COLUMNS: super::Prop = super::Prop("columns");
-    pub const FILL: super::Prop = super::Prop("fill");
-    pub const FONT: super::Prop = super::Prop("font");
-    pub const FONT_SIZE: super::Prop = super::Prop("font-size");
-    pub const HEIGHT: super::Prop = super::Prop("height");
-    pub const LIST_STYLE: super::Prop = super::Prop("list-style");
-    pub const MARGIN: super::Prop = super::Prop("margin");
-    pub const OPACITY: super::Prop = super::Prop("opacity");
-    pub const PADDING: super::Prop = super::Prop("padding");
-    pub const SHAPE_RENDERING: super::Prop = super::Prop("shape-rendering");
-    pub const WIDTH: super::Prop = super::Prop("width");
+    pub const BACKGROUND: super::Prop<()> = super::Prop::new("background");
+    pub const BORDER: super::Prop<()> = super::Prop::new("border");
+    pub const BORDER_RADIUS: super::Prop<()> = super::Prop::new("border-radius");
+    pub const COLOR: super::Prop<salon_web::style::Color> = super::Prop::new("color");
+    pub const COLUMNS: super::Prop<()> = super::Prop::new("columns");
+    pub const FILL: super::Prop<()> = super::Prop::new("fill");
+    pub const FONT: super::Prop<()> = super::Prop::new("font");
+    pub const FONT_SIZE: super::Prop<()> = super::Prop::new("font-size");
+    pub const HEIGHT: super::Prop<salon_web::style::Length> = super::Prop::new("height");
+    pub const LIST_STYLE: super::Prop<()> = super::Prop::new("list-style");
+    pub const MARGIN: super::Prop<()> = super::Prop::new("margin");
+    pub const OPACITY: super::Prop<salon_web::style::Number> = super::Prop::new("opacity");
+    pub const PADDING: super::Prop<()> = super::Prop::new("padding");
+    pub const SHAPE_RENDERING: super::Prop<()> = super::Prop::new("shape-rendering");
+    pub const WIDTH: super::Prop<salon_web::style::Length> = super::Prop::new("width");
 }
 
 /// The elements the Rust side may create.

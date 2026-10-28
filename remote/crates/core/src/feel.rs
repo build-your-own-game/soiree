@@ -152,7 +152,11 @@ fn sliding_from_b_to_a_rolls_through_both() {
     assert_eq!(held(&pad), [n64::A]);
     let below = Point::new(a.x - 45.0, pad.layout().area.bottom - 2.0);
     assert_eq!(pad.touch_move(1, below), Some(Haptic::Release));
-    assert_eq!(held(&pad), [], "between buttons nothing is held");
+    assert_eq!(
+        held(&pad),
+        Vec::<u8>::new(),
+        "between buttons nothing is held"
+    );
 }
 
 #[test]
@@ -161,7 +165,11 @@ fn a_held_button_keeps_a_wider_margin() {
     let a = center_of(&pad, n64::A);
     let edge = Point::new(a.x + 40.0 + 25.0, a.y);
     pad.touch_down(1, edge);
-    assert_eq!(held(&pad), [], "25 pt off A is too far for a new touch");
+    assert_eq!(
+        held(&pad),
+        Vec::<u8>::new(),
+        "25 pt off A is too far for a new touch"
+    );
     pad.touch_down(2, a);
     pad.touch_move(2, edge);
     assert_eq!(held(&pad), [n64::A], "but not for a finger already on A");
@@ -172,7 +180,7 @@ fn minor_buttons_take_no_touch_beyond_their_drawing() {
     let mut pad = pad(&presets::cross());
     let start = center_of(&pad, presets::cross::START);
     pad.touch_down(1, Point::new(start.x, start.y - 20.0));
-    assert_eq!(held(&pad), [], "just above Start");
+    assert_eq!(held(&pad), Vec::<u8>::new(), "just above Start");
 }
 
 #[test]
@@ -323,7 +331,7 @@ fn a_thumb_that_leaves_the_stick_keeps_steering_and_presses_nothing() {
     let mut pad = pad(&presets::n64());
     pad.touch_down(1, stick_center(&pad));
     pad.touch_move(1, center_of(&pad, n64::A));
-    assert_eq!(held(&pad), []);
+    assert_eq!(held(&pad), Vec::<u8>::new());
     assert!(n64_stick(&pad).0 > 70);
 }
 
@@ -357,7 +365,11 @@ fn dpad_favors_straight_directions() {
         (-1.0, 0.0, vec![left]),
     ];
     pad.touch_down(1, dpad.center);
-    assert_eq!(held(&pad), [], "the center of the cross is neutral");
+    assert_eq!(
+        held(&pad),
+        Vec::<u8>::new(),
+        "the center of the cross is neutral"
+    );
     for (dx, dy, mut expected) in cases {
         pad.touch_move(
             1,
@@ -374,11 +386,11 @@ fn a_new_layout_lets_go_of_everything() {
     pad.touch_down(1, center_of(&pad, n64::A));
     let (screen, insets) = PHONES[1];
     pad.set_layout(Layout::resolve(&presets::n64(), screen, insets));
-    assert_eq!(held(&pad), []);
+    assert_eq!(held(&pad), Vec::<u8>::new());
     pad.touch_move(1, center_of(&pad, n64::A));
     assert_eq!(
         held(&pad),
-        [],
+        Vec::<u8>::new(),
         "a finger from before the change is forgotten"
     );
 }
@@ -390,5 +402,5 @@ fn touches_on_empty_space_do_nothing() {
     let empty = Point::new(area.center_x() + 5.0, area.top + area.height() * 0.45);
     assert_eq!(pad.touch_down(1, empty), None);
     pad.touch_move(1, center_of(&pad, n64::A));
-    assert_eq!(held(&pad), []);
+    assert_eq!(held(&pad), Vec::<u8>::new());
 }

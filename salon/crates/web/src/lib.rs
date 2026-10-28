@@ -19,6 +19,7 @@
 
 pub mod journal;
 mod recovery;
+pub mod ui;
 pub use recovery::{install_panic_hook, install_tv_diagnostics};
 
 use std::cell::{Cell, RefCell};
@@ -116,6 +117,7 @@ enum Transport {
         channel: RtcDataChannel,
         open: bool,
         _closures: Vec<Listener>,
+        _patience: Option<ui::Timer>,
     },
     Ws {
         socket: WebSocket,
@@ -176,7 +178,7 @@ struct Inner<Up, Down> {
     generation: u32,
     rtc_failures: u32,
     websocket_only: bool,
-    timer: Option<i32>,
+    timer: Option<ui::Timer>,
 }
 
 struct Shared<Up, Down> {
@@ -184,12 +186,23 @@ struct Shared<Up, Down> {
     pending: RefCell<VecDeque<Happening<Down>>>,
     delivering: Cell<bool>,
     on: RefCell<Box<dyn FnMut(Happening<Down>)>>,
-    tick: RefCell<Option<Closure<dyn FnMut()>>>,
-    wake: RefCell<Vec<Listener>>,
+    wake: ui::Listeners,
+}
+
+impl<Up, Down> Drop for Shared<Up, Down> {
+    fn drop(&mut self) {
+        let inner = self.inner.get_mut();
+        inner.timer = None;
+        if let Some(transport) = inner.transport.take() {
+            transport.close();
+        }
+    }
 }
 
 /// The page's link to the host. Cheap to clone; every clone is the same link,
-/// and it lives as long as the page.
+/// and its resources are released when the final clone is dropped. Keep one
+/// handle in the page or view that owns the connection.
+#[must_use = "keep a connection in the page or view that owns its transport"]
 pub struct Connection<Up, Down> {
     shared: Rc<Shared<Up, Down>>,
 }
@@ -295,8 +308,7 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
             pending: RefCell::new(VecDeque::new()),
             delivering: Cell::new(false),
             on: RefCell::new(Box::new(on)),
-            tick: RefCell::new(None),
-            wake: RefCell::new(Vec::new()),
+            wake: ui::Listeners::default(),
         });
         let connection = Connection { shared };
         connection.listen();
@@ -334,41 +346,28 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         connection
     }
 
-    /// Wakes salon when the page comes back or the network returns. These
-    /// listeners hold the connection: it lives as long as the page, even if
-    /// the page drops every `Connection` it had.
+    /// Wakes salon when the page comes back or the network returns. Callbacks
+    /// only hold a Weak reference; the final handle drop unregisters them.
     fn listen(&self) {
         let Some(window) = web_sys::window() else {
             return;
         };
-        let shared = Rc::clone(&self.shared);
-        let wake = Listener::new(move |_| {
-            let visible = web_sys::window()
-                .and_then(|window| window.document())
-                .is_none_or(|document| !document.hidden());
-            if visible {
-                if let Ok(mut inner) = shared.inner.try_borrow_mut()
-                    && let Some(client) = inner.client.as_mut()
-                {
-                    client.wake(now());
-                }
-                pump(&shared);
-            }
-        });
-        let function = wake.as_ref().unchecked_ref();
         // Without these, the tick still wakes the client, only later.
-        let _: Result<(), JsValue> = window.add_event_listener_with_callback("pageshow", function);
-        let _: Result<(), JsValue> = window.add_event_listener_with_callback("online", function);
-        if let Some(document) = window.document() {
+        for name in ["pageshow", "online"] {
+            let weak = Rc::downgrade(&self.shared);
             let _: Result<(), JsValue> =
-                document.add_event_listener_with_callback("visibilitychange", function);
+                self.shared
+                    .wake
+                    .listen::<web_sys::Event>(&window, name, move |_| wake(&weak));
         }
-        self.shared.wake.borrow_mut().push(wake);
-        let shared = Rc::clone(&self.shared);
-        *self.shared.tick.borrow_mut() = Some(Closure::new(move || {
-            shared.inner.borrow_mut().timer = None;
-            pump(&shared);
-        }));
+        if let Some(document) = window.document() {
+            let weak = Rc::downgrade(&self.shared);
+            let _: Result<(), JsValue> = self.shared.wake.listen::<web_sys::Event>(
+                &document,
+                "visibilitychange",
+                move |_| wake(&weak),
+            );
+        }
     }
 
     fn with_client<T>(&self, act: impl FnOnce(&mut Client<Up, Down>) -> T) -> Option<T> {
@@ -434,6 +433,20 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
             .client
             .as_ref()
             .and_then(|client| client.host_time(now()))
+    }
+}
+
+fn wake<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(weak: &Weak<Shared<Up, Down>>) {
+    let visible = web_sys::window()
+        .and_then(|window| window.document())
+        .is_none_or(|document| !document.hidden());
+    if let Some(shared) = weak.upgrade().filter(|_| visible) {
+        if let Ok(mut inner) = shared.inner.try_borrow_mut()
+            && let Some(client) = inner.client.as_mut()
+        {
+            client.wake(now());
+        }
+        pump(&shared);
     }
 }
 
@@ -541,6 +554,10 @@ fn refresh_tv_key<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
 }
 
 /// Waits `ms` milliseconds.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "one-shot native Promise resolver has no Rust callback and ends even if its waiter is dropped"
+)]
 async fn sleep(ms: i32) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         if let Some(window) = web_sys::window() {
@@ -551,29 +568,24 @@ async fn sleep(ms: i32) {
     let _: Result<JsValue, JsValue> = JsFuture::from(promise).await;
 }
 
-fn schedule<Up: Serialize, Down: DeserializeOwned>(
-    shared: &Shared<Up, Down>,
+fn schedule<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
+    shared: &Rc<Shared<Up, Down>>,
     inner: &mut Inner<Up, Down>,
     now: Ms,
 ) {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    if let Some(timer) = inner.timer.take() {
-        window.clear_timeout_with_handle(timer);
-    }
+    inner.timer = None;
     let Some(at) = inner.client.as_ref().and_then(Client::next_deadline) else {
         return;
     };
     let wait = i32::try_from(at.since(now)).unwrap_or(i32::MAX).max(0);
-    if let Some(tick) = shared.tick.borrow().as_ref() {
-        inner.timer = window
-            .set_timeout_with_callback_and_timeout_and_arguments_0(
-                tick.as_ref().unchecked_ref(),
-                wait,
-            )
-            .ok();
-    }
+    let weak = Rc::downgrade(shared);
+    inner.timer = ui::Timer::after(wait, move || {
+        if let Some(shared) = weak.upgrade() {
+            shared.inner.borrow_mut().timer = None;
+            pump(&shared);
+        }
+    })
+    .ok();
 }
 
 /// Calls `act` with the client if the event comes from the current transport.
@@ -768,18 +780,13 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         }
     });
     let weak = Rc::downgrade(shared);
-    let patience = Closure::once_into_js(move || fall_back(&weak, generation));
-    if let Some(window) = web_sys::window() {
-        let _: Result<i32, JsValue> = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-            patience.unchecked_ref(),
-            RTC_PATIENCE_MS,
-        );
-    }
+    let patience = ui::Timer::after(RTC_PATIENCE_MS, move || fall_back(&weak, generation)).ok();
     Some(Transport::Rtc {
         pc,
         channel,
         open: false,
         _closures: vec![opened, message, closed],
+        _patience: patience,
     })
 }
 
@@ -861,3 +868,6 @@ pub fn qr(qr: &Qr) -> Result<web_sys::Element, JsValue> {
     svg.append_child(&path)?;
     Ok(svg)
 }
+
+/// Typed values at the browser rendering boundary.
+pub mod style;

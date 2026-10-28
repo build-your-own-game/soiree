@@ -1,18 +1,26 @@
-# Certification du modèle
+# Certification du modèle v0.2.0
 
-Passage complet du 27 octobre 2026, graine `20261027`, quatre téléphones
-WebKit et quatre Chromium. `rapport.json` indique un passage réussi et des
-sources et un harnais inchangés pendant le test.
+Passage complet du 28 octobre 2026, graine 6839, sur un jeu créé par le
+binaire candidat avec `soiree new`. Les trois dépendances salon du jeu de
+test pointaient vers le checkout commun candidat, avant publication de son
+étiquette. Le rapport confirme que ni les sources du jeu ni le harnais
+n’ont changé pendant le passage. Les trois jeux du dossier de l’hôte ont
+également terminé leur passage complet sur le même candidat.
 
-Le modèle a été rendu avec `nom = "modele-test"`,
-`org = "build-your-own-game"` et `version = "0.1.0"`. Les règles embarquées
-ont été ajoutées comme le fait `soiree new`. Pour ce passage avant publication,
-les trois dépendances salon de son `Cargo.toml` utilisent les chemins locaux
-`../soiree/salon/crates/{core,host,web}` à la place de l’étiquette non publiée.
-Le dossier de test `.chantier-modele` était un dépôt Git initialisé localement ;
-il est supprimé après conservation de ces rapports. Son empreinte couvre les
-fichiers rendus, pas les sources avec les placeholders de `modele/`.
+Le premier passage du modèle s’était arrêté sur un geste natif WebKit
+bloqué ; son rapport est conservé localement. Le diagnostic a reproduit
+séparément un swipe produisant deux activations et un accusé de hover
+retenu jusqu’à un rendu. Le harnais exerce maintenant un seul drag et
+n’attend plus cet accusé avant d’envoyer l’appui qui le libère. Les
+contre-épreuves natives de ces deux correctifs sont exécutées par les tests
+du harnais. Elles n’établissent pas rétroactivement la cause exacte de
+tous les anciens blocages du pilote.
 
-Les captures détaillées restent dans le dossier temporaire indiqué au rapport.
-Ce passage automatisé ne remplace ni le test sur de vrais iPhone ni le jugement
-des textes et du jeu dans un salon.
+Le passage final utilise les listeners réentrants `Fn`. Leur ancien
+trampoline `FnMut` provoquait une erreur sur les clics imbriqués du
+sélecteur de fichiers de Tier-list ; une contre-épreuve dans les deux
+moteurs et le parcours réel du jeu la reproduisent.
+
+Ce passage ne couvre ni l’endurance de trente minutes ni les vrais claviers
+et appareils du salon. Le rapport distingue les catégories UI non
+applicables de celles réellement exécutées.

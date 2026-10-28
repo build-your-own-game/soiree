@@ -7,6 +7,7 @@
     reason = "test helpers outside #[test] functions: a phone that never joins stops the test with its message"
 )]
 
+mod framing;
 mod net;
 
 use net::{Down, Faults, Net, Up, phone_config};

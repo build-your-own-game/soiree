@@ -24,10 +24,12 @@ pub mod rules {
     pub const TOOLCHAIN: &str = include_str!("../regles/rust-toolchain.toml");
     pub const CARGO: &str = include_str!("../regles/cargo.toml");
     pub const CLIPPY: &str = include_str!("../regles/clippy.toml");
+    pub const CI: &str = include_str!("../regles/ci.yml");
 }
 
 /// The documents written to a game's `.soiree/`, at their path there.
 pub const DOCS: &[(&str, &str)] = &[
+    ("CHANGELOG.md", include_str!("../../CHANGELOG.md")),
     ("MANIFESTE.md", include_str!("../../MANIFESTE.md")),
     ("CERTIFICATION.md", include_str!("../../CERTIFICATION.md")),
     ("salon/README.md", include_str!("../../salon/README.md")),
@@ -47,6 +49,12 @@ pub const HARNESS: &[(&str, &str)] = &[
     (
         "performance.mjs",
         include_str!("../../tools/cert/performance.mjs"),
+    ),
+    ("ui.mjs", include_str!("../../tools/cert/ui.mjs")),
+    ("ui.test.mjs", include_str!("../../tools/cert/ui.test.mjs")),
+    (
+        "ui-browser.test.mjs",
+        include_str!("../../tools/cert/ui-browser.test.mjs"),
     ),
     (
         "socket-observer.test.mjs",

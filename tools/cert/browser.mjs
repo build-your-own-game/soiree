@@ -239,9 +239,11 @@ export class Tab {
   }
 
   /** Native-driver stage, retained when a protocol command stops answering. */
-  async input(operation, task) {
-    const pending = { operation, started: Date.now(), url: this.page.url() };
-    this.pendingInput = pending;
+  async input(operation, task, details = undefined) {
+    const pending = { operation, started: Date.now(), url: this.page.url(), ...(details ? { details } : {}) };
+    this.pendingInputs ??= new Set();
+    this.pendingInputs.add(pending);
+    this.pendingInput ??= pending;
     try {
       const result = await task();
       this.lastInput = { ...pending, finished: Date.now(), status: "completed" };
@@ -256,7 +258,8 @@ export class Tab {
       if (this.inputHistory.length > 32) this.inputHistory.shift();
       throw error;
     } finally {
-      if (this.pendingInput === pending) this.pendingInput = null;
+      this.pendingInputs.delete(pending);
+      this.pendingInput = this.pendingInputs.values().next().value ?? null;
     }
   }
 
@@ -271,40 +274,62 @@ export class Tab {
   /** A finger on a phone, the mouse elsewhere. */
   tap(x, y) {
     return this.mobile
-      ? this.input("touchscreen.tap", () => this.page.touchscreen.tap(x, y))
-      : this.input("mouse.click", () => this.page.mouse.click(x, y));
+      ? this.input("touchscreen.tap", () => this.page.touchscreen.tap(x, y), { x, y })
+      : this.input("mouse.click", () => this.page.mouse.click(x, y), { x, y });
   }
 
   click(x, y) {
-    return this.input("mouse.click", () => this.page.mouse.click(x, y));
+    return this.input("mouse.click", () => this.page.mouse.click(x, y), { x, y });
   }
 
   /** A mouse drag from one point to another (drag and drop, sliders). */
   async drag(from, to) {
+    let failure;
     try {
-      await this.input("drag.mouse.move.start", () => this.page.mouse.move(from.x, from.y));
-      await this.input("drag.mouse.down", () => this.page.mouse.down());
-      await this.input("drag.mouse.move.steps", () => this.page.mouse.move(to.x, to.y, { steps: 8 }));
+      // WebKit defers a hover's acknowledgement until a rendering update.
+      // A following down flushes it, even while painting waits for CSS. Send
+      // move then down in transport order, without making down depend on that
+      // deferred acknowledgement. Both native results must still succeed.
+      const move = () => this.input("drag.mouse.move.start", () => this.page.mouse.move(from.x, from.y), { x: from.x, y: from.y });
+      const down = () => this.input("drag.mouse.down", () => this.page.mouse.down());
+      if (this.engine === "webkit") {
+        const start = await Promise.allSettled([move(), down()]);
+        const errors = start.filter((result) => result.status === "rejected").map((result) => result.reason);
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "native drag start failed");
+      } else {
+        await move();
+        await down();
+      }
+      await this.input("drag.mouse.move.steps", () => this.page.mouse.move(to.x, to.y, { steps: 8 }), { from, to });
+    } catch (error) {
+      failure = error;
     } finally {
       // The native driver remembers pressed buttons independently of page JS.
       // A rejected move must not leave the next gesture dragging already.
-      await this.input("drag.mouse.up", () => this.page.mouse.up());
+      try {
+        await this.input("drag.mouse.up", () => this.page.mouse.up());
+      } catch (error) {
+        failure = failure ? new AggregateError([failure, error], "native drag and release failed") : error;
+      }
     }
+    if (failure) throw failure;
   }
 
   /** A finger that slides (sticks, canvases, pads). */
   async swipe(points) {
     if (!points.length) return;
     if (!this.cdp) {
-      // WebKit has no public CDP touch dispatcher. A real touch start/end
-      // followed by mouse dragging still exercises pointer-driven controls;
-      // this is explicitly not an iOS lifecycle simulation.
-      await this.input("swipe.touchscreen.tap", () => this.page.touchscreen.tap(points[0].x, points[0].y));
+      // WebKit exposes native taps but no public touch-move API. Exercise
+      // pointer-driven controls with one native mouse drag. A preparatory
+      // tap would be a second gesture and activate a button twice. Native
+      // touch taps are exercised separately; this fallback is not a touch
+      // swipe or an iOS lifecycle simulation.
       await this.drag(points[0], points.at(-1));
       return;
     }
     try {
-      await this.input("swipe.cdp.touchStart", () => this.call("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [points[0]] }));
+      await this.input("swipe.cdp.touchStart", () => this.call("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [points[0]] }), { point: points[0] });
       for (const point of points.slice(1)) await this.input("swipe.cdp.touchMove", () => this.call("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] }));
     } finally {
       await this.input("swipe.cdp.touchEnd", () => this.call("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }));

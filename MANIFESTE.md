@@ -1,5 +1,7 @@
 # Manifeste : jeux de soirée en Rust, repensés de zéro
 
+**Ce document ne doit être modifié que sur demande explicite de l’hôte.**
+
 > Ce fichier s'adresse à l'agent de code (Claude Code, Codex…) qui code ton jeu. L'outil `soiree` l'écrit dans `.soiree/MANIFESTE.md` de chaque jeu, à la version de son `soiree.toml`, et l'`AGENTS.md` du jeu dit de le lire et de l'appliquer.
 
 ## Le pari
@@ -96,6 +98,16 @@ On repense tout de zéro, mais toujours avec une raison. Si ton jeu a une meille
 
 Les types protègent la forme des données ; les tests, les replays et les mesures protègent leur sens.
 
+Une interface possède aussi des durées de vie. Ses listeners, timers et boucles
+d’animation appartiennent à une page ou une vue, et s’arrêtent avec elle.
+Une réponse asynchrone appartient à l’opération qui l’a demandée : elle ne
+modifie rien si cette opération a été annulée, remplacée ou détruite. Une
+fermeture suivie d’une réouverture ne rend pas l’ancien résultat valable.
+Les éléments en cours d’édition conservent leur identité, leur sélection et
+leur composition tant que leur objet logique existe. Les valeurs dérivées
+se calculent depuis l’état faisant autorité ; un effet ponctuel possède une
+identité qui empêche de le rejouer lors d’un simple réaffichage.
+
 Écris-le dans une section `## Écarts au manifeste` de ton `LEARNINGS.md`, avec un point numéroté par principe ci-dessous. Chaque point commence par **Respecté.**, par **Écart.** suivi d'une « Raison : », ou par **À faire.**
 
 1. **La machine vérifie, pas l'humain.** Préfère les choix qui laissent le compilateur, les tests et les replays attraper les erreurs : types forts, états impossibles non représentables, aucun `unwrap` dans la boucle de jeu sans raison écrite.
@@ -113,6 +125,8 @@ Les types protègent la forme des données ; les tests, les replays et les mesur
 8. **Aucune chaîne n'est un contrat.** Toute valeur qui traverse une frontière (entre deux processus, deux langages, un fichier et le code, ou deux versions) est écrite et lue par le même type Rust, ou validée pour en devenir un dès son entrée. Le compilateur garde alors toute la pile, et un agent qui renomme d'un côté voit casser l'autre. Concrètement :
    - les messages entre l'hôte et les écrans sont des enums partagées (`Up`, `Down`), jamais du JSON écrit à la main ;
    - la page ne se lit pas par chaîne : `soiree dom` tire de son HTML et de son CSS un module de constantes typées (ids, classes, attributs, propriétés CSS, balises), et les règles interdisent les méthodes à chaînes de `web_sys` ailleurs. Rust ne peut nommer que ce que la page déclare ;
+   - les valeurs d’interface que Rust écrit ont leur type : couleur, longueur, nombre, durée, image. Une propriété CSS générée n’accepte que sa catégorie ; une variable personnalisée déclare cette catégorie dans sa feuille avec `soiree-type`. La conversion en texte se fait à la frontière du navigateur, avec validation des valeurs extérieures ;
+   - le contrat entre une page libre et l’app iPhone a une définition Rust unique, utilisée par le SDK et par l’app à travers ses liaisons Swift générées. Les objets JavaScript sont validés à l’entrée ; le code Swift ne redéfinit ni leurs clés ni leurs règles. Des tests exécutent les vraies liaisons et les scripts émis ;
    - la version du jeu que vérifie salon se calcule depuis ses sources (`salon/version.rs`) : une page restée en cache après un changement est refusée, au lieu de décoder de travers ;
    - les données lues à l'exécution (contenu, sauvegardes, `localStorage`) passent par un type qui les valide, et leurs fichiers sont vérifiés par un test.
 
@@ -154,11 +168,70 @@ Avant de déclarer une étape finie, `soiree check`, dans le dossier du jeu, pas
 - la section « Écarts au manifeste » ;
 - un `cert.json` lisible par le harnais de `CERTIFICATION.md`, et le `CERTIFICATION.md` du jeu, dont chaque test nommé existe.
 
+Le modèle fournit aussi une CI liée à la version du commun. `soiree check`
+refuse une CI absente ou périmée et exige que `cert.json` exerce les propriétés
+d’interface applicables, ou explique leur non-applicabilité. Les primitives
+communes sont testées dans le commun ; leur intégration est exercée dans les
+jeux par `soiree certify`. Le mode CI `soiree check --locked --published`
+refuse un salon local ou une autre étiquette : ce qui marche chez l’hôte doit
+également se construire depuis les dépendances publiées. La mise à niveau
+se fait avec l’outil de la version cible, puis `soiree upgrade` ; le code
+signalé par les nouveaux contrôles reste à adapter.
+
+Les contrôles possèdent leurs propres cas négatifs : une faute injectée doit
+faire échouer la vraie commande et sa CI. Un contrôle non exécuté ou déclaré
+non applicable n’est jamais présenté comme une propriété vérifiée.
+
 Il lance aussi `cargo fmt --check`, Clippy en natif et en WASM avec `-D warnings`, et `cargo test` ; `soiree check --fast` les saute, pour la boucle serrée. Le reste (états impossibles, sensation, validité d'une raison) demande toujours un jugement.
 
 ## Vérification
 
 C'est le vrai goulot. Tu dois savoir que ton jeu marche sans que l'hôte ait à y jouer à ta place.
+
+### La portée d'une garantie
+
+Une garantie associe une propriété précise, un domaine d'application et une justification. Sa portée dépend de plusieurs questions distinctes :
+
+- **La propriété** : ce qui est affirmé et ce qui constituerait une violation.
+- **L'application** : tous les jeux, ou seulement ceux qui possèdent certaines mécaniques : réseau, physique, votes, sauvegarde…
+- **La responsabilité** : ce qui est fourni par le commun, ce qui dépend du jeu et de son intégration, ce qui relève des intentions de l'auteur.
+- **La justification** : types, preuve formelle, tests, mesures ou raisonnement explicite.
+- **Les hypothèses et les limites** : les conditions nécessaires, les versions et configurations concernées, les cas hors du périmètre établi.
+
+« Obligatoire », « commun à tous les jeux » et « prouvé » disent des choses différentes. Une exigence commune peut être éprouvée par des tests ; une règle propre à un jeu peut être formellement prouvée. La reconnexion concerne les jeux avec des appareils connectés ; l'annulation concerne ceux qui proposent un historique. Leur absence dans un autre jeu ne constitue pas une défaillance.
+
+Le déterminisme illustre l'importance du périmètre. Il peut être un principe commun pour l'état logique : même version, même contenu, même état initial, même état du générateur aléatoire et même suite ordonnée d'entrées donnent le même état. Une graine seule ne suffit pas : le temps et les résultats extérieurs peuvent aussi influencer les règles. L'identité entre natif et WASM est une propriété supplémentaire ; celle des pixels et des délais physiques du navigateur en est encore une autre.
+
+### Des moyens de vérification complémentaires
+
+| Moyen | Ce qu'il apporte | Ce qui reste à justifier |
+|---|---|---|
+| Types et API | Certaines erreurs de représentation ou d'usage deviennent impossibles à exprimer. | Les propriétés réellement encodées, la validation aux frontières et le passage par ces constructions. |
+| Preuve formelle | Une propriété est établie sur du code ou un modèle, pour les cas de son périmètre et sous ses hypothèses. | Le sens de la spécification, la validité des hypothèses et le lien avec le code effectivement utilisé. |
+| Tests, simulations et mesures | Des comportements sont exercés, des contre-exemples recherchés et l'intégration confrontée au réel. | Les cas non explorés et la capacité des contrôles à reconnaître une erreur. |
+| Explicitation des choix | Les alternatives, les exclusions et le raisonnement deviennent examinables ; les oublis sont plus faciles à repérer. | La justesse des arguments et les éléments qui les soutiennent. |
+
+Ces moyens peuvent se renforcer. Une API peut faire respecter une précondition dont dépend une preuve ; le harnais peut éprouver l'intégration du composant. Une garantie du noyau ne suffit pas à établir que la page affiche le bon résultat. Inversement, observer le jeu en boîte noire ne démontre pas la correction de toutes ses transitions internes.
+
+La preuve formelle trouve sa place dans cet ensemble. La machine peut contrôler une preuve sans que l'hôte relise toute l'implémentation. Il reste une confiance dans l'outillage, dans les hypothèses retenues et dans la correspondance entre la spécification et le jeu voulu. Une fonction prouvée sous une précondition n'apporte sa garantie à l'appelant que si cette condition est respectée. Des portions supposées correctes ou exclues de la preuve limitent sa portée. L'utilisation d'un vérificateur ne constitue donc pas, à elle seule, une garantie globale sur un jeu.
+
+Le commun peut fournir des garanties réutilisables à travers des interfaces précises. Les règles originales et leur intégration appartiennent à chaque jeu. Un outil peut vérifier une propriété exprimée ; il ne peut pas déduire du seul code que cette propriété correspond à l'intention de l'auteur.
+
+L'explicitation répond à une autre source d'erreurs : les décisions prises sans examiner leurs conséquences ou les cas oubliés. Une justification reliée à des références, des exemples et des vérifications rend ces erreurs plus détectables. Elle peut néanmoins être convaincante et fausse. De même, la présence d'un test ne suffit pas à établir qu'il s'exécute ou qu'il détecte le défaut annoncé. La confiance dépend de ce que les arguments et les contrôles permettent effectivement d'établir.
+
+### Exigences, déclarations et résultats
+
+Trois éléments interviennent dans une vérification :
+
+- **L'exigence** définit la propriété attendue, ses conditions d'application et le niveau de justification demandé.
+- **La déclaration du jeu** décrit les mécaniques présentes, les choix effectués et les moyens proposés pour répondre à l'exigence.
+- **Le résultat** établit ce qui a réellement été exécuté ou démontré, sur quelle version et avec quelles limites.
+
+La conformité d'une déclaration n'établit pas la correction du logiciel. Écrire « prouvé » ne produit pas une preuve ; une propriété testée reste testée sur le domaine exercé. Une exigence non applicable, un contrôle pas encore exécuté, un échec du logiciel et une panne du moyen de vérification sont des situations différentes.
+
+La confiance repose sur le lien entre ces trois éléments : une affirmation compréhensible, des arguments et des vérifications qui la concernent réellement, et des hypothèses identifiables. Les journaux, les replays, les simulations, les mutations et les essais sur les appareils apportent chacun des éléments à cette justification. Les preuves formelles peuvent renforcer certaines propriétés de cet ensemble.
+
+### Les moyens de vérification
 
 - **Bots et entrées scriptées** : le jeu peut se jouer tout seul avec N joueurs simulés, sans écran et en accéléré.
 - **Replays** : chaque partie enregistre les entrées à leur arrivée dans la simulation ; une commande rejoue et compare l’état. Chaque bug trouvé devient un fichier de replay sans données personnelles, puis un test. Les journaux réels restent locaux, ignorés par Git et supprimés après trente jours. Une panne du journal ne bloque jamais la partie.

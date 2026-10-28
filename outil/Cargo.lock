@@ -115,6 +115,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,11 +184,13 @@ dependencies = [
 
 [[package]]
 name = "soiree"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "semver",
  "serde_json",
  "sha2",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]
@@ -218,6 +226,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.25.17+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3641d5bbb5349a79e1020a242d251efbc546ad8048d133958323ce9c40a9c9c"
+dependencies = [
+ "indexmap",
+ "toml_datetime",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
 ]
 
 [[package]]
@@ -258,6 +279,9 @@ name = "winnow"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "zmij"
@@ -267,20 +291,20 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[patch.unused]]
 name = "remote-protocol"
-version = "0.1.0"
+version = "0.2.0"
 
 [[patch.unused]]
 name = "remote-web"
-version = "0.1.0"
+version = "0.2.0"
 
 [[patch.unused]]
 name = "salon-core"
-version = "0.1.0"
+version = "0.2.0"
 
 [[patch.unused]]
 name = "salon-host"
-version = "0.1.0"
+version = "0.2.0"
 
 [[patch.unused]]
 name = "salon-web"
-version = "0.1.0"
+version = "0.2.0"

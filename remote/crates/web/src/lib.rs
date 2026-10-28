@@ -13,16 +13,18 @@
 //! let _motion = motion(|sample| log(sample.gravity));  // runs while kept
 //! ```
 
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use js_sys::{Function, JSON, Reflect};
 use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::{Closure, JsValue};
+use wasm_bindgen::JsValue;
 use web_sys::CustomEvent;
 
 pub mod message;
 
-pub use message::{Allowed, HapticEvent, Info, Motion, Orientation, Vibration};
+pub use message::{Allowed, HapticEvent, Info, Motion, Orientation, PlayerId, Vibration};
 
 /// Whether the page runs in the app.
 pub fn available() -> bool {
@@ -50,8 +52,8 @@ pub fn set_orientation(allowed: Allowed) {
 }
 
 /// Calls `callback` at each orientation change, while the listener is kept.
-pub fn on_orientation(mut callback: impl FnMut(Orientation) + 'static) -> Listener {
-    Listener::new("orientation", move |detail| {
+pub fn on_orientation(callback: impl Fn(Orientation) + 'static) -> Listener {
+    Listener::new(message::EventKind::Orientation, move |detail| {
         if let Some(orientation) = message::read_orientation(&detail) {
             callback(orientation);
         }
@@ -59,24 +61,53 @@ pub fn on_orientation(mut callback: impl FnMut(Orientation) + 'static) -> Listen
 }
 
 /// Motion, once per screen refresh, while the returned value is kept.
-pub fn motion(mut callback: impl FnMut(Motion) + 'static) -> Motions {
-    post(&message::motion(true));
+pub fn motion(callback: impl Fn(Motion) + 'static) -> Motions {
+    let listener = Listener::new(message::EventKind::Motion, move |detail| {
+        if let Some(sample) = message::read_motion(&detail) {
+            callback(sample);
+        }
+    });
     Motions {
-        _listener: Listener::new("motion", move |detail| {
-            if let Some(sample) = message::read_motion(&detail) {
-                callback(sample);
-            }
-        }),
+        _listener: listener,
+        _source: MotionSource::acquire(),
     }
 }
 
-/// Motion keeps coming until this is dropped.
+/// Motion keeps coming until the final subscription is dropped. Independent
+/// views can listen concurrently; dropping one never stops the other view.
+#[must_use = "store the motion subscription while its view needs sensor samples"]
 pub struct Motions {
     /// Held for its drop, which stops listening.
     _listener: Listener,
+    _source: Rc<MotionSource>,
 }
 
-impl Drop for Motions {
+struct MotionSource;
+
+thread_local! {
+    static MOTION_SOURCE: RefCell<Weak<MotionSource>> = const { RefCell::new(Weak::new()) };
+}
+
+impl MotionSource {
+    fn acquire() -> Rc<Self> {
+        let (source, start) = MOTION_SOURCE.with_borrow_mut(|current| {
+            if let Some(source) = current.upgrade() {
+                (source, false)
+            } else {
+                let source = Rc::new(Self);
+                *current = Rc::downgrade(&source);
+                (source, true)
+            }
+        });
+        // No RefCell borrow crosses the browser callback boundary.
+        if start {
+            post(&message::motion(true));
+        }
+        source
+    }
+}
+
+impl Drop for MotionSource {
     fn drop(&mut self) {
         post(&message::motion(false));
     }
@@ -84,6 +115,7 @@ impl Drop for Motions {
 
 /// A UDP socket to the game's host. Datagrams can be lost or come twice:
 /// send whole states, not changes. Closed when dropped.
+#[must_use = "store the socket while its page or view needs datagrams"]
 pub struct Datagram {
     id: u32,
     listener: Option<Listener>,
@@ -102,9 +134,9 @@ impl Datagram {
     }
 
     /// Calls `callback` with each datagram the host sends back.
-    pub fn on_message(&mut self, mut callback: impl FnMut(Vec<u8>) + 'static) {
+    pub fn on_message(&mut self, callback: impl Fn(Vec<u8>) + 'static) {
         let id = self.id;
-        self.listener = Some(Listener::new("datagram", move |detail| {
+        self.listener = Some(Listener::new(message::EventKind::Datagram, move |detail| {
             if let Some((from, bytes)) = message::read_datagram(&detail)
                 && from == id
             {
@@ -121,36 +153,24 @@ impl Drop for Datagram {
 }
 
 /// Listens to one of the app's events on `window` until dropped.
+#[must_use = "store the listener until its view is destroyed"]
 pub struct Listener {
-    event: String,
-    closure: Closure<dyn FnMut(CustomEvent)>,
+    _listener: Option<salon_web::ui::Listener>,
 }
 
 impl Listener {
     /// `callback` gets the event's detail as JSON.
-    fn new(name: &str, mut callback: impl FnMut(String) + 'static) -> Self {
-        let event = format!("{}:{name}", message::NAME);
-        let closure = Closure::<dyn FnMut(CustomEvent)>::new(move |event: CustomEvent| {
-            if let Some(detail) = stringify(&event.detail()) {
-                callback(detail);
-            }
+    fn new(kind: message::EventKind, callback: impl Fn(String) + 'static) -> Self {
+        let listener = web_sys::window().and_then(|window| {
+            salon_web::ui::Listener::new(&window, kind.name(), move |event: CustomEvent| {
+                if let Some(detail) = stringify(&event.detail()) {
+                    callback(detail);
+                }
+            })
+            .ok()
         });
-        if let Some(window) = web_sys::window() {
-            // Without it, the event never comes: the same as outside the app.
-            let _: Result<(), JsValue> =
-                window.add_event_listener_with_callback(&event, closure.as_ref().unchecked_ref());
-        }
-        Self { event, closure }
-    }
-}
-
-impl Drop for Listener {
-    fn drop(&mut self) {
-        if let Some(window) = web_sys::window() {
-            let _: Result<(), JsValue> = window.remove_event_listener_with_callback(
-                &self.event,
-                self.closure.as_ref().unchecked_ref(),
-            );
+        Self {
+            _listener: listener,
         }
     }
 }

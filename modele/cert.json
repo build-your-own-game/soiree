@@ -48,5 +48,44 @@
         "rendered": "document.querySelector(\"h1\")?.textContent"
       }
     ]
+  },
+  "ui": {
+    "scenarios": [
+      {
+        "name": "Le bouton reste le même après une mise à jour",
+        "screen": "phone",
+        "covers": [
+          "lifecycle"
+        ],
+        "steps": [
+          {
+            "wait": "document.querySelector(\"#tap:not([hidden])\") !== null"
+          },
+          {
+            "remember": "tap",
+            "read": "document.querySelector(\"#tap\")"
+          },
+          {
+            "remember": "count",
+            "read": "document.querySelector(\"#view\").textContent"
+          },
+          {
+            "click": "#tap"
+          },
+          {
+            "wait": "document.querySelector(\"#view\").textContent !== window.__certUiRemembered.get(\"count\")"
+          },
+          {
+            "unchanged": "tap",
+            "read": "document.querySelector(\"#tap\")"
+          }
+        ]
+      }
+    ],
+    "not_applicable": {
+      "editing": "Le modèle ne propose aucun champ de saisie. Ajouter un parcours editing dès qu’un éditeur est ajouté.",
+      "effects": "Le modèle projette des compteurs ; aucun son ni vibration déclenché par une vue.",
+      "async": "Aucun import, export ou chargement asynchrone propre au jeu ; le transport commun est exercé séparément."
+    }
   }
 }

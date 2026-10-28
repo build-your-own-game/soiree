@@ -2,6 +2,104 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
+## v0.2.0 — 2026-10-28
+
+Le contrat entre une page libre et l’app iPhone est défini dans
+`remote-protocol::web`, réutilisé par le SDK WASM et par les liaisons Swift
+UniFFI. Le format JSON public reste identique. Les propriétés CSS écrites par
+Rust demandent maintenant une catégorie de valeur typée.
+
+Les pages possèdent leurs ressources navigateur via `salon_web::ui` :
+listeners, timers, animations, tickets d’opérations asynchrones, composition
+et effets ponctuels. Les formulaires gardent leur identité pendant les
+mises à jour qui ne changent pas leur tâche. Les tests exercent les
+destructions, les résultats tardifs, les compositions et les décodeurs
+ambigus, ainsi que la propagation des échecs des contrôles eux-mêmes.
+`soiree new` et `soiree upgrade` installent une CI versionnée ; le mode
+`check --published` refuse les dépendances communes non publiées ou locales.
+Ce mode exige un jeu versionné (`Cargo.toml` et `soiree.toml`) ; retirer la
+version ne permet pas de sauter les règles de CI et les déclarations U1.
+Les noms de jeu `salon` et `remote` sont réservés aux crates du commun ;
+`--org` choisit le dépôt du jeu sans rediriger ses dépendances communes.
+
+### Passer à cette version
+
+1. Après publication de l’étiquette `v0.2.0`, installer l’outil de cette version
+   et aligner les dépendances salon/remote ainsi que `soiree.toml`. Pendant le
+   développement chez l’hôte, les jeux gardent leur ancienne étiquette Cargo
+   et utilisent le `[patch]` local ; ils ne doivent pas être poussés ainsi.
+2. Régénérer chaque module avec `soiree dom <page.rs>`. Pour une propriété
+   personnalisée écrite par Rust, déclarer sa catégorie dans sa feuille CSS,
+   par exemple `/* soiree-type: --accent color */`. Catégories : `color`,
+   `length`, `number`, `time`, `image`. Une propriété sans catégorie n’a pas
+   de setter ; les déclarations absentes ou contradictoires échouent.
+3. Remplacer les valeurs libres de `prop::X.set` par une référence à
+   `salon_web::style::{Color, Length, Number, Time, Image}` :
+   `Color::rgb(255, 0, 0)`, `Length::px(x)?`, `Number::new(n)?`,
+   `Time::milliseconds(ms)` ou `Image::url(src)?`. Les couleurs hexadécimales
+   existantes se valident avec `parse::<Color>()`. Les coordonnées et nombres
+   non finis sont refusés. Les noms de propriété viennent du générateur.
+4. `remote_web::Info::player` est un `PlayerId` validé : utiliser `.bytes()`
+   pour le jeton ou `.to_string()` pour l’affichage. Retirer les décodeurs
+   hexadécimaux qui validaient à nouveau cette même identité.
+5. Reconstruire l’app avec `cargo xtask ios`. `WebRemote.swift` utilise les
+   commandes générées de `remote-ffi`, et les scripts de sortie sont fournis
+   par le même contrat Rust. `cargo xtask web-contract` compile et exécute les
+   liaisons Swift réelles et vérifie les scripts dans JavaScriptCore ; ce
+   contrôle rejoint `soiree check remote` sur macOS. Ailleurs, il est signalé
+   comme non exécuté. `cargo xtask web-contract-browser` complète ce contrôle
+   avec le vrai SDK WASM, WebKit et Chromium (navigateurs du harnais requis).
+   Un build Xcode vérifie le consommateur réel.
+6. `soiree check`, puis les vérifications navigateur applicables. Les fichiers
+   `.soiree/` et les sorties UniFFI restent générés et ignorés par Git.
+7. Conserver chaque `Connection` aussi longtemps que sa page en a besoin :
+   sa dernière copie détruite ferme maintenant le transport. Remplacer les
+   callbacks oubliés et les timers/boucles manuels par `Listener`,
+   `Listeners`, `Timer` et `AnimationLoop` de `salon_web::ui`, gardés dans
+   leur propriétaire. Leurs résultats sont `must_use`. Les listeners DOM et
+   les callbacks `on_orientation`, `motion`, `Datagram::on_message` de
+   `remote-web` prennent `Fn` : remplacer une capture directement mutable
+   par un `Cell` ou `RefCell` détenu par le propriétaire. Libérer les emprunts
+   avant une opération DOM pouvant déclencher un événement synchrone.
+8. Protéger les tâches avec `OperationSlot` (le dernier appel remplace le
+   précédent) ou `OperationScope` (plusieurs tâches indépendantes). Appeler
+   `finish` juste avant d’appliquer le résultat ; annuler à la fermeture ou
+   au remplacement de l’objet logique. Un ticket n’interrompt pas à lui seul
+   le travail natif du navigateur. Brancher `Composition` sur les événements
+   de composition et bloquer les nouvelles validations/raccourcis ; garder
+   les relâchements de commandes tenues. Un effet ponctuel ordonné peut
+   utiliser `OnceEffects`, avec identités croissantes et remise à zéro lors
+   d’un changement de session faisant autorité.
+9. Ajouter `ui` à `cert.json` : scénarios ou commandes réelles couvrant
+   `editing`, `lifecycle`, `async`, `effects`, et une justification pour
+   chaque catégorie non applicable. Voir `CERTIFICATION.md`. Le modèle et
+   les trois jeux de l’hôte en donnent des exemples. Installer la CI avec
+   `soiree upgrade` ; `--dry-run` montre les fichiers visés. La commande
+   cible la version du binaire installé et refuse une étiquette non publiée
+   avant de modifier le jeu ; elle ne réécrit pas automatiquement sa logique.
+10. Remplacer `postcard::from_bytes` par `salon_core::codec::decode` pour
+    un message dont le cadre contient exactement un objet. Les décodeurs de
+    salon et de la télécommande l’utilisent déjà. Les variantes JSON non
+    étiquetées ne sont acceptables que si leurs formes sont disjointes,
+    vérifiées par des cas négatifs.
+
+### Change de sens
+
+- Une identité doit être exactement seize octets, exprimés par 32 chiffres
+  hexadécimaux. Un datagramme encodé en base64 doit être canonique et complet.
+- Les objets JavaScript mal typés sont refusés avant les effets natifs ; les
+  ports et octets ne sont plus tronqués par les conversions NSNumber.
+- Les valeurs CSS d’un jeu passent par des constructeurs validés et des
+  propriétés de catégorie correspondante. Les tracés SVG et la syntaxe
+  déclarative CSS restent du vocabulaire du navigateur, pas une promesse de
+  typage de toute sa grammaire.
+- Les octets ajoutés après un message binaire valide sont refusés ; ils
+  étaient auparavant ignorés par `postcard::from_bytes`.
+- La destruction du dernier `Connection` clôt son transport. Les ressources
+  d’une vue cessent leurs rappels avec leur propriétaire.
+- Plusieurs abonnements aux capteurs de `remote-web` partagent la source :
+  seul le dernier abonnement détruit envoie `motion:false`.
+
 ## v0.1.0 — 2026-10-27
 
 La première version : salon, la télécommande iPhone, les règles communes, le harnais de certification, le catalogue d'items par mécanique, l'outil `soiree` et le modèle de jeu.
