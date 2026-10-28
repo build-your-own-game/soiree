@@ -9,11 +9,15 @@ Pour brancher un jeu : `CONTRAT.md`.
 Prérequis : Xcode 27, Rust (version fixée par `rust-toolchain.toml`, les cibles iOS s'installent seules).
 
 ```sh
-cargo xtask ios
 open ios/Remote.xcodeproj
 ```
 
 Dans Xcode, choisis un simulateur ou ton iPhone, puis ⌘R. Pour un vrai iPhone, choisis ton équipe dans *Signing & Capabilities* et change l'identifiant `fr.buildyourowngame.remote` s'il est déjà pris.
+
+Le build Xcode compile le cœur Rust et génère ses liaisons Swift avant de
+compiler l'app, y compris depuis un clone neuf. `cargo xtask ios` reste
+disponible pour construire séparément les bibliothèques et les liaisons des
+cibles iPhone et simulateur ; cette préparation est facultative.
 
 ## Essayer avec le faux jeu
 

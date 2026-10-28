@@ -30,8 +30,8 @@ cargo test
 cargo xtask web-contract # vraies liaisons Swift + scripts exécutés dans JavaScriptCore (macOS)
 cargo xtask web-contract-browser # mêmes scripts et vrai SDK WASM dans WebKit et Chromium
 soiree check .           # tout ce que le manifeste permet de vérifier par machine (../outil/)
-cargo xtask ios          # une fois avant d'ouvrir Xcode, ensuite Xcode le relance à chaque build
+cargo xtask ios          # facultatif : construit séparément les bibliothèques et les liaisons iOS
 open ios/Remote.xcodeproj
 ```
 
-Le build Xcode lance `cargo xtask ios` pour la cible et le profil en cours : modifier le Rust puis ⌘R suffit.
+Le build Xcode lance `cargo xtask ios` pour la cible et le profil en cours : ouvrir le projet d'un clone neuf puis ⌘R suffit, sans pré-génération. Les sorties Swift, en-tête, modulemap et bibliothèque sont déclarées dans la phase « Build Rust core » ; conserve ces dépendances pour que le build à froid reste valable. La phase reste exécutée à chaque build : Cargo vérifie les changements Rust transitifs.

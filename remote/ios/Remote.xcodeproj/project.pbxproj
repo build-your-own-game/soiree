@@ -140,6 +140,10 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(SRCROOT)/Generated/remote_ffi.swift",
+				"$(SRCROOT)/Generated/remote_ffiFFI.h",
+				"$(SRCROOT)/Generated/module.modulemap",
+				"$(SRCROOT)/../target/$(RUST_TARGET)/$(RUST_PROFILE)/libremote_ffi.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

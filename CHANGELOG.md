@@ -2,6 +2,18 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
+## v0.3.1 — Non publié
+
+Le projet Xcode déclare les fichiers produits par sa phase de compilation Rust :
+les liaisons Swift, leur en-tête, leur module et l’archive native. Xcode attend
+ainsi leur génération avant de compiler Swift, y compris sur un checkout neuf.
+La CI vérifie explicitement ce cas sans liaisons prégénérées.
+
+### Passer à cette version
+
+Aucun changement de code de jeu. Le correctif concerne le projet de l’app
+iPhone ; aucun `cargo xtask ios` préalable n’est nécessaire à son build Xcode.
+
 ## v0.3.0 — 2026-10-28
 
 Les engagements propres au jeu passent de tableaux Markdown à

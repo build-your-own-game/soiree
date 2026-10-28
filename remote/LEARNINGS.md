@@ -200,3 +200,18 @@ Le JSON décrit par `CONTRAT.md` est conservé, y compris les commandes combiné
 `cargo xtask web-contract-browser` fait produire les scripts par les vraies liaisons Swift, construit la page de démonstration WASM puis vérifie dans WebKit et Chromium les informations, les trois événements et les commandes issues des gestes. Il vérifie aussi la page hors de l’app. Il utilise les navigateurs installés pour le harnais, à la demande.
 
 Un test négatif a révélé que la désérialisation automatique des structs acceptait des tableaux positionnels à la place des objets JavaScript documentés. La frontière impose désormais des objets pour les commandes, chaque événement haptique, les informations, les capteurs et les datagrammes. Les tests Rust et les vraies liaisons Swift gardent les cas qui reproduisaient ce défaut.
+
+## Génération des liaisons dans un clone neuf
+
+Le [premier build CI de v0.3.0](https://github.com/build-your-own-game/soiree/actions/runs/40668698905)
+a échoué sur `ios/Generated/remote_ffi.swift`, absent au démarrage. La phase
+« Build Rust core » produisait bien le fichier, mais ne déclarait aucune
+sortie à Xcode : le graphe ne savait pas que cette source Swift serait créée.
+Une génération préalable en local masquait ce défaut. Un clone isolé sans
+`ios/Generated` ni `target` a reproduit la même erreur.
+
+La phase déclare désormais la source Swift, l'en-tête, le modulemap et
+l'archive Rust avec sa cible et son profil. Elle reste exécutée à chaque
+build pour que Cargo détecte les changements Rust transitifs. La CI construit
+la vraie app après avoir vérifié l'absence de la source générée ; lancer
+`cargo xtask ios` avant Xcode reste une possibilité, sans être un prérequis.

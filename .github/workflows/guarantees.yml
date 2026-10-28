@@ -90,9 +90,13 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test --locked
-      - name: Build the actual iPhone app
+      - name: Build the actual iPhone app without pregenerated bindings
         working-directory: remote
-        run: xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+        run: |
+          set -euo pipefail
+          # The project must order generation before Swift compilation itself.
+          test ! -e ios/Generated/remote_ffi.swift
+          xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check the shared crates and real Swift ABI
         run: soiree check --locked salon remote .
       - name: Exercise the browser harness
