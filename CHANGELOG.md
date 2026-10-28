@@ -9,6 +9,13 @@ les liaisons Swift, leur en-tête, leur module et l’archive native. Xcode atte
 ainsi leur génération avant de compiler Swift, y compris sur un checkout neuf.
 La CI vérifie explicitement ce cas sans liaisons prégénérées.
 
+Les tests du harnais navigateur tournent dans un job indépendant des
+compilations Rust/iPhone. Leurs fichiers s’exécutent l’un après l’autre pour
+que des fixtures navigateur indépendantes ne se disputent pas le runner.
+Le contrôle de navigation conserve l’historique des requêtes : la fermeture
+d’une connexion au délai ne signifie pas que sa ressource n’a pas été demandée.
+Les délais et les assertions de navigation restent inchangés.
+
 ### Passer à cette version
 
 Aucun changement de code de jeu. Le correctif concerne le projet de l’app

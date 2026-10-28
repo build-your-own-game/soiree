@@ -5,7 +5,7 @@
   "description": "Étage 2 de CERTIFICATION.md : la certification en boîte noire d'un jeu.",
   "scripts": {
     "cert": "node cert.mjs",
-    "test": "node --test *.test.mjs"
+    "test": "node --test --test-concurrency=1 *.test.mjs"
   },
   "dependencies": {
     "playwright-core": "1.64.0"

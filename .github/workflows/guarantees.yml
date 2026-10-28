@@ -99,13 +99,12 @@ jobs:
           xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check the shared crates and real Swift ABI
         run: soiree check --locked salon remote .
-      - name: Exercise the browser harness
+      - name: Prepare browsers for the SDK integration checks
         working-directory: tools/cert
         run: |
           set -euo pipefail
           npm ci --no-audit --no-fund
           npx playwright-core install webkit
-          npm test
       - name: Exercise shared UI lifetimes in real browsers
         run: node salon/tests/ui-browser.mjs
       - name: Exercise the Swift to WASM bridge
@@ -122,6 +121,26 @@ jobs:
         with:
           name: model-certification
           path: ${{ runner.temp }}/soiree-model/ci-model/certification/
+  browser-harness:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare native browser fixtures
+        working-directory: tools/cert
+        run: |
+          set -euo pipefail
+          if [ ! -x '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' ]; then
+            brew install --cask google-chrome
+          fi
+          npm ci --no-audit --no-fund
+          npx playwright-core install webkit
+      - name: Exercise the browser harness in isolation
+        working-directory: tools/cert
+        run: npm test
   verification-policy:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

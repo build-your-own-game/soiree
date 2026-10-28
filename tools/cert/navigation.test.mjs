@@ -63,7 +63,7 @@ test("HTTP preflight distinguishes a served product error from a missing respons
 
 test("initial navigation waits for load and reports HTTP or resource timeouts on both engines", { timeout: 30000 }, async () => {
   const browser = await launchBrowser();
-  const held = new Set();
+  let heldRequests = 0;
   try {
     await serverFixture((request, response) => {
       if (request.url === "/error") { response.writeHead(500); response.end("served failure"); }
@@ -71,7 +71,9 @@ test("initial navigation waits for load and reports HTTP or resource timeouts on
         response.writeHead(500, { "content-type": "text/html" });
         response.write("<!doctype html><p>served error before the body finishes</p>" + " ".repeat(1024));
       }
-      else if (request.url === "/held.css") { held.add(response); response.on("close", () => held.delete(response)); }
+      else if (request.url === "/held.css") {
+        heldRequests++;
+      }
       else if (request.url === "/delayed.css") {
         const timer = setTimeout(() => { response.writeHead(200, { "content-type": "text/css" }); response.end("body{color:green}"); }, 100);
         response.on("close", () => clearTimeout(timer));
@@ -101,13 +103,16 @@ test("initial navigation waits for load and reports HTTP or resource timeouts on
           });
           let loaded = false;
           tab.page.once("load", () => { loaded = true; });
+          const requestedBefore = heldRequests;
           await assert.rejects(tab.goto(base + "/slow", { timeoutMs: 250 }), (error) => {
             assert.ok(error instanceof NavigationFailure);
             assert.equal(error.kind, "infrastructure");
             assert.equal(error.timeoutMs, 250);
             return true;
           });
-          assert.ok(held.size > 0, "the browser really requested the blocked resource");
+          // A navigation timeout may close its resource socket before it
+          // rejects. Request history, not remaining sockets, proves setup.
+          assert.ok(heldRequests > requestedBefore, `${engine}: the browser really requested the blocked resource`);
           assert.equal(loaded, false, "a timed out document must not be treated as loaded");
           assert.equal(tab.pendingInput, null);
           assert.equal(tab.lastNavigationFailure.kind, "infrastructure");

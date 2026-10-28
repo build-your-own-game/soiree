@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { launchBrowser, Tab } from "./browser.mjs";
 
-const SURFACE = "data:text/html," + encodeURIComponent("<style>body{margin:0;user-select:none}div{width:390px;height:844px}</style><div>Native input surface</div><script>window.moves=[];window.ends=0;document.addEventListener('mousemove',e=>moves.push(e.buttons));document.addEventListener('touchend',()=>ends++);</script>");
+const SURFACE = "data:text/html," + encodeURIComponent("<style>body{margin:0;user-select:none}div{width:390px;height:844px}</style><div>Native input surface</div><script>window.moves=[];window.ends=0;window.touchEnds=[];document.addEventListener('mousemove',e=>moves.push(e.buttons));document.addEventListener('touchend',e=>{ends++;touchEnds.push({trusted:e.isTrusted,touches:e.touches.length,changed:e.changedTouches.length});});</script>");
 
 async function bounded(promise, ms = 2000) {
   let timer;
@@ -167,23 +167,76 @@ test("interrupted native drags release the held mouse on both engines", { timeou
   } finally { await browser.close(); }
 });
 
-test("an interrupted Chromium touch sequence emits its native touch end", { timeout: 30000 }, async () => {
-  const browser = await launchBrowser();
+test("an interrupted Chromium touch sequence emits its native touch end", { timeout: 30000 }, async (t) => {
+  let browser;
+  let tab;
+  let phase;
+  let watchdog;
+  const timeline = [];
+  const short = (record) => record && ({ ...record, url: record.url?.slice(0, 160) });
+  const report = (reason) => t.diagnostic(JSON.stringify({
+    reason, phase, timeline,
+    chromium: tab?.context.browser()?.version(),
+    page_closed: tab?.page.isClosed(), viewport: tab?.page.viewportSize(),
+    pending: [...(tab?.pendingInputs ?? [])].map(short),
+    history: (tab?.inputHistory ?? []).slice(-8).map(short),
+  }));
+  const progress = (name) => {
+    phase = name;
+    timeline.push({ phase, at: Date.now() });
+    clearTimeout(watchdog);
+    // Observe the driver's existing state without querying the renderer:
+    // a layout/evaluation probe must not accidentally release a blocked ACK.
+    watchdog = setTimeout(() => report("native stage still pending"), 2000);
+    watchdog.unref();
+  };
+  const failed = async (reason) => {
+    report(reason);
+    if (tab && !tab.page.isClosed()) {
+      const state = await bounded(tab.page.evaluate(() => ({
+        ready: document.readyState, visibility: document.visibilityState,
+        focused: document.hasFocus(), fonts: document.fonts.status,
+        ends: globalThis.ends, touch_ends: globalThis.touchEnds,
+      })), 500).catch((error) => ({ unavailable: error.message }));
+      t.diagnostic(JSON.stringify({ reason: "page state after failure", state }));
+    }
+  };
+  t.after(async () => {
+    clearTimeout(watchdog);
+    if (t.signal.aborted) await failed("test aborted");
+    // A timed-out await does not unwind the test callback's finally block.
+    // The test hook closes the native session even when CDP never answers.
+    await browser?.close();
+  });
+  progress("browser.launch");
+  browser = await launchBrowser();
+  if (t.signal.aborted) { await browser.close(); return; }
   try {
-    const tab = await browser.open(SURFACE, { engine: "chromium", mobile: true });
+    progress("tab.open");
+    tab = await browser.open(SURFACE, { engine: "chromium", mobile: true });
     const input = tab.input.bind(tab);
-    tab.input = async (operation, task) => {
-      const value = await input(operation, task);
+    tab.input = async (operation, task, details) => {
+      progress(operation);
+      const value = await input(operation, task, details);
       if (operation === "swipe.cdp.touchMove") throw new Error("interrupted native touch move");
       return value;
     };
     await assert.rejects(tab.swipe([{ x: 20, y: 20 }, { x: 100, y: 100 }]), /interrupted/);
+    progress("first.touchend.observation");
     assert.equal(await tab.evaluate("ends"), 1);
+    assert.deepEqual(await tab.evaluate("touchEnds"), [{ trusted: true, touches: 0, changed: 1 }]);
     tab.input = input;
+    progress("next.touchscreen.tap");
     await tab.tap(30, 30);
+    progress("second.touchend.observation");
     assert.equal(await tab.evaluate("ends"), 2, "the next real touch must form an independent sequence");
+    assert.deepEqual(await tab.evaluate("touchEnds"), Array.from({ length: 2 }, () => ({ trusted: true, touches: 0, changed: 1 })));
+    progress("tab.close");
     await tab.close();
-  } finally { await browser.close(); }
+  } catch (error) {
+    await failed(error.message);
+    throw error;
+  } finally { clearTimeout(watchdog); }
 });
 
 test("WebKit pointer fallback is one native gesture without an extra tap", { timeout: 30000 }, async () => {
