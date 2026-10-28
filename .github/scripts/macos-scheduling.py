@@ -41,6 +41,8 @@ def main():
             "Requested QoS and readable base policies do not reveal every effective scheduler constraint.",
             "An instrumented sample can differ from an uninstrumented sample; both baselines are retained.",
             "Controlled utility/background children demonstrate a mechanism, not the CI job's original policy.",
+            "A successful main-thread QoS request does not prove the QoS inherited by the room thread or override a task clamp.",
+            "The optional pthread introspection hook records requested QoS at thread START, before the Rust callback; this is not effective QoS or a promise it stays unchanged.",
         ],
     }
 
@@ -93,6 +95,12 @@ def main():
             "policy": [json.loads(line.removeprefix("SOIREE_MACOS_POLICY "))
                        for line in stderr.decode(errors="replace").splitlines()
                        if line.startswith("SOIREE_MACOS_POLICY ")],
+            "qos_requests": [json.loads(line.removeprefix("SOIREE_MACOS_QOS_REQUEST "))
+                             for line in stderr.decode(errors="replace").splitlines()
+                             if line.startswith("SOIREE_MACOS_QOS_REQUEST ")],
+            "thread_creations": [json.loads(line.removeprefix("SOIREE_MACOS_THREAD_CREATE "))
+                                 for line in stderr.decode(errors="replace").splitlines()
+                                 if line.startswith("SOIREE_MACOS_THREAD_CREATE ")],
         }
         report["samples"].append(sample)
         save()
@@ -111,6 +119,7 @@ def main():
             "CI", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "RUNNER_OS", "RUNNER_ARCH",
             "RUSTUP_TOOLCHAIN", "CARGO_TARGET_DIR", "RUST_TEST_THREADS") if key in os.environ}
         sources = [Path(__file__).resolve(), root / ".github/scripts/macos-policy.c",
+                   root / ".github/scripts/macos-qos-request.c",
                    root / "salon/crates/host/src/room.rs", root / "salon/Cargo.lock",
                    root / "outil/src/verification/cargo.rs",
                    root / ".github/workflows/macos-scheduling.yml"]
@@ -165,20 +174,42 @@ fn main() {
         report["launcher_sha256"] = sha256(launcher)
         report["extracted_runner_source_sha256"] = sha256(runner_path)
         report["policy_reader_sha256"] = sha256(policy)
+        qos_request = output / "controlled-qos-request.dylib"
+        run("build-controlled-qos-request", ["xcrun", "clang", "-Wall", "-Wextra", "-Werror", "-dynamiclib",
+                                              str(root / ".github/scripts/macos-qos-request.c"), "-o", str(qos_request)],
+            isolated_build=True)
+        report["controlled_qos_request_sha256"] = sha256(qos_request)
         base = [str(executable), "room::tests::steps_come_on_time", "--exact", "--ignored",
                 "--nocapture", "--test-threads=1"]
         injected = ["/usr/bin/env", f"DYLD_INSERT_LIBRARIES={policy}", *base]
+        user_initiated = ["/usr/bin/env", f"DYLD_INSERT_LIBRARIES={qos_request}",
+                          "SOIREE_MACOS_CONTROLLED_QOS=user-initiated", *base]
+        observed_threads = ["/usr/bin/env", f"DYLD_INSERT_LIBRARIES={qos_request}",
+                            "SOIREE_MACOS_CONTROLLED_QOS=observe-threads", *base]
         cases = [
-            ("direct", base, False),
-            ("production-launch", [str(launcher), *base], False),
-            ("production-launch-policy", [str(launcher), *injected], True),
-            ("controlled-utility", [str(launcher), "/usr/sbin/taskpolicy", "-c", "utility", *injected], True),
-            ("controlled-background", [str(launcher), "/usr/sbin/taskpolicy", "-b", *injected], True),
+            ("direct", base, 0, 0),
+            ("production-launch", [str(launcher), *base], 0, 0),
+            ("production-launch-policy", [str(launcher), *injected], 1, 0),
+            ("controlled-utility", [str(launcher), "/usr/sbin/taskpolicy", "-c", "utility", *injected], 1, 0),
+            ("controlled-background", [str(launcher), "/usr/sbin/taskpolicy", "-b", *injected], 1, 0),
+            ("controlled-application", [str(launcher), "/usr/sbin/taskpolicy", "-a", *injected], 1, 0),
+            ("observed-threads", [str(launcher), *observed_threads], -1, 0),
+            ("controlled-threads-user-initiated", [str(launcher), *user_initiated], -1, -1),
+            ("controlled-application-threads-user-initiated", [str(launcher), "/usr/sbin/taskpolicy", "-a", *user_initiated], -1, -1),
         ]
-        for name, command, require_policy in cases:
+        for name, command, policy_count, request_count in cases:
             stdout, sample = run(name, command, cwd=root / "salon", timeout=45)
-            if require_policy and len(sample["policy"]) != 1:
-                raise RuntimeError(f"{name}: policy reader did not load exactly once (SIP may strip DYLD variables)")
+            if ((policy_count >= 0 and len(sample["policy"]) != policy_count)
+                    or (request_count >= 0 and len(sample["qos_requests"]) != request_count)):
+                raise RuntimeError(f"{name}: expected policy reads/QoS requests were not observed (SIP may strip DYLD variables)")
+            if policy_count < 0:
+                workers = {value["thread_id"] for value in sample["policy"]
+                           if value.get("phase") == "thread-start-before-request"}
+                requested = {value["thread_id"] for value in sample["qos_requests"]}
+                if len(workers) < 2 or len(sample["thread_creations"]) < 2:
+                    raise RuntimeError(f"{name}: missing libtest/room thread observations")
+                if request_count < 0 and not workers.issubset(requested):
+                    raise RuntimeError(f"{name}: a started worker did not receive the controlled QoS request")
             if not re.search(rb"[1-9][0-9]* wakes, gaps", stdout):
                 raise RuntimeError(f"{name}: no usable cadence measurement was emitted")
             if b"1 passed; 0 failed; 0 ignored" not in stdout:
