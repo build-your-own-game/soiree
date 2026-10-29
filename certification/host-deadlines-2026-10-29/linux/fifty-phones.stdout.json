@@ -1,0 +1,5 @@
+{
+  "encoding": "utf-8",
+  "source_sha256": "044ebcc1887ac7f5ecf44720392d5f37cde25296afe8b525112e228429af391e",
+  "text": "\nrunning 1 test\ntest fifty_phones_move_at_once ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 3.29s\n\n"
+}

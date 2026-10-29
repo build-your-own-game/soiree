@@ -1,0 +1,41 @@
+{
+  "selective_excerpt": true,
+  "source_metadata_sha256": "78f5a7d5a82befb6f80ba54cd330a4e5807a1200c503e96e24159012b9851463",
+  "packages": [
+    {
+      "id": "registry+https://github.com/rust-lang/crates.io-index#nix@0.30.1",
+      "name": "nix",
+      "version": "0.30.1",
+      "manifest_path": "/Users/axel2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/Cargo.toml",
+      "source": "registry+https://github.com/rust-lang/crates.io-index"
+    },
+    {
+      "id": "path+file:///private/tmp/soiree-precise-wait/remote/crates/protocol#remote-protocol@0.2.0",
+      "name": "remote-protocol",
+      "version": "0.2.0",
+      "manifest_path": "/private/tmp/soiree-precise-wait/remote/crates/protocol/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///private/tmp/soiree-precise-wait/salon/crates/core#salon-core@0.2.0",
+      "name": "salon-core",
+      "version": "0.2.0",
+      "manifest_path": "/private/tmp/soiree-precise-wait/salon/crates/core/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///private/tmp/soiree-precise-wait/salon/crates/crypto#salon-crypto@0.2.0",
+      "name": "salon-crypto",
+      "version": "0.2.0",
+      "manifest_path": "/private/tmp/soiree-precise-wait/salon/crates/crypto/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///private/tmp/soiree-precise-wait/salon/crates/host#salon-host@0.2.0",
+      "name": "salon-host",
+      "version": "0.2.0",
+      "manifest_path": "/private/tmp/soiree-precise-wait/salon/crates/host/Cargo.toml",
+      "source": null
+    }
+  ]
+}

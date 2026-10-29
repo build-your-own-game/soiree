@@ -1,0 +1,50 @@
+{
+  "unreleased_sdk_integration": true,
+  "complete_certification": false,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "steps": [
+    {
+      "name": "rustc",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "resolve",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "fifty-phones",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "sidequest-host",
+        "--test",
+        "e2e",
+        "fifty_phones_move_at_once",
+        "--",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": 101
+    }
+  ],
+  "passed": false,
+  "game_commit": "8332a6105eb4909b9f9d577924355987710dbc8a",
+  "sdk_commit": "53e2fa4fdbf498fd2f655ab5bfb56df1a6a71e6f",
+  "game_status_before": "?? .github/workflows/host-deadlines.yml\n?? tools/host-deadlines-ci.py\n",
+  "sdk_status_before": "",
+  "test_source_sha256_before": "199bb9133472712c7b5cb731271a0152b834564fe12a10fff0dc44aa9392fbad",
+  "published_lock_sha256": "440e52f90301d3d18b38df0ea010aaaa7c469611efe756d934e16528a63650b7",
+  "resolved_lock_sha256": "0d3319e2176c06e270f4580cd87c436cbab5ceeef7dae9cea0849733f065580b"
+}

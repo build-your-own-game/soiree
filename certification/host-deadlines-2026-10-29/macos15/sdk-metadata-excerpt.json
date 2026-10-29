@@ -1,0 +1,41 @@
+{
+  "selective_excerpt": true,
+  "source_metadata_sha256": "a81fcd6d17e6c157c4f844947b41035fc7a0735b8d3c65e3b92cff94a4b69147",
+  "packages": [
+    {
+      "id": "registry+https://github.com/rust-lang/crates.io-index#nix@0.30.1",
+      "name": "nix",
+      "version": "0.30.1",
+      "manifest_path": "/Users/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/Cargo.toml",
+      "source": "registry+https://github.com/rust-lang/crates.io-index"
+    },
+    {
+      "id": "path+file:///Users/runner/work/sidequest/sidequest/sdk/remote/crates/protocol#remote-protocol@0.2.0",
+      "name": "remote-protocol",
+      "version": "0.2.0",
+      "manifest_path": "/Users/runner/work/sidequest/sidequest/sdk/remote/crates/protocol/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///Users/runner/work/sidequest/sidequest/sdk/salon/crates/core#salon-core@0.2.0",
+      "name": "salon-core",
+      "version": "0.2.0",
+      "manifest_path": "/Users/runner/work/sidequest/sidequest/sdk/salon/crates/core/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///Users/runner/work/sidequest/sidequest/sdk/salon/crates/crypto#salon-crypto@0.2.0",
+      "name": "salon-crypto",
+      "version": "0.2.0",
+      "manifest_path": "/Users/runner/work/sidequest/sidequest/sdk/salon/crates/crypto/Cargo.toml",
+      "source": null
+    },
+    {
+      "id": "path+file:///Users/runner/work/sidequest/sidequest/sdk/salon/crates/host#salon-host@0.2.0",
+      "name": "salon-host",
+      "version": "0.2.0",
+      "manifest_path": "/Users/runner/work/sidequest/sidequest/sdk/salon/crates/host/Cargo.toml",
+      "source": null
+    }
+  ]
+}

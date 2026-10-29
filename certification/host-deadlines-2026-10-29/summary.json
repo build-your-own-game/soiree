@@ -1,0 +1,59 @@
+{
+  "derived_summary_only": true,
+  "complete_certification": false,
+  "sdk_commit": "a002ab2bd2f362e476e8512588d4c2901447e2ed",
+  "ci_url": "https://github.com/build-your-own-game/sidequest/actions/runs/40915597190",
+  "samples": [
+    {
+      "environment": "macos15",
+      "platform": "macOS-15.7.9-arm64-arm-64bit-Mach-O",
+      "passed": true,
+      "phone_rtt_ms": {
+        "count": 1050.0,
+        "p50": 0.0,
+        "p95": 1.0,
+        "max": 2.0
+      },
+      "snapshot_gap_ms": {
+        "count": 179.0,
+        "p50": 16.689292000000023,
+        "p95": 17.700165999999967,
+        "max": 18.501416999999947
+      }
+    },
+    {
+      "environment": "linux",
+      "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+      "passed": true,
+      "phone_rtt_ms": {
+        "count": 1050.0,
+        "p50": 0.0,
+        "p95": 1.0,
+        "max": 2.0
+      },
+      "snapshot_gap_ms": {
+        "count": 179.0,
+        "p50": 16.933132999999998,
+        "p95": 18.07366300000001,
+        "max": 18.382395000000088
+      }
+    },
+    {
+      "environment": "local-failed",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "passed": false,
+      "phone_rtt_ms": {
+        "count": 1050.0,
+        "p50": 0.0,
+        "p95": 6.0,
+        "max": 8.0
+      },
+      "snapshot_gap_ms": {
+        "count": 177.0,
+        "p50": 16.84662500000013,
+        "p95": 26.32866699999977,
+        "max": 67.93604099999993
+      }
+    }
+  ]
+}

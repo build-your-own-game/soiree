@@ -1,0 +1,6 @@
+[patch."https://github.com/build-your-own-game/soiree"]
+salon-core = { path = "/private/tmp/soiree-precise-wait/salon/crates/core" }
+salon-host = { path = "/private/tmp/soiree-precise-wait/salon/crates/host" }
+salon-web = { path = "/private/tmp/soiree-precise-wait/salon/crates/web" }
+remote-protocol = { path = "/private/tmp/soiree-precise-wait/remote/crates/protocol" }
+remote-web = { path = "/private/tmp/soiree-precise-wait/remote/crates/web" }

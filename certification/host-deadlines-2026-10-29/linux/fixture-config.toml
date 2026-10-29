@@ -1,0 +1,6 @@
+[patch."https://github.com/build-your-own-game/soiree"]
+salon-core = { path = "/home/runner/work/sidequest/sidequest/sdk/salon/crates/core" }
+salon-host = { path = "/home/runner/work/sidequest/sidequest/sdk/salon/crates/host" }
+salon-web = { path = "/home/runner/work/sidequest/sidequest/sdk/salon/crates/web" }
+remote-protocol = { path = "/home/runner/work/sidequest/sidequest/sdk/remote/crates/protocol" }
+remote-web = { path = "/home/runner/work/sidequest/sidequest/sdk/remote/crates/web" }

@@ -1,0 +1,29 @@
+
+running 2 tests
+test room::inbox::tests::last_sender_drop_between_empty_check_and_wait_wakes_disconnect ... FAILED
+test room::inbox::tests::message_between_empty_check_and_wait_is_not_lost ... FAILED
+
+failures:
+
+---- room::inbox::tests::last_sender_drop_between_empty_check_and_wait_wakes_disconnect stdout ----
+
+thread 'room::inbox::tests::last_sender_drop_between_empty_check_and_wait_wakes_disconnect' (6754349) panicked at crates/host/src/room/inbox.rs:272:9:
+disconnect wake lost
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- room::inbox::tests::message_between_empty_check_and_wait_is_not_lost stdout ----
+
+thread 'room::inbox::tests::message_between_empty_check_and_wait_is_not_lost' (6754350) panicked at crates/host/src/room/inbox.rs:254:9:
+wake lost until the deadline
+
+
+failures:
+    room::inbox::tests::last_sender_drop_between_empty_check_and_wait_wakes_disconnect
+    room::inbox::tests::message_between_empty_check_and_wait_is_not_lost
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 26 filtered out; finished in 5.00s
+
+   Compiling salon-host v0.2.0 (/private/tmp/soiree-precise-wait/salon/crates/host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.39s
+     Running unittests src/lib.rs (salon/target/debug/deps/salon_host-730dfd24a16284e3)
+error: test failed, to rerun pass `-p salon-host --lib`
