@@ -1,0 +1,24 @@
+name: Compare wake mechanisms across systems
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  observe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the same native toolchain
+        run: rustup toolchain install 1.99 --profile minimal
+      - name: Observe waits without game or dependencies
+        run: python3 .github/scripts/wake-diagnostic.py "$RUNNER_TEMP/wake-diagnostic"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wake-diagnostic-${{ matrix.os }}
+          path: ${{ runner.temp }}/wake-diagnostic/
