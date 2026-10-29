@@ -13,6 +13,7 @@ root = Path(__file__).resolve().parents[2]
 output = Path(sys.argv[1]).resolve()
 output.mkdir(parents=True, exist_ok=False)
 report = {"diagnostic_only": True, "not_a_performance_attestation": True,
+          "suite": "native" if len(sys.argv) > 2 and sys.argv[2] == "native" else "std",
           "platform": platform.platform(), "machine": platform.machine(),
           "cpu_count": os.cpu_count(), "samples": [],
           "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
@@ -59,6 +60,15 @@ try:
             if path.exists():
                 report[item] = path.read_text()
     modes = ["room-wait", "recv-timeout", "sleep", "park", "condvar", "yield", "spin"]
+    if report["suite"] == "native":
+        if platform.system() != "Darwin":
+            raise RuntimeError("native timer diagnostic requires macOS")
+        native = root / ".github/scripts/native-wake-probe.c"
+        report["source_sha256"][str(native.relative_to(root))] = digest(native)
+        executable = output / "native-probe"
+        command("build-native", ["xcrun", "clang", "-Wall", "-Wextra", "-Werror", "-pthread", str(native), "-o", str(executable)])
+        report["native_binary_sha256"] = digest(executable)
+        modes = ["nanosleep", "dispatch-semaphore", "mach-wait", "kqueue-normal", "kqueue-critical"]
     for round_index, ordered in enumerate((modes, list(reversed(modes)))):
         for mode in ordered:
             before = resource.getrusage(resource.RUSAGE_CHILDREN)
