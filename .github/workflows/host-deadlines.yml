@@ -1,0 +1,33 @@
+name: Host deadline and wake semantics
+on:
+  push:
+    paths: ['salon/crates/host/**', 'salon/Cargo.lock', '.github/workflows/host-deadlines.yml']
+  pull_request:
+    paths: ['salon/crates/host/**', 'salon/Cargo.lock', '.github/workflows/host-deadlines.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.99 --component rustfmt,clippy --profile minimal
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            salon/target/debug
+          key: ${{ runner.os }}-${{ runner.arch }}-host-deadlines-${{ hashFiles('salon/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-host-deadlines-${{ hashFiles('salon/Cargo.lock') }}-
+      - working-directory: salon
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked -p salon-host --all-targets -- -D warnings
+          cargo test --locked -p salon-host

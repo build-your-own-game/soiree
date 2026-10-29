@@ -3,7 +3,7 @@
 //! channel drops the packet, which salon resends.
 
 use std::collections::BTreeMap;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError};
+use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
 use salon_core::{Caps, HostConfig, LinkId};
@@ -13,6 +13,9 @@ use crate::driver::{Driver, Effect, Input};
 use crate::Game;
 use crate::clock::Clock;
 use crate::store::Store;
+
+pub(crate) mod inbox;
+use inbox::{ReceiveError, Receiver};
 
 /// Network events waiting for the room, at most.
 pub const INBOX: usize = 4096;
@@ -74,32 +77,6 @@ impl Outlet {
 
 /// The longest the room sleeps without checking anything.
 const MAX_WAIT: Duration = Duration::from_millis(50);
-/// The last stretch before a deadline is waited for without a timer: macOS
-/// coalesces the timers of programs without a window, and a 60 Hz game saw
-/// steps 21 to 28 ms apart. Yielding costs this much CPU per deadline.
-const SPIN: Duration = Duration::from_millis(2);
-
-/// The next network event, or a timeout at `deadline`, on time.
-fn wait(inbox: &Receiver<Net>, deadline: std::time::Instant) -> Result<Net, RecvTimeoutError> {
-    let remaining = deadline.saturating_duration_since(Clock::instant());
-    if let Some(sleep) = remaining.checked_sub(SPIN).filter(|sleep| !sleep.is_zero()) {
-        match inbox.recv_timeout(sleep) {
-            Err(RecvTimeoutError::Timeout) => {}
-            other => return other,
-        }
-    }
-    loop {
-        match inbox.try_recv() {
-            Ok(net) => return Ok(net),
-            Err(TryRecvError::Disconnected) => return Err(RecvTimeoutError::Disconnected),
-            Err(TryRecvError::Empty) if Clock::instant() >= deadline => {
-                return Err(RecvTimeoutError::Timeout);
-            }
-            Err(TryRecvError::Empty) => std::thread::yield_now(),
-        }
-    }
-}
-
 pub fn run<G: Game>(
     inbox: &Receiver<Net>,
     game: G,
@@ -120,15 +97,20 @@ pub fn run<G: Game>(
             .at(driver.next_deadline())
             .map_or(soon, |wake| wake.min(soon));
         let mut inputs = Vec::new();
-        match wait(inbox, until) {
+        match inbox.recv_until(until) {
             Ok(net) => {
                 handle(&mut inputs, &mut outlets, net);
                 for net in inbox.try_iter().take(INBOX) {
                     handle(&mut inputs, &mut outlets, net);
                 }
             }
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return,
+            Err(ReceiveError::Timeout) => {}
+            Err(ReceiveError::Disconnected) => return,
+            #[cfg(any(target_os = "macos", test))]
+            Err(ReceiveError::Wait(error)) => {
+                eprintln!("salon: room wait failed: {error}");
+                return;
+            }
         }
         let now = clock.now();
         for effect in driver.step(now, inputs) {
@@ -193,7 +175,6 @@ fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: 
     reason = "test: an overflow must panic and fail the test"
 )]
 mod tests {
-    use std::sync::mpsc::sync_channel;
     use std::sync::{Arc, Mutex};
     use std::thread;
 
@@ -273,7 +254,7 @@ mod tests {
             done: 0,
             seen: Arc::clone(&seen),
         };
-        let (net, inbox) = sync_channel(16);
+        let (net, inbox) = inbox::channel(16).unwrap();
         let config = HostConfig {
             game: 1,
             epoch: Epoch(1),

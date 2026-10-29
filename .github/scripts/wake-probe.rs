@@ -1,4 +1,4 @@
-//! Standalone diagnostic. No game, sockets, disk IO, or output in the timed loop.
+//! Standalone pre-fix baseline diagnostic (reference source identified by the controller). No game, sockets, disk IO, or output in the timed loop.
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};

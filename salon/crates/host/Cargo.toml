@@ -22,5 +22,9 @@ salon-crypto = { path = "../crypto" }
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 qrcode = { version = "0.14", default-features = false }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Safe ownership and syscall wrappers; the deadline and wake protocol stays here.
+nix = { version = "=0.30.1", default-features = false, features = ["event"] }
+
 [lints]
 workspace = true

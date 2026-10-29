@@ -16,10 +16,17 @@ Le contrôle de navigation conserve l’historique des requêtes : la fermeture
 d’une connexion au délai ne signifie pas que sa ressource n’a pas été demandée.
 Les délais et les assertions de navigation restent inchangés.
 
+Sous macOS, la salle attend ses échéances avec une minuterie kqueue critique,
+et les messages réseau ou la fin du dernier émetteur la réveillent immédiatement.
+La file reste bornée et FIFO. Aucun réglage global, thread de minuterie ou spin
+permanent : les erreurs natives restent explicites et les budgets des jeux
+ne changent pas. Les autres systèmes utilisent leur attente de canal native.
+
 ### Passer à cette version
 
-Aucun changement de code de jeu. Le correctif concerne le projet de l’app
-iPhone ; aucun `cargo xtask ios` préalable n’est nécessaire à son build Xcode.
+Aucun changement de code de jeu. `soiree upgrade`, puis `soiree check` et
+`soiree certify`. Aucun `cargo xtask ios` préalable n’est nécessaire au build
+Xcode de l’app iPhone.
 
 ## v0.3.0 — 2026-10-28
 

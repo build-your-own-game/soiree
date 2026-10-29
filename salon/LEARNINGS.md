@@ -297,3 +297,27 @@ contrôle rouge ; aucun événement n’est mis en file ni perdu par le helper.
 6. **Respecté.** Un DataChannel non ordonné et non fiable ; la fiabilité, l'ordre et l'abandon des états périmés sont faits ici, une fois pour tous les jeux.
 7. **À faire.** Mesurer sur le Wi-Fi du salon, avec 15 téléphones : aller-retour, pertes, temps de reconnexion après un iPhone verrouillé.
 8. **Respecté.** Les messages sont les types `Up` et `Down` du jeu, encodés en postcard par `salon-core` : aucun JSON écrit à la main. Les chemins de salon sont nommés une fois (`salon_core::route`), pour l'hôte et la page. La démo calcule sa version depuis ses sources (`version.rs`) ; l'hôte et la page la tiennent de la même bibliothèque, `salon-demo`. Sa page passe par `soiree dom`, QR code compris : l'hôte l'envoie en modules typés (`Qr`), la page le dessine en SVG. Restent en chaînes, chacune lue en un seul endroit et validée à son entrée : l'offre et la réponse WebRTC, au format `RTCSessionDescription` du navigateur (la page l'écrit avec `json!`, l'hôte la lit dans le `SdpOffer` de str0m) ; la clé du jeton dans `localStorage` (sa valeur passe par `unhex` avant de devenir un `Token`) ; les paramètres `?seat=` et `?salon=ws` ; les noms d'événements du navigateur. `cert.json` écrit `/salon/ws` en toutes lettres : le harnais attaque en boîte noire.
+
+## Attente native de la salle — intégration du 29 octobre 2026
+
+L'attente macOS utilise maintenant `EVFILT_TIMER | NOTE_CRITICAL` et un
+`EVFILT_USER` enregistré dès la création de la file. La file reste le
+`sync_channel` borné de Rust : une notification coalescée n'est pas un message,
+et la réception relit toujours la file et l'échéance monotone. La notification
+est persistante jusqu'à sa consommation, y compris si elle arrive entre la
+lecture à vide et l'appel au noyau. Le dernier émetteur détruit son vrai sender
+**avant** de notifier, afin que le réveil voie déjà la déconnexion. Les capacités
+nulles sont refusées : un rendez-vous ne peut pas notifier après un envoi qui
+attend lui-même une réception. Les erreurs natives restent explicites.
+
+Les wrappers sûrs de [Nix 0.30.1](https://github.com/nix-rust/nix/blob/v0.30.1/src/sys/event.rs)
+portent la possession du descripteur et les appels système ; aucune FFI ni
+exception `unsafe` n'est ajoutée au produit. Le drapeau critique vient de la
+constante SDK exposée par libc. Aucun réglage global, thread de minuterie ou
+spin n'est nécessaire. Sur les autres systèmes, la même file garde son attente
+native. Les six tests de file couvrent les bornes, l'ordre, les producteurs
+concurrents, les réveils dans la fenêtre vide→attente, la déconnexion et les
+notifications anciennes ; ils ne constituent pas une preuve de temps réel.
+Les sources de l'enquête précédente restent reproductibles via le fichier de
+référence `baseline-room-wait.rs`, explicitement identifié comme antérieur au
+correctif, et ne sont plus présentées comme l'attente de production courante.

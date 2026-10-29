@@ -48,7 +48,7 @@ struct Shared {
     rtc_address: SocketAddr,
     cert: salon_crypto::DtlsCert,
     signals: SyncSender<Signal>,
-    net: SyncSender<Net>,
+    net: room::inbox::Sender<Net>,
     links: AtomicU64,
     handler: Option<HttpHandler>,
     app_page: Option<String>,
@@ -92,7 +92,8 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         known: store.known(),
     };
 
-    let (net, inbox) = sync_channel(INBOX);
+    let (net, inbox) = room::inbox::channel(INBOX)
+        .map_err(|error| format!("cannot create the room inbox: {error}"))?;
     let (signals, signal_inbox) = sync_channel(64);
     let (outlet, outgoing) = sync_channel(OUTBOX * 16);
     let rtcs = Rtcs {

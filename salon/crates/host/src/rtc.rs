@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
-use std::sync::mpsc::{Receiver, SendError, SyncSender, TryRecvError};
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use salon_core::{Caps, LinkId};
@@ -85,7 +85,7 @@ pub struct Rtcs {
     pub signals: Receiver<Signal>,
     pub outgoing: Receiver<RtcOut>,
     pub outlet: SyncSender<RtcOut>,
-    pub net: SyncSender<Net>,
+    pub net: crate::room::inbox::Sender<Net>,
 }
 
 pub fn run(rtcs: &Rtcs) {
@@ -151,7 +151,7 @@ pub fn run(rtcs: &Rtcs) {
                 eprintln!("salon: WebRTC link {} dropped (stalled: {stalled})", link.0);
             }
             if !keep && entry.channel.is_some() {
-                let _: Result<(), SendError<Net>> = rtcs.net.send(Net::Closed { link });
+                let _: std::io::Result<()> = rtcs.net.send(Net::Closed { link });
             }
             keep
         });
@@ -233,10 +233,10 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
                         },
                         outlet: Outlet::Rtc(rtcs.outlet.clone()),
                     };
-                    let _: Result<(), SendError<Net>> = rtcs.net.send(opened);
+                    let _: std::io::Result<()> = rtcs.net.send(opened);
                 }
                 Event::ChannelData(data) if Some(data.id) == entry.channel => {
-                    let _: Result<(), SendError<Net>> = rtcs.net.send(Net::Received {
+                    let _: std::io::Result<()> = rtcs.net.send(Net::Received {
                         link,
                         bytes: data.data,
                     });

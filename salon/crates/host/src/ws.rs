@@ -7,7 +7,7 @@
 
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
@@ -52,7 +52,7 @@ impl Write for Reading {
     }
 }
 
-pub fn run(stream: TcpStream, link: LinkId, net: &SyncSender<Net>) {
+pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net>) {
     if stream.set_nodelay(true).is_err() {
         return;
     }
@@ -125,7 +125,7 @@ pub fn run(stream: TcpStream, link: LinkId, net: &SyncSender<Net>) {
         .unwrap_or_else(PoisonError::into_inner)
         .shutdown(Shutdown::Both);
     // The room is gone only when the host stops.
-    let _: Result<(), std::sync::mpsc::SendError<Net>> = net.send(Net::Closed { link });
+    let _: std::io::Result<()> = net.send(Net::Closed { link });
 }
 
 /// Writes what the room sends, one whole frame at a time, until it says
@@ -154,7 +154,6 @@ fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>) {
 #[cfg(test)]
 mod tests {
     use std::net::{TcpListener, TcpStream};
-    use std::sync::mpsc::sync_channel;
     use std::thread;
     use std::time::Duration;
 
@@ -169,7 +168,7 @@ mod tests {
     fn an_oversized_frame_closes_its_link() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
-        let (net, inbox) = sync_channel(64);
+        let (net, inbox) = crate::room::inbox::channel(64).unwrap();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             run(stream, LinkId(1), &net);

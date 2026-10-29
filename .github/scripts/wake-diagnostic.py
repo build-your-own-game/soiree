@@ -1,4 +1,4 @@
-"""Compare the exact room wait with independent std primitives. Diagnostic only."""
+"""Compare the archived pre-fix room wait with independent std primitives. Diagnostic only."""
 import hashlib
 import json
 import os
@@ -54,13 +54,14 @@ try:
             original_coalescing = None
             raise RuntimeError("expected coalescing enabled at baseline")
         report["original_coalescing"] = original_coalescing
-    room = (root / "salon/crates/host/src/room.rs").read_text()
-    wait = room[room.index("const SPIN:"):room.index("pub fn run<G:")]
+    room = (root / ".github/scripts/baseline-room-wait.rs").read_text()
+    report["room_wait_reference_commit"] = "08af13e"
+    wait = room[room.index("const SPIN:"):]
     template = root / ".github/scripts/wake-probe.rs"
     source = output / "probe.rs"
     source.write_text(template.read_text().replace("// PRODUCTION_WAIT", wait))
     report["source_sha256"] = {str(path.relative_to(root)): digest(path) for path in
-                               (template, Path(__file__).resolve(), root / "salon/crates/host/src/room.rs")}
+                               (template, Path(__file__).resolve(), root / ".github/scripts/baseline-room-wait.rs")}
     report["extracted_production_wait_sha256"] = hashlib.sha256(wait.encode()).hexdigest()
     report["generated_source_sha256"] = digest(source)
     command("rustc-version", ["rustup", "run", "1.99", "rustc", "-vV"])
