@@ -130,6 +130,24 @@ Les clones ont servi le temps de la lecture ; les références ci-dessous (fichi
   aux rares activités qui ont besoin de la précision maximale. Il faut mesurer
   la politique et le lieu du retard sur la machine concernée avant de choisir
   un changement du shell ; augmenter le spin ou les budgets ne l'établirait pas.
+- **Une cadence demande une minuterie adaptée, pas seulement une priorité.**
+  Le 29/10/2026, le même `room::wait` autonome donne 17 ms p95 sur GitHub
+  Linux, 61–70 ms sur GitHub macOS 15/26, et 18–19 ms sur le Mac local.
+  Une intervention sur une même VM macOS 15 établit l'effet du regroupement
+  des minuteries : activé 65,9 ms ; désactivé 17,6 puis 17,5 ms ; réactivé
+  71,8 ms. Le réglage initial est restauré et relu. Ce contre-test reste
+  réservé aux VM jetables, jamais au produit ni au Mac de l'hôte.
+  Sur macOS 26 hébergé, deux variantes C ne différant que par `NOTE_CRITICAL`
+  donnent 71,0/76,8 ms pour la minuterie kqueue normale et 19,1/19,0 ms pour
+  la critique, avec moins de 0,011 s CPU par échantillon de 3 s. Le noyau Apple
+  [associe ce drapeau à l'urgence critique](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_event.c)
+  et [calcule la marge de regroupement selon l'urgence et la politique effective](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/timer_call.c).
+  Le mécanisme principal est établi ; l'origine exacte de la politique
+  effective plus défavorable du runner ne l'est pas. Il faut intégrer une
+  attente précise **et réveillable par le réseau et l'arrêt**, sans changer
+  les budgets ; ce prototype de minuterie ne prouve pas encore cette
+  intégration ni la charge de 50 téléphones. Mesures, commandes, limites et
+  empreintes sont dans [`ci-timers-2026-10-29`](../certification/ci-timers-2026-10-29/README.md).
 - **Le pare-feu de macOS bloque l'UDP de tout nouveau binaire, en silence.** Constaté le 27/10/2026 : le pare-feu est activé, `salon-demo` n'y était pas autorisé, et pas un seul paquet WebRTC n'est arrivé (la page TV est passée par WebSocket au bout de 3 s). Chaque `cargo build` produit un binaire neuf, que macOS considère comme une nouvelle app. Avant la soirée : lancer chaque jeu une fois et accepter la demande, ou signer les binaires avec un certificat stable. C'est un item du salon.
 - **La confidentialité du réseau local d'Apple** (TN3179) : l'app iPhone doit demander la permission, et son premier envoi peut échouer avant la réponse. Un hôte macOS lancé depuis le Finder en a besoin aussi ; lancé depuis le Terminal, non.
 - **Les manettes** sont lues par l'hôte natif, pas par la page TV : Chrome en limiterait le nombre (à vérifier), et la page TV n'a pas à relayer.
