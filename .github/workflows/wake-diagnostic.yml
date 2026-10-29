@@ -5,7 +5,7 @@ on:
       suite:
         type: choice
         default: std
-        options: [std, native]
+        options: [std, native, coalescing]
 permissions:
   contents: read
 jobs:
@@ -21,10 +21,10 @@ jobs:
       - name: Install the same native toolchain
         run: rustup toolchain install 1.99 --profile minimal
       - name: Observe waits without game or dependencies
-        if: inputs.suite != 'native' || runner.os == 'macOS'
+        if: inputs.suite == 'std' || runner.os == 'macOS'
         run: python3 .github/scripts/wake-diagnostic.py "$RUNNER_TEMP/wake-diagnostic" '${{ inputs.suite }}'
       - uses: actions/upload-artifact@v4
-        if: always() && (inputs.suite != 'native' || runner.os == 'macOS')
+        if: always() && (inputs.suite == 'std' || runner.os == 'macOS')
         with:
           name: wake-diagnostic-${{ matrix.os }}
           path: ${{ runner.temp }}/wake-diagnostic/

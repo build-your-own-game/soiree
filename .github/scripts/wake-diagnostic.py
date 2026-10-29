@@ -12,11 +12,15 @@ import time
 root = Path(__file__).resolve().parents[2]
 output = Path(sys.argv[1]).resolve()
 output.mkdir(parents=True, exist_ok=False)
+suite = sys.argv[2] if len(sys.argv) > 2 else "std"
+if suite not in ("std", "native", "coalescing"):
+    raise ValueError("unknown diagnostic suite")
 report = {"diagnostic_only": True, "not_a_performance_attestation": True,
-          "suite": "native" if len(sys.argv) > 2 and sys.argv[2] == "native" else "std",
+          "suite": suite,
           "platform": platform.platform(), "machine": platform.machine(),
           "cpu_count": os.cpu_count(), "samples": [],
           "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
+          "git_status": subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True),
           "environment": {key: os.environ[key] for key in ("GITHUB_RUN_ID", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH") if key in os.environ},
           "limitations": ["Fixed two rounds, reverse order on round two; never retry until green.",
                           "Three-second samples diagnose a mechanism; they do not certify a game.",
@@ -37,7 +41,19 @@ def command(name, args):
     result.check_returncode()
     return result
 
+original_coalescing = None
 try:
+    if suite == "coalescing":
+        # This is a global kernel counterfactual, confined to a disposable
+        # GitHub-hosted VM. Never run it against the host's personal Mac.
+        if (platform.system() != "Darwin" or os.environ.get("GITHUB_ACTIONS") != "true"
+                or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"):
+            raise RuntimeError("coalescing mutation is confined to a disposable GitHub-hosted macOS VM")
+        original_coalescing = subprocess.check_output(["sysctl", "-n", "kern.timer.coalescing_enabled"], text=True).strip()
+        if original_coalescing != "1":
+            original_coalescing = None
+            raise RuntimeError("expected coalescing enabled at baseline")
+        report["original_coalescing"] = original_coalescing
     room = (root / "salon/crates/host/src/room.rs").read_text()
     wait = room[room.index("const SPIN:"):room.index("pub fn run<G:")]
     template = root / ".github/scripts/wake-probe.rs"
@@ -53,6 +69,8 @@ try:
     report["binary_sha256"] = digest(executable)
     if platform.system() == "Darwin":
         command("host", ["sysctl", "hw.model", "hw.ncpu", "hw.memsize", "kern.osrelease"])
+        command("timer-policy", ["sysctl", "kern.timer.coalescing_enabled", "kern.timer_coalesce_bg_ns_max",
+                                 "kern.timer_coalesce_tier3_ns_max"])
     else:
         command("host", ["uname", "-a"])
         for item in ("/proc/self/cgroup", "/proc/loadavg", "/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu.stat"):
@@ -69,7 +87,16 @@ try:
         command("build-native", ["xcrun", "clang", "-Wall", "-Wextra", "-Werror", "-pthread", str(native), "-o", str(executable)])
         report["native_binary_sha256"] = digest(executable)
         modes = ["nanosleep", "dispatch-semaphore", "mach-wait", "kqueue-normal", "kqueue-critical"]
-    for round_index, ordered in enumerate((modes, list(reversed(modes)))):
+    rounds = [(None, modes), (None, list(reversed(modes)))]
+    if suite == "coalescing":
+        modes = ["room-wait", "recv-timeout", "sleep"]
+        rounds = [(1, modes), (0, modes), (0, list(reversed(modes))), (1, list(reversed(modes)))]
+    for round_index, (coalescing, ordered) in enumerate(rounds):
+        if coalescing is not None:
+            command(f"round-{round_index}-set-coalescing", ["sudo", "-n", "sysctl", "-w", f"kern.timer.coalescing_enabled={coalescing}"])
+            observed = subprocess.check_output(["sysctl", "-n", "kern.timer.coalescing_enabled"], text=True).strip()
+            if observed != str(coalescing):
+                raise RuntimeError("kernel control did not take effect")
         for mode in ordered:
             before = resource.getrusage(resource.RUSAGE_CHILDREN)
             started = time.monotonic()
@@ -81,6 +108,7 @@ try:
             gaps = sorted(pair[0] / 1e6 for pair in sample["samples_gap_lateness_ns"])
             late = sorted(pair[1] / 1e6 for pair in sample["samples_gap_lateness_ns"])
             sample.update(round=round_index, wall_seconds=time.monotonic() - started,
+                          kernel_coalescing=coalescing,
                           cpu_seconds=after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                           count=len(gaps), gap_p95_ms=gaps[((len(gaps)*95+99)//100)-1],
                           gap_max_ms=max(gaps), lateness_p95_ms=late[((len(late)*95+99)//100)-1])
@@ -89,4 +117,12 @@ try:
             print(f"round {round_index} {mode}: n={len(gaps)} p95={sample['gap_p95_ms']:.3f}ms max={max(gaps):.3f}ms CPU={sample['cpu_seconds']:.3f}s", flush=True)
     report["completed"] = True
 finally:
-    save()
+    try:
+        if original_coalescing is not None:
+            command("restore-coalescing", ["sudo", "-n", "sysctl", "-w", f"kern.timer.coalescing_enabled={original_coalescing}"])
+            restored = subprocess.check_output(["sysctl", "-n", "kern.timer.coalescing_enabled"], text=True).strip()
+            report["restored_coalescing"] = restored
+            if restored != original_coalescing:
+                raise RuntimeError("kernel control restoration failed")
+    finally:
+        save()
