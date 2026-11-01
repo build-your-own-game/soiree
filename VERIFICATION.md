@@ -94,7 +94,8 @@ name = "same_inputs_give_the_same_states"
 `requirement` et `checks` sont obligatoires, `assumptions` est facultatif ; tout
 autre champ est refusé. Un contrôle n’a pas besoin d’une garantie `J` s’il est
 cité par une liaison. Plusieurs liaisons et garanties peuvent citer le même
-contrôle, qui ne s’exécute qu’une fois.
+contrôle, qui ne s’exécute qu’une fois. La vue du jeu liste ses liaisons :
+`soiree contracts --write-view` l’actualise.
 
 La validation est stricte et fait échouer `soiree contracts` et `soiree check` :
 un contrôle inconnu ou répété, une liste vide, une exigence reliée deux fois,
@@ -201,8 +202,8 @@ garanti par cette première implémentation.
 
 ## Premier état de la couverture
 
-Tant qu’un jeu ne les relie pas, le plan garde sept exigences communes sans
-liaison exécutable (`Unbound`) : C6, E5, T1, D1, D3, D4 et D5. Elles restent
+Le plan garde aussi sept exigences communes sans liaison exécutable (`Unbound`)
+tant qu’un jeu ne les relie pas : C6, E5, T1, D1, D3, D4 et D5. Elles restent
 alors non attestées.
 Les conditions de genre ou de mécanique qui ne sont pas déclarées restent
 inconnues, notamment pour les phases, les champs texte et la simulation en temps
@@ -217,11 +218,12 @@ reste au salon. T4 est observé indépendamment de la stratégie de rendu TV.
 Les domaines explicites desktop/interaction continue ont leurs négatifs :
 une désactivation seule ou un jeu à phases ne peut pas les usurper.
 
-Les rapports
-`check` et `certify` ne se fusionnent pas automatiquement ; leurs sélections
-restent visibles : même toutes reliées, ces exigences sont observées par `check`
-et les scénarios par `certify`, et les gestes S1–S10 restent humains. Le succès de la CI ciblée du modèle n'est pas présenté comme
-celui de tous les scénarios, ni de toutes les exigences.
+Les rapports `check` et `certify` ne se fusionnent pas automatiquement ; leurs
+sélections restent visibles. Même toutes reliées, ces exigences sont observées
+par `check`, les scénarios par `certify`, et les gestes S1–S10 restent humains :
+aucun passage isolé n’atteint donc `complete`. Le succès de la CI ciblée du
+modèle n'est pas présenté comme celui de tous les scénarios, ni de toutes les
+exigences.
 
 ## Provenance et hypothèses
 
