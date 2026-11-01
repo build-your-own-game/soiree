@@ -134,8 +134,8 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     render::save(dir, &report, "verification")?;
     copy_artifacts(&out, &output)?;
     println!(
-        "\nPérimètre demandé {} ; voir certification/verification.json. Les contrôles absents restent non attestés.",
-        if passed { "satisfait" } else { "non satisfait" }
+        "\n{}\n\nDétail : certification/verification.md",
+        render::summary(&report)
     );
     Ok(passed)
 }
@@ -300,10 +300,13 @@ fn summarize(records: &[&Record]) -> Outcome {
         return Outcome::Failed;
     }
     if records.iter().any(|r| r.status == "partial") {
-        return Outcome::ReviewRequired;
+        return Outcome::NotRun;
     }
     if records.iter().any(|r| r.status == "skip") {
         return Outcome::NotRun;
+    }
+    if records.iter().any(|r| r.status == "review") {
+        return Outcome::ReviewRequired;
     }
     if records.iter().all(|r| r.status == "ok") {
         Outcome::Passed
@@ -393,11 +396,12 @@ mod tests {
         );
     }
     #[test]
-    fn absent_skip_and_partial_are_not_success() {
+    fn absent_skip_partial_and_review_are_not_success() {
         assert_eq!(summarize(&[]), Outcome::NotRun);
         for (status, outcome) in [
             ("skip", Outcome::NotRun),
-            ("partial", Outcome::ReviewRequired),
+            ("partial", Outcome::NotRun),
+            ("review", Outcome::ReviewRequired),
             ("fail", Outcome::Failed),
             ("invented", Outcome::InfrastructureError),
         ] {

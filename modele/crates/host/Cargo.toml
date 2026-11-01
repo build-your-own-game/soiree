@@ -1,5 +1,5 @@
 [package]
-name = "{{nom}}-host"
+name = "nom-du-jeu-host"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true

@@ -15,7 +15,7 @@ publish = false
 salon-core = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
 salon-host = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
 salon-web = { git = "https://github.com/build-your-own-game/soiree", tag = "v{{version}}" }
-game-core = { package = "{{nom}}-core", path = "crates/core" }
+game-core = { package = "nom-du-jeu-core", path = "crates/core" }
 serde = { version = "1", features = ["derive"] }
 # Doit être exactement la version du wasm-bindgen-cli installé (`soiree doctor`).
 wasm-bindgen = "=0.2.129"

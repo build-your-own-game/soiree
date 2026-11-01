@@ -4,6 +4,9 @@ Chaque version a sa section, de la plus récente à la plus ancienne. « Passer 
 
 ## v0.4.0 — Non publié
 
+`certify` signale le pare-feu quand l’adresse du réseau ne répond pas, et le
+modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
+
 Le serveur borne les connexions avant de créer leurs threads (deux connexions par appareil configuré, 32 places HTTP et 32 places
 réservées au loopback ; au moins 128 places au total), applique une échéance absolue aux lectures HTTP
 et WebSocket et borne les écritures. La fermeture d'un lecteur arrête aussi son
@@ -58,6 +61,10 @@ et aucun thread supplémentaire conservé.
 
 ### Change de sens
 
+- `soiree check` et `soiree certify` finissent par un résumé en clair. Ce qu’un
+  humain doit juger (`?` dans le rapport du harnais) ne fait plus échouer la
+  commande. Une vérification qui n’a pas pu finir (`~`) la fait toujours
+  échouer, avec le statut « pas pu vérifier ».
 - Une tentative WebRTC dispose maintenant de la même fenêtre absolue de 15 s
   côté page et côté hôte, au lieu d'être détruite par la page après 3 s pendant
   une négociation encore viable. Les erreurs natives déclenchent immédiatement

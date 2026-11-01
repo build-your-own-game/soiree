@@ -46,6 +46,7 @@ pub fn create(name: &str, parent: &Path, org: &str) -> Result<PathBuf> {
     for (path, contents) in MODEL {
         let filled = contents
             .replace("{{nom}}", name)
+            .replace("nom-du-jeu", name)
             .replace("{{crate}}", &name.replace('-', "_"))
             .replace("{{org}}", org)
             .replace("{{version}}", VERSION);

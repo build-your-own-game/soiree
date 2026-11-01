@@ -188,7 +188,9 @@ pub const HOST_FOLDER: &[(&str, &str)] = &[
 ];
 
 /// The model a new game starts from, at its path in the game. `{{nom}}`,
-/// `{{org}}` and `{{version}}` are replaced when it is written.
+/// `{{org}}` and `{{version}}` are replaced when it is written, as is
+/// `nom-du-jeu`: the manifests need a valid name, or Cargo complains about
+/// them in every game that fetches this repository.
 pub const MODEL: &[(&str, &str)] = &[
     (
         "verification.toml",
@@ -327,6 +329,7 @@ mod tests {
             if Path::new(path).extension().is_some_and(|e| e == "toml") {
                 let filled = contents
                     .replace("{{nom}}", "essai")
+                    .replace("nom-du-jeu", "essai")
                     .replace("{{crate}}", "essai")
                     .replace("{{org}}", "org")
                     .replace("{{version}}", VERSION);

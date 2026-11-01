@@ -60,7 +60,9 @@ pub fn evaluate(
             if selected.contains(id)
                 && !matches!(
                     verdict,
-                    kernel::Verdict::Satisfied | kernel::Verdict::NotApplicable
+                    kernel::Verdict::Satisfied
+                        | kernel::Verdict::NotApplicable
+                        | kernel::Verdict::ReviewRequired
                 )
             {
                 selected_ok = false;
@@ -259,6 +261,19 @@ mod tests {
             );
             assert_eq!(e.obligations.first().unwrap().assessment, expected);
         }
+    }
+
+    #[test]
+    fn a_human_judgement_does_not_fail_the_run_but_is_not_a_success() {
+        let (plan, mut observation, selected) = fixture();
+        observation.outcome = Outcome::ReviewRequired;
+        let result = evaluate(&plan, &[observation], &selected, Some("now"));
+        assert!(result.selected_scope_satisfied);
+        assert!(!result.complete);
+        assert_eq!(
+            result.obligations.first().unwrap().assessment,
+            Assessment::ReviewRequired
+        );
     }
 
     #[test]

@@ -32,6 +32,11 @@ export function phoneTransport(config, lan) {
     : { mode: "none", upstream: null, explicit: false };
 }
 
+/** A brand-new game binary is what this most often means on a Mac. */
+const FIREWALL_HINT = process.platform === "darwin"
+  ? " : le pare-feu de macOS bloque souvent un jeu neuf ; autorise-le dans la fenêtre du système, puis relance"
+  : " : vérifie que le pare-feu laisse passer le jeu";
+
 /** The LAN must answer HTTP before browser scenarios start. This proves
  * reachability only; document/resources still load through Tab.goto. */
 export function preflightPhoneUpstream(url, timeoutMs = 2000) {
@@ -56,7 +61,7 @@ export function preflightPhoneUpstream(url, timeoutMs = 2000) {
         else finish(unavailable(`réponse HTTP invalide : ${status}`));
       });
       request.on("error", (error) => finish(unavailable(error.message, error)));
-      timer = setTimeout(() => finish(unavailable(`aucune réponse HTTP après ${timeoutMs} ms`)), timeoutMs);
+      timer = setTimeout(() => finish(unavailable(`aucune réponse HTTP après ${timeoutMs} ms${FIREWALL_HINT}`)), timeoutMs);
     } catch (error) {
       finish(unavailable(error.message, error));
     }

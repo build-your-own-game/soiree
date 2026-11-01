@@ -194,13 +194,13 @@ function deviceOf(tab) {
 
 // ---------------------------------------------------------------- the report
 
-/** item → { status: "ok" | "fail" | "partial" | "skip", notes: [{ status, text, count }] }:
+/** item → { status: "ok" | "fail" | "review" | "partial" | "skip", notes: [{ status, text, count }] }:
  * every note an item received, each with its own outcome, the same note
  * once with how many times it came (a soak repeats them). */
 const results = new Map();
 // Ordering is only for the readable presentation, never a strength ordering of evidence.
-const PRESENTATION_ORDER = { skip: 0, ok: 1, partial: 2, fail: 3 };
-const MARK = { ok: "✓", fail: "✗", partial: "~", skip: "–" };
+const PRESENTATION_ORDER = { skip: 0, ok: 1, review: 2, partial: 3, fail: 4 };
+const MARK = { ok: "✓", fail: "✗", review: "?", partial: "~", skip: "–" };
 let activeScenario = "setup";
 const evidence = { schema: 1, arguments: args, completed: false, infrastructure_error: null, navigation_failure: null, transport: null, records: [] };
 const evidencePath = process.env.SOIREE_OBSERVATIONS_PATH ?? join(outDir, "observations.json");
@@ -228,6 +228,8 @@ function record(item, status, note, explicitExclusion = false) {
 }
 const ok = (item, note) => record(item, "ok", note);
 const fail = (item, note) => record(item, "fail", note);
+// `review` is a person's call on what the machine saw; `partial` is a check that could not finish.
+const review = (item, note) => record(item, "review", note);
 const partial = (item, note) => record(item, "partial", note);
 const skip = (item, note) => record(item, "skip", note);
 const excludedCategory = (item, note) => record(item, "skip", note, true);
@@ -998,7 +1000,7 @@ const scenarios = {
         // A nasty name may be refused, as long as the player understands why
         // and a plain name then works.
         const text = (await phone.tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-        partial("T2", `téléphone ${i + 1} : le prénom ${JSON.stringify(name).slice(0, 40)} n'entre pas ; il lit « ${text.slice(0, 100)} » (clair ?)`);
+        review("T2", `téléphone ${i + 1} : le prénom ${JSON.stringify(name).slice(0, 40)} n'entre pas ; il lit « ${text.slice(0, 100)} » (clair ?)`);
         await runJoin(phone, `Joueur${i + 1}`);
         took = await waitJoined(phone, 20_000);
         if (took !== null) took = Date.now() - start;
@@ -1196,7 +1198,7 @@ const scenarios = {
       const why = `(${a.tab.label} avait une place : le harnais ne refait pas les étapes pour rejoindre, l'ancienne place resterait prise ; puis son stockage revient, et sa place avec)`;
       if (inNow) ok("C9", `stockage refusé : la page s'ouvre et le joueur est dans la partie, en appareil neuf ${why}`);
       else if (await joinOffered(a)) ok("C9", `stockage refusé : la page s'ouvre et propose de rejoindre ${why}`);
-      else partial("C9", `stockage refusé : la page s'ouvre mais ne propose pas de rejoindre ; elle dit « ${(await pageText(a.tab)).slice(0, 100)} » ${why}`);
+      else review("C9", `stockage refusé : la page s'ouvre mais ne propose pas de rejoindre ; elle dit « ${(await pageText(a.tab)).slice(0, 100)} » ${why}`);
     }
     else {
       if (!(await joined(a))) await runJoin(a, "SansCookie");
@@ -1242,7 +1244,7 @@ const scenarios = {
       const why = `(${b.tab.label} avait une place : le harnais ne refait pas les étapes pour rejoindre, l'ancienne place resterait prise ; puis son stockage est remis, et sa place avec)`;
       if (inNow) ok("C9", `${keys.length} clé(s) du stockage corrompue(s) : la page s'ouvre et le joueur est dans la partie, en appareil neuf ${why}`);
       else if (await joinOffered(b)) ok("C9", `${keys.length} clé(s) du stockage corrompue(s) : la page s'ouvre et propose de rejoindre ${why}`);
-      else partial("C9", `${keys.length} clé(s) du stockage corrompue(s) : la page s'ouvre mais ne propose pas de rejoindre ; elle dit « ${(await pageText(b.tab)).slice(0, 100)} » ${why}`);
+      else review("C9", `${keys.length} clé(s) du stockage corrompue(s) : la page s'ouvre mais ne propose pas de rejoindre ; elle dit « ${(await pageText(b.tab)).slice(0, 100)} » ${why}`);
     } else {
       if (!(await joined(b))) await runJoin(b, "Corrompu");
       if ((await waitJoined(b, 10_000)) === null) fail("C9", `après corruption du stockage (${keys.length} clé(s)), la page s'ouvre mais on ne peut pas rejoindre ; elle dit « ${(await pageText(b.tab)).slice(0, 100)} »`);
@@ -1370,7 +1372,7 @@ const scenarios = {
     const seat = await waitJoined(phone, 10_000);
     if (seat !== null) ok("C4", `après un rechargement, de retour à sa place en ${(seat / 1000).toFixed(1)} s`);
     else if ((await runJoin(phone, phone.name)) && (await waitJoined(phone, 10_000)) !== null) {
-      partial("C4", "après un rechargement, il faut repasser par l'écran pour rejoindre : vérifie que le joueur y retrouve son personnage et son score");
+      review("C4", "après un rechargement, il faut repasser par l'écran pour rejoindre : vérifie que le joueur y retrouve son personnage et son score");
     } else fail("C4", "après un rechargement, le joueur a perdu sa place");
     await invariants("reload");
   },
@@ -1386,7 +1388,7 @@ const scenarios = {
     let twinSeat = await waitJoined({ tab: twin }, 10_000);
     if (twinSeat === null && (await runJoin({ tab: twin }, phone.name))) {
       twinSeat = await waitJoined({ tab: twin }, 10_000);
-      if (twinSeat !== null) partial("C5", "le nouvel onglet doit repasser par l'écran pour rejoindre");
+      if (twinSeat !== null) review("C5", "le nouvel onglet doit repasser par l'écran pour rejoindre");
     }
     await sleep(10_000);
     const connections = phone.tab.sockets - before + twin.sockets;
@@ -1902,14 +1904,14 @@ const scenarios = {
     }
     if (told.length) {
       const text = (await told[0].tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-      partial("C7", `${told.length} téléphone(s) ne se reconnectent pas mais ont quitté l'écran de jeu ; ils lisent : « ${text.slice(0, 120)} » (clair ?)`);
+      review("C7", `${told.length} téléphone(s) ne se reconnectent pas mais ont quitté l'écran de jeu ; ils lisent : « ${text.slice(0, 120)} » (clair ?)`);
     }
     if (!frozen.length && !told.length) ok("C7", "après le redémarrage de l'hôte, la TV et tous les téléphones se sont reconnectés");
     const lost = [];
     for (const p of phones) if (!(await joined(p))) lost.push(p);
     if (lost.length) {
       const text = (await lost[0].tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-      partial("C7", `${lost.length} joueur(s) ont perdu leur place (partie neuve) ; ils lisent : « ${text.slice(0, 100)} »`);
+      review("C7", `${lost.length} joueur(s) ont perdu leur place (partie neuve) ; ils lisent : « ${text.slice(0, 100)} »`);
     }
     await invariants("restart");
     if (!order.includes("storage")) {
@@ -2144,7 +2146,7 @@ for (const item of ITEMS) {
   const text = notes.map((n) => `${mixed ? `${MARK[n.status]} ` : ""}${n.text.replace(/\s*\n\s*/g, " ")}${n.count > 1 ? ` (×${n.count})` : ""}`);
   lines.push(`| ${item} | ${MARK[r.status]} | ${text.join("<br>").replaceAll("|", "\\|")} |`);
 }
-lines.push("", "✓ observé · ✗ échec · ~ à juger par un humain, ou vérifié en partie · – non exécuté ou exclusion explicitée", "");
+lines.push("", "✓ observé · ✗ échec · ? à juger par un humain · ~ vérifié en partie seulement · – non exécuté ou exclusion explicitée", "");
 if (host?.stderr.length) lines.push("Dernières lignes d'erreur de l'hôte :", "", "```", ...host.stderr.slice(-10), "```");
 writeFileSync(join(outDir, "performance.json"), `${JSON.stringify(measurements, null, 2)}\n`);
 writeFileSync(join(outDir, "rapport.md"), lines.join("\n"));

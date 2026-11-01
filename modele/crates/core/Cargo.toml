@@ -1,5 +1,5 @@
 [package]
-name = "{{nom}}-core"
+name = "nom-du-jeu-core"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true

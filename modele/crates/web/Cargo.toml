@@ -1,5 +1,5 @@
 [package]
-name = "{{nom}}-web"
+name = "nom-du-jeu-web"
 description = "The demo's TV and phone page"
 edition.workspace = true
 rust-version.workspace = true

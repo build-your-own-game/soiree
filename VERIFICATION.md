@@ -140,7 +140,8 @@ d’infrastructure, aucune réussite implicite.
 Un `--only` vide ou inconnu échoue. Un scénario sélectionné mais sauté,
 partiel ou dépourvu d’observation attendue ne réussit pas simplement parce que
 Node est sorti avec le code zéro. Les contrôles non sélectionnés restent
-visibles. Le code de sortie porte sur le périmètre demandé.
+visibles. Le code de sortie porte sur le périmètre demandé : un jugement humain
+reste listé sans faire échouer, un contrôle qui n’a pas pu finir fait échouer.
 
 Les rapports structurés sont `certification/check-fast.json`,
 `certification/check.json` et `certification/verification.json`, avec une vue

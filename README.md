@@ -68,7 +68,10 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 
 `soiree help` les rappelle.
 
-Le code de sortie dit si le **périmètre demandé** a passé. Un passage rapide ou
+`soiree check` et `soiree certify` finissent par le même résumé : **rien à
+corriger**, **à corriger** ou **le passage n’a pas abouti**. Ce qu’un humain doit
+juger reste listé sans faire échouer la commande ; ce qui n’a pas pu être
+vérifié la fait échouer. Le code de sortie porte sur le périmètre demandé. Un passage rapide ou
 un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
 méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
 un test passé. Les durées et les gains dans la boucle d’itération restent à

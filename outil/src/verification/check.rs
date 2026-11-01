@@ -336,22 +336,6 @@ fn finish(
         evaluation.diagnostics.extend(errors.clone());
     }
     let passed = evaluation.selected_scope_satisfied;
-    let satisfied = evaluation
-        .obligations
-        .iter()
-        .filter(|obligation| {
-            matches!(
-                obligation.assessment,
-                model::Assessment::Satisfied | model::Assessment::NotApplicable
-            )
-        })
-        .count();
-    println!(
-        "\n{} / {} obligations satisfaites ou non applicables ; périmètre demandé {}. Les autres restent non attestées.",
-        satisfied,
-        evaluation.obligations.len(),
-        if passed { "satisfait" } else { "non satisfait" }
-    );
     let input = before.as_ref().ok().map(|identity| identity.value.clone());
     let result = model::VerificationReport {
         schema: 1,
@@ -373,6 +357,7 @@ fn finish(
         eprintln!("{error}");
         return false;
     }
+    println!("\n{}", render::summary(&result));
     passed
 }
 
