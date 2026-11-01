@@ -51,7 +51,7 @@ pub fn install_panic_hook() {
     clippy::cast_sign_loss,
     reason = "Date.now is finite epoch milliseconds, below u64 for the lifetime of this app"
 )]
-fn wall_ms() -> u64 {
+pub(crate) fn wall_ms() -> u64 {
     js_sys::Date::now().max(0.0) as u64
 }
 

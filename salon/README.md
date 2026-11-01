@@ -137,7 +137,7 @@ cargo run --release -p salon-demo
 
 La TV est sur http://localhost:8095, les téléphones sur l'adresse affichée. `SALON_LOG=1` affiche chaque lien ouvert ou fermé, avec son transport.
 
-Le pare-feu de macOS demande d'autoriser chaque nouveau binaire (chaque `cargo build` en est un). Sans autorisation, l'UDP de WebRTC qui vient du réseau est bloqué en silence. Une négociation dispose d'une fenêtre absolue de 15 s, partagée par la page et l'hôte ; le téléphone passe ensuite par WebSocket. Une erreur de négociation ou un état natif `Failed` déclenche ce repli immédiatement. La progression SDP/ICE ne renouvelle pas la fenêtre. Une page ouverte sur l'ordinateur même passe par la boucle locale, que le pare-feu laisse passer.
+Le pare-feu de macOS demande d'autoriser chaque nouveau binaire (chaque `cargo build` en est un). Sans autorisation, l'UDP de WebRTC qui vient du réseau est bloqué en silence. Une négociation dispose d'une fenêtre absolue de 15 s, partagée par la page et l'hôte ; le téléphone passe ensuite par WebSocket. Une erreur de négociation ou un état natif `Failed` déclenche ce repli immédiatement. La progression SDP/ICE ne renouvelle pas la fenêtre. L'onglet garde l'échec dans son stockage de session : un rechargement passe tout de suite par WebSocket, sans repayer la fenêtre, et WebRTC est retenté après dix minutes, quand le navigateur annonce `online`, ou dès qu'un lien WebRTC s'ouvre. iOS n'annonce pas un changement de Wi-Fi : c'est le délai qui borne son attente. Une page ouverte sur l'ordinateur même passe par la boucle locale, que le pare-feu laisse passer.
 
 ## Tester
 

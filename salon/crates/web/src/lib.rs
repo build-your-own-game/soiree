@@ -8,8 +8,10 @@
 //!   the device arrives as new (C9);
 //! - **WebRTC first**: one DataChannel, unordered and without
 //!   retransmission, to the host (`POST /salon/offer`). If it does not open
-//!   within [`RTC_PATIENCE_MS`], or twice in a row, **WebSocket**
-//!   (`/salon/ws`) takes over;
+//!   within [`RTC_PATIENCE_MS`], **WebSocket** (`/salon/ws`) takes over, for
+//!   good after two failures in a row. The tab remembers the failure, so that
+//!   a reload does not wait again: for ten minutes, or until the browser says
+//!   it is `online` again, or until a WebRTC link opens;
 //! - **the clock** (`performance.now()`) and the timers salon asks for;
 //! - **waking up**: `visibilitychange`, `pageshow` and `online` tell salon
 //!   to check the link at once, since iOS freezes pages in the background;
@@ -20,6 +22,7 @@
 pub mod audio;
 pub mod journal;
 mod recovery;
+mod rtc_memory;
 pub mod ui;
 pub use recovery::{install_panic_hook, install_tv_diagnostics};
 
@@ -29,6 +32,8 @@ use std::fmt::Write as _;
 use std::rc::{Rc, Weak};
 
 use js_sys::{Reflect, Uint8Array};
+use recovery::wall_ms;
+use rtc_memory::RtcMemory;
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
     Refusal, Status, Timing, Token, TvKey, route,
@@ -48,8 +53,6 @@ use web_sys::{
 /// negotiation errors fall back immediately; progress never renews this bound.
 pub const RTC_PATIENCE_MS: i32 =
     (salon_core::transport::RTC_NEGOTIATION_SECONDS as i32).saturating_mul(1_000);
-/// After this many WebRTC failures in a row, this page sticks to WebSocket.
-const RTC_FAILURES: u32 = 2;
 /// A DataChannel with this much waiting is behind: skip a packet rather than
 /// pile up (geckos.io drops on any backlog; salon resends what matters).
 const RTC_BACKLOG: u32 = 64 * 1024;
@@ -180,7 +183,7 @@ struct Inner<Up, Down> {
     transport: Option<Transport>,
     /// Bumped at each new transport: events of an older one are ignored.
     generation: u32,
-    rtc_failures: u32,
+    rtc_memory: RtcMemory,
     websocket_only: bool,
     timer: Option<ui::Timer>,
 }
@@ -287,6 +290,22 @@ fn token(kind: Kind, seat: Option<&str>) -> Token {
     Token(fresh)
 }
 
+fn session_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.session_storage().ok().flatten()
+}
+
+fn read_rtc_memory() -> RtcMemory {
+    let stored = session_storage().and_then(|storage| storage.get_item(rtc_memory::KEY).ok());
+    RtcMemory::loaded(stored.flatten().as_deref(), wall_ms())
+}
+
+/// Lost when storage refuses: only a reload then pays the window again.
+fn save_rtc_memory(memory: RtcMemory) {
+    if let (Some(storage), Ok(text)) = (session_storage(), serde_json::to_string(&memory)) {
+        let _: Result<(), JsValue> = storage.set_item(rtc_memory::KEY, &text);
+    }
+}
+
 impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, Down> {
     /// Opens the link; `on` receives what happens, in order and one at a
     /// time. It may be called during [`Connection::send`] and the other
@@ -305,7 +324,7 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
                 tv: options.kind == Kind::Tv,
                 transport: None,
                 generation: 0,
-                rtc_failures: 0,
+                rtc_memory: read_rtc_memory(),
                 websocket_only: options.websocket_only,
                 timer: None,
             }),
@@ -356,6 +375,12 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         let Some(window) = web_sys::window() else {
             return;
         };
+        // Before the wake below: a connection made there may try WebRTC.
+        let weak = Rc::downgrade(&self.shared);
+        let _: Result<(), JsValue> =
+            self.shared
+                .wake
+                .listen::<web_sys::Event>(&window, "online", move |_| forget_rtc_failures(&weak));
         // Without these, the tick still wakes the client, only later.
         for name in ["pageshow", "online"] {
             let weak = Rc::downgrade(&self.shared);
@@ -437,6 +462,16 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
             .client
             .as_ref()
             .and_then(|client| client.host_time(now()))
+    }
+}
+
+/// The network came back, maybe another one: what failed says nothing of it.
+fn forget_rtc_failures<Up, Down>(weak: &Weak<Shared<Up, Down>>) {
+    if let Some(shared) = weak.upgrade()
+        && let Ok(mut inner) = shared.inner.try_borrow_mut()
+    {
+        inner.rtc_memory = RtcMemory::default();
+        save_rtc_memory(inner.rtc_memory);
     }
 }
 
@@ -621,7 +656,7 @@ fn connect<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         old.close();
     }
     inner.generation = inner.generation.wrapping_add(1);
-    let use_rtc = !inner.websocket_only && inner.rtc_failures < RTC_FAILURES;
+    let use_rtc = !inner.websocket_only && inner.rtc_memory.use_rtc(wall_ms());
     inner.transport = if use_rtc {
         rtc(shared, inner.generation)
     } else {
@@ -728,7 +763,8 @@ fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         if inner.generation != generation || opened {
             return;
         }
-        inner.rtc_failures = inner.rtc_failures.saturating_add(1);
+        inner.rtc_memory = inner.rtc_memory.failed(wall_ms());
+        save_rtc_memory(inner.rtc_memory);
         if let Some(old) = inner.transport.take() {
             old.close();
         }
@@ -765,7 +801,10 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             if let Some(Transport::Rtc { open, .. }) = inner.transport.as_mut() {
                 *open = true;
             }
-            inner.rtc_failures = 0;
+            if inner.rtc_memory != RtcMemory::default() {
+                inner.rtc_memory = RtcMemory::default();
+                save_rtc_memory(inner.rtc_memory);
+            }
             if let Some(client) = inner.client.as_mut() {
                 client.opened(now, Caps::DATAGRAM);
             }
