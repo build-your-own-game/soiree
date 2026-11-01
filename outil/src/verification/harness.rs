@@ -509,6 +509,7 @@ mod tests {
             guarantees: vec![],
             checks: vec![],
             catalogue_decisions: vec![],
+            bindings: vec![],
         };
         let plan = resolve::resolve(
             &contract,

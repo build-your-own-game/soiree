@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 
 use super::model::{
-    Applicability, Contract, Control, Display, DisplayRole, ExecutionSpec, Method, Obligation,
-    Plan, Progression,
+    Applicability, Binding, Contract, Control, Display, DisplayRole, ExecutionSpec, Method,
+    Obligation, Plan, Progression,
 };
 use crate::embedded;
 
@@ -78,7 +78,8 @@ pub fn resolve_with_capabilities(
     declared_guarantees(contract, &checks, &mut plan);
     catalogue_decisions(contract, &mut plan);
     common_controls(&mut plan, capabilities);
-    unbound_game_requirements(&mut plan);
+    let bound = bound_requirements(contract, &checks, &mut plan);
+    game_requirements(&bound, &mut plan);
     harness_health(&mut plan);
     harness_controls(config, &mut plan);
     rehearsal(&mut plan);
@@ -116,6 +117,10 @@ fn declared_checks(contract: &Contract, plan: &mut Plan) -> BTreeMap<String, Str
             .guarantees
             .iter()
             .any(|g| !g.retired && g.checks.contains(&check.id))
+            && !contract
+                .bindings
+                .iter()
+                .any(|b| b.checks.contains(&check.id))
         {
             continue;
         }
@@ -174,6 +179,10 @@ fn declared_guarantees(contract: &Contract, checks: &BTreeMap<String, String>, p
             .guarantees
             .iter()
             .any(|g| g.checks.contains(&check.id))
+            && !contract
+                .bindings
+                .iter()
+                .any(|b| b.checks.contains(&check.id))
         {
             plan.diagnostics
                 .push(format!("contrôle sans engagement : {}", check.id));
@@ -322,7 +331,10 @@ fn harness_health(plan: &mut Plan) {
     });
 }
 
-/// Common requirements nothing runs yet. They stay visible as not attested.
+/// Common requirements nothing common can run: each game owns their meaning.
+/// They stay visible as not attested until a game binds its own checks to them
+/// in `verification.toml`. `CERTIFICATION.md` marks these, and only these,
+/// « à relier » (`docs.rs`).
 pub const UNBOUND: [(&str, &str, Option<&str>); 7] = [
     (
         "C6",
@@ -365,8 +377,84 @@ pub const UNBOUND: [(&str, &str, Option<&str>); 7] = [
     ),
 ];
 
-fn unbound_game_requirements(plan: &mut Plan) {
+/// The valid bindings, by requirement. An invalid one binds nothing, and its
+/// diagnostic fails the run: a typo never reads as a requirement under control.
+fn bound_requirements<'a>(
+    contract: &'a Contract,
+    checks: &BTreeMap<String, String>,
+    plan: &mut Plan,
+) -> BTreeMap<&'a str, (&'a Binding, Vec<String>)> {
+    let mut seen = BTreeSet::new();
+    let mut bound = BTreeMap::new();
+    for binding in &contract.bindings {
+        let id = binding.requirement.as_str();
+        if !UNBOUND.iter().any(|(known, _, _)| *known == id) {
+            plan.diagnostics.push(format!(
+                "liaison {id} : seules les exigences « à relier » du socle se relient ; un minimum commun garde ses propres contrôles"
+            ));
+            continue;
+        }
+        if !seen.insert(id) {
+            plan.diagnostics
+                .push(format!("liaison {id} : exigence reliée deux fois"));
+            bound.remove(id);
+            continue;
+        }
+        if let Some(controls) = bound_controls(binding, checks, plan) {
+            bound.insert(id, (binding, controls));
+        }
+    }
+    bound
+}
+
+fn bound_controls(
+    binding: &Binding,
+    checks: &BTreeMap<String, String>,
+    plan: &mut Plan,
+) -> Option<Vec<String>> {
+    let id = &binding.requirement;
+    if binding.checks.is_empty() {
+        plan.diagnostics
+            .push(format!("liaison {id} : aucun contrôle"));
+        return None;
+    }
+    let mut controls = Vec::new();
+    let mut valid = true;
+    for check in &binding.checks {
+        match checks.get(check) {
+            Some(control) if controls.contains(control) => {
+                plan.diagnostics
+                    .push(format!("liaison {id} : contrôle répété {check}"));
+                valid = false;
+            }
+            Some(control) => controls.push(control.clone()),
+            None => {
+                plan.diagnostics
+                    .push(format!("liaison {id} : contrôle inconnu {check}"));
+                valid = false;
+            }
+        }
+    }
+    valid.then_some(controls)
+}
+
+fn game_requirements(bound: &BTreeMap<&str, (&Binding, Vec<String>)>, plan: &mut Plan) {
     for (id, claim, condition) in UNBOUND {
+        if let Some((binding, controls)) = bound.get(id) {
+            // Binding a conditional requirement declares its condition met: it
+            // applies, and its checks decide. It never becomes an exclusion.
+            let mut assumptions = binding.assumptions.clone();
+            assumptions.push("Liaison déclarée par le jeu : elle désigne ces contrôles, elle n’établit pas qu’ils couvrent toute l’exigence.".to_owned());
+            plan.obligations.push(Obligation {
+                id: id.to_owned(),
+                claim: claim.to_owned(),
+                applicability: Applicability::Applicable,
+                controls: controls.clone(),
+                owner: "game".to_owned(),
+                assumptions,
+            });
+            continue;
+        }
         let control = format!("unbound:{id}");
         let reason = "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement.";
         plan.controls.push(Control {
@@ -820,7 +908,7 @@ mod tests {
             has_ios: false,
         });
         let control = plan.controls.first().unwrap().clone();
-        unbound_game_requirements(&mut plan);
+        game_requirements(&BTreeMap::new(), &mut plan);
         let pending = plan
             .controls
             .iter()
@@ -865,6 +953,7 @@ mod tests {
             guarantees: vec![],
             checks: vec![],
             catalogue_decisions: vec![],
+            bindings: vec![],
         };
         let plan = resolve(&contract, &serde_json::json!({}));
         assert!(
@@ -879,6 +968,247 @@ mod tests {
         );
     }
 
+    /// A game with a test `replay`, and whatever bindings a case gives it.
+    fn bound(text: &str) -> (Contract, Plan) {
+        let contract: Contract = toml::from_str(&format!(
+            r#"
+schema = 1
+[[checks]]
+id = "replay"
+kind = "cargo-test"
+package = "game-core"
+target_kind = "lib"
+target = "game_core"
+name = "tests::replay_is_deterministic"
+[[checks]]
+id = "other"
+kind = "cargo-test"
+package = "game-core"
+target_kind = "lib"
+target = "game_core"
+name = "tests::other"
+[[guarantees]]
+id = "J1"
+claim = "Une garantie du jeu."
+checks = ["other"]
+{text}
+"#
+        ))
+        .unwrap();
+        let plan = resolve(&contract, &serde_json::json!({}));
+        (contract, plan)
+    }
+
+    fn obligation<'a>(plan: &'a Plan, id: &str) -> &'a Obligation {
+        plan.obligations.iter().find(|o| o.id == id).unwrap()
+    }
+
+    #[test]
+    fn a_bound_requirement_runs_the_games_checks_and_only_those() {
+        let (_, plan) = bound(
+            r#"
+[[bindings]]
+requirement = "D1"
+checks = ["replay"]
+assumptions = ["Le replay couvre une partie entière."]
+"#,
+        );
+        assert_eq!(plan.diagnostics, Vec::<String>::new());
+        let d1 = obligation(&plan, "D1");
+        assert_eq!(d1.controls, ["game:replay"]);
+        assert_eq!(d1.applicability, Applicability::Applicable);
+        assert_eq!(d1.owner, "game");
+        assert!(d1.assumptions.iter().any(|a| a.contains("partie entière")));
+        assert!(d1.assumptions.iter().any(|a| a.contains("n’établit pas")));
+        assert!(plan.controls.iter().all(|c| c.id != "unbound:D1"));
+        assert_eq!(
+            plan.controls
+                .iter()
+                .filter(|c| c.id == "game:replay")
+                .count(),
+            1
+        );
+        let unbound = obligation(&plan, "D3");
+        assert_eq!(unbound.controls, ["unbound:D3"]);
+    }
+
+    #[test]
+    fn binding_a_conditional_requirement_declares_it_applicable() {
+        let (_, plan) = bound("");
+        assert!(matches!(
+            obligation(&plan, "D4").applicability,
+            Applicability::Unknown(_)
+        ));
+        let (_, plan) = bound("[[bindings]]\nrequirement = \"D4\"\nchecks = [\"replay\"]\n");
+        assert_eq!(
+            obligation(&plan, "D4").applicability,
+            Applicability::Applicable
+        );
+    }
+
+    #[test]
+    fn a_binding_keeps_every_common_minimum() {
+        let (_, without) = bound("");
+        let (_, with) = bound("[[bindings]]\nrequirement = \"E5\"\nchecks = [\"replay\"]\n");
+        let ids = |plan: &Plan| {
+            plan.obligations
+                .iter()
+                .map(|o| o.id.clone())
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(ids(&without), ids(&with));
+        for (before, after) in without.obligations.iter().zip(&with.obligations) {
+            if before.id != "E5" {
+                assert_eq!(before.controls, after.controls, "{}", before.id);
+                assert_eq!(before.applicability, after.applicability, "{}", before.id);
+            }
+        }
+    }
+
+    #[test]
+    fn an_invalid_binding_is_refused_and_binds_nothing() {
+        let d3 = |checks: &str| format!("[[bindings]]\nrequirement = \"D3\"\nchecks = {checks}\n");
+        for (text, expected) in [
+            (d3(r#"["inexistant"]"#), "contrôle inconnu inexistant"),
+            (d3(r#"["replay", "inexistant"]"#), "contrôle inconnu"),
+            (d3("[]"), "aucun contrôle"),
+            (d3(r#"["replay", "replay"]"#), "contrôle répété"),
+            (
+                format!("{}{}", d3(r#"["replay"]"#), d3(r#"["other"]"#)),
+                "reliée deux fois",
+            ),
+        ] {
+            let (_, plan) = bound(&text);
+            assert!(
+                plan.diagnostics.iter().any(|d| d.contains(expected)),
+                "{text} : {:?}",
+                plan.diagnostics
+            );
+            assert_eq!(obligation(&plan, "D3").controls, ["unbound:D3"], "{text}");
+        }
+        for requirement in [
+            "C1",
+            "P1",
+            "H1",
+            "S1",
+            "static:common",
+            "J1",
+            "D2",
+            "Z9",
+            "",
+        ] {
+            let (_, plan) = bound(&format!(
+                "[[bindings]]\nrequirement = \"{requirement}\"\nchecks = [\"replay\"]\n"
+            ));
+            assert!(
+                plan.diagnostics.iter().any(|d| d.contains("à relier")),
+                "{requirement} : {:?}",
+                plan.diagnostics
+            );
+        }
+        let unknown_field: Result<Contract, _> = toml::from_str(
+            "schema = 1\n[[bindings]]\nrequirement = \"D1\"\nchecks = []\nsatisfied = true\n",
+        );
+        assert!(unknown_field.is_err());
+    }
+
+    #[test]
+    fn a_check_used_only_by_a_binding_is_a_real_control() {
+        let (_, plan) = bound("");
+        assert!(
+            plan.diagnostics
+                .iter()
+                .any(|d| d == "contrôle sans engagement : replay")
+        );
+        let (_, plan) = bound("[[bindings]]\nrequirement = \"D5\"\nchecks = [\"replay\"]\n");
+        assert_eq!(plan.diagnostics, Vec::<String>::new());
+        assert!(plan.controls.iter().any(
+            |c| c.id == "game:replay" && matches!(c.execution, ExecutionSpec::CargoTest { .. })
+        ));
+    }
+
+    fn passed(control: &Control) -> crate::verification::model::Observation {
+        crate::verification::model::Observation {
+            control_id: control.id.clone(),
+            method: control.method,
+            scope: control.scope.clone(),
+            outcome: crate::verification::model::Outcome::Passed,
+            input_identity: Some("current".to_owned()),
+            detail: String::new(),
+            command: vec![],
+            artifacts: vec![],
+        }
+    }
+
+    #[test]
+    fn a_binding_counts_only_through_its_observation() {
+        use crate::verification::model::{Assessment, Outcome};
+        let (_, plan) = bound("[[bindings]]\nrequirement = \"D1\"\nchecks = [\"replay\"]\n");
+        let control = plan
+            .controls
+            .iter()
+            .find(|c| c.id == "game:replay")
+            .unwrap();
+        let selected = BTreeSet::from([control.id.clone()]);
+        let assess = |observations: &[_]| {
+            crate::verification::evaluate::evaluate(&plan, observations, &selected, Some("current"))
+                .obligations
+                .into_iter()
+                .find(|o| o.id == "D1")
+                .unwrap()
+                .assessment
+        };
+        assert_eq!(assess(&[]), Assessment::Pending);
+        assert_eq!(assess(&[passed(control)]), Assessment::Satisfied);
+        for (outcome, expected) in [
+            (Outcome::Failed, Assessment::Failed),
+            (Outcome::Ignored, Assessment::Pending),
+            (Outcome::NotRun, Assessment::Pending),
+        ] {
+            let mut observed = passed(control);
+            observed.outcome = outcome;
+            assert_eq!(assess(&[observed]), expected);
+        }
+    }
+
+    #[test]
+    fn binding_all_seven_lifts_the_only_cause_they_hold_and_no_other() {
+        let every = UNBOUND.iter().fold(String::new(), |text, (id, _, _)| {
+            format!("{text}[[bindings]]\nrequirement = \"{id}\"\nchecks = [\"replay\"]\n")
+        });
+        let (contract, mut plan) = bound(&every);
+        // A game whose harness obligations all apply and are observed.
+        for obligation in &mut plan.obligations {
+            if matches!(obligation.applicability, Applicability::Unknown(_)) {
+                obligation.applicability = Applicability::NotApplicable("fixture".to_owned());
+            }
+        }
+        let automatic = |plan: &Plan| {
+            let observations = plan
+                .controls
+                .iter()
+                .filter(|c| {
+                    !matches!(
+                        c.execution,
+                        ExecutionSpec::Manual | ExecutionSpec::Unbound { .. }
+                    )
+                })
+                .map(passed)
+                .collect::<Vec<_>>();
+            let selected = observations.iter().map(|o| o.control_id.clone()).collect();
+            crate::verification::evaluate::evaluate(plan, &observations, &selected, Some("current"))
+        };
+        assert_eq!(contract.bindings.len(), 7);
+        let evaluation = automatic(&plan);
+        assert!(evaluation.all_automated_obligations_satisfied);
+        // The real-device rehearsal stays a human judgement.
+        assert!(!evaluation.complete);
+        let (_, mut partial) = bound("");
+        partial.diagnostics.clear();
+        let evaluation = automatic(&partial);
+        assert!(!evaluation.all_automated_obligations_satisfied);
+    }
+
     #[test]
     fn loopback_ui_observations_cannot_claim_local_network_coverage() {
         let contract = Contract {
@@ -886,6 +1216,7 @@ mod tests {
             guarantees: vec![],
             checks: vec![],
             catalogue_decisions: vec![],
+            bindings: vec![],
         };
         let config =
             serde_json::json!({"phone":"/play", "socket":"/socket", "phone_upstream":"loopback"});

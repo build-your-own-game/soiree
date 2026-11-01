@@ -40,6 +40,18 @@ pub fn guarantees(contract: &Contract) -> String {
     for d in &contract.catalogue_decisions {
         let _: std::fmt::Result = writeln!(text, "- {} — {} : {}", d.id, d.status, cell(&d.reason));
     }
+    if !contract.bindings.is_empty() {
+        text.push_str("\n## Exigences communes reliées\n\n| Exigence | Contrôles |\n|---|---|\n");
+        for b in &contract.bindings {
+            let checks = b
+                .checks
+                .iter()
+                .map(|s| format!("`{s}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _: std::fmt::Result = writeln!(text, "| {} | {checks} |", cell(&b.requirement));
+        }
+    }
     let _: std::fmt::Result = write!(text, "\n{END}");
     text
 }
@@ -365,6 +377,25 @@ mod tests {
         ExecutionSpec::Static {
             name: "test".to_owned(),
         }
+    }
+
+    #[test]
+    fn the_view_shows_bindings_and_leaves_a_contract_without_them_unchanged() {
+        let contract = |bindings: &str| -> Contract {
+            toml::from_str(&format!("schema = 1\n{bindings}")).unwrap()
+        };
+        let plain = guarantees(&contract(""));
+        assert!(!plain.contains("Exigences communes reliées"));
+        assert_eq!(
+            plain,
+            format!(
+                "{START}\n\n## Les items\n\n| # | Exigence | Contrôles | Origine |\n|---|---|---|---|\n\n## Décisions du catalogue\n\n\n{END}"
+            )
+        );
+        let bound = guarantees(&contract(
+            "[[bindings]]\nrequirement = \"D1\"\nchecks = [\"replay\", \"hash\"]\n",
+        ));
+        assert!(bound.contains("| D1 | `replay`, `hash` |"), "{bound}");
     }
 
     #[test]

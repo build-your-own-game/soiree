@@ -69,6 +69,48 @@ Une preuve, une mesure ou un script arbitraire ne deviennent pas un tel test en
 changeant leur étiquette. Les extensions de méthodes demandent un adaptateur
 commun qui définit son oracle et les données nécessaires à son évaluation.
 
+### Relier une exigence commune
+
+Sept exigences du socle, marquées « à relier » dans
+[`CERTIFICATION.md`](CERTIFICATION.md), dépendent des règles de chaque jeu : le
+commun ne sait pas les exécuter. Ce sont C6, E5, T1, D1, D3, D4 et D5. Un jeu
+les relie à ses propres contrôles dans `verification.toml` :
+
+```toml
+[[bindings]]
+requirement = "D1"
+checks = ["replay-deterministe"]
+assumptions = ["Le replay couvre une partie entière, de la graine à la fin."]
+
+[[checks]]
+id = "replay-deterministe"
+kind = "cargo-test"
+package = "mon-jeu-core"
+target_kind = "test"
+target = "replay"
+name = "same_inputs_give_the_same_states"
+```
+
+`requirement` et `checks` sont obligatoires, `assumptions` est facultatif ; tout
+autre champ est refusé. Un contrôle n’a pas besoin d’une garantie `J` s’il est
+cité par une liaison. Plusieurs liaisons et garanties peuvent citer le même
+contrôle, qui ne s’exécute qu’une fois.
+
+La validation est stricte et fait échouer `soiree contracts` et `soiree check` :
+un contrôle inconnu ou répété, une liste vide, une exigence reliée deux fois,
+une exigence hors des sept. Une liaison invalide ne relie rien. Une exigence
+portée par un scénario commun, comme C1 ou P1, ne se relie pas : une liaison
+ajoute des contrôles à une exigence qui n’en avait pas et ne retire jamais un
+minimum commun. Une garantie `J` au texte voisin ne relie rien non plus.
+
+Relier C6, T1, D4 ou D5, dont l’application dépend du jeu, déclare que le jeu
+est concerné : l’exigence devient applicable et ses contrôles décident. Il
+n’existe pas de déclaration inverse : une exigence conditionnelle non reliée
+reste inconnue, jamais écartée. Une liaison compte comme tout contrôle, par
+l’observation de son test pour les entrées courantes ; ignoré, absent ou en
+échec, il ne la satisfait pas. Elle nomme des contrôles sans établir qu’ils
+couvrent toute l’exigence, et le rapport garde cette hypothèse.
+
 ## Catalogue, applicabilité et décisions
 
 Les 97 items du [catalogue](certifications/README.md) sont une réserve
@@ -159,9 +201,9 @@ garanti par cette première implémentation.
 
 ## Premier état de la couverture
 
-Le plan garde aussi sept exigences communes sans liaison exécutable (`Unbound`) :
-C6, E5, T1, D1, D3, D4 et D5. Elles restent non attestées ; une garantie J dont
-le texte semble proche n’est pas reliée automatiquement à une exigence commune.
+Tant qu’un jeu ne les relie pas, le plan garde sept exigences communes sans
+liaison exécutable (`Unbound`) : C6, E5, T1, D1, D3, D4 et D5. Elles restent
+alors non attestées.
 Les conditions de genre ou de mécanique qui ne sont pas déclarées restent
 inconnues, notamment pour les phases, les champs texte et la simulation en temps
 réel. La réussite du périmètre statique ne les transforme pas en garanties.
@@ -175,9 +217,10 @@ reste au salon. T4 est observé indépendamment de la stratégie de rendu TV.
 Les domaines explicites desktop/interaction continue ont leurs négatifs :
 une désactivation seule ou un jeu à phases ne peut pas les usurper.
 
-Les sept exigences sans liaison ci-dessus restent non attestées. Les rapports
+Les rapports
 `check` et `certify` ne se fusionnent pas automatiquement ; leurs sélections
-restent visibles. Le succès de la CI ciblée du modèle n'est pas présenté comme
+restent visibles : même toutes reliées, ces exigences sont observées par `check`
+et les scénarios par `certify`, et les gestes S1–S10 restent humains. Le succès de la CI ciblée du modèle n'est pas présenté comme
 celui de tous les scénarios, ni de toutes les exigences.
 
 ## Provenance et hypothèses

@@ -13,6 +13,19 @@ pub struct Contract {
     pub checks: Vec<DeclaredCheck>,
     #[serde(default)]
     pub catalogue_decisions: Vec<CatalogueDecision>,
+    #[serde(default)]
+    pub bindings: Vec<Binding>,
+}
+
+/// A game's own checks for a common requirement that nothing common can run.
+/// It names them; it does not establish that they cover the requirement.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Binding {
+    pub requirement: String,
+    pub checks: Vec<String>,
+    #[serde(default)]
+    pub assumptions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

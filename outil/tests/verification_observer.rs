@@ -119,6 +119,43 @@ process.exit(mode === 'abort' ? 2 : 0);
             std::fs::write(manifest, text.replace("0.1.0", "0.2.0")).unwrap();
         }
 
+        /// A real test bound to the common requirement D1.
+        fn bind_d1(&self, body: &str, declared_name: &str) {
+            std::fs::write(
+                self.game.join("src/lib.rs"),
+                format!(
+                    "#[cfg(test)]\nmod tests {{\n    #[test]\n    fn replay() {{ {body} }}\n}}\n"
+                ),
+            )
+            .unwrap();
+            std::fs::write(
+                self.game.join("soiree.toml"),
+                "name = \"observer-fixture\"\n",
+            )
+            .unwrap();
+            std::fs::write(
+                self.game.join("verification.toml"),
+                format!(
+                    "schema = 1\n[[checks]]\nid = \"replay\"\nkind = \"cargo-test\"\npackage = \"observer-fixture\"\ntarget_kind = \"lib\"\ntarget = \"observer_fixture\"\nname = \"{declared_name}\"\n[[bindings]]\nrequirement = \"D1\"\nchecks = [\"replay\"]\n"
+                ),
+            )
+            .unwrap();
+        }
+
+        fn check_report(&self) -> Value {
+            let output = Command::new(env!("CARGO_BIN_EXE_soiree"))
+                .current_dir(&self.game)
+                .env("CARGO_NET_OFFLINE", "true")
+                .arg("check")
+                .output()
+                .unwrap();
+            let report = self.game.join("certification/check.json");
+            serde_json::from_str(&std::fs::read_to_string(report).unwrap_or_else(|error| {
+                panic!("{error}: {}", String::from_utf8_lossy(&output.stderr))
+            }))
+            .unwrap()
+        }
+
         fn check_fast(&self, extra: &[&str]) -> Output {
             Command::new(env!("CARGO_BIN_EXE_soiree"))
                 .current_dir(&self.game)
@@ -263,6 +300,46 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_eq!(report["evaluation"]["complete"], false);
         assert_eq!(obligation(&report, "C2")["assessment"], "review-required");
         assert!(String::from_utf8_lossy(&output.stdout).contains("À juger par un humain"));
+    }
+
+    #[test]
+    fn a_bound_requirement_is_decided_by_the_real_test_it_names() {
+        for (body, declared, assessment) in [
+            ("assert_eq!(1, 1);", "tests::replay", "satisfied"),
+            ("assert_eq!(1, 2);", "tests::replay", "failed"),
+            ("assert_eq!(1, 1);", "tests::absent", "pending"),
+        ] {
+            let fixture = Fixture::new("completed");
+            fixture.bind_d1(body, declared);
+            let report = fixture.check_report();
+            assert_eq!(report["plan"]["diagnostics"], json!([]), "{body}");
+            assert_eq!(
+                obligation(&report, "D1")["assessment"],
+                assessment,
+                "{body} {declared}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_binding_to_an_inexistent_check_fails_the_real_command() {
+        let fixture = Fixture::new("completed");
+        fixture.bind_d1("assert_eq!(1, 1);", "tests::replay");
+        let contract = fixture.game.join("verification.toml");
+        let text = std::fs::read_to_string(&contract).unwrap();
+        std::fs::write(
+            contract,
+            text.replace("checks = [\"replay\"]", "checks = [\"invente\"]"),
+        )
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_soiree"))
+            .current_dir(&fixture.game)
+            .arg("contracts")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("contrôle inconnu invente"), "{stdout}");
     }
 
     #[test]
