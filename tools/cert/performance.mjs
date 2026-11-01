@@ -265,6 +265,20 @@ async function observeProbe(tv, target, probe, timeoutMs, control) {
   }
 }
 
+/** Waits for an action's effect to end: the value came back, as after a jump,
+ * or it stopped moving, as a score does. A value that never rests is a failure. */
+export async function renderSettled(tv, expression, baseline, { quietMs = 1500, timeoutMs = 3000 } = {}) {
+  await tv.page.evaluate(() => { delete window.__certSettle; });
+  const settled = await tv.page.waitForFunction(({ expression, baseline, quietMs }) => {
+    const value = JSON.stringify((0, eval)(expression));
+    const now = performance.now();
+    const state = window.__certSettle ??= { value, since: now };
+    if (value !== state.value) Object.assign(state, { value, since: now });
+    return value === baseline || now - state.since >= quietMs;
+  }, { expression, baseline, quietMs }, { timeout: timeoutMs, polling: "raf" });
+  await settled.dispose();
+}
+
 /** Match a durable panic report to one deliberate target injection. */
 export function panicMatches(report, nonce, page) {
   return report?.page === page

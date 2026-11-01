@@ -6,6 +6,10 @@ Chaque version a sa section, de la plus récente à la plus ancienne. « Passer 
 
 `soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
 
+Le scénario `rtc` accepte qu’un effet se termine en revenant à sa valeur ou en
+cessant de bouger : il supposait un saut qui retombe, et échouait toujours sur
+un compteur comme celui du modèle.
+
 `certify` signale le pare-feu quand l’adresse du réseau ne répond pas, et le
 modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
 

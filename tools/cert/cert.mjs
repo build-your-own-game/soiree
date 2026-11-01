@@ -28,7 +28,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { launchBrowser, sleep, silenceReaction, NavigationFailure, phoneTransport, preflightPhoneUpstream } from "./browser.mjs";
-import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
+import { measureFrames, frameFailures, measureProbe, renderSettled, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
 import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment } from "./udp.mjs";
 import { verifyRtcNegotiation } from "./rtc-negotiation.mjs";
@@ -1479,8 +1479,7 @@ const scenarios = {
       relay.set({ dropEvery: 5, delayMs: 35, reorderEvery: 3 });
       if(causal){
         // A naturally finishing jump must not masquerade as the next input.
-        await tv.tab.page.waitForFunction(({expression,baseline})=>JSON.stringify((0,eval)(expression))===baseline,
-          {expression:causal.rendered,baseline:measurements.rtc_causal.baseline},{timeout:3000,polling:"raf"});
+        await renderSettled(tv.tab,causal.rendered,measurements.rtc_causal.baseline);
         measurements.rtc_causal_impaired=await measureProbe(tv.tab,phone.tab,causal);
         for(const probe of config.performance?.probes??[])if(probe.screen==='tv')await measureProbe(tv.tab,tv.tab,probe);
       }

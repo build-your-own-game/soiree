@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { launchBrowser } from "./browser.mjs";
-import { summarizeFrames, frameFailures, measureFrames, measureProbe, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
+import { summarizeFrames, frameFailures, measureFrames, measureProbe, renderSettled, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
 
 test("frame budgets reject an isolated stall and low cadence", () => {
   const smooth = summarizeFrames(Array(180).fill(1000 / 60));
@@ -51,6 +51,25 @@ test("both engines preserve removable init scripts and measure a causal rendered
         await tab.close();
       });
     }
+  } finally { await browser.close(); }
+});
+
+test("a rendered value settles by coming back or by resting, never while it keeps moving", { timeout: 30000 }, async () => {
+  const browser = await launchBrowser();
+  try {
+    const tab = await browser.open("data:text/html," + encodeURIComponent("<output id='value'>0</output>"));
+    const read = "document.querySelector('#value').textContent";
+    const set = (text) => tab.page.evaluate((next) => { document.querySelector("#value").textContent = next; }, text);
+    // A jump: back to where it began.
+    await renderSettled(tab, read, '"0"', { quietMs: 60000, timeoutMs: 1000 });
+    // A score: it stays changed, and resting is enough.
+    await set("1");
+    await renderSettled(tab, read, '"0"', { quietMs: 200, timeoutMs: 1000 });
+    // A value moving all the time never counts as finished.
+    await tab.page.evaluate(() => { let n = 2; window.__moving = setInterval(() => { document.querySelector("#value").textContent = String(n++); }, 20); });
+    await assert.rejects(renderSettled(tab, read, '"0"', { quietMs: 200, timeoutMs: 800 }), /Timeout/);
+    await tab.page.evaluate(() => clearInterval(window.__moving));
+    await tab.close();
   } finally { await browser.close(); }
 });
 
