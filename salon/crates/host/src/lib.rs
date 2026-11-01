@@ -22,7 +22,8 @@
 //!   organizer reserve; complete HTTP reads/writes and WebSocket frames have
 //!   deadlines, and reader/writer lifetimes end together;
 //! - **the room**: one thread owns the [`salon_core::Host`] and the [`Game`],
-//!   so the game is plain sequential code that never locks anything.
+//!   so the game is plain sequential code that never locks anything. If it
+//!   dies, the process ends with [`ROOM_DIED`].
 //!
 //! Identities survive a restart: they are saved in the game's data folder,
 //! with the epoch, which only grows.
@@ -166,7 +167,15 @@ impl Options {
     }
 }
 
+/// The exit code of a server whose room died: the one of a Rust panic.
+pub const ROOM_DIED: i32 = 101;
+
 /// Serves `game` until the process ends. Returns only if it cannot start.
+///
+/// If the room dies (the game panics, the system's wait fails), the log says
+/// why and the process ends with [`ROOM_DIED`], which closes every connection:
+/// this function does not return then, whatever the game's `main` does with
+/// its result.
 pub fn run<G: Game>(options: Options, game: G) -> Result<(), String> {
     http::serve(options, game)
 }

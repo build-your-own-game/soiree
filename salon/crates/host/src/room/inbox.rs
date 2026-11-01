@@ -18,6 +18,9 @@ pub(crate) struct Receiver<T> {
     queue: mpsc::Receiver<T>,
     #[cfg(target_os = "macos")]
     wake: std::sync::Arc<macos::Wake>,
+    /// No test can make the kernel's wait fail: it stands in for that.
+    #[cfg(test)]
+    failure: std::cell::Cell<Option<io::Error>>,
 }
 
 #[derive(Debug)]
@@ -50,6 +53,8 @@ pub(crate) fn channel<T>(capacity: usize) -> io::Result<(Sender<T>, Receiver<T>)
             queue: receiver,
             #[cfg(target_os = "macos")]
             wake,
+            #[cfg(test)]
+            failure: std::cell::Cell::new(None),
         },
     ))
 }
@@ -136,6 +141,10 @@ impl<T> Receiver<T> {
                 return Err(ReceiveError::Timeout);
             }
             before_wait();
+            #[cfg(test)]
+            if let Some(error) = self.failure.take() {
+                return Err(ReceiveError::Wait(error));
+            }
             #[cfg(target_os = "macos")]
             self.wake.wait_until(deadline).map_err(ReceiveError::Wait)?;
             #[cfg(not(target_os = "macos"))]
@@ -151,6 +160,11 @@ impl<T> Receiver<T> {
 
     pub(crate) fn try_iter(&self) -> mpsc::TryIter<'_, T> {
         self.queue.try_iter()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_the_next_wait(&self, error: io::Error) {
+        self.failure.set(Some(error));
     }
 
     #[cfg(test)]

@@ -1,9 +1,16 @@
 //! The room thread: it alone owns the `Host` and the game. Transports talk
 //! to it through bounded channels, and it never waits on them: a full
 //! channel drops the packet, which salon resends.
+//!
+//! Nothing can go on without the room: [`watch`] ends the process when it
+//! stops, so that phones and the TV never retry against a server that still
+//! answers with nobody behind it.
 
+use std::any::Any;
 use std::collections::BTreeMap;
+use std::io::{self, Write as _};
 use std::sync::mpsc::SyncSender;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use salon_core::{Caps, HostConfig, LinkId};
@@ -77,6 +84,46 @@ impl Outlet {
 
 /// The longest the room sleeps without checking anything.
 const MAX_WAIT: Duration = Duration::from_millis(50);
+
+/// Why the room stopped without panicking.
+#[derive(Debug)]
+pub enum Ended {
+    /// Every sender of its inbox is gone.
+    NoTransport,
+    /// The operating system's wait failed.
+    Wait(io::Error),
+}
+
+/// What the room's end was, for the log.
+fn cause(ending: thread::Result<Ended>) -> String {
+    let panicked = |payload: Box<dyn Any + Send>| match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => payload
+            .downcast_ref::<&str>()
+            .map_or_else(|| "without a message".to_owned(), ToString::to_string),
+    };
+    match ending {
+        Ok(Ended::NoTransport) => "no transport is left".to_owned(),
+        Ok(Ended::Wait(error)) => format!("its wait failed: {error}"),
+        Err(payload) => format!("the game panicked: {}", panicked(payload)),
+    }
+}
+
+/// Waits for the room's end, then ends the process. A panicking game has
+/// finished unwinding by then, so what it owns, like its journal, was dropped.
+/// The operating system closes every connection, and games cannot get this
+/// wrong in their `main`.
+pub fn watch(room: JoinHandle<Ended>) -> ! {
+    let cause = cause(room.join());
+    // `eprintln!` panics when stderr is gone, and the process must still end.
+    let _: io::Result<()> = writeln!(
+        io::stderr(),
+        "salon: the room died: {cause}. The server stops with exit code {}.",
+        crate::ROOM_DIED
+    );
+    std::process::exit(crate::ROOM_DIED)
+}
+
 pub fn run<G: Game>(
     inbox: &Receiver<Net>,
     game: G,
@@ -84,7 +131,7 @@ pub fn run<G: Game>(
     tick: Duration,
     mut store: Store,
     clock: Clock,
-) {
+) -> Ended {
     let tick = u64::try_from(tick.as_millis()).unwrap_or(100).max(1);
     let mut driver = Driver::new(clock.now(), config, tick, game);
     let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
@@ -105,12 +152,9 @@ pub fn run<G: Game>(
                 }
             }
             Err(ReceiveError::Timeout) => {}
-            Err(ReceiveError::Disconnected) => return,
+            Err(ReceiveError::Disconnected) => return Ended::NoTransport,
             #[cfg(any(target_os = "macos", test))]
-            Err(ReceiveError::Wait(error)) => {
-                eprintln!("salon: room wait failed: {error}");
-                return;
-            }
+            Err(ReceiveError::Wait(error)) => return Ended::Wait(error),
         }
         let now = clock.now();
         for effect in driver.step(now, inputs) {
@@ -179,7 +223,6 @@ fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: 
 )]
 mod tests {
     use std::sync::{Arc, Mutex};
-    use std::thread;
 
     use salon_core::{DeviceEvent, Epoch, Host, Limits, Ms, Timing, TvKey};
 
@@ -223,6 +266,54 @@ mod tests {
         }
     }
 
+    fn config() -> HostConfig {
+        HostConfig {
+            game: 1,
+            epoch: Epoch(1),
+            tv_key: TvKey([0; 16]),
+            timing: Timing::default(),
+            limits: Limits::default(),
+            known: Vec::new(),
+        }
+    }
+
+    /// The other half, the process that ends, is `tests/room_death.rs`.
+    #[test]
+    fn a_failed_wait_ends_the_room_and_says_why() {
+        let clock = Clock::start();
+        let (net, inbox) = inbox::channel::<Net>(16).unwrap();
+        inbox.fail_the_next_wait(io::Error::other("kevent broke"));
+        let game = Steps {
+            start: clock,
+            done: 0,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let store = Store::open(None, 1, [0; 16]);
+        let ended = run(&inbox, game, config(), Duration::from_secs(1), store, clock);
+        drop(net);
+        assert!(matches!(ended, Ended::Wait(_)), "{ended:?}");
+        assert_eq!(cause(Ok(ended)), "its wait failed: kevent broke");
+    }
+
+    #[test]
+    fn a_panic_is_told_with_its_message() {
+        let told = |act: fn() -> ()| {
+            cause(
+                thread::spawn(move || {
+                    act();
+                    Ended::NoTransport
+                })
+                .join(),
+            )
+        };
+        let text = told(|| std::panic::panic_any("plain text"));
+        let formatted = told(|| std::panic::panic_any(format!("formatted {}", 1)));
+        let opaque = told(|| std::panic::panic_any(7));
+        assert_eq!(text, "the game panicked: plain text");
+        assert_eq!(formatted, "the game panicked: formatted 1");
+        assert_eq!(opaque, "the game panicked: without a message");
+    }
+
     #[test]
     fn cadence_probe_skips_missed_slots_instead_of_measuring_catch_up() {
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -231,15 +322,7 @@ mod tests {
             done: 0,
             seen: Arc::clone(&seen),
         };
-        let config = HostConfig {
-            game: 1,
-            epoch: Epoch(1),
-            tv_key: TvKey([0; 16]),
-            timing: Timing::default(),
-            limits: Limits::default(),
-            known: Vec::new(),
-        };
-        let mut host = Host::new(Ms(0), config);
+        let mut host = Host::new(Ms(0), config());
         game.tick(Ms(5_051), &mut host);
         assert_eq!(seen.lock().unwrap().len(), 1);
         assert_eq!(game.next_deadline(), Some(Ms(5_067)));
@@ -258,17 +341,10 @@ mod tests {
             seen: Arc::clone(&seen),
         };
         let (net, inbox) = inbox::channel(16).unwrap();
-        let config = HostConfig {
-            game: 1,
-            epoch: Epoch(1),
-            tv_key: TvKey([0; 16]),
-            timing: Timing::default(),
-            limits: Limits::default(),
-            known: Vec::new(),
-        };
         let store = Store::open(None, 1, [0; 16]);
-        let room =
-            thread::spawn(move || run(&inbox, game, config, Duration::from_secs(1), store, clock));
+        let room = thread::spawn(move || {
+            run(&inbox, game, config(), Duration::from_secs(1), store, clock)
+        });
         thread::sleep(Duration::from_secs(3));
         drop(net);
         room.join().unwrap();

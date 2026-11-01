@@ -105,7 +105,14 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let handler = game.http();
     let tick = options.tick;
     let clock = Clock::start();
-    thread::spawn(move || room::run(&inbox, game, config, tick, store, clock));
+    let room = thread::Builder::new()
+        .name("salon-room".into())
+        .spawn(move || room::run(&inbox, game, config, tick, store, clock))
+        .map_err(|error| format!("cannot start the room: {error}"))?;
+    thread::Builder::new()
+        .name("salon-watch".into())
+        .spawn(move || room::watch(room))
+        .map_err(|error| format!("cannot watch the room: {error}"))?;
 
     let diagnostic_dir = options
         .data
