@@ -1,7 +1,6 @@
 //! Shared verification policy, evidence and decision pipeline.
 pub mod cargo;
 pub mod check;
-pub mod decision;
 pub mod evaluate;
 pub mod harness;
 pub mod identity;

@@ -204,16 +204,21 @@ Leur observation n’inventorie pas tous les comportements possibles d’un GPU,
 d’iOS ou du réseau réel. Écrire `assumptions` rend les limites discutables et
 révisables ; leur présence ne démontre pas qu’elles sont vraies.
 
-## La place de la revue
+## La place exacte de Verus et de la revue
 
-La décision finale tient dans [`decision.rs`](outil/src/verification/decision.rs),
-dont les tests parcourent toutes les combinaisons de ce petit domaine : une
-observation absente ou périmée n’y devient pas une réussite, et agréger des
-résultats ne masque pas une obligation incomplète.
+Le [noyau de décision](outil/verification-kernel/README.md) est le code de
+production appelé par l’évaluateur. Verus vérifie ses fonctions de décision
+finies et leurs lois d’agrégation : une observation absente ou périmée ne peut pas y
+devenir une réussite ; agréger des résultats ne masque pas une obligation
+incomplète. Les tests exhaustifs de ce domaine fini et les mutations de preuve
+complètent le contrôle et sont rapportés comme des méthodes distinctes.
 
-Ces tests ne couvrent ni les parseurs, ni la résolution de l’applicabilité, ni
-le calcul des empreintes, ni les adaptateurs Cargo/navigateur, ni les
-spécifications du jeu, ni la véracité des observations reçues.
+Cela ne prouve pas les parseurs, la résolution de l’applicabilité, le calcul des
+empreintes, les adaptateurs Cargo/navigateur, les spécifications du jeu ni la
+véracité des observations fournies au noyau. Verus, son solveur, les
+spécifications de sa bibliothèque et la compilation restent dans la base de
+confiance. Les commandes reproductibles et les rapports de preuve sont décrits
+dans le README du noyau ; Verus n’est pas requis pour compiler chaque jeu.
 
 Les gestes S1–S10 sur appareils réels restent des jugements humains. Un compte
 rendu doit nommer les appareils, le contexte, la personne et ce qui a été
@@ -240,7 +245,9 @@ utilise la source du SDK à son étiquette publiée et immuable.
 
 Ces caches de compilation et de binaires supposent le runner et les caches
 GitHub dignes de confiance ; une chaîne de version n’est pas une attestation
-cryptographique d’origine. Cargo garde son contrôle des dépendances. Aucun rapport de vérification ni observation
+cryptographique d’origine. Cargo garde son contrôle des dépendances et le
+téléchargement de Verus vérifie en plus le SHA-256 figé de l’archive officielle,
+y compris sur un cache présent. Aucun rapport de vérification ni observation
 brute n’est restauré comme autorité : les résultats sont produits à nouveau.
 La présence d’un cache ne transforme jamais une obligation en réussite et
 n’établit pas un gain de temps ; les mesures de la campagne du modèle sont

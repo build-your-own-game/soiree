@@ -28,7 +28,7 @@ jobs:
             ~/.cargo/registry/src
             ~/.cargo/git/db
             ~/.cargo/git/checkouts
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-cargo-downloads-v1-${{ hashFiles('outil/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-cargo-downloads-v1-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-cargo-downloads-v1-
       - name: Cache Rust compilation
@@ -37,6 +37,7 @@ jobs:
           path: |
             outil/target/debug
             outil/target/release
+            outil/verification-kernel/target/debug
             salon/target/debug
             salon/target/release
             salon/target/wasm32-unknown-unknown
@@ -47,9 +48,9 @@ jobs:
             ${{ runner.temp }}/soiree-model-target/debug
             ${{ runner.temp }}/soiree-model-target/release
             ${{ runner.temp }}/soiree-model-target/wasm32-unknown-unknown
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-${{ hashFiles('outil/Cargo.lock', 'outil/verification-kernel/Cargo.lock', 'salon/Cargo.lock', 'remote/Cargo.lock') }}-
             ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-build-v2-
       - name: Cache immutable external CLI tools
         uses: actions/cache@v4
@@ -142,3 +143,59 @@ jobs:
       - name: Exercise the browser harness in isolation
         working-directory: tools/cert
         run: npm test
+  verification-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchains
+        id: versions
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99 --component rustfmt,clippy
+          rustup toolchain install 1.99.1
+          sdk_version="$(python3 -c 'import pathlib,re; text=pathlib.Path("outil/Cargo.toml").read_text().split("[package]",1)[1].split("\n[",1)[0]; print(re.search(r"(?m)^version = \"([^\"]+)\"$",text).group(1))')"
+          printf 'sdk=%s\n' "$sdk_version" >> "$GITHUB_OUTPUT"
+      - name: Cache policy Cargo downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-downloads-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-downloads-v1-
+      - name: Cache policy compilation
+        uses: actions/cache@v4
+        with:
+          path: outil/verification-kernel/target/debug
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-${{ hashFiles('outil/verification-kernel/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-sdk-${{ steps.versions.outputs.sdk }}-policy-build-v1-
+      - name: Check the production policy and exhaustive finite cases
+        run: |
+          set -euo pipefail
+          cargo +1.99 fmt --manifest-path outil/verification-kernel/Cargo.toml --check
+          cargo +1.99 clippy --manifest-path outil/verification-kernel/Cargo.toml --all-targets --locked -- -D warnings
+          cargo +1.99 test --manifest-path outil/verification-kernel/Cargo.toml --locked
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}/soiree-verus
+          key: verus-0.2026.10.26.d17fbd0-${{ runner.os }}-${{ runner.arch }}-archive-v1
+      - name: Install the authenticated official Verus release
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy_verus="$(python3 .github/scripts/install-verus.py "$RUNNER_TOOL_CACHE/soiree-verus")"
+          echo "SOIREE_VERUS=$policy_verus" >> "$GITHUB_ENV"
+      - name: Verify the production source and reject bad policy mutations
+        run: tools/verify-policy.sh --mutations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-policy
+          path: target/verification-policy/

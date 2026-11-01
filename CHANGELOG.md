@@ -5,8 +5,6 @@ Chaque version a sa section, de la plus récente à la plus ancienne. « Passer 
 ## v0.4.0 — Non publié
 
 `soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
-La décision finale reste dans `outil`, testée sur tout son domaine, sans Verus :
-installer l’outil compile vingt paquets de moins.
 
 `certify` signale le pare-feu quand l’adresse du réseau ne répond pas, et le
 modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
