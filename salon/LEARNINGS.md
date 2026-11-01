@@ -447,3 +447,11 @@ chiffré et sa renégociation, en plus des simulations du protocole applicatif.
   repli ses 5 s à sa création. Deux tests purs et la panne UDP réelle couvrent
   cette interaction. Le passage final réel observe 7/7 cas par moteur, avec
   fermeture absolue entre 14 999,6 et 15 000,5 ms et aucune panne de cleanup.
+
+## Les diagnostics de minuteries sont retirés
+
+L'enquête macOS est close par la minuterie kqueue : les scripts et les deux
+workflows qu'elle a utilisés sont sortis du dépôt, avec l'historique git pour
+les retrouver au commit `fff8061`. Les mesures restent dans
+`certification/ci-timers-2026-10-29/`, et `host-deadlines.yml` garde la
+régression. Les chemins cités plus haut désignent donc ces fichiers historiques.
