@@ -1,3 +1,5 @@
+> Archive : l'état du commun à la v0.1.0, avec les idées remises à plus tard. Ce fichier ne fait pas foi ; `MANIFESTE.md`, `CERTIFICATION.md` et le code si.
+
 # Chantiers : la philosophie, les réalisations et les limites restantes
 
 > Ce fichier s'adresse à l'hôte et à l'agent de code qui travaille sur le commun. Il se lit seul : il rappelle la philosophie de `MANIFESTE.md` et `CERTIFICATION.md`, puis consigne les huit chantiers, leurs critères de fin et leurs preuves.

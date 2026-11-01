@@ -1,6 +1,6 @@
 # {{nom}} : la certification propre à ce jeu
 
-> Ce que **ce jeu-ci** doit tenir, en plus des items communs de `.soiree/CERTIFICATION.md`. L'agent du jeu écrit ces items au fil des règles (voir `AGENTS.md`).
+> Ce que **ce jeu-ci** doit tenir, en plus des items communs de `.soiree/CERTIFICATION.md`. Ce fichier ne s'écrit pas à la main : `verification.toml` en est la source (voir `AGENTS.md`).
 
 Les engagements, leurs références exactes de tests et les décisions du catalogue
 ont leur source dans `verification.toml`. Le bloc ci-dessous est une vue générée ;

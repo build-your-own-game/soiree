@@ -33,7 +33,7 @@ Avant de toucher un fichier, sache dans quel dépôt il est. Puis lis l'`AGENTS.
 Chaque jeu dépend de salon par étiquette git :
 
 ```toml
-salon-core = { git = "https://github.com/build-your-own-game/soiree", tag = "v0.1.0" }
+salon-core = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }
 ```
 
 Ici, `.cargo/config.toml` remplace ces dépendances par les dossiers de `soiree/`. Cargo lit ce fichier pour tout projet placé sous ce dossier. Conséquences :
@@ -43,7 +43,7 @@ Ici, `.cargo/config.toml` remplace ces dépendances par les dossiers de `soiree/
 - L'étiquette nommée dans le `Cargo.toml` du jeu doit quand même exister sur GitHub : Cargo la récupère avant d'appliquer le `[patch]`.
 - Cargo affiche `patch … was not used in the crate graph` pour chaque crate qu'un jeu n'utilise pas. C'est normal.
 
-Pour voir le jeu comme le voient les amis, sans le `[patch]` : clone-le hors de ce dossier et lance `soiree check` dans le clone.
+Pour voir le jeu comme le voient les amis, sans le `[patch]` : clone-le hors de ce dossier et lance `soiree check --locked --published` dans le clone.
 
 ## Un changement qui touche salon et un jeu
 
@@ -51,8 +51,8 @@ C'est le cas courant : un jeu a besoin de quelque chose que salon n'a pas encore
 
 1. **Développe ensemble.** Modifie `soiree/salon` et le jeu en même temps. Le `[patch]` fait le lien. Le `Cargo.toml` du jeu garde l'ancienne étiquette.
 2. **Vérifie le commun.** Suis `soiree/AGENTS.md` : `soiree check` et `soiree certify` sur le modèle et sur les trois jeux, `CHANGELOG.md` à jour.
-3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version (`v0.2.0`), pousse le commit **et** l'étiquette (`git push --follow-tags`).
-4. **Passe le jeu à l'étiquette.** Dans le jeu : `soiree upgrade`, ou à la main la nouvelle étiquette dans `Cargo.toml` et la version dans `soiree.toml`. Puis `soiree check`.
+3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version, pousse le commit **et** l'étiquette (`git push --follow-tags`).
+4. **Passe le jeu à l'étiquette.** Dans le jeu : `soiree upgrade`, jamais à la main : il réécrit aussi les étiquettes des crates du jeu. Puis `soiree check`.
 5. **Pousse le jeu.** Seulement maintenant.
 
 **Ne pousse jamais un jeu qui dépend d'un salon non publié.** Chez un ami, ou sur la machine de la soirée, il ne compilerait pas, ou compilerait contre l'ancien salon. Si `soiree check` prévient d'un chemin local, demande-toi si le jeu a besoin de ce qui n'est pas encore étiqueté. Si oui, reviens à l'étape 3.

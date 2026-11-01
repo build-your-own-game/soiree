@@ -1,6 +1,10 @@
 # Brancher un jeu sur la Télécommande
 
-L'app iPhone de `remote/` sert de télécommande à tous les jeux. Le joueur n'y choisit rien : **ton jeu dit quelle télécommande afficher**, et il en change quand il veut (un buzzer pendant le quiz, une toile pendant le dessin). Garde ta page téléphone pour les joueurs qui n'ont pas l'app.
+L'app iPhone de `remote/` sert de télécommande. Le joueur n'y choisit rien, et chaque jeu garde sa page téléphone pour les joueurs qui n'ont pas l'app.
+
+**Avec salon, c'est-à-dire pour tous les jeux de la soirée :** salon tient `/remote` et répond toujours `Remote::Web`. L'app affiche donc ta page téléphone, et tu n'as rien à servir. Ce que tu utilises ici, c'est la section « Ce que l'app ajoute à ta page ». Un jeu ne touche jamais un socket : ne sers pas `/remote` toi-même.
+
+**Hors de salon :** tout le reste de ce document décrit le protocole complet, celui de `crates/demo`. Les presets et les compositions natives (`Remote::Pad`) n'y sont accessibles qu'à ce démonstrateur tant que salon ne les relaie pas.
 
 ## Rejoindre
 
@@ -21,7 +25,7 @@ avant un appel susceptible de déclencher un autre événement.
 
 ## Messages
 
-Des frames WebSocket binaires, un message par frame, encodés par le crate `remote-protocol`. Ajoute-le avec `remote-protocol = { git = "https://github.com/build-your-own-game/soiree", tag = "v0.1.0" }`, à l'étiquette de ton `soiree.toml` ; il fixe le format, et ses tests vérifient l'aller-retour.
+Des frames WebSocket binaires, un message par frame, encodés par le crate `remote-protocol`. Ajoute-le avec `remote-protocol = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }`, à l'étiquette de ton `soiree.toml` ; il fixe le format, et ses tests vérifient l'aller-retour.
 
 1. Le téléphone envoie `PhoneMessage::Hello { version, player, name }`.
    - `player` est un jeton de 16 octets, le même à chaque reconnexion : c'est l'identité du joueur, sans compte.
@@ -72,7 +76,7 @@ Dans l'app, ta page peut faire ce qu'un navigateur ne permet pas. Hors de l'app,
 
 ### En Rust (page compilée en WASM)
 
-Ajoute `remote-web = { git = "https://github.com/build-your-own-game/soiree", tag = "v0.1.0" }`, à l'étiquette de ton `soiree.toml`. Le crate fait tout, sans une ligne de JavaScript à écrire :
+Ajoute `remote-web = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }`, à l'étiquette de ton `soiree.toml`. Le crate fait tout, sans une ligne de JavaScript à écrire :
 
 | Capacité | Appel |
 |---|---|
@@ -153,7 +157,7 @@ vibration, motif, capteurs, orientation, datagramme. Un objet mal typé est
 refusé sans effet partiel. Les identifiants de socket sont des entiers u32,
 les ports vont de 1 à 65535 et les datagrammes contiennent au plus 65507 octets
 dans 0..255. Les motifs gardent au plus 64 événements ; temps, durée, intensité
-et netteté sont bornés comme auparavant. Les valeurs absentes d’un événement
+et netteté sont bornés. Les valeurs absentes d’un événement
 valent respectivement 0, 0, 1 et 0,5. Les capteurs doivent être finis.
 
 Le SDK valide l’identité avant de fournir `Info`. `info.player.bytes()` donne

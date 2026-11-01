@@ -1,5 +1,4 @@
-# Les jeux de la soirée. `soiree play` les lit, récupère chaque dépôt et en
-# fait le menu de la TV.
+# Les jeux de la soirée. `soiree host-setup` les lit et récupère chaque dépôt.
 #
 # Pour proposer ton jeu : une pull request qui ajoute un bloc [[game]], une
 # seule fois. Le reste (version du commun, certification) est lu dans le

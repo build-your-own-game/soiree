@@ -1,12 +1,12 @@
 # Catalogue des items de certification
 
-> Pour l'agent de code qui écrit le `CERTIFICATION.md` d'un jeu. Ce catalogue rassemble des items de certification déjà rédigés, chacun tiré d'un bug réel, pour que ton jeu n'ait pas à les redécouvrir en pleine soirée.
+> Pour l'agent de code qui écrit le `verification.toml` d'un jeu. Ce catalogue rassemble des items de certification déjà rédigés, chacun tiré d'un bug réel, pour que ton jeu n'ait pas à les redécouvrir en pleine soirée.
 
 ## À quoi il sert
 
 `CERTIFICATION.md`, à la racine du dépôt commun, fixe le plancher de **tous** les jeux : reconnexions, entrées hostiles, textes vicieux, mise en page de la TV, endurance. Le harnais et salon le vérifient sur chaque jeu. Ce catalogue ne répète rien de tout cela.
 
-Chaque jeu a aussi son propre `CERTIFICATION.md` : ce que **ce jeu-ci** doit tenir, à cause de ses règles. Ces items-là portent sur la logique et la sensation du jeu : un vote qui compte deux fois, un joueur coincé dans un mur, une égalité donnée au joueur 1, une question qui revient. Beaucoup se répètent d'un jeu à l'autre. Le catalogue les a écrits une fois, chacun avec :
+Chaque jeu déclare aussi dans son `verification.toml`, dont `CERTIFICATION.md` est une vue générée, ce que **ce jeu-ci** doit tenir, à cause de ses règles. Ces items-là portent sur la logique et la sensation du jeu : un vote qui compte deux fois, un joueur coincé dans un mur, une égalité donnée au joueur 1, une question qui revient. Beaucoup se répètent d'un jeu à l'autre. Le catalogue les a écrits une fois, chacun avec :
 - ce qui ne doit jamais arriver, en une ligne ;
 - le bug réel qui l'a montré, avec sa source ;
 - une propriété testable sur la simulation (`crates/core`), sans navigateur ni réseau ;
@@ -22,13 +22,23 @@ Le réseau n'y est jamais : les coupures, les jetons, les paquets perdus ou host
 3. **Prends tout ce qui s'applique.** Dans le doute, prends l'item : un test de trop coûte quelques secondes, un bug en pleine soirée coûte la soirée.
 4. **Adapte chaque item.** Remplace les mots génériques par ceux de ton jeu, suis la ligne « Adapter », écris le test, et vérifie qu'il échoue quand tu casses exprès la règle (sinon il ne teste rien). Dans le `CERTIFICATION.md` du jeu, note d'où vient l'item :
 
-   ```markdown
-   ### P-04 · Un vote arrivé après la fin de son duel ne compte pour aucun autre duel
-   - **Origine :** VOTE-09
-   - **Test :** `crates/core/src/tests/properties.rs`, `a_late_vote_does_not_land_on_the_next_duel`
+   ```toml
+   [[guarantees]]
+   id = "J4"
+   claim = "Un vote arrivé après la fin de son duel ne compte pour aucun autre duel."
+   checks = ["a_late_vote_does_not_land_on_the_next_duel"]
+   origins = ["VOTE-09"]
+   assumptions = []
+
+   [[catalogue_decisions]]
+   id = "VOTE-09"
+   status = "adopted"
+   reason = "Adapté par J4."
    ```
 
-5. **Justifie chaque item écarté en une ligne,** dans une section « Items du catalogue écartés » du `CERTIFICATION.md` du jeu. Exemple : « TXT-08 : pas de filtre de mots, on joue entre amis. » Un fichier entier peut s'écarter d'une ligne : « `physique.md` : rien ne bouge, c'est un quiz. »
+   Le contrôle lui-même se déclare dans `[[checks]]` ; `VERIFICATION.md` donne le format complet.
+
+5. **Justifie chaque item écarté en une ligne,** avec le statut `not-applicable` dans `catalogue_decisions`. Exemple de raison : « Pas de filtre de mots, on joue entre amis. » Sans décision explicite, un item reste non revu.
 
 | Ton jeu a… | Lis |
 |---|---|
@@ -47,11 +57,11 @@ Presque tous les jeux de soirée cochent les trois dernières lignes et `progres
 
 ## Proposer un nouvel item
 
-Un bug trouvé en jouant suit la règle du commun (`CERTIFICATION.md`, « La règle du bug trouvé en jouant ») : on le reproduit en test, on écrit dans `LEARNINGS.md` pourquoi aucun item ne l'a vu, et on ajoute un item au `CERTIFICATION.md` du jeu. Si la faille n'est pas propre à ce jeu (un autre jeu de soirée pourrait l'avoir), elle a sa place ici aussi.
+Un bug trouvé en jouant suit la procédure de l'`AGENTS.md` du jeu (« Un bug trouvé en jouant »). Si la faille n'est pas propre à ce jeu (un autre jeu de soirée pourrait l'avoir), elle a sa place ici aussi.
 
 - **L'agent du jeu la propose de lui-même,** sans attendre qu'on le lui demande, par une **pull request** sur le dépôt commun (pas une issue).
 - **La PR ajoute l'item au bon fichier,** au format exact du catalogue, avec l'identifiant libre suivant de sa famille, une ligne dans l'index plus bas, et **un lien vers le test du jeu qui a trouvé la faille**. Le « bug d'origine » est alors ce bug-là, décrit en une à trois phrases.
-- **C'est l'hôte qui décide** de la fusionner ou non : rien n'entre dans le catalogue sans son choix. En attendant, l'item reste dans le `CERTIFICATION.md` du jeu, qui le teste déjà.
+- **C'est l'hôte qui décide** de la fusionner ou non : rien n'entre dans le catalogue sans son choix. En attendant, la garantie reste dans le `verification.toml` du jeu, qui la teste déjà.
 - **Si l'agent ne peut pas ouvrir de PR lui-même,** il en écrit le contenu (le fichier visé et l'item complet) pour l'auteur du jeu, qui l'ouvrira.
 
 Un item qui manque de famille peut ouvrir un nouveau fichier, avec un nouveau préfixe stable. Un identifiant publié ne change jamais et n'est jamais réutilisé, même si l'item est retiré : des jeux le citent dans leur `origine`.

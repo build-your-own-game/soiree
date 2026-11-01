@@ -23,7 +23,7 @@ Deux idées viennent des navigateurs. La suite commune web-platform-tests, que C
 | **2. Certification** | pour éprouver le jeu réel | scénarios et mesures demandés | le harnais, en boîte noire | `soiree certify`, dans le dossier du jeu |
 | **3. Le salon** | avant la soirée | appareils, perception et plaisir de jeu | un humain, avec de vrais téléphones | la liste « Étage 3 » plus bas |
 
-- **Étage 1.** Il joue des milliers de suites d'entrées au hasard sur la simulation (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
+- **Étage 1.** Il joue des suites d'entrées au hasard sur la simulation, en nombre fixé par chaque campagne, (`crates/core`) et vérifie des invariants après chaque pas. Un échec est réduit (*shrinking*) au plus petit exemple qui casse encore. Un agent peut corriger ça.
 - **Étage 2.** Il lance le vrai serveur et ouvre la TV et 8 téléphones sans écran, pilotés par Playwright : la TV dans le Chrome de l'ordinateur, quatre téléphones dans WebKit et quatre dans Chromium, en alternance. Chaque téléphone passe par son propre proxy [Toxiproxy](https://github.com/Shopify/toxiproxy), qui sait retarder, couper ou avaler la connexion sans rien dire. Toxiproxy ne porte que du TCP : la TV et les téléphones ouvrent leur page avec `?salon=ws`, qui garde salon sur son WebSocket. Le harnais tape au hasard, coupe, gèle, recharge, redémarre l'hôte, et envoie des paquets hostiles. Il ne connaît du jeu que son fichier `cert.json`, décrit plus bas.
 - **Étage 3.** Ce qu'aucun simulateur ne reproduit : la suspension d'iOS, un vrai Wi-Fi, le recul du canapé, savoir si c'est drôle.
 
@@ -54,13 +54,7 @@ Les jugements sur appareils réels gardent leur statut de revue humaine.
 
 ## La règle du bug trouvé en jouant
 
-Un bug découvert en jouant est un échec de la certification avant d'être un échec du code. C'est l'esprit des postmortems sans blâme de Google et des *Correction of Errors* d'Amazon. Pour chacun :
-
-1. **Le reproduire.** Un replay, ou une suite d'entrées, qui devient un test de l'étage 1.
-2. **Répondre par écrit** dans `LEARNINGS.md` : *pourquoi aucun item de cette liste ne l'a vu ?*
-3. **Renforcer la liste.** Ajoute un item, ou durcis un item existant, pour que **tous** les jeux en profitent.
-
-Un test n'est jamais supprimé sans dire ce qui le couvre maintenant : chaque jeu en tient le registre dans la section « Tests retirés au passage à salon » de son `LEARNINGS.md`.
+Un bug découvert en jouant est un échec de la certification avant d'être un échec du code : c'est l'esprit des postmortems sans blâme de Google et des *Correction of Errors* d'Amazon. La procédure est dans l'`AGENTS.md` de chaque jeu, section « Un bug trouvé en jouant ». Un test n'est jamais supprimé sans dire ce qui le couvre maintenant : chaque jeu en tient le registre dans son `LEARNINGS.md`.
 
 ## Lancer le harnais
 
@@ -75,7 +69,7 @@ soiree certify -- --seed 12             # rejoue le hasard d'un passage
 soiree certify -- --soak 30             # 30 min d'endurance (R2)
 ```
 
-Les scénarios, dans l'ordre : `capacity`, `join`, `rtc`, `text`, `ui`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `progression`, `monkey`, `restart`, `storage`, `resources`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais conserve ses observations, mais l’évaluateur commun décide si le périmètre demandé est satisfait. `soiree certify` écrit `certification/verification.json` et `certification/verification.md` : plan, sélection, observations, hypothèses et provenance des entrées. Le détail brut reste dans `certification/harness-observations.json` et, lorsqu’il est produit, `certification/harness-observations.md`. Ces rapports datés accompagnent le code ; aucun ancien rapport n’est repris comme une observation fraîche. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
+Les scénarios, dans l'ordre : `capacity`, `join`, `rtc`, `text`, `ui`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `progression`, `monkey`, `restart`, `storage`, `resources`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `ui`, `performance` et `panic`. L'item `HTTP` du rapport signale une page que le jeu sert en erreur. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais conserve ses observations, mais l’évaluateur commun décide si le périmètre demandé est satisfait. `soiree certify` écrit `certification/verification.json` et `certification/verification.md` : plan, sélection, observations, hypothèses et provenance des entrées. Le détail brut reste dans `certification/harness-observations.json` et, lorsqu’il est produit, `certification/harness-observations.md`. Ces rapports datés accompagnent le code ; aucun ancien rapport n’est repris comme une observation fraîche. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
 
 Si le harnais doit fermer de force un contexte après une commande native bloquée, le passage s’arrête avec **H1**, une panne de l’infrastructure de test. Les observations déjà terminées restent dans le rapport ; les scénarios restants sont explicitement non vérifiés. Un contexte détruit ne doit jamais produire ensuite de faux verdicts sur la reconnexion ou le stockage. Le diagnostic conserve l’opération native, son historique récent et l’état observable de la page.
 
@@ -113,7 +107,12 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`join`** liste les étapes pour rejoindre depuis un téléphone : `fill` (un champ et son texte, `{name}` étant le prénom), `click` (un sélecteur), `press` (une touche). **`joined`** est une expression évaluée dans la page téléphone, vraie une fois le joueur dans la partie.
 - **`start`** lance la partie depuis la TV, et **`advance`** la fait avancer (passer une étape), pour la parcourir vite. Chacun est `{ "key": "…" }` ou `{ "text": "Play" }` (le bouton qui porte ce texte).
 - **`players.max`** est la taille de la salle (R3).
-- **`layout: false`**, avec **`layout_reason`**, saute la vérification de la zone sûre : une TV dessinée sur un canvas, une page qui n'est pas une TV.
+- **`display`** dit ce qu'est l'écran : `{"role":"desktop","reason":"…"}` retire la zone sûre T3 à un éditeur solo sans téléphone. **`layout`** donne l'oracle d'une TV dessinée sur un canvas : `{"name":"…","command":[…],"timeout_ms":120000}`. `layout: false` seul n'exclut rien, et T3 reste alors non attesté ; **`layout_reason`** garde sa raison pour le rapport.
+- **`text`** liste les contrôles du corpus de textes, **`refused`** le sélecteur et le texte vus par le joueur en trop, **`progression`** la nature de la partie (`{"kind":"finite","checks":[…]}` ou `{"kind":"continuous","reason":"…"}`).
+- **`storage`** identifie la sauvegarde IndexedDB à corrompre (`{"kind":"indexeddb","database":"…","store":"…","key":"…"}`). Sans cette clé, le harnais utilise `localStorage`.
+- **`jitter`** prépare le scénario de latence : `setup` (actions d'avant la mesure) et `ready` (expression vraie quand on peut commencer).
+- **`phone_upstream`** vaut `lan` par défaut, ou `loopback` si le jeu ne doit pas passer par l'adresse du réseau ; le LAN reste alors non attesté.
+- **`advance.progress`** est une expression dont la valeur change quand la partie avance. Sans elle, la progression de D2 n'est pas attestée.
 - Un jeu sans téléphone (`"phone": null`) passe seulement les items qui le concernent : le singe joue alors sur sa page.
 - **`ui`** décrit les contrôles d’interface U1 ci-dessous. Chaque catégorie
   `editing`, `lifecycle`, `async`, `effects` est couverte par un scénario ou
@@ -269,7 +268,7 @@ Jackbox admet que sa reconnexion marche « 90 % du temps », et c'est la premiè
 | C4 | Recharger la page en pleine manche rend la même place, grâce au jeton. | Jackbox, Kahoot | salon (le retour de C2, sans test à lui), 2 `reload` |
 | C10 | Une panique WASM sur un téléphone est transmise au journal de l’hôte, recharge la page et rend au joueur le même appareil, le même jeton et sa place. Des paniques répétées arrêtent les rechargements avec un message clair. | chantier anti-panique | salon, 2 `panic` (une injection dans chaque moteur), tests du garde de rechargement |
 | C5 | Deux onglets pour le même joueur : le dernier gagne, et l'autre ne se reconnecte pas en boucle. | Sidequest Live (code 4001) | salon, 2 `twin` |
-| C6 | Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance. | Jackbox, AirConsole | 1 |
+| C6 | Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance. | Jackbox, AirConsole | à relier |
 | C7 | L'hôte qui redémarre en pleine partie ne laisse aucun écran figé. La TV et les téléphones se reconnectent, ou disent clairement quoi faire. | rocketcrab #70 | salon, 2 `restart` |
 | C8 | Une salle pleine, une partie déjà lancée ou une mauvaise version donnent un message clair, jamais un lobby fantôme. Le contrôle de capacité exige le refus visible déclaré ; les autres refus gardent leurs tests salon/jeu. | Drawphone #57 | salon, 1, 2 `capacity` |
 | C9 | Les données gardées par le navigateur (jeton, sauvegarde), corrompues ou inaccessibles, n'empêchent pas la page de s'ouvrir. | rocketcrab #105 | 1, 2 `storage` |
@@ -281,10 +280,10 @@ Sur un serveur qui fait autorité, une panique termine la soirée. Les clones de
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
 | E1 | Un message illisible (octets au hasard, paquet tronqué ou muté, frame texte) est ignoré. L'hôte et les autres joueurs continuent. | ClusterFuzz, Drawphone #124 | salon, 1, 2 `hostile` |
-| E2 | Un message plus gros que la limite (64 Kio) ferme cette connexion, et elle seule. | Drawphone #94 | salon (la limite de 64 Kio est dans `salon-host`, sans test à lui), 2 `hostile` |
+| E2 | Un message plus gros que la limite (64 Kio) ferme cette connexion, et elle seule. | Drawphone #94 | salon, 2 `hostile` |
 | E3 | Un téléphone qui inonde l'hôte (des milliers de messages par seconde) ne ralentit pas les autres. | Colyseus (limiteur) | salon, 2 `hostile` |
 | E4 | Un téléphone ne peut ni devenir la TV, ni prendre la place d'un autre avec un jeton inventé. Le premier paquet de la TV, rejoué depuis le réseau, reçoit un refus court et sa connexion se ferme en 3 s, sans jamais l'écran de la TV. | red team | salon, 2 `hostile` |
-| E5 | Une action hors de sa phase, ou d'un joueur qui n'est pas concerné, est refusée sans rien changer. Exemples : voter pour soi, répondre après l'échéance, agir dans une partie finie. | Drawphone #124 | 1 |
+| E5 | Une action hors de sa phase, ou d'un joueur qui n'est pas concerné, est refusée sans rien changer. Exemples : voter pour soi, répondre après l'échéance, agir dans une partie finie. | Drawphone #124 | à relier |
 | E6 | 8 téléphones qui tapent et écrivent au hasard pendant toute une partie ne font apparaître aucune exception, ni dans les pages ni dans l'hôte. | gremlins.js, Android monkey | 2 `monkey` |
 
 ### T — Texte et affichage
@@ -302,8 +301,8 @@ Les **textes vicieux** sont ceux de `tools/cert/nasty.json`, dans le dépôt com
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| T1 | Chaque limite de longueur est appliquée par l'hôte, pas seulement par la page, et comptée de la même façon des deux côtés. | Drawphone #134 | 1 |
-| T2 | Aucun texte vicieux ne fait planter un écran, injecte du HTML ou sort de son cadre. | XR-046, Sivonen | 1, 2 `text` + `layout` |
+| T1 | Chaque limite de longueur est appliquée par l'hôte, pas seulement par la page, et comptée de la même façon des deux côtés. | Drawphone #134 | à relier |
+| T2 | Aucun texte vicieux ne fait planter un écran, injecte du HTML ou sort de son cadre. | XR-046, Sivonen | 1, 2 `text` |
 | T3 | Le texte de la TV reste dans la zone sûre, aux formats 16:9, 4:3, ultra-large et portrait, de 1280×720 à 3840×2160. | Xbox (zone sûre), Punchline | 2 `layout` |
 | T4 | Sur le téléphone, un champ de saisie a un texte d'au moins 16 px : sinon iOS zoome et la page se décale. | Safari iOS | 2 `layout` |
 
@@ -313,11 +312,11 @@ Age of Empires appelait la désynchronisation « le bug têtu », jusqu'à la so
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| D1 | Le même état initial, les mêmes contenus et versions, la même graine et les mêmes entrées externes datées et ordonnées donnent les mêmes états et effets logiques. Le rendu au pixel près et les délais physiques demandent des contrôles distincts. | manifeste (principe 3) | 1 |
-| D2 | Une partie se termine toujours, quelles que soient les entrées, les absences et les déconnexions : aucun état ne bloque. Le parcours navigateur observe une fin réelle puis une reprise ; les propriétés natives éprouvent les autres suites. | Drawphone #70 | 1, 2 `progression` ; watchdog `monkey` |
-| D3 | Les invariants du jeu tiennent après chaque pas. Exemples : scores cohérents, un joueur par place, chaque consigne attribuée. Le jeu les énumère dans son test. | Sea of Thieves (tests d'acteurs) | 1 |
-| D4 | Pour une simulation en temps réel, le hash de l'état est le même en natif et en WASM sur un replay. | Factorio, Fiedler, League of Legends | 1 |
-| D5 | On relance une partie sans rien redémarrer. | manifeste (« Le soir même ») | 1, 2 `monkey` |
+| D1 | Le même état initial, les mêmes contenus et versions, la même graine et les mêmes entrées externes datées et ordonnées donnent les mêmes états et effets logiques. Le rendu au pixel près et les délais physiques demandent des contrôles distincts. | manifeste (principe 3) | à relier |
+| D2 | Une partie se termine toujours, quelles que soient les entrées, les absences et les déconnexions : aucun état ne bloque. Le parcours navigateur observe une fin réelle puis une reprise ; les propriétés natives éprouvent les autres suites. | Drawphone #70 | 1, 2 `progression` |
+| D3 | Les invariants du jeu tiennent après chaque pas. Exemples : scores cohérents, un joueur par place, chaque consigne attribuée. Le jeu les énumère dans son test. | Sea of Thieves (tests d'acteurs) | à relier |
+| D4 | Pour une simulation en temps réel, le hash de l'état est le même en natif et en WASM sur un replay. | Factorio, Fiedler, League of Legends | à relier |
+| D5 | On relance une partie sans rien redémarrer. | manifeste (« Le soir même ») | à relier |
 
 ### R — Durée et réseau dégradé
 

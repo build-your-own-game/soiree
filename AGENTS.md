@@ -27,16 +27,12 @@ Chaque jeu dépend d'une étiquette de ce dépôt. Une version figée ici, c'est
 
 ## Salon
 
-Reprises de `salon/AGENTS.md`, qui reste la référence :
-- La spécification est la documentation de `salon/crates/core/src/lib.rs`. Une garantie qu'elle annonce a son test dans `salon/crates/core/tests/` ; une garantie nouvelle aussi.
-- `salon-core` reste `#![no_std]`, sans horloge ni hasard : le temps et les octets entrent par les appels.
-- Chaque leçon tirée d'une référence va dans `salon/LEARNINGS.md`, avec sa source.
-- Les jeux ne contiennent aucune logique réseau : ni jeton, ni reconnexion, ni battement, ni limite de débit. Si un jeu en a besoin, c'est dans salon qu'elle manque.
+Ses règles sont dans `salon/AGENTS.md`.
 
 ## Les règles et le harnais
 
 - Les règles (toolchain, lints, `clippy.toml`) sont dans `outil/regles/`, embarquées dans le binaire. `MANIFESTE.md` garde les idées, pas les fichiers de config.
-- Un item commun de `CERTIFICATION.md` a son scénario dans le harnais, ou sa garantie dans salon. Un item sans vérification n'est pas un item : c'est une intention.
+- Un item commun de `CERTIFICATION.md` a son scénario dans le harnais, ou sa garantie dans salon. Un item sans vérification n'est pas un item : c'est une intention, marquée « à relier » tant qu'aucun contrôle ne le porte.
 - Le harnais ne connaît un jeu que par son `cert.json`. N'y ajoute pas de cas propre à un jeu.
 
 ## Les contrats de vérification
@@ -71,10 +67,27 @@ par `soiree mutants --help` (`cargo install --locked cargo-mutants --version 27.
 Ce prérequis concerne le développement du commun ; `soiree check` et
 `soiree certify` d’un jeu ne lancent jamais les mutations.
 
+## La documentation
+
+Une phrase fausse produit du mauvais code chez tous les agents. Chaque fait a une seule source ; les autres documents y renvoient.
+
+| Fichier | Son rôle, et lui seul |
+|---|---|
+| `MANIFESTE.md` | le pari et les principes |
+| `CERTIFICATION.md` | les exigences, et le format de `cert.json` |
+| `VERIFICATION.md` | le mécanisme et la portée d'un résultat |
+| `CHANGELOG.md` | ce qui a changé, et comment s'adapter |
+| `README.md`, `REJOINDRE.md` | par où commencer |
+| `AGENTS.md` | comment travailler ici |
+| `LEARNINGS.md` | ce qu'on a appris et d'où ça vient, jamais une consigne |
+| `certification/` | le dernier résultat de chaque jeu, jamais une déclaration |
+
+`soiree check .` vérifie les versions, commandes, chemins, scénarios, clés de `cert.json` et items cités. Écris « `vX.Y.Z` » dans un exemple. Les campagnes passées restent dans l'historique git : `git show e73554f:certification/`.
+
 ## Versions
 
-- Une version, c'est une étiquette sur ce dépôt : `v0.1.0`, `v0.2.0`… Elle fige ensemble salon, la télécommande, les règles, le harnais et le modèle.
-- On suit semver. Tant qu'on est en `0.x`, un changement qui casse un jeu monte le chiffre du milieu (`v0.1.3` → `v0.2.0`) ; une correction qui ne casse rien monte le dernier.
+- Une version, c'est une étiquette sur ce dépôt. Elle fige ensemble salon, la télécommande, les règles, le harnais et le modèle.
+- On suit semver. Tant qu'on est en `0.x`, un changement qui casse un jeu monte le chiffre du milieu ; une correction qui ne casse rien monte le dernier.
 - La version du paquet `soiree` (`outil/Cargo.toml`) est celle de l'étiquette. `soiree check` refuse un jeu dont `soiree.toml` demande une autre version.
 - Une étiquette publiée ne bouge plus. Une erreur se corrige par une nouvelle version.
 
@@ -83,7 +96,7 @@ Ce prérequis concerne le développement du commun ; `soiree check` et
 Chaque version y a sa section, de la plus récente à la plus ancienne :
 
 ```markdown
-## v0.2.0 — 2026-11-14
+## vX.Y.Z — AAAA-MM-JJ
 
 Ce qui change, en deux ou trois phrases, pour quelqu'un qui fait un jeu.
 
@@ -118,9 +131,10 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
 4. Les mêmes sur chaque jeu du dossier de l'hôte (`games/*`). Le `[patch]` de son `.cargo/config.toml` les fait compiler contre ce salon-ci, avant toute étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
 5. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
 6. La version de `outil/Cargo.toml` est celle de l'étiquette.
+7. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
 
 Puis : commit, étiquette, `git push --follow-tags`, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
 
 ## Le modèle
 
-`modele/` est ce que reçoit un ami qui commence. Il passe `soiree check` et `soiree certify` à chaque version. Son `AGENTS.md` est écrit pour un agent qui n'a jamais vu ce dépôt, et pour un auteur qui ne code peut-être pas. `{{nom}}` y est remplacé par le nom du jeu, `build-your-own-game` par l'organisation, `{{version}}` par la version.
+`modele/` est ce que reçoit un ami qui commence. Il passe `soiree check` et `soiree certify` à chaque version. Son `AGENTS.md` est écrit pour un agent qui n'a jamais vu ce dépôt, et pour un auteur qui ne code peut-être pas. `{{nom}}` et `nom-du-jeu` y sont remplacés par le nom du jeu, `{{crate}}` par sa forme Rust, `{{org}}` par l'organisation, `{{version}}` par la version.

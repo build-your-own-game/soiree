@@ -10,6 +10,12 @@ Le scénario `rtc` accepte qu’un effet se termine en revenant à sa valeur ou 
 cessant de bouger : il supposait un saut qui retombe, et échouait toujours sur
 un compteur comme celui du modèle.
 
+`soiree check .` lit désormais les documents du commun contre le code : versions,
+commandes et options, chemins, scénarios, clés de `cert.json` et items. Le catalogue
+renvoie à `verification.toml`, `CONTRAT.md` dit ce que salon permet vraiment, et
+seuls les derniers résultats restent dans `certification/` ; les campagnes passées
+sont dans l’historique git.
+
 `certify` signale le pare-feu quand l’adresse du réseau ne répond pas, et le
 modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
 

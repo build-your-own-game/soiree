@@ -1,6 +1,6 @@
 # Contrats de vérification
 
-Ce document décrit le mécanisme de la version 0.3.0.
+Ce document décrit le mécanisme de la vérification.
 Le [manifeste](MANIFESTE.md) porte l’ambition ; le
 [socle commun](CERTIFICATION.md) décrit les exigences. Ici, on précise ce que
 l’outil sait effectivement établir, sur quelles entrées et avec quelles limites.
@@ -52,7 +52,7 @@ profile = "dev"
 
 Le nom de cible est celui de Cargo ; le nom du test est son chemin complet dans
 libtest. Pour une cible binaire, utiliser `target_kind = "bin"` et le nom du
-binaire ; pour `tests/replay.rs`, utiliser `target_kind = "test"`,
+binaire ; pour un fichier `replay.rs` du dossier `tests`, utiliser `target_kind = "test"`,
 `target = "replay"` et le nom complet annoncé par cet exécutable.
 Paquet, genre de cible, cible, nom, features, activation des features par défaut
 et profil forment ensemble l’identité. Les features sont triées et dédupliquées.
@@ -251,7 +251,7 @@ y compris sur un cache présent. Aucun rapport de vérification ni observation
 brute n’est restauré comme autorité : les résultats sont produits à nouveau.
 La présence d’un cache ne transforme jamais une obligation en réussite et
 n’établit pas un gain de temps ; les mesures de la campagne du modèle sont
-enregistrées dans `certification/model-ci.json`.
+conservées comme artefact de la CI commune.
 
 
 ### Portée locale du transport pendant une vérification UI

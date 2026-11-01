@@ -7,10 +7,11 @@
 Lis, dans `.soiree/` (écrit par `soiree`, à la version de `soiree.toml`) :
 - `MANIFESTE.md` : le pari, le niveau d'exigence, les principes. Applique-le.
 - `CERTIFICATION.md` : le plancher que tout jeu tient le soir même.
+- `VERIFICATION.md` : le format de `verification.toml`, et ce qu'un résultat permet de conclure.
 - `salon/README.md` : comment la TV, les téléphones et les manettes rejoignent le jeu. Tu ne touches jamais un socket ni une reconnexion : c'est salon.
 - `remote/CONTRAT.md`, seulement si le jeu utilise l'app iPhone.
 
-Si `.soiree/` manque, lance `soiree check` : il le recrée. Si `soiree` manque, lance `soiree doctor` après l'avoir installé (voir le README du dépôt commun).
+Si `.soiree/` manque, lance `soiree check --fast` : il le recrée. Si `soiree` manque, lance `soiree doctor` après l'avoir installé (voir le README du dépôt commun).
 
 ## Vérifier pendant le développement
 
@@ -26,7 +27,7 @@ périmées invalidées, identité et composition des champs préservées, effets
 ponctuels identifiés. Une catégorie non applicable cesse de l’être dès que
 sa mécanique apparaît.
 
-**La boucle lourde, à la fin d'une étape : `soiree certify`.** 5 à 10 minutes : le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles, endurance. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige les échecs produit et les pannes du contrôleur, puis relance le périmètre concerné. Le résumé final donne la situation, et le rapport le détail : `✓ Aucun problème trouvé`, `✗ À corriger` ou `⚠ Le passage n’a pas abouti` (une panne de l’outil, pas forcément du jeu). Ce qui reste « à juger par un humain » ne fait pas échouer la commande : montre-le à l’auteur. Ce qui n’a « pas pu être vérifié » la fait échouer : il manque une observation ou un contrôle, pas une relance pour obtenir artificiellement du vert. Documente ces limites et committe `certification/` avec le code. Un passage ciblé réussi ne valide pas les autres scénarios.
+**La boucle lourde, à la fin d'une étape : `soiree certify`.** Le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles. L'endurance se lance à part, avec `soiree certify -- --soak 30`. Lance la boucle lourde sur une machine qui ne compile rien d'autre : elle mesure du temps réel. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige les échecs produit et les pannes du contrôleur, puis relance le périmètre concerné. Le résumé final donne la situation, et le rapport le détail : `✓ Aucun problème trouvé`, `✗ À corriger` ou `⚠ Le passage n’a pas abouti` (une panne de l’outil, pas forcément du jeu). Ce qui reste « à juger par un humain » ne fait pas échouer la commande : montre-le à l’auteur. Ce qui n’a « pas pu être vérifié » la fait échouer : il manque une observation ou un contrôle, pas une relance pour obtenir artificiellement du vert. Documente ces limites et committe `certification/` avec le code. Un passage ciblé réussi ne valide pas les autres scénarios.
 
 Entre les deux, joue : lance le jeu (`cargo run --release -p {{nom}}-host`), ouvre la TV et des téléphones (`/play?seat=1`, `/play?seat=2`…), regarde des captures. Si ton environnement a un navigateur ou un simulateur iOS, sers-t'en.
 

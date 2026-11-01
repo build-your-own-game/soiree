@@ -8,10 +8,7 @@ Ce dépôt est le commun : les idées, la couche réseau, la télécommande, l'o
 
 Tu ne codes pas ? Commence par [`REJOINDRE.md`](REJOINDRE.md) : donne-le à ton assistant IA, il te guidera.
 
-La version **0.3.0** introduit les contrats de vérification exécutables.
-Leur portée et leurs limites sont décrites dans [`VERIFICATION.md`](VERIFICATION.md) ;
-les [résultats de validation](certification/contracts-v0.3.0/README.md) distinguent
-les contrôles satisfaits des garanties qui restent non attestées.
+Les contrats de vérification, leur portée et leurs limites sont décrits dans [`VERIFICATION.md`](VERIFICATION.md).
 
 ## Commencer un jeu
 
@@ -27,7 +24,7 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    ```sh
    soiree doctor
    ```
-   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il soit tout vert.
+   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il ne reste aucune erreur. Le WebKit du harnais se vérifie seulement après le premier `soiree certify`.
 4. **Créer le jeu**, dans le dossier où tu ranges tes projets :
    ```sh
    soiree new mon-jeu
@@ -62,6 +59,7 @@ C'est fini quand `soiree check` passe dans le dossier du jeu.
 | `soiree mutants` | à la demande | vérifie que les tests détectent des mutations ; rapports séparés |
 | `soiree certify` | pour éprouver le jeu réel | exécute les scénarios ordinaires du harnais ; écrit les observations et leur évaluation dans `certification/` |
 | `soiree certify -- --only ui,panic` | pour un retour ciblé | atteste uniquement les scénarios demandés et la santé du contrôleur |
+| `soiree dom <fichier.rs>` | après un changement de page | réécrit le module typé des noms de la page |
 | `soiree upgrade` | après une publication | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
 | `soiree status` | chez l'hôte | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
 | `soiree host-setup` | chez l'hôte, une fois par machine | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |

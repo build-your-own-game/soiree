@@ -152,10 +152,9 @@ Les fichiers eux-mêmes sont dans `outil/regles/` du dépôt commun, embarqués 
   - ni arithmétique entière qui peut déborder : avec le dépassement vérifié en release, elle arrête la partie. On choisit `checked_`, `saturating_` ou `wrapping_` selon ce que veut dire le débordement. Le code de rendu et les tests peuvent s'en exempter en tête de crate ou de module, avec leur raison ;
   - ni conversion entier → flottant qui perd des chiffres sans le dire ;
   - ni valeur jetée sans son type : `let _: T = …`, jamais `.ok()` pour faire taire un `Result` ;
-  - ni accès à la page par chaîne (`get_element_by_id`, `set_attribute`, `class_list`, `set_inner_html`, `style().set_property`…) : le module de `soiree dom` à la place (principe 8) ;
   - les dépendances optimisées même en debug, sans quoi un jeu est injouable ;
   - le dépassement d'entier vérifié même en release : c'est un bug.
-- **`clippy.toml`** protège le déterminisme (principe 3) : ni `HashMap` ni `HashSet` (ordre d'itération aléatoire), ni `Instant::now` ni `SystemTime::now` (le temps entre dans la simulation comme une entrée), ni les fonctions mathématiques des flottants dont le résultat diffère entre WASM et natif (`sin`, `cos`, `powf`… : utilise le crate `libm`). Les tests, eux, ont droit à `unwrap`, `expect`, `panic!` et aux index.
+- **`clippy.toml`** protège le déterminisme (principe 3) et les frontières (principe 8) : ni `HashMap` ni `HashSet` (ordre d'itération aléatoire), ni `Instant::now` ni `SystemTime::now` (le temps entre dans la simulation comme une entrée), ni les fonctions mathématiques des flottants dont le résultat diffère entre WASM et natif (`sin`, `cos`, `powf`… : utilise le crate `libm`), ni accès à la page par chaîne (`get_element_by_id`, `set_attribute`, `class_list`, `set_inner_html`, `style().set_property`… : le module de `soiree dom` à la place, principe 8). Les tests, eux, ont droit à `unwrap`, `expect`, `panic!` et aux index.
 
 Ces interdictions protègent la simulation. Si le code de rendu a besoin d'une `HashMap` ou de `sin`, utilise `#[expect(clippy::disallowed_types, reason = "...")]`, ou donne au crate de rendu son propre `clippy.toml`.
 
@@ -166,7 +165,7 @@ Avant de déclarer une étape finie, `soiree check`, dans le dossier du jeu, pas
 - aucun JavaScript écrit à la main dans `web/` ;
 - les chemins cités dans `AGENTS.md` et `README.md`, qui doivent exister ;
 - la section « Écarts au manifeste » ;
-- un `cert.json` lisible par le harnais de `CERTIFICATION.md`, et le `CERTIFICATION.md` du jeu, dont chaque test nommé existe.
+- un `cert.json` lisible par le harnais de `CERTIFICATION.md`, et le `verification.toml` du jeu, dont chaque test nommé existe réellement et s'exécute.
 
 Le modèle fournit aussi une CI liée à la version du commun. `soiree check`
 refuse une CI absente ou périmée et exige que `cert.json` exerce les propriétés
