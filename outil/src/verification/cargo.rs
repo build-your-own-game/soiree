@@ -993,6 +993,8 @@ fn parse_results(output: &[u8], discovered: &BTreeSet<String>) -> BTreeMap<Strin
         else {
             continue;
         };
+        // `test name - should panic ... ok`: the test's name is only `name`.
+        let name = name.strip_suffix(" - should panic").unwrap_or(name);
         if !discovered.contains(name) {
             continue;
         }
@@ -1420,6 +1422,79 @@ crate-type = ["dylib"]
             parse_results(duplicate, &names)["tests::one"],
             TestOutcome::InfrastructureError
         );
+    }
+
+    #[test]
+    fn should_panic_lines_keep_their_exact_name_and_outcome() {
+        // The exact lines of libtest 1.99, compiled and read from a real run.
+        let names = BTreeSet::from([
+            "tests::panics".to_owned(),
+            "tests::does_not_panic".to_owned(),
+            "tests::skipped".to_owned(),
+        ]);
+        let output = b"running 3 tests\ntest tests::skipped ... ignored, because\ntest tests::does_not_panic - should panic ... FAILED\ntest tests::panics - should panic ... ok\n\ntest result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s\n";
+        let tests = parse_results(output, &names);
+        assert_eq!(tests["tests::panics"], TestOutcome::Passed);
+        assert_eq!(tests["tests::does_not_panic"], TestOutcome::Failed);
+        assert_eq!(tests["tests::skipped"], TestOutcome::Ignored);
+        assert!(valid_summary(output, &tests));
+        // The suffix is not a way into the inventory: the name must still be listed.
+        assert!(parse_results(b"test other - should panic ... ok\n", &names).is_empty());
+    }
+
+    #[test]
+    fn a_should_panic_test_runs_and_keeps_the_target_observable() {
+        let fixture = Fixture::new();
+        std::fs::write(
+            fixture.root.join("src/lib.rs"),
+            r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn plain() {}
+    #[test]
+    #[should_panic(expected = "boom")]
+    fn panics() { panic!("boom"); }
+}
+"#,
+        )
+        .unwrap();
+        let references = [
+            Fixture::reference("tests::plain"),
+            Fixture::reference("tests::panics"),
+        ];
+        let report = run_with_suites(&fixture.root, &references, Options::default());
+        for result in &report.executions {
+            assert_eq!(result.outcome, TestOutcome::Passed, "{}", result.detail);
+        }
+        let suite = report.suites.first().unwrap();
+        assert_eq!(suite.outcome, TestOutcome::Passed, "{}", suite.detail);
+        assert_eq!((suite.discovered, suite.executed), (2, 2));
+    }
+
+    #[test]
+    fn a_should_panic_test_that_does_not_panic_fails_its_reference() {
+        let fixture = Fixture::new();
+        std::fs::write(
+            fixture.root.join("src/lib.rs"),
+            r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[should_panic]
+    fn does_not_panic() {}
+}
+"#,
+        )
+        .unwrap();
+        let report = run_with_suites(
+            &fixture.root,
+            &[Fixture::reference("tests::does_not_panic")],
+            Options::default(),
+        );
+        let observed = report.executions.first().unwrap();
+        assert_eq!(observed.outcome, TestOutcome::Failed, "{}", observed.detail);
+        assert_eq!(report.suites.first().unwrap().outcome, TestOutcome::Failed);
     }
 
     #[cfg(unix)]
