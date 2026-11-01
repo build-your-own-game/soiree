@@ -119,14 +119,14 @@ pub fn summary(report: &VerificationReport) -> String {
                 .any(|c| &c.id == id && matches!(c.execution, ExecutionSpec::Manual))
         })
     };
-    let (mut verified, mut at_the_table, mut elsewhere) = (0_usize, 0_usize, 0_usize);
+    let (mut verified, mut not_applicable) = (0_usize, 0_usize);
+    let (mut at_the_table, mut elsewhere) = (0_usize, 0_usize);
     let (mut to_fix, mut broken, mut unverified, mut judged) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for o in &evaluation.obligations {
         match o.assessment {
-            Assessment::Satisfied | Assessment::NotApplicable => {
-                verified = verified.saturating_add(1);
-            }
+            Assessment::Satisfied => verified = verified.saturating_add(1),
+            Assessment::NotApplicable => not_applicable = not_applicable.saturating_add(1),
             Assessment::Failed => to_fix.push(line(report, o)),
             Assessment::InfrastructureError => broken.push(line(report, o)),
             Assessment::Pending | Assessment::ReviewRequired if selected_pending(o) => {
@@ -139,7 +139,9 @@ pub fn summary(report: &VerificationReport) -> String {
     }
     let troubles = !evaluation.diagnostics.is_empty() || !broken.is_empty();
     let mut text = if evaluation.selected_scope_satisfied {
-        format!("✓ Rien à corriger dans ce passage : {verified} vérifications réussies.")
+        format!(
+            "✓ Aucun problème trouvé dans ce passage : {verified} vérifiées, {not_applicable} non applicables."
+        )
     } else if troubles {
         "⚠ Le passage n’a pas abouti : le jeu n’est pas forcément en cause.".to_owned()
     } else {
@@ -316,10 +318,22 @@ mod tests {
             ],
             "le message est-il clair ?",
         ));
-        assert!(text.starts_with("✓ Rien à corriger"), "{text}");
+        assert!(text.starts_with("✓ Aucun problème trouvé"), "{text}");
         assert!(text.contains("À juger par un humain"), "{text}");
         assert!(text.contains("C8 : le message est-il clair ?"), "{text}");
         assert!(text.contains("1 à vérifier au salon"), "{text}");
+    }
+
+    #[test]
+    fn a_check_that_does_not_apply_is_not_counted_as_verified() {
+        let text = summary(&report(
+            &[
+                ("A", Assessment::Satisfied, automatic()),
+                ("B", Assessment::NotApplicable, automatic()),
+            ],
+            "",
+        ));
+        assert!(text.contains("1 vérifiées, 1 non applicables"), "{text}");
     }
 
     #[test]
