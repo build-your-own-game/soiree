@@ -717,3 +717,45 @@ fn a_phone_without_host_keeps_trying_ever_more_calmly() {
     // Still trying at the end.
     assert!(attempts[119] > attempts[100]);
 }
+
+/// RTC owns 15 s then TCP owns 5 s; the core's default 5 s must not destroy
+/// the first negotiation repeatedly before its shell can choose TCP.
+#[test]
+fn transport_phase_budgets_are_absolute_and_the_next_attempt_keeps_default() {
+    use salon_core::{Client, ClientOutput};
+    let mut client = Client::<Up, Down>::new(Ms(1_000), phone_config(31, Kind::Phone));
+    assert!(matches!(
+        client.poll(Ms(1_000)),
+        Some(ClientOutput::Connect)
+    ));
+    client.connecting_for(Ms(1_000), 20_000);
+    assert_eq!(client.next_deadline(), Some(Ms(21_000)));
+    assert!(client.poll(Ms(6_000)).is_none());
+    assert!(client.poll(Ms(15_999)).is_none());
+    // The shell starts TCP after its own 15 s deadline, without progress
+    // calls in between. The original 20 s total remains the same.
+    client.connecting_for(Ms(16_000), 5_000);
+    assert_eq!(client.next_deadline(), Some(Ms(21_000)));
+    assert!(client.poll(Ms(20_999)).is_none());
+    assert!(matches!(
+        client.poll(Ms(21_000)),
+        Some(ClientOutput::Disconnect)
+    ));
+    let retry = client.next_deadline().unwrap();
+    assert!(matches!(client.poll(retry), Some(ClientOutput::Connect)));
+    assert_eq!(client.next_deadline(), Some(retry.plus(5_000)));
+}
+
+#[test]
+fn a_transport_budget_cannot_postpone_an_open_connections_handshake() {
+    use salon_core::{Client, ClientOutput};
+    let mut client = Client::<Up, Down>::new(Ms(0), phone_config(32, Kind::Phone));
+    assert!(matches!(client.poll(Ms(0)), Some(ClientOutput::Connect)));
+    client.opened(Ms(0), Caps::DATAGRAM);
+    client.connecting_for(Ms(9_999), u64::MAX);
+    while client.poll(Ms(9_999)).is_some() {}
+    assert!(matches!(
+        client.poll(Ms(10_000)),
+        Some(ClientOutput::Disconnect)
+    ));
+}

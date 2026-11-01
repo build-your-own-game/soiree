@@ -17,6 +17,10 @@
 //! - **the TV key** at `GET /salon/tv`, given only to a page of this very
 //!   computer (loopback address, local `Host`, no foreign `Origin`, no proxy
 //!   header): only the TV can become the TV;
+//! - **bounded connections**: admission before spawning, with room for an app
+//!   door and WebSocket per configured device, HTTP headroom and a local
+//!   organizer reserve; complete HTTP reads/writes and WebSocket frames have
+//!   deadlines, and reader/writer lifetimes end together;
 //! - **the room**: one thread owns the [`salon_core::Host`] and the [`Game`],
 //!   so the game is plain sequential code that never locks anything.
 //!
@@ -29,6 +33,7 @@
 // A native program: on wasm32 the crate is empty (see Cargo.toml).
 #![cfg(not(target_arch = "wasm32"))]
 
+mod admission;
 mod app;
 mod clock;
 pub mod driver;

@@ -88,6 +88,7 @@ enum Link {
     },
     Connecting {
         since: Ms,
+        budget: u64,
     },
     Open(Open),
 }
@@ -218,6 +219,18 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         }
         self.link = Link::Idle { retry_at: None };
         self.set_status(status);
+    }
+
+    /// A shell started an unopened transport phase with its own absolute
+    /// budget. Call once when selecting/replacing that transport, never for
+    /// SDP/ICE or other progress. The next Connect still uses `Timing::connect`.
+    /// An already opened connection cannot have its watchdog reset this way.
+    pub fn connecting_for(&mut self, now: Ms, budget: u64) {
+        let now = self.advance(now);
+        if let Link::Connecting { since, budget: old } = &mut self.link {
+            *since = now;
+            *old = budget;
+        }
     }
 
     /// The transport asked for by [`ClientOutput::Connect`] is open.
@@ -392,9 +405,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         match &self.link {
             Link::Idle { retry_at: Some(at) } if *at <= now => {
                 self.outbox.push_back(ClientOutput::Connect);
-                self.link = Link::Connecting { since: now };
+                self.link = Link::Connecting {
+                    since: now,
+                    budget: timing.connect,
+                };
             }
-            Link::Connecting { since } if now.since(*since) >= timing.connect => {
+            Link::Connecting { since, budget } if now.since(*since) >= *budget => {
                 self.retry(now, Retry::Later);
             }
             Link::Open(open) if !open.welcomed && now.since(open.opened) >= timing.handshake => {
@@ -496,7 +512,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         let timing = self.config.timing;
         match &self.link {
             Link::Idle { retry_at } => *retry_at,
-            Link::Connecting { since } => Some(since.plus(timing.connect)),
+            Link::Connecting { since, budget } => Some(since.plus(*budget)),
             Link::Open(open) => {
                 if open.ack_due || open.bye > 0 {
                     return Some(self.now);

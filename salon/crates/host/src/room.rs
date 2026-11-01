@@ -122,6 +122,9 @@ pub fn run<G: Game>(
                 }
                 Effect::Close { link } => {
                     if let Some(outlet) = outlets.remove(&link) {
+                        if logging() {
+                            eprintln!("salon: link {} closed by host", link.0);
+                        }
                         outlet.close(link);
                     }
                 }

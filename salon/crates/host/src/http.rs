@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::admission::{Admission, DeadlineReader, DeadlineWriter};
+
 use salon_core::{HostConfig, LinkId, TvKey, route};
 
 use crate::clock::Clock;
@@ -83,6 +85,7 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let epoch = os_random::<4>().map_or(1, u32::from_le_bytes);
     let store = Store::open(options.data.as_deref(), epoch, fresh_key);
     let key = store.tv_key();
+    let admission = Admission::for_devices(options.limits.max_devices);
     let config = HostConfig {
         game: options.version,
         epoch: store.epoch(),
@@ -137,11 +140,22 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     // Only the console's echo is lost if stdout is gone.
     let _: std::io::Result<()> = std::io::stdout().flush();
     for stream in listener.incoming().flatten() {
+        let Some(permit) = stream
+            .peer_addr()
+            .ok()
+            .and_then(|peer| admission.acquire(peer.ip()))
+        else {
+            continue;
+        };
         let shared = Arc::clone(&shared);
-        thread::spawn(move || {
-            // A broken request only concerns the browser that sent it.
-            let _: std::io::Result<()> = handle(stream, &shared);
-        });
+        let _: std::io::Result<_> =
+            thread::Builder::new()
+                .name("salon-http".into())
+                .spawn(move || {
+                    let _permit = permit;
+                    // A broken request only concerns the browser that sent it.
+                    let _: std::io::Result<()> = handle(stream, &shared);
+                });
     }
     Ok(())
 }
@@ -184,7 +198,13 @@ fn read_head(reader: &mut impl BufRead) -> std::io::Result<Head> {
     let mut headers = Vec::new();
     loop {
         let mut header = String::new();
-        if limited.read_line(&mut header)? == 0 || header.trim().is_empty() {
+        if limited.read_line(&mut header)? == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "incomplete HTTP headers",
+            ));
+        }
+        if header == "\r\n" {
             break;
         }
         if let Some((name, value)) = header.split_once(':') {
@@ -253,6 +273,7 @@ fn respond(
     body: &[u8],
     payload: Payload,
 ) -> std::io::Result<()> {
+    let mut stream = DeadlineWriter::new(stream, READ_TIMEOUT);
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -279,9 +300,9 @@ fn respond(
 }
 
 fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
-    stream.set_read_timeout(Some(READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(READ_TIMEOUT))?;
     let peer = stream.peer_addr()?;
-    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut reader = BufReader::new(DeadlineReader::new(stream.try_clone()?, READ_TIMEOUT));
     let head = read_head(&mut reader)?;
     let link = || LinkId(shared.links.fetch_add(1, Ordering::Relaxed));
 
@@ -300,7 +321,7 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
              Sec-WebSocket-Accept: {accept}\r\n\r\n"
         );
-        stream.write_all(answer.as_bytes())?;
+        DeadlineWriter::new(&mut stream, READ_TIMEOUT).write_all(answer.as_bytes())?;
         match app_page {
             Some(page) => crate::app::run(stream, page),
             None => crate::ws::run(stream, link(), &shared.net),

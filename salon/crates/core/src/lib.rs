@@ -88,6 +88,9 @@
 //!   reconnects on its own, from 250 ms to 2 s between attempts and without
 //!   end, and gets its identity, its latest state and every event it missed
 //!   (C2, C4). The game gets [`DeviceEvent::Back`].
+//!   A shell can declare an absolute connection-phase budget with
+//!   [`Client::connecting_for`]. It does not change the next attempt's default
+//!   budget and cannot postpone the handshake of an already open link (C1).
 //! - **Silence is detected on both sides**: each side sends at least every
 //!   [`Timing::heartbeat`]. After [`Timing::absent`] without a packet, the
 //!   host sees [`DeviceEvent::Left`] with [`Why::Silent`], and the page drops
@@ -163,6 +166,14 @@ pub use types::{
     TvKey, Why,
 };
 pub use wire::PROTOCOL;
+
+/// Shared policy for the I/O shells, independent of protocol packet timing.
+pub mod transport {
+    /// Absolute window for one WebRTC negotiation, from peer creation through
+    /// SDP, ICE, DTLS and DataChannel opening. Both shells use this bound:
+    /// packet loss must be allowed to use the native handshake retransmissions.
+    pub const RTC_NEGOTIATION_SECONDS: u16 = 15;
+}
 
 /// The paths salon serves next to the game's pages, named once for the host
 /// and the page alike.

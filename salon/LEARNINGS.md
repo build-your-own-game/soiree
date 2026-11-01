@@ -298,6 +298,66 @@ contrôle rouge ; aucun événement n’est mis en file ni perdu par le helper.
 7. **À faire.** Mesurer sur le Wi-Fi du salon, avec 15 téléphones : aller-retour, pertes, temps de reconnexion après un iPhone verrouillé.
 8. **Respecté.** Les messages sont les types `Up` et `Down` du jeu, encodés en postcard par `salon-core` : aucun JSON écrit à la main. Les chemins de salon sont nommés une fois (`salon_core::route`), pour l'hôte et la page. La démo calcule sa version depuis ses sources (`version.rs`) ; l'hôte et la page la tiennent de la même bibliothèque, `salon-demo`. Sa page passe par `soiree dom`, QR code compris : l'hôte l'envoie en modules typés (`Qr`), la page le dessine en SVG. Restent en chaînes, chacune lue en un seul endroit et validée à son entrée : l'offre et la réponse WebRTC, au format `RTCSessionDescription` du navigateur (la page l'écrit avec `json!`, l'hôte la lit dans le `SdpOffer` de str0m) ; la clé du jeton dans `localStorage` (sa valeur passe par `unhex` avant de devenir un `Token`) ; les paramètres `?seat=` et `?salon=ws` ; les noms d'événements du navigateur. `cert.json` écrit `/salon/ws` en toutes lettres : le harnais attaque en boîte noire.
 
+## Connexions lentes et ressources navigateur — octobre 2026
+
+- Les délais `TcpStream::set_read_timeout` s'appliquent à chaque appel système,
+  pas à une requête entière ([Rust std](https://doc.rust-lang.org/std/net/struct.TcpStream.html#method.set_read_timeout)).
+  L'adaptateur recalcule le temps restant avant chaque lecture et refuse les
+  en-têtes incomplets. Un test réel envoie un octet toutes les 10 ms et doit
+  néanmoins atteindre la limite totale. L'admission, avant création du thread,
+  réserve une partie des places au loopback ; les quotas du protocole ne
+  suffisaient pas à protéger les étapes précédant son décodage.
+- Un writer WebSocket est une ressource de sa connexion : sa sortie est bornée,
+  l'arrêt du lecteur interrompt le socket et le writer est rejoint avant de
+  libérer le permis. Conserver une file ne doit pas garder un thread orphelin.
+- Le [CDP](https://chromedevtools.github.io/devtools-protocol/tot/Memory/)
+  distingue DOM et tas ; Runtime.getHeapUsage ne comptait pas la mémoire WASM
+  du contrôle négatif sur notre Chrome. Le harnais observe donc aussi les
+  mémoires réellement exportées par WebAssembly, via références faibles. Le RSS
+  inclut Chromium/GPU et la mesure ne prétend pas connaître la VRAM ni WebKit.
+- Toxiproxy est TCP. Le relais UDP du harnais transporte les vrais datagrammes
+  chiffrés, modifie uniquement les adresses des candidats SDP et garde les
+  pertes/délais/réordonnancements observables. Il ne partage pas les règles du
+  jeu. L'ouverture sans panne ne suffisait pas à attester ce chemin.
+- [Toxiproxy 2.13, acceptation et arrêt](https://github.com/Shopify/toxiproxy/blob/v2.13.0/proxy.go)
+  : son `net.Dial` amont n'a pas de délai explicite ; l'arrêt attend la boucle
+  d'acceptation. Son [API](https://github.com/Shopify/toxiproxy/blob/v2.13.0/api.go)
+  renvoie le HTTP 503 HTML de `http.TimeoutHandler` après 25 secondes. Le
+  `/version` peut rester sain pendant ce blocage. Un backlog TCP local saturé
+  a reproduit une coupure bloquée 7,6 s ; la pile du processus possédé montre
+  `net.Dial` et `stop`/`tomb.Wait`. Le harnais conserve les toxics officiels et
+  place devant la vraie destination LAN un connecteur possédé, borné à 2 s et
+  128 connexions, avec backpressure et fermeture. Les régressions vérifient
+  les octets/FIN, la deadline, le nettoyage même sur HTTP 503, le trajet LAN et
+  chaque panne avec un voisin intact. Les anciens rapports restent échoués ;
+  cette reproduction établit un mécanisme distinct, sans identifier à elle
+  seule la cause de chaque ancien échec ni celle de l'intermittence WebRTC.
+
+## Audio TV : événements, horloges et ressources
+
+- [Web Audio 1.1, états et cycle de vie](https://www.w3.org/TR/webaudio-1.1/)
+  et [Chrome, autoplay et jeux](https://developer.chrome.com/blog/web-audio-autoplay/)
+  : un contexte peut rester suspendu tant qu'un geste n'a pas autorisé le son.
+  `salon_web::audio::Audio` crée son contexte dans un geste natif, montre son
+  état et conserve coupure/volume. Un état autre que `running`, y compris
+  `interrupted` rencontré dans Safari, ne devient jamais une réussite implicite.
+- Le temps audio (`currentTime`) ordonnance l'enveloppe de chaque source ; le
+  temps de l'événement, fourni par le jeu, décide de sa fraîcheur. Aucun son
+  n'attend dans une file : une observation bloquée, muette ou périmée est
+  consommée. Une reconnexion établit une nouvelle référence silencieuse.
+- Quatre oscillateurs au maximum, amplitude individuelle 0,12 et volume
+  maître au plus 1 : leur somme arithmétique reste sous la pleine échelle.
+  Les sources terminées sont arrêtées/déconnectées par un timer possédé ;
+  cacher/quitter la page ou détruire le propriétaire arrête les sources.
+  Un contexte fermé ou dont la reprise reste bloquée est fermé/remplacé au
+  prochain geste ; un ancien résultat asynchrone ne possède pas le nouveau.
+- `node salon/tests/audio-browser.mjs` exécute le WASM et le vrai graphe dans
+  Chromium et WebKit, y compris le rendu `OfflineAudioContext`, gestes natifs
+  et synthétiques, doublons, expiration, budget, mute, suspension, panne de
+  construction et destruction répétée. Ce résultat ne mesure ni HDMI/Bluetooth,
+  ni volume acoustique, ni interruptions matérielles réelles d'iOS : S9 reste
+  requis sur la TV réelle.
+
 ## Attente native de la salle — intégration du 29 octobre 2026
 
 L'attente macOS utilise maintenant `EVFILT_TIMER | NOTE_CRITICAL` et un
@@ -321,3 +381,69 @@ notifications anciennes ; ils ne constituent pas une preuve de temps réel.
 Les sources de l'enquête précédente restent reproductibles via le fichier de
 référence `baseline-room-wait.rs`, explicitement identifié comme antérieur au
 correctif, et ne sont plus présentées comme l'attente de production courante.
+- [Tone.js, incident #1102](https://github.com/Tonejs/Tone.js/issues/1102)
+  documente les effets de bord d'un contexte créé dès l'import ; notre module
+  n'en crée aucun avant un geste, propriété vérifiée par un constructeur natif
+  instrumenté. [Howler, options et unload](https://github.com/goldfire/howler.js/blob/master/README.md)
+  confirme les besoins de déblocage, de suspension et de libération explicite.
+  Nous retenons ces contraintes ; son pool HTML5 et son catalogue de formats
+  ne servent pas à nos courts cues synthétisés, sans chargement de fichiers.
+
+Le quota d'admission dérive de `Limits::max_devices` : il compte aussi la porte
+native `/remote` en plus du WebSocket de secours. Un plafond fixe de 96 clients
+LAN aurait empêché les 71 iPhones de Sidequest d'utiliser simultanément ces
+deux voies. Le test d'admission couvre 144 connexions puis la marge HTTP et la
+réserve locale. Les budgets d'écriture portent sur la réponse entière, non sur
+chaque `write` partiel ; la porte native borne aussi les pairs qui envoient des
+trames complètes mais ne disent jamais Hello.
+
+Les notes de [str0m](https://github.com/algesten/str0m/blob/main/CHANGELOG.md)
+conservent notamment des corrections SCTP sous pertes, de réutilisation des
+canaux et d'expiration ICE. Ces classes justifient de perturber le vrai trajet
+chiffré et sa renégociation, en plus des simulations du protocole applicatif.
+
+## Négociation RTC : ne pas confondre lenteur viable et échec — 29/10/2026
+
+- **Cause de classe reproduite sur le vrai SDK.** En retardant seulement la
+  réponse SDP de 4 s, l'ancien SDK ferme son unique PeerConnection à environ
+  3 s, avant de lire la réponse, puis ouvre WebSocket : aucun datagramme n'a
+  encore été envoyé. Avec le seul callback de coupure neutralisé dans le
+  diagnostic, cette même négociation ouvre son DataChannel vers 4,3 s sans
+  repli. Un retard de 2 s et un retour sans retard fonctionnent aussi. Les
+  quatre témoins et les échecs attendus sont conservés dans
+  `../certification/robustesse-2026-10-29/rtc-diagnostic/` ; cette causalité ne
+  prouve pas que l'échec historique de la graine 7222 avait le même retard.
+- **Une échéance d'application ne remplace pas les états du protocole.**
+  [RFC 6347 §4.2.4.1](https://www.rfc-editor.org/rfc/rfc6347.html#section-4.2.4.1)
+  prévoit un premier délai DTLS d'une seconde puis son doublement ; trois
+  secondes ne suffisent donc pas à conclure qu'une négociation est impossible.
+  [RFC 8838 §16](https://www.rfc-editor.org/rfc/rfc8838.html#section-16)
+  autorise l'initiateur full ICE à ne pas trickler ses candidats vers ICE-lite :
+  les vérifications permettent au pair lite de les découvrir comme
+  peer-reflexive. L'offre sans candidat de salon n'est pas à elle seule une
+  preuve d'échec.
+- **Politique d'application bornée et partagée.** Le SDK et l'hôte consomment
+  `salon_core::transport::RTC_NEGOTIATION_SECONDS` : 15 s absolues, couvrant
+  SDP, ICE, DTLS et l'ouverture du DataChannel, dans le contrat C1 de connexion
+  en 30 s. Une erreur native ou l'état `Failed` fait replier immédiatement ;
+  les étapes réussies ne redémarrent pas le délai. Une impossibilité d'armer
+  le timer libère le pair avant toute tâche async et choisit WebSocket. Les
+  générations empêchent une réponse SDP périmée de remplacer ce transport.
+- **Pourquoi les anciens contrôles n'ont pas vu cette classe.** La campagne
+  UDP attendait une ouverture saine avant d'injecter ses pertes. Elle
+  n'éprouvait pas les durées des étapes de négociation. Le nouveau helper
+  `tools/cert/rtc-negotiation.mjs` exécute les retards SDP 2/4 s, de vrais
+  rejets SDP/DTLS, une panne permanente après progression, la borne absolue,
+  une réponse après le repli et l'échec d'enregistrement du timer. Les
+  traces du navigateur conservent les étapes et leurs erreurs, avec bornes,
+  sans conserver les credentials SDP. Aucun moteur ni budget P1/P2 n'est
+  changé pour obtenir un résultat vert.
+- **Les délais superposés doivent avoir un propriétaire cohérent.** La
+  régression de panne permanente a trouvé `Timing.connect=5_000` qui détruisait
+  chaque tentative RTC avant les 15 s, puis en recréait une sans jamais choisir
+  TCP. `Client::connecting_for` déclare maintenant un budget de phase choisi
+  par le shell ; il ne touche ni les défauts de l'essai suivant, ni le watchdog
+  d'un lien déjà ouvert. Le shell réserve 15 s RTC + 5 s TCP, puis donne au vrai
+  repli ses 5 s à sa création. Deux tests purs et la panne UDP réelle couvrent
+  cette interaction. Le passage final réel observe 7/7 cas par moteur, avec
+  fermeture absolue entre 14 999,6 et 15 000,5 ms et aucune panne de cleanup.

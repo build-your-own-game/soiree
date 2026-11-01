@@ -26,7 +26,8 @@ use crate::room::{Net, Outlet, RtcOut};
 
 /// A page that has not opened its channel by then is dropped: str0m has no
 /// timeout of its own before it hears from the other side.
-const HANDSHAKE: Duration = Duration::from_secs(15);
+const HANDSHAKE: Duration =
+    Duration::from_secs(salon_core::transport::RTC_NEGOTIATION_SECONDS as u64);
 /// Longest a read waits before the thread checks for packets to send: one
 /// thread serves every page, so waking a thousand times a second costs little
 /// and keeps outgoing packets from waiting.

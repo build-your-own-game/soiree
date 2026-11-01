@@ -17,6 +17,7 @@
 //!
 //! The page receives [`Happening`]s, in order, and never sees a socket.
 
+pub mod audio;
 pub mod journal;
 mod recovery;
 pub mod ui;
@@ -38,12 +39,15 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
-    BinaryType, MessageEvent, RequestInit, RtcDataChannel, RtcDataChannelInit, RtcDataChannelType,
-    RtcPeerConnection, RtcSdpType, RtcSessionDescriptionInit, WebSocket,
+    BinaryType, MessageEvent, RequestInit, RtcDataChannel, RtcDataChannelInit, RtcDataChannelState,
+    RtcDataChannelType, RtcPeerConnection, RtcPeerConnectionState, RtcSdpType,
+    RtcSessionDescriptionInit, WebSocket,
 };
 
-/// How long a WebRTC attempt may take to open before WebSocket is used.
-pub const RTC_PATIENCE_MS: i32 = 3_000;
+/// Absolute SDP/ICE/DTLS/DataChannel window, shared with the host. Native
+/// negotiation errors fall back immediately; progress never renews this bound.
+pub const RTC_PATIENCE_MS: i32 =
+    (salon_core::transport::RTC_NEGOTIATION_SECONDS as i32).saturating_mul(1_000);
 /// After this many WebRTC failures in a row, this page sticks to WebSocket.
 const RTC_FAILURES: u32 = 2;
 /// A DataChannel with this much waiting is behind: skip a packet rather than
@@ -624,6 +628,20 @@ fn connect<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         None
     }
     .or_else(|| websocket(shared, inner.generation));
+    if let Some(client) = inner.client.as_mut() {
+        let tcp = Timing::default().connect;
+        let budget = if matches!(inner.transport, Some(Transport::Rtc { .. })) {
+            // The RTC owner enforces its own 15 s bound. The outer client
+            // must leave room for that owner's TCP fallback, rather than
+            // destroy/retry RTC first at Timing::connect (5 s by default).
+            u64::from(salon_core::transport::RTC_NEGOTIATION_SECONDS)
+                .saturating_mul(1_000)
+                .saturating_add(tcp)
+        } else {
+            tcp
+        };
+        client.connecting_for(now(), budget);
+    }
     if inner.transport.is_none()
         && let Some(client) = inner.client.as_mut()
     {
@@ -701,7 +719,12 @@ fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         let Ok(mut inner) = shared.inner.try_borrow_mut() else {
             return;
         };
-        let opened = matches!(inner.transport, Some(Transport::Rtc { open: true, .. }));
+        // Native open can precede delivery of the JS open callback at the
+        // absolute deadline. Do not destroy an already established channel.
+        let opened = inner.transport.as_ref().is_some_and(|transport| {
+            matches!(transport, Transport::Rtc { channel, open, .. }
+                if *open || channel.ready_state() == RtcDataChannelState::Open)
+        });
         if inner.generation != generation || opened {
             return;
         }
@@ -712,6 +735,9 @@ fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         inner.generation = inner.generation.wrapping_add(1);
         let generation = inner.generation;
         inner.transport = websocket(&shared, generation);
+        if let Some(client) = inner.client.as_mut() {
+            client.connecting_for(now(), Timing::default().connect);
+        }
         if inner.transport.is_none()
             && let Some(client) = inner.client.as_mut()
         {
@@ -725,6 +751,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     shared: &Rc<Shared<Up, Down>>,
     generation: u32,
 ) -> Option<Transport> {
+    let started = now();
     let pc = RtcPeerConnection::new().ok()?;
     let init = RtcDataChannelInit::new();
     init.set_ordered(false);
@@ -771,7 +798,34 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     channel.set_onmessage(Some(message.as_ref().unchecked_ref()));
     channel.set_onclose(Some(closed.as_ref().unchecked_ref()));
 
-    // Offer, answer, and a deadline: whatever fails, WebSocket takes over.
+    let weak = Rc::downgrade(shared);
+    let connecting = pc.clone();
+    let failed = Listener::new(move |_| {
+        if connecting.connection_state() == RtcPeerConnectionState::Failed {
+            fall_back(&weak, generation);
+        }
+    });
+    pc.set_onconnectionstatechange(Some(failed.as_ref().unchecked_ref()));
+
+    // Arm the absolute deadline before starting any asynchronous negotiation.
+    // A timer registration failure must release the attempt and use WebSocket.
+    let weak = Rc::downgrade(shared);
+    let remaining = u64::from(salon_core::transport::RTC_NEGOTIATION_SECONDS)
+        .saturating_mul(1_000)
+        .saturating_sub(now().since(started));
+    let remaining = i32::try_from(remaining).unwrap_or(0);
+    let closures = vec![opened, message, closed, failed];
+    let Ok(patience) = ui::Timer::after(remaining, move || fall_back(&weak, generation)) else {
+        Transport::Rtc {
+            pc,
+            channel,
+            open: false,
+            _closures: closures,
+            _patience: None,
+        }
+        .close();
+        return None;
+    };
     let weak = Rc::downgrade(shared);
     let offering = pc.clone();
     spawn_local(async move {
@@ -779,14 +833,12 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             fall_back(&weak, generation);
         }
     });
-    let weak = Rc::downgrade(shared);
-    let patience = ui::Timer::after(RTC_PATIENCE_MS, move || fall_back(&weak, generation)).ok();
     Some(Transport::Rtc {
         pc,
         channel,
         open: false,
-        _closures: vec![opened, message, closed],
-        _patience: patience,
+        _closures: closures,
+        _patience: Some(patience),
     })
 }
 

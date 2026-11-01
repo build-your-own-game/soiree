@@ -7,9 +7,13 @@
 
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
-use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
+
+use crate::admission::{DeadlineReader, DeadlineWriter};
 
 use salon_core::{Caps, LinkId};
 use tungstenite::protocol::CloseFrame;
@@ -27,7 +31,7 @@ const MAX_FRAME: usize = 64 * 1024;
 /// The socket as tungstenite's reader sees it: reads its own handle, writes
 /// (pongs, the closing handshake) through the shared lock.
 struct Reading {
-    read: TcpStream,
+    read: DeadlineReader,
     write: Arc<Mutex<TcpStream>>,
 }
 
@@ -53,7 +57,11 @@ impl Write for Reading {
 }
 
 pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net>) {
-    if stream.set_nodelay(true).is_err() {
+    if stream.set_nodelay(true).is_err()
+        || stream
+            .set_write_timeout(Some(Duration::from_secs(10)))
+            .is_err()
+    {
         return;
     }
     // Only a link from this very computer may be the TV (salon-core, `Caps`).
@@ -63,12 +71,15 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
     let Ok(write) = stream.try_clone() else {
         return;
     };
+    let Ok(shutdown) = stream.try_clone() else {
+        return;
+    };
     let write = Arc::new(Mutex::new(write));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_FRAME))
         .max_frame_size(Some(MAX_FRAME));
     let reading = Reading {
-        read: stream,
+        read: DeadlineReader::new(stream, Duration::from_secs(30)),
         write: Arc::clone(&write),
     };
     let mut socket = WebSocket::from_raw_socket(reading, Role::Server, Some(config));
@@ -86,8 +97,11 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
         return;
     }
     let writer = Arc::clone(&write);
-    thread::spawn(move || send(&outgoing, &writer));
+    let stopped = Arc::new(AtomicBool::new(false));
+    let writer_stopped = Arc::clone(&stopped);
+    let writer_thread = thread::spawn(move || send(&outgoing, &writer, &writer_stopped));
     loop {
+        socket.get_mut().read.renew(Duration::from_secs(30));
         match socket.read() {
             Ok(Message::Binary(bytes)) => {
                 if net
@@ -120,18 +134,22 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
         }
     }
     // Wakes the writer if it is blocked, and tells the room.
-    let _: std::io::Result<()> = write
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .shutdown(Shutdown::Both);
+    stopped.store(true, Ordering::Relaxed);
+    let _: std::io::Result<()> = shutdown.shutdown(Shutdown::Both);
     // The room is gone only when the host stops.
     let _: std::io::Result<()> = net.send(Net::Closed { link });
+    let _: std::thread::Result<()> = writer_thread.join();
 }
 
 /// Writes what the room sends, one whole frame at a time, until it says
 /// close or forgets the link.
-fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>) {
-    for out in outgoing {
+fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>, stopped: &AtomicBool) {
+    while !stopped.load(Ordering::Relaxed) {
+        let out = match outgoing.recv_timeout(Duration::from_millis(100)) {
+            Ok(out) => out,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         let (frame, last) = match out {
             WsOut::Packet(bytes) => (
                 Frame::message(bytes, OpCode::Data(Data::Binary), true),
@@ -144,11 +162,19 @@ fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>) {
             break;
         }
         let mut stream = write.lock().unwrap_or_else(PoisonError::into_inner);
-        if stream.write_all(&buffer).is_err() || last {
+        if DeadlineWriter::new(&mut stream, Duration::from_secs(10))
+            .write_all(&buffer)
+            .is_err()
+            || last
+        {
             let _: std::io::Result<()> = stream.shutdown(Shutdown::Both);
             break;
         }
     }
+    let _: std::io::Result<()> = write
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .shutdown(Shutdown::Both);
 }
 
 #[cfg(test)]

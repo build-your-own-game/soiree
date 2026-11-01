@@ -17,9 +17,9 @@ use remote_protocol::{GameMessage, PhoneMessage, Remote, VERSION, decode, encode
 use tungstenite::protocol::{Role, WebSocketConfig};
 use tungstenite::{Message, WebSocket};
 
+use crate::admission::DeadlineReader;
 use crate::clock::Clock;
 
-const POLL: Duration = Duration::from_millis(250);
 const HANDSHAKE: Duration = Duration::from_secs(10);
 const MAX_FRAME: usize = 16 * 1024;
 
@@ -42,20 +42,32 @@ pub fn answer(frame: &[u8], page: &str) -> Option<GameMessage> {
 }
 
 pub fn run(stream: TcpStream, page: &str) {
-    if stream.set_read_timeout(Some(POLL)).is_err() {
-        return;
-    }
+    run_with_handshake(stream, page, HANDSHAKE);
+}
+
+fn run_with_handshake(stream: TcpStream, page: &str, handshake: Duration) {
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_FRAME))
         .max_frame_size(Some(MAX_FRAME));
-    let mut socket = WebSocket::from_raw_socket(stream, Role::Server, Some(config));
+    let mut socket = WebSocket::from_raw_socket(
+        DeadlineReader::new(stream, handshake),
+        Role::Server,
+        Some(config),
+    );
     let opened = Clock::instant();
     let mut greeted = false;
     loop {
+        if !greeted && Clock::instant().duration_since(opened) >= handshake {
+            break;
+        }
+        if greeted {
+            socket.get_mut().renew(Duration::from_secs(30));
+        }
         match socket.read() {
             Ok(Message::Binary(frame)) => {
                 if let Some(answer) = answer(&frame, page) {
                     greeted = true;
+                    socket.get_mut().renew_write(Duration::from_secs(10));
                     if socket.send(Message::binary(encode(&answer))).is_err() {
                         break;
                     }
@@ -66,7 +78,7 @@ pub fn run(stream: TcpStream, page: &str) {
             Err(tungstenite::Error::Io(error))
                 if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
             {
-                if !greeted && Clock::instant().duration_since(opened) > HANDSHAKE {
+                if !greeted {
                     break;
                 }
             }
@@ -74,6 +86,7 @@ pub fn run(stream: TcpStream, page: &str) {
         }
     }
     // The page is gone or done: nothing to do if the goodbye fails.
+    socket.get_mut().renew_write(Duration::from_secs(10));
     let _: tungstenite::Result<()> = socket.close(None);
     let _: tungstenite::Result<()> = socket.flush();
 }
@@ -105,5 +118,69 @@ mod tests {
             Some(GameMessage::Refuse { .. })
         ));
         assert_eq!(answer(b"garbage", "/play"), None);
+    }
+
+    #[test]
+    fn malformed_complete_frames_do_not_keep_an_ungreeted_app_alive() {
+        use std::io::Read;
+        use std::net::{Shutdown, TcpListener};
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(400)))
+            .unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let task =
+            thread::spawn(move || run_with_handshake(server, "/play", Duration::from_millis(80)));
+        let writer_stream = client.try_clone().unwrap();
+        let writer = thread::spawn(move || {
+            let mut socket = WebSocket::from_raw_socket(writer_stream, Role::Client, None);
+            for _ in 0..50 {
+                if socket.send(Message::binary(b"garbage".to_vec())).is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let mut close = [0; 2];
+        let result = client.read_exact(&mut close);
+        let _: std::io::Result<()> = client.shutdown(Shutdown::Both);
+        writer.join().unwrap();
+        task.join().unwrap();
+        result.unwrap();
+        assert_eq!(
+            close[0], 0x88,
+            "ungreeted peer was not sent a WebSocket close"
+        );
+    }
+
+    #[test]
+    fn a_greeted_app_can_stay_idle_past_the_handshake_deadline() {
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let task =
+            thread::spawn(move || run_with_handshake(server, "/play", Duration::from_millis(80)));
+        let mut socket = WebSocket::from_raw_socket(client, Role::Client, None);
+        let hello = encode(&PhoneMessage::Hello {
+            version: VERSION,
+            player: [1; 16],
+            name: "Ada".to_owned(),
+        });
+        socket.send(Message::binary(hello.clone())).unwrap();
+        assert!(matches!(socket.read().unwrap(), Message::Binary(_)));
+        thread::sleep(Duration::from_millis(120));
+        socket.send(Message::binary(hello)).unwrap();
+        assert!(matches!(socket.read().unwrap(), Message::Binary(_)));
+        socket.close(None).unwrap();
+        task.join().unwrap();
     }
 }
