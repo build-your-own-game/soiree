@@ -91,6 +91,7 @@ pub enum Ended {
     /// Every sender of its inbox is gone.
     NoTransport,
     /// The operating system's wait failed.
+    #[cfg(any(target_os = "macos", test))]
     Wait(io::Error),
 }
 
@@ -104,6 +105,7 @@ fn cause(ending: thread::Result<Ended>) -> String {
     };
     match ending {
         Ok(Ended::NoTransport) => "no transport is left".to_owned(),
+        #[cfg(any(target_os = "macos", test))]
         Ok(Ended::Wait(error)) => format!("its wait failed: {error}"),
         Err(payload) => format!("the game panicked: {}", panicked(payload)),
     }
