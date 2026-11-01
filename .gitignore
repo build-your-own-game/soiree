@@ -7,3 +7,8 @@ node_modules/
 
 # Local replay journals and browser panic reports (30-day retention).
 data/journals/
+
+# Rewritten by every run; past campaigns stay in git history.
+/certification/
+/salon/certification/
+/remote/certification/
