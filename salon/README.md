@@ -83,6 +83,21 @@ Règles :
 - **Les manettes** : `host.add_local(now, Kind::Gamepad, …)`, puis `local_state`, `local_unplugged` et `local_plugged`.
 - **Les requêtes HTTP du jeu** (télécharger des résultats) : `Game::http`. Les actions de l'organisateur passent par la TV, en événements : seule la TV a la clé, et seule une connexion de l'ordinateur lui-même peut être la TV.
 
+### Le QR code
+
+L'hôte fabrique l'adresse et le code ; la page les dessine.
+
+```rust
+let url = salon_host::join_url(port, "/play");   // sur l'hôte : http://192.168.1.5:8090/play
+let code = salon_host::qr(&url)?;                // sur l'hôte : un `salon_core::Qr`, à mettre dans un `Down`
+let svg = salon_web::qr(&code)?;                 // dans la page TV : un <svg> dimensionné par son conteneur
+```
+
+- `join_url(port, chemin)` part de l'adresse réseau de l'ordinateur (`lan_address()`), celle de sa route par défaut. Sans réseau, elle n'existe pas : `join_url` écrit un avertissement et rend `http://localhost`, qu'un téléphone n'atteint pas. Derrière un VPN complet, elle existe mais aucun téléphone ne l'atteint.
+- `SALON_PUBLIC_URL` dit alors l'adresse vraie, pour tous les jeux et sans une ligne de code : `SALON_PUBLIC_URL=http://192.168.1.5:8090`, ou `https://soiree.example`. Elle remplace le schéma, l'hôte et le port ; `join_url` y ajoute le chemin. Vide ou blanche, elle est ignorée. Elle doit commencer par `http://` ou `https://`, sans requête ni fragment : sinon elle est ignorée, avec un message sur la sortie d'erreur.
+- Si son hôte est une adresse IP, c'est aussi celle que WebRTC annonce. Un nom ne peut pas l'être : WebRTC garde l'adresse réseau et les téléphones qui ne l'atteignent pas passent par WebSocket.
+- Le QR de la TV suffit aussi à l'app iPhone, qui en déduit `/remote` (`remote/CONTRAT.md`).
+
 ### La page
 
 ```rust

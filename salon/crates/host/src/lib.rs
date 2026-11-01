@@ -7,8 +7,9 @@
 //!   `Cross-Origin-Embedder-Policy`), never outside that folder;
 //! - **WebRTC** at `POST /salon/offer`: the page posts its offer, gets the
 //!   answer, and its DataChannel reaches the host's single UDP port (the same
-//!   number as the HTTP port) in ICE-lite, at the network address or, for a
-//!   page of this computer, at loopback. No internet server, and no C: the
+//!   number as the HTTP port) in ICE-lite, at the network address (or the IP
+//!   address `SALON_PUBLIC_URL` names) or, for a page of this computer, at
+//!   loopback. No internet server, and no C: the
 //!   cryptography is `salon-crypto`'s, with one certificate per run;
 //! - **WebSocket** at `/salon/ws`, when WebRTC fails, and for the TV;
 //! - **the iPhone app** at `/remote` (`remote/CONTRAT.md`), when the game
@@ -34,6 +35,7 @@
 // A native program: on wasm32 the crate is empty (see Cargo.toml).
 #![cfg(not(target_arch = "wasm32"))]
 
+mod address;
 mod admission;
 mod app;
 mod clock;
@@ -46,11 +48,11 @@ pub mod simulation;
 mod store;
 mod ws;
 
-use std::net::{IpAddr, UdpSocket};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+pub use address::{PUBLIC_URL, join_url, lan_address};
 pub use clock::Clock;
 use salon_core::{DeviceEvent, Host, Limits, Ms, Qr, Timing};
 use serde::Serialize;
@@ -178,22 +180,6 @@ pub const ROOM_DIED: i32 = 101;
 /// its result.
 pub fn run<G: Game>(options: Options, game: G) -> Result<(), String> {
     http::serve(options, game)
-}
-
-/// The address other devices on the network reach this computer at.
-/// Connecting a UDP socket sends nothing; it only asks the OS which
-/// interface it would use.
-pub fn lan_address() -> Option<IpAddr> {
-    let socket = UdpSocket::bind(("0.0.0.0", 0)).ok()?;
-    socket.connect(("192.0.2.1", 9)).ok()?;
-    let ip = socket.local_addr().ok()?.ip();
-    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
-}
-
-/// The address phones open: `http://<lan address>:<port><path>`.
-pub fn join_url(port: u16, path: &str) -> String {
-    let host = lan_address().map_or_else(|| "localhost".to_owned(), |ip| ip.to_string());
-    format!("http://{host}:{port}{path}")
 }
 
 /// The QR code of `url`, as modules for the page to draw (`salon_web::qr`).
