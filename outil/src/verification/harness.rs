@@ -26,7 +26,7 @@ struct Evidence {
     records: Vec<Record>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct Record {
     scenario: String,
     item: String,
@@ -236,28 +236,11 @@ fn collect(
                 health = Outcome::Failed;
             }
             for control in &plan.controls {
-                if let ExecutionSpec::Harness { scenario, item } = &control.execution {
-                    if !selected.contains(&control.id) {
-                        continue;
-                    }
-                    let records = evidence
-                        .records
-                        .iter()
-                        .filter(|r| {
-                            &r.scenario == scenario
-                                && &r.item == item
-                                && !(item == "U1" && r.explicit_exclusion)
-                        })
-                        .collect::<Vec<_>>();
-                    let outcome = summarize(&records);
-                    // The worst note first: the summary quotes the first line.
-                    let mut notes = records.clone();
-                    notes.sort_by_key(|r| severity(&r.status));
-                    let detail = notes
-                        .iter()
-                        .map(|r| r.note.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                if let ExecutionSpec::Harness { scenario, item } = &control.execution
+                    && selected.contains(&control.id)
+                {
+                    let (outcome, detail) =
+                        item_records(&evidence.records, scenario, item, selected);
                     observations.push(observe(
                         control,
                         outcome,
@@ -268,17 +251,13 @@ fn collect(
                 }
             }
             for record in &evidence.records {
-                if record.status == "fail" {
-                    let id = resolve::harness_id(&record.scenario, &record.item);
-                    if !selected.contains(&id) {
-                        health = if record.item == "H1" {
-                            Outcome::InfrastructureError
-                        } else {
-                            Outcome::Failed
-                        };
-                        let _: std::fmt::Result =
-                            write!(health_detail, " ; {} : {}", record.item, record.note);
-                    }
+                if let Some(next) = controller_outcome(record, plan, selected) {
+                    health = worst(health, next);
+                    let _: std::fmt::Result = write!(
+                        health_detail,
+                        " ; {} [{}] : {}",
+                        record.item, record.scenario, record.note
+                    );
                 }
             }
         }
@@ -293,6 +272,85 @@ fn collect(
         ));
     }
     observations
+}
+
+/// What one selected control observed: its own records, and those of its item
+/// that no selected control listens to.
+fn item_records(
+    records: &[Record],
+    scenario: &str,
+    item: &str,
+    selected: &BTreeSet<String>,
+) -> (Outcome, String) {
+    let own = |r: &&Record| {
+        r.scenario == scenario && r.item == item && !(item == "U1" && r.explicit_exclusion)
+    };
+    let foreign = |r: &&Record| r.item == item && unattached(r, selected);
+    let records = records
+        .iter()
+        .filter(|r| own(r) || foreign(r))
+        .collect::<Vec<_>>();
+    let outcome = summarize(&records);
+    // The worst note first: the summary quotes the first line.
+    let mut notes = records;
+    notes.sort_by_key(|r| severity(&r.status));
+    let detail = notes
+        .iter()
+        .map(|r| {
+            if foreign(r) {
+                format!("[{}] {}", r.scenario, r.note)
+            } else {
+                r.note.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (outcome, detail)
+}
+
+/// What a record outside every selected control means for the controller's
+/// own health, if anything.
+fn controller_outcome(
+    record: &Record,
+    plan: &model::Plan,
+    selected: &BTreeSet<String>,
+) -> Option<Outcome> {
+    let id = resolve::harness_id(&record.scenario, &record.item);
+    let held_by_its_item = plan.controls.iter().any(|control| {
+        selected.contains(&control.id)
+            && matches!(&control.execution, ExecutionSpec::Harness { item, .. } if item == &record.item)
+    });
+    match record.status.as_str() {
+        "fail" if selected.contains(&id) => None,
+        "fail" if record.item == "H1" => Some(Outcome::InfrastructureError),
+        "fail" => Some(Outcome::Failed),
+        "partial" if unattached(record, selected) && !held_by_its_item => Some(Outcome::NotRun),
+        "review" if unattached(record, selected) && !held_by_its_item => {
+            Some(Outcome::ReviewRequired)
+        }
+        _ => None,
+    }
+}
+
+/// A judgement or an unfinished check written where no selected control
+/// listens: `review("T2", …)` during `join`, or an oracle common to every
+/// scenario. Linking the pair in `resolve::HARNESS` would make every run that
+/// does not meet the case fail, so such a record joins its item's selected
+/// controls instead, or the controller's health when the run selected none.
+fn unattached(record: &Record, selected: &BTreeSet<String>) -> bool {
+    matches!(record.status.as_str(), "review" | "partial")
+        && !selected.contains(&resolve::harness_id(&record.scenario, &record.item))
+}
+
+fn worst(a: Outcome, b: Outcome) -> Outcome {
+    let rank = |outcome| match outcome {
+        Outcome::Passed => 0,
+        Outcome::ReviewRequired => 1,
+        Outcome::Ignored | Outcome::NotRun => 2,
+        Outcome::Failed => 3,
+        Outcome::InfrastructureError => 4,
+    };
+    if rank(b) > rank(a) { b } else { a }
 }
 
 fn severity(status: &str) -> u8 {
@@ -408,6 +466,175 @@ mod tests {
             "new observations\n"
         );
     }
+    fn record(scenario: &str, item: &str, status: &str, note: &str) -> Record {
+        Record {
+            scenario: scenario.into(),
+            item: item.into(),
+            status: status.into(),
+            note: note.into(),
+            explicit_exclusion: false,
+        }
+    }
+
+    /// The real plan, with `scenarios` as the run's selection.
+    fn observed(
+        scenarios: &[&str],
+        records: Vec<Record>,
+    ) -> (
+        model::Plan,
+        BTreeSet<String>,
+        Vec<model::Observation>,
+        model::Evaluation,
+    ) {
+        let contract = model::Contract {
+            schema: 1,
+            guarantees: vec![],
+            checks: vec![],
+            catalogue_decisions: vec![],
+        };
+        let plan = resolve::resolve(
+            &contract,
+            &serde_json::json!({"phone": "/play", "socket": "/salon/ws"}),
+        );
+        let mut selected = BTreeSet::from(["harness:health".to_owned()]);
+        for control in &plan.controls {
+            if let ExecutionSpec::Harness { scenario, .. } = &control.execution
+                && scenarios.contains(&scenario.as_str())
+            {
+                selected.insert(control.id.clone());
+            }
+        }
+        let evidence = Evidence {
+            schema: 1,
+            completed: true,
+            infrastructure_error: None,
+            records,
+        };
+        let observations = collect(
+            &plan,
+            &selected,
+            Ok(evidence),
+            std::process::ExitStatus::default(),
+            Some("now"),
+            &[],
+        );
+        let evaluation = evaluate::evaluate(&plan, &observations, &selected, Some("now"));
+        (plan, selected, observations, evaluation)
+    }
+
+    fn outcome_of(observations: &[model::Observation], id: &str) -> Outcome {
+        observations
+            .iter()
+            .find(|observation| observation.control_id == id)
+            .unwrap()
+            .outcome
+    }
+
+    #[test]
+    fn a_judgement_written_outside_its_scenario_reaches_its_item() {
+        let ordinary = vec![
+            record("join", "C1", "ok", "tout le monde a rejoint"),
+            record("text", "T2", "ok", "corpus ok"),
+        ];
+        let (_, _, quiet, evaluation) = observed(&["join", "text"], ordinary.clone());
+        assert_eq!(outcome_of(&quiet, "harness:text:T2"), Outcome::Passed);
+        assert!(evaluation.selected_scope_satisfied);
+
+        let mut noted = ordinary;
+        noted.push(record("join", "T2", "review", "le prénom n'entre pas"));
+        let (_, _, observations, evaluation) = observed(&["join", "text"], noted);
+        assert_eq!(
+            outcome_of(&observations, "harness:text:T2"),
+            Outcome::ReviewRequired
+        );
+        let detail = &observations
+            .iter()
+            .find(|observation| observation.control_id == "harness:text:T2")
+            .unwrap()
+            .detail;
+        assert!(
+            detail.starts_with("[join] le prénom n'entre pas"),
+            "{detail}"
+        );
+        assert_eq!(outcome_of(&observations, "harness:health"), Outcome::Passed);
+        assert!(evaluation.selected_scope_satisfied);
+        let t2 = evaluation
+            .obligations
+            .iter()
+            .find(|obligation| obligation.id == "T2")
+            .unwrap();
+        assert_eq!(t2.assessment, model::Assessment::ReviewRequired);
+    }
+
+    #[test]
+    fn an_unfinished_check_outside_its_scenario_fails_the_run() {
+        let records = vec![
+            record("monkey", "E6", "ok", "aucune exception"),
+            record("join", "E6", "partial", "[join] console.error : oups"),
+        ];
+        let (_, _, observations, evaluation) = observed(&["join", "monkey"], records);
+        assert_eq!(
+            outcome_of(&observations, "harness:monkey:E6"),
+            Outcome::NotRun
+        );
+        assert!(!evaluation.selected_scope_satisfied);
+    }
+
+    #[test]
+    fn a_note_whose_item_is_not_in_this_run_stays_visible_in_the_controller_health() {
+        let joined = record("join", "C1", "ok", "tout le monde a rejoint");
+        let judged = record("join", "T2", "review", "le prénom n'entre pas");
+        let (_, selected, observations, evaluation) =
+            observed(&["join"], vec![joined.clone(), judged]);
+        assert!(!selected.contains("harness:text:T2"));
+        assert_eq!(
+            outcome_of(&observations, "harness:health"),
+            Outcome::ReviewRequired
+        );
+        assert!(evaluation.selected_scope_satisfied);
+        assert!(
+            observations
+                .iter()
+                .any(|o| o.control_id == "harness:health" && o.detail.contains("n'entre pas"))
+        );
+
+        let unfinished = record("join", "E6", "partial", "console.error : oups");
+        let (_, _, observations, evaluation) =
+            observed(&["join"], vec![joined.clone(), unfinished]);
+        assert_eq!(outcome_of(&observations, "harness:health"), Outcome::NotRun);
+        assert!(!evaluation.selected_scope_satisfied);
+
+        let invented = record("join", "Z9", "review", "item absent du plan");
+        let (_, _, observations, _) = observed(&["join"], vec![joined, invented]);
+        assert_eq!(
+            outcome_of(&observations, "harness:health"),
+            Outcome::ReviewRequired
+        );
+    }
+
+    #[test]
+    fn a_passing_or_skipped_record_outside_its_scenario_changes_nothing() {
+        let records = vec![
+            record("monkey", "T3", "ok", "tout le texte tient"),
+            record("monkey", "D2", "skip", "pas de touche advance"),
+        ];
+        let (_, _, observations, _) = observed(&["monkey"], records);
+        assert_eq!(outcome_of(&observations, "harness:health"), Outcome::Passed);
+    }
+
+    #[test]
+    fn a_later_note_never_softens_a_worse_controller_state() {
+        for (first, next) in [
+            (Outcome::InfrastructureError, Outcome::Failed),
+            (Outcome::Failed, Outcome::NotRun),
+            (Outcome::NotRun, Outcome::ReviewRequired),
+            (Outcome::ReviewRequired, Outcome::Passed),
+        ] {
+            assert_eq!(worst(first, next), first);
+            assert_eq!(worst(next, first), first);
+        }
+    }
+
     #[test]
     fn absent_skip_partial_and_review_are_not_success() {
         assert_eq!(summarize(&[]), Outcome::NotRun);

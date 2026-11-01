@@ -32,7 +32,9 @@ writeFileSync(output, JSON.stringify({
   records: [{
     scenario: mode === 'wrong-scenario' ? 'reload' : 'cut',
     item: 'C2', status: ['partial', 'review'].includes(mode) ? mode : 'ok', note: 'fixture completed the cut observation',
-  }],
+  }, ...(mode.startsWith('stray-') ? [{
+    scenario: 'cut', item: 'T2', status: mode.slice('stray-'.length), note: 'stray note outside its scenario',
+  }] : [])],
 }));
 process.exit(mode === 'abort' ? 2 : 0);
 ";
@@ -224,6 +226,36 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_eq!(report["evaluation"]["complete"], false);
         assert_eq!(obligation(&report, "C2")["assessment"], "review-required");
         assert!(String::from_utf8_lossy(&output.stdout).contains("À juger par un humain"));
+    }
+
+    #[test]
+    fn a_judgement_outside_its_scenario_is_shown_by_the_real_command() {
+        let fixture = Fixture::new("stray-review");
+        let output = fixture.run();
+        assert_success(&output);
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], true);
+        assert_eq!(obligation(&report, "H1")["assessment"], "review-required");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("À juger par un humain"), "{stdout}");
+        assert!(
+            stdout.contains("stray note outside its scenario"),
+            "{stdout}"
+        );
+    }
+
+    #[test]
+    fn an_unfinished_check_outside_its_scenario_fails_the_real_command() {
+        let fixture = Fixture::new("stray-partial");
+        let output = fixture.run();
+        assert!(!output.status.success());
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], false);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("stray note outside its scenario"),
+            "{stdout}"
+        );
     }
 
     #[test]
