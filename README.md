@@ -75,7 +75,7 @@ vérifié la fait échouer. Le code de sortie porte sur le périmètre demandé.
 un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
 méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
 un test passé. Les durées et les gains dans la boucle d’itération restent à
-mesurer. Le format et la migration sont dans [`VERIFICATION.md`](VERIFICATION.md).
+mesurer. Le format est dans [`VERIFICATION.md`](VERIFICATION.md).
 
 ## Où trouver le reste
 

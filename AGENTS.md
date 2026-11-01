@@ -3,7 +3,7 @@
 > Ce fichier s'adresse à l'agent de code qui travaille dans ce dépôt, quel qu'il soit. Ce dépôt est public, et tous les jeux de la soirée en dépendent.
 
 Lis et applique `MANIFESTE.md` et `CERTIFICATION.md`. `VERIFICATION.md` décrit
-les contrats exécutables, la migration et la portée exacte des résultats.
+les contrats exécutables et la portée exacte des résultats.
 Ne modifie pas le manifeste sans demande explicite de l’hôte.
 
 ## Chaque changement touche tous les jeux

@@ -226,60 +226,6 @@ observé. Le système actuel les laisse en attente ; il n’importe pas un texte
 de revue comme une preuve automatisée. Forcer l’explicitation aide la revue,
 mais une explication convaincante peut encore être erronée ou incomplète.
 
-## Migrer un jeu antérieur
-
-La migration importe les engagements historiques de `CERTIFICATION.md`, pas
-les anciens résultats. Elle exige que l’auteur fournisse l’identité des tests,
-au lieu de deviner quel homonyme ou quel helper serait la preuve recherchée.
-À la racine du jeu, préparer par exemple `references.json` :
-
-```json
-{
-  "schema": 1,
-  "references": [
-    {
-      "legacy": "a_duplicate_vote_does_not_score_twice",
-      "test": {
-        "package": "mon-jeu-core",
-        "target_kind": "lib",
-        "target": "mon_jeu_core",
-        "name": "tests::a_duplicate_vote_does_not_score_twice",
-        "features": [],
-        "default_features": true,
-        "profile": "dev"
-      },
-      "reason": "Le test exécutable porte la propriété annoncée par l’ancien item."
-    }
-  ]
-}
-```
-
-`legacy` reprend exactement la référence entre backticks de l’ancien tableau,
-avec son module s’il était écrit. Si elle désignait un helper ou un autre nom,
-indiquer le vrai test qui l’exerce et expliquer la redirection dans `reason`.
-Les clés dupliquées, références inutilisées, identités incomplètes et
-redirections inexpliquées font échouer la migration.
-
-```sh
-soiree contracts --migrate references.json
-soiree contracts --write-view
-soiree check
-soiree certify -- --only ui,panic
-```
-
-La commande crée `verification.toml`, garde l’original dans
-`CERTIFICATION.legacy.md` et remplace la partie historique par la vue générée.
-Elle refuse d’écraser un contrat ou une archive existants. Relire l’import,
-les hypothèses et les décisions du catalogue, puis exécuter les contrôles :
-l’import ne prétend ni que le test existe, ni qu’il passe. Les anciennes
-attestations ne sont pas reprises comme résultats frais.
-
-La version du binaire, `soiree.toml`, les dépendances communes et les documents
-embarqués doivent être alignés. `soiree upgrade` vérifie l’existence de
-l’étiquette publiée avant de modifier le jeu. Chez l’hôte, le patch local sert
-au travail conjoint ; un clone hors de ce dossier et
-`soiree check --locked --published` vérifient les dépendances distribuées.
-
 ## Caches de CI et confiance
 
 Les workflows mettent en cache les téléchargements Cargo et des répertoires

@@ -4,7 +4,6 @@ pub mod check;
 pub mod evaluate;
 pub mod harness;
 pub mod identity;
-pub mod migrate;
 pub mod model;
 pub mod render;
 pub mod resolve;

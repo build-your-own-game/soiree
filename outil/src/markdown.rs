@@ -55,39 +55,6 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
     out
 }
 
-/// The cells of a table row `| a | b |`, trimmed; `\|` stays inside a cell.
-pub fn cells(row: &str) -> Vec<String> {
-    let row = row.trim();
-    let row = row.strip_prefix('|').unwrap_or(row);
-    let row = row.strip_suffix('|').unwrap_or(row);
-    let mut cells = vec![String::new()];
-    let mut escaped = false;
-    for c in row.chars() {
-        if c == '|' && !escaped {
-            cells.push(String::new());
-        } else if let Some(cell) = cells.last_mut() {
-            cell.push(c);
-        }
-        escaped = c == '\\';
-    }
-    cells.iter().map(|c| c.trim().to_owned()).collect()
-}
-
-/// `|---|:--:|` and the like.
-pub fn is_separator(row: &str) -> bool {
-    let cells = cells(row);
-    !cells.is_empty()
-        && cells.iter().all(|c| {
-            let c = c.trim_matches(':');
-            !c.is_empty() && c.chars().all(|x| x == '-')
-        })
-}
-
-/// The text between backticks, in order.
-pub fn code_spans(text: &str) -> Vec<&str> {
-    text.split('`').skip(1).step_by(2).collect()
-}
-
 /// An identifier of the shared catalogue: 2 to 5 capitals, a dash, 2 digits
 /// (`^[A-Z]{2,5}-\d{2}$`).
 pub fn is_catalogue_id(id: &str) -> bool {
@@ -132,15 +99,6 @@ pub fn catalogue_ids(text: &str) -> Vec<String> {
     found
 }
 
-/// A Rust identifier.
-pub fn is_ident(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
-        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,16 +112,6 @@ mod tests {
             .map(|l| l.number)
             .collect();
         assert_eq!(read, vec![1, 8]);
-    }
-
-    #[test]
-    fn cells_and_separators() {
-        assert_eq!(
-            cells("| J1 | a \\| b | `t` | |"),
-            vec!["J1", "a \\| b", "`t`", ""]
-        );
-        assert!(is_separator("|---|:--:|---|"));
-        assert!(!is_separator("| # | Test |"));
     }
 
     #[test]
