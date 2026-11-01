@@ -17,6 +17,21 @@ use net::{Down, Faults, Net, Up, phone_config};
 use proptest::prelude::*;
 use salon_core::{Caps, DeviceEvent, Kind, LinkId, Ms, Output, Status};
 
+/// One line per chaos case, so that a run can be counted from outside.
+const CASE: &str = "chaos case";
+
+/// A chaos case costs far more than the others: 64 of them in a plain
+/// `cargo test`. `PROPTEST_CASES` sets their number like everywhere else;
+/// an explicit `cases` field would ignore it.
+fn chaos_config() -> ProptestConfig {
+    let asked = std::env::var("PROPTEST_CASES").ok();
+    let cases = asked.and_then(|cases| cases.parse().ok()).unwrap_or(64);
+    ProptestConfig {
+        cases,
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
     /// E1: bytes from nowhere never crash the host, never reach the game,
     /// and a stranger that only sends garbage is dropped.
@@ -81,7 +96,7 @@ fn step() -> impl Strategy<Value = Step> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+    #![proptest_config(chaos_config())]
 
     /// Whatever the network does, every event arrives once and in order,
     /// every phone ends up connected as itself once the network is back,
@@ -93,6 +108,7 @@ proptest! {
         jitter in 0..120u64,
         steps in prop::collection::vec(step(), 1..60),
     ) {
+        println!("{CASE}");
         let mut net = Net::new(seed, Faults { loss, duplicate: 10, jitter });
         for token in 0..3u8 {
             net.add_phone(phone_config(token + 1, Kind::Phone), Caps::DATAGRAM);
@@ -170,4 +186,38 @@ proptest! {
             }
         }
     }
+}
+
+/// Runs the real chaos property in a child of this test binary, and counts
+/// the cases it really played.
+fn chaos_cases_played(asked: Option<&str>) -> usize {
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+    child.args([
+        "--exact",
+        "chaos_never_loses_or_doubles_an_event",
+        "--nocapture",
+    ]);
+    match asked {
+        Some(cases) => child.env("PROPTEST_CASES", cases),
+        None => child.env_remove("PROPTEST_CASES"),
+    };
+    let output = child.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.ends_with(CASE))
+        .count()
+}
+
+/// The chaos stays cheap in a plain `cargo test`, and `PROPTEST_CASES`, as
+/// the head of this file promises, searches further.
+#[test]
+fn proptest_cases_really_widens_the_chaos() {
+    // Proptest plays the saved failures first, on top of the cases asked.
+    let saved = include_str!("properties.proptest-regressions")
+        .lines()
+        .filter(|line| line.starts_with("cc "))
+        .count();
+    assert_eq!(chaos_cases_played(None), 64 + saved);
+    assert_eq!(chaos_cases_played(Some("80")), 80 + saved);
 }
