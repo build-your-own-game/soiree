@@ -35,10 +35,8 @@ pub fn run(dir: &Path, options: check::Options) -> bool {
         }
     };
     let selected = select(&plan, options);
-    // First-time creation of Cargo.lock belongs before the input snapshot.
-    if dir.join("Cargo.toml").is_file() && !options.locked && !dir.join("Cargo.lock").is_file() {
-        let _: util::Result<std::process::Output> =
-            util::run(dir, "cargo", &["metadata", "--format-version", "1"]);
+    if !options.locked {
+        identity::settle_lock(dir);
     }
     let parameters = vec![format!(
         "locked={};published={};fast={}",
@@ -318,11 +316,12 @@ fn finish(
         .into_iter()
         .collect::<Vec<_>>();
     errors.extend(after.as_ref().err().cloned());
-    if before.as_ref().ok().map(|identity| &identity.value)
-        != after.as_ref().ok().map(|identity| &identity.value)
-    {
-        errors.push("Les entrées ont changé pendant le passage".to_owned());
-    }
+    errors.extend(identity::drift(
+        &before,
+        &after,
+        dir,
+        "Les entrées ont changé pendant le passage",
+    ));
     let mut evaluation = evaluate::evaluate(
         &plan,
         &observations,

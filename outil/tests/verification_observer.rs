@@ -21,6 +21,13 @@ appendFileSync(join(game, 'certification', 'observer-invocations.jsonl'), JSON.s
   evidence_path_present: output !== undefined,
 }) + '\n');
 if (preparation) process.exit(0);
+if (mode === 'touch-noise') {
+  writeFileSync(join(game, '.DS_Store'), 'finder');
+  writeFileSync(join(game, 'notes.md'), 'ce soir');
+  mkdirSync(join(game, 'data'), { recursive: true });
+  writeFileSync(join(game, 'data', 'journal.jsonl'), '{}');
+}
+if (mode === 'touch-source') writeFileSync(join(game, 'src', 'lib.rs'), 'pub const VALUE: u8 = 2;\n');
 if (mode === 'stdout-only') {
   console.log('ALL CHECKS PASSED: this green text is not structured evidence');
   process.exit(0);
@@ -90,6 +97,33 @@ process.exit(mode === 'abort' ? 2 : 0);
                 game,
                 harness,
             }
+        }
+
+        /// The game under Git, with the `/data` a real game ignores.
+        fn track(&self) {
+            std::fs::write(self.game.join(".gitignore"), "/data\n/target\n").unwrap();
+            let init = Command::new("git")
+                .current_dir(&self.game)
+                .args(["init", "-q"])
+                .output()
+                .unwrap();
+            assert_success(&init);
+        }
+
+        fn stale_lock(&self) {
+            let manifest = self.game.join("Cargo.toml");
+            let text = std::fs::read_to_string(&manifest).unwrap();
+            std::fs::write(manifest, text.replace("0.1.0", "0.2.0")).unwrap();
+        }
+
+        fn check_fast(&self, extra: &[&str]) -> Output {
+            Command::new(env!("CARGO_BIN_EXE_soiree"))
+                .current_dir(&self.game)
+                .env("CARGO_NET_OFFLINE", "true")
+                .args(["check", "--fast"])
+                .args(extra)
+                .output()
+                .unwrap()
         }
 
         fn run(&self) -> Output {
@@ -226,6 +260,71 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_eq!(report["evaluation"]["complete"], false);
         assert_eq!(obligation(&report, "C2")["assessment"], "review-required");
         assert!(String::from_utf8_lossy(&output.stdout).contains("À juger par un humain"));
+    }
+
+    #[test]
+    fn noise_written_during_a_run_does_not_invalidate_it() {
+        let fixture = Fixture::new("touch-noise");
+        fixture.track();
+        let output = fixture.run();
+        assert_success(&output);
+        let report = fixture.report();
+        assert_eq!(report["identity_errors"], json!([]));
+        assert_eq!(report["identity_before"], report["identity_after"]);
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], true);
+    }
+
+    #[test]
+    fn a_real_source_changed_during_a_run_fails_the_real_command_and_is_named() {
+        let fixture = Fixture::new("touch-source");
+        fixture.track();
+        let output = fixture.run();
+        assert!(!output.status.success());
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], false);
+        assert_ne!(report["identity_before"], report["identity_after"]);
+        let errors = report["identity_errors"].to_string();
+        assert!(errors.contains("src/lib.rs"), "{errors}");
+    }
+
+    #[test]
+    fn a_stale_lock_is_refreshed_before_the_snapshot_of_an_ordinary_run() {
+        let fixture = Fixture::new("completed");
+        fixture.stale_lock();
+        assert_success(&fixture.run());
+        assert_eq!(fixture.report()["identity_errors"], json!([]));
+
+        let fixture = Fixture::new("completed");
+        fixture.stale_lock();
+        let _ignored_static_outcome: Output = fixture.check_fast(&[]);
+        let report: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture.game.join("certification/check-fast.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["identity_errors"], json!([]));
+        assert!(
+            std::fs::read_to_string(fixture.game.join("Cargo.lock"))
+                .unwrap()
+                .contains("0.2.0")
+        );
+    }
+
+    #[test]
+    fn a_locked_run_still_refuses_a_stale_lock_and_never_rewrites_it() {
+        let fixture = Fixture::new("completed");
+        fixture.stale_lock();
+        let lock = std::fs::read_to_string(fixture.game.join("Cargo.lock")).unwrap();
+        let output = fixture.check_fast(&["--locked"]);
+        assert!(!output.status.success());
+        let report: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture.game.join("certification/check-fast.json")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(report["identity_errors"], json!([]));
+        assert_eq!(
+            std::fs::read_to_string(fixture.game.join("Cargo.lock")).unwrap(),
+            lock
+        );
     }
 
     #[test]

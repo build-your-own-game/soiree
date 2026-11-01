@@ -55,6 +55,7 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
             selected.insert(control.id.clone());
         }
     }
+    identity::settle_lock(dir);
     // Build served artefacts before the observation snapshot. Their bytes remain
     // covered by the identity; they are never silently excluded as "generated".
     let prepared = prepare(dir, harness, &arguments)?;
@@ -72,21 +73,8 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     if raw.exists() {
         std::fs::remove_file(&raw).map_err(|e| e.to_string())?;
     }
-    let (status, output, transport_errors) = if prepared.status.success() {
-        launch(dir, harness, &arguments, &raw)?
-    } else {
-        (
-            prepared.status,
-            String::from_utf8_lossy(&prepared.stdout)
-                .lines()
-                .map(str::to_owned)
-                .collect(),
-            vec![format!(
-                "Préparation du contrôleur échouée : {}",
-                String::from_utf8_lossy(&prepared.stderr)
-            )],
-        )
-    };
+    let (status, output, transport_errors) =
+        observe_prepared(&prepared, dir, harness, &arguments, &raw)?;
     errors.extend(transport_errors);
     let evidence: Result<Evidence> =
         util::read(&raw).and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()));
@@ -100,9 +88,12 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     );
     let after = identity::capture(dir, &plan, &selected, Some(harness), &arguments);
     errors.extend(after.as_ref().err().cloned());
-    if before.as_ref().ok().map(|i| &i.value) != after.as_ref().ok().map(|i| &i.value) {
-        errors.push("Les entrées ou le contrôleur ont changé pendant le passage".to_owned());
-    }
+    errors.extend(identity::drift(
+        &before,
+        &after,
+        dir,
+        "Les entrées ou le contrôleur ont changé pendant le passage",
+    ));
     let mut evaluation = evaluate::evaluate(
         &plan,
         &observations,
@@ -151,6 +142,31 @@ fn prepare(dir: &Path, harness: &Path, arguments: &[String]) -> Result<std::proc
         .map_err(|error| format!("préparation node : {error}"))
 }
 
+type Launched = (std::process::ExitStatus, Vec<String>, Vec<String>);
+
+fn observe_prepared(
+    prepared: &std::process::Output,
+    dir: &Path,
+    harness: &Path,
+    arguments: &[String],
+    raw: &Path,
+) -> Result<Launched> {
+    if prepared.status.success() {
+        return launch(dir, harness, arguments, raw);
+    }
+    Ok((
+        prepared.status,
+        String::from_utf8_lossy(&prepared.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        vec![format!(
+            "Préparation du contrôleur échouée : {}",
+            String::from_utf8_lossy(&prepared.stderr)
+        )],
+    ))
+}
+
 fn copy_artifacts(out: &Path, output: &[String]) -> Result<()> {
     if let Some(captures) = crate::certify::captures(output) {
         for name in ["performance.json", "rapport.md"] {
@@ -170,12 +186,7 @@ fn copy_artifacts(out: &Path, output: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn launch(
-    dir: &Path,
-    harness: &Path,
-    arguments: &[String],
-    raw: &Path,
-) -> Result<(std::process::ExitStatus, Vec<String>, Vec<String>)> {
+fn launch(dir: &Path, harness: &Path, arguments: &[String], raw: &Path) -> Result<Launched> {
     let mut errors = Vec::new();
     let mut child = Command::new("node")
         .arg(harness.join("cert.mjs"))

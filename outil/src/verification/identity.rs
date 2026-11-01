@@ -24,8 +24,79 @@ pub struct Identity {
     pub value: String,
     pub source_roots: Vec<String>,
     pub files: usize,
+    /// Entries left out of the value by the rules of `assumptions`, each named.
+    #[serde(default)]
+    pub excluded: Vec<String>,
+    /// Each hashed source, to name what changed between two captures.
+    #[serde(skip)]
+    digests: BTreeMap<String, String>,
     #[serde(default)]
     pub assumptions: Vec<String>,
+}
+
+/// The files of a source root: what is hashed, and what is left out and why.
+#[derive(Debug, Default)]
+struct Sources {
+    files: Vec<PathBuf>,
+    excluded: Vec<String>,
+    digests: BTreeMap<String, String>,
+}
+
+/// Cargo refreshes a stale `Cargo.lock` at its first command. Doing it here puts
+/// that rewrite before the snapshot, where it is not a change during the run;
+/// otherwise the snapshot's own `--locked` metadata refuses the run. A locked
+/// run never comes here: it must still refuse a stale lock, and rewrites nothing.
+pub fn settle_lock(dir: &Path) {
+    if dir.join("Cargo.toml").is_file() {
+        let _: Result<std::process::Output> =
+            util::run(dir, "cargo", &["metadata", "--format-version", "1"]);
+    }
+}
+
+/// The sentence for two captures that differ, `what` being what changed.
+pub fn drift(
+    before: &Result<Identity>,
+    after: &Result<Identity>,
+    dir: &Path,
+    what: &str,
+) -> Option<String> {
+    let value = |capture: &Result<Identity>| capture.as_ref().ok().map(|i| i.value.clone());
+    (value(before) != value(after)).then(|| match (before, after) {
+        (Ok(before), Ok(after)) => format!("{what}{}", changes(before, after, dir)),
+        _ => what.to_owned(),
+    })
+}
+
+/// The sources that differ between two captures, for the reader of a failed
+/// passage: ` : a, b et 3 autres`, or nothing when the sources did not change.
+fn changes(before: &Identity, after: &Identity, dir: &Path) -> String {
+    const SHOWN: usize = 5;
+    let changed: Vec<String> = before
+        .digests
+        .iter()
+        .filter(|(path, digest)| after.digests.get(*path) != Some(digest))
+        .map(|(path, _)| path)
+        .chain(
+            after
+                .digests
+                .keys()
+                .filter(|path| !before.digests.contains_key(*path)),
+        )
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|path| util::shown(Path::new(path), dir))
+        .collect();
+    let named = changed
+        .iter()
+        .take(SHOWN)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match changed.len() {
+        0 => String::new(),
+        count if count <= SHOWN => format!(" : {named}"),
+        count => format!(" : {named} et {} autres", count.saturating_sub(SHOWN)),
+    }
 }
 
 pub fn capture(
@@ -67,7 +138,7 @@ pub fn capture(
         "dependency-graph",
         &serde_json::to_vec(graph).map_err(|e| e.to_string())?,
     );
-    let count = hash_sources(&mut hash, &roots)?;
+    let sources = hash_sources(&mut hash, &roots)?;
     hash_configs(&mut hash, &dir, &environment)?;
     hash_environment(&mut hash, &dir, &environment)?;
     hash_tools(&mut hash, &dir, &environment)?;
@@ -77,7 +148,9 @@ pub fn capture(
             .iter()
             .map(|root| root.display().to_string())
             .collect(),
-        files: count,
+        files: sources.digests.len(),
+        excluded: sources.excluded,
+        digests: sources.digests,
         assumptions: assumptions(),
     })
 }
@@ -110,7 +183,8 @@ fn metadata(dir: &Path) -> Result<Value> {
 
 fn assumptions() -> Vec<String> {
     [
-        "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+        "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+        "Sont aussi exclus, et nommés dans cette provenance : les fichiers que dépose la machine (.DS_Store, ._*, Thumbs.db, desktop.ini, sauvegardes et verrous d’éditeur), les notes personnelles que Git ne suit pas (.md ou .txt nommés notes, todo, scratch ou brouillon, ou placés dans notes/) et un dossier data que Git ignore, état local du jeu en marche. Un fichier suivi par Git reste toujours une entrée, et hors de Git rien de cela n’est présumé. Un test qui lirait ces fichiers ne serait pas couvert.",
         "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
         "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
         "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage.",
@@ -163,17 +237,21 @@ fn source_roots(
     Ok(roots)
 }
 
-fn hash_sources(hash: &mut Sha256, roots: &BTreeSet<PathBuf>) -> Result<usize> {
-    let mut count = 0usize;
+fn hash_sources(hash: &mut Sha256, roots: &BTreeSet<PathBuf>) -> Result<Sources> {
+    let mut sources = Sources::default();
     for root in roots {
         add(hash, "root", path_text(root)?.as_bytes());
-        for path in source_files(root)? {
+        let found = source_files(root)?;
+        for path in found.files {
             let name = path.strip_prefix(root).map_err(|e| e.to_string())?;
-            add_file(hash, path_text(name)?, &path)?;
-            count = count.saturating_add(1);
+            let digest = add_file(hash, path_text(name)?, &path)?;
+            sources.digests.insert(path_text(&path)?.to_owned(), digest);
         }
+        sources.excluded.extend(found.excluded);
     }
-    Ok(count)
+    sources.excluded.sort();
+    sources.excluded.dedup();
+    Ok(sources)
 }
 
 fn add(hash: &mut Sha256, name: &str, bytes: &[u8]) {
@@ -187,7 +265,7 @@ fn add_digest(hash: &mut Sha256, name: &str, digest: &[u8]) {
     hash.update(b"\n");
 }
 
-fn add_file(hash: &mut Sha256, name: &str, path: &Path) -> Result<()> {
+fn add_file(hash: &mut Sha256, name: &str, path: &Path) -> Result<String> {
     let mut file = std::fs::File::open(path).map_err(|e| format!("{} : {e}", path.display()))?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0u8; 65536];
@@ -201,8 +279,9 @@ fn add_file(hash: &mut Sha256, name: &str, path: &Path) -> Result<()> {
         let bytes = buffer.get(..read).ok_or("lecture de fichier hors tampon")?;
         digest.update(bytes);
     }
-    add_digest(hash, name, &digest.finalize());
-    Ok(())
+    let digest = digest.finalize();
+    add_digest(hash, name, &digest);
+    Ok(hex(&digest))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -217,54 +296,129 @@ fn path_text(path: &Path) -> Result<&str> {
         .ok_or_else(|| format!("chemin non UTF-8 non pris en charge : {}", path.display()))
 }
 
-fn source_files(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    walk(root, &mut files)?;
+fn source_files(root: &Path) -> Result<Sources> {
+    let tracked = tracked_files(root)?;
+    let mut found = Sources::default();
+    walk(root, root, tracked.as_ref(), &mut found)?;
     // A tracked file missing from the working tree is never silently omitted.
-    if has_git_ancestor(root)? {
-        let tracked = util::run(root, "git", &["ls-files", "-z", "--cached", "--", "."])?;
-        if !tracked.status.success() {
-            return Err(format!("inventaire Git impossible dans {}", root.display()));
-        }
-        let tracked = String::from_utf8(tracked.stdout).map_err(|e| e.to_string())?;
-        for name in tracked.split('\0').filter(|name| !name.is_empty()) {
-            let relative = Path::new(name);
-            if relative.is_absolute()
-                || relative
-                    .components()
-                    .any(|part| !matches!(part, Component::Normal(_)))
-            {
-                return Err("chemin Git hors racine source".to_owned());
-            }
-            if relative.parent().is_some_and(|parent| {
+    for relative in tracked.iter().flatten() {
+        if machine_noise(relative)
+            || relative.parent().is_some_and(|parent| {
                 parent.components().any(|part| {
                     ARTIFACT_DIRECTORIES
                         .iter()
                         .any(|skip| part.as_os_str() == *skip)
                 })
-            }) {
-                continue;
-            }
-            let path = root.join(relative);
-            let kind = std::fs::symlink_metadata(&path)
-                .map_err(|e| {
-                    format!(
-                        "source suivie absente ou illisible {} : {e}",
-                        path.display()
-                    )
-                })?
-                .file_type();
-            if kind.is_symlink() {
-                return Err(symbolic_source(&path));
-            }
-            if !kind.is_file() {
-                return Err(format!("source suivie non fichier : {}", path.display()));
-            }
+            })
+        {
+            continue;
         }
+        let path = root.join(relative);
+        let kind = std::fs::symlink_metadata(&path)
+            .map_err(|e| {
+                format!(
+                    "source suivie absente ou illisible {} : {e}",
+                    path.display()
+                )
+            })?
+            .file_type();
+        if kind.is_symlink() {
+            return Err(symbolic_source(&path));
+        }
+        if !kind.is_file() {
+            return Err(format!("source suivie non fichier : {}", path.display()));
+        }
+        found.files.push(path);
     }
-    files.sort();
-    files.dedup();
-    Ok(files)
+    found.files.sort();
+    found.files.dedup();
+    Ok(found)
+}
+
+fn tracked_files(root: &Path) -> Result<Option<BTreeSet<PathBuf>>> {
+    if !has_git_ancestor(root)? {
+        return Ok(None);
+    }
+    let tracked = util::run(root, "git", &["ls-files", "-z", "--cached", "--", "."])?;
+    if !tracked.status.success() {
+        return Err(format!("inventaire Git impossible dans {}", root.display()));
+    }
+    let tracked = String::from_utf8(tracked.stdout).map_err(|e| e.to_string())?;
+    let mut files = BTreeSet::new();
+    for name in tracked.split('\0').filter(|name| !name.is_empty()) {
+        let relative = Path::new(name);
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return Err("chemin Git hors racine source".to_owned());
+        }
+        files.insert(relative.to_owned());
+    }
+    Ok(Some(files))
+}
+
+/// What the Finder, Windows and editors leave beside the sources. No build
+/// reads these, and they come and go during a passage.
+fn machine_noise(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini")
+        || name.starts_with("._")
+        || name.starts_with(".#")
+        || name.ends_with('~')
+        || path
+            .extension()
+            .is_some_and(|extension| extension == "swp" || extension == "swo")
+}
+
+/// A document someone writes for themselves. Only its name tells it from a
+/// document the game reads, so the caller keeps every file Git follows, and
+/// `ideas.md` remains an input: a false alarm costs less than a blind spot.
+fn personal_note(relative: &Path) -> bool {
+    let document = relative
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| matches!(extension.to_lowercase().as_str(), "md" | "txt"));
+    let stem = relative
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .to_lowercase();
+    let in_notes = relative
+        .parent()
+        .is_some_and(|parent| parent.components().any(|part| part.as_os_str() == "notes"));
+    document
+        && (in_notes
+            || stem.contains("note")
+            || ["todo", "scratch", "brouillon"]
+                .iter()
+                .any(|name| stem.starts_with(name)))
+}
+
+/// `--no-index`: a followed file inside must not hide the folder's own rule.
+fn ignored_by_git(root: &Path, relative: &Path) -> Result<bool> {
+    let output = util::run(
+        root,
+        "git",
+        &[
+            "check-ignore",
+            "--quiet",
+            "--no-index",
+            "--",
+            path_text(relative)?,
+        ],
+    )?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(format!(
+            "git check-ignore impossible pour {}",
+            relative.display()
+        )),
+    }
 }
 
 fn has_git_ancestor(root: &Path) -> Result<bool> {
@@ -278,25 +432,46 @@ fn has_git_ancestor(root: &Path) -> Result<bool> {
     Ok(false)
 }
 
-fn walk(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+fn walk(
+    root: &Path,
+    dir: &Path,
+    tracked: Option<&BTreeSet<PathBuf>>,
+    found: &mut Sources,
+) -> Result<()> {
     for entry in std::fs::read_dir(dir).map_err(|e| format!("{} : {e}", dir.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
         let kind = entry.file_type().map_err(|e| e.to_string())?;
         let name = entry.file_name();
+        let path = entry.path();
+        let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
         if kind.is_dir() && ARTIFACT_DIRECTORIES.iter().any(|skip| name == *skip) {
             continue;
         }
+        if !kind.is_dir() && machine_noise(relative) {
+            found.excluded.push(path_text(relative)?.to_owned());
+            continue;
+        }
         if kind.is_symlink() {
-            return Err(symbolic_source(&entry.path()));
+            return Err(symbolic_source(&path));
         }
         if kind.is_dir() {
-            walk(&entry.path(), files)?;
+            // `source_files` puts back any file Git follows inside.
+            if name == "data" && tracked.is_some() && ignored_by_git(root, relative)? {
+                found.excluded.push(format!("{}/", path_text(relative)?));
+            } else {
+                walk(root, &path, tracked, found)?;
+            }
         } else if kind.is_file() {
-            files.push(entry.path());
+            if tracked.is_some_and(|tracked| !tracked.contains(relative)) && personal_note(relative)
+            {
+                found.excluded.push(path_text(relative)?.to_owned());
+            } else {
+                found.files.push(path);
+            }
         } else {
             return Err(format!(
                 "entrée source spéciale non prise en charge : {}",
-                entry.path().display()
+                path.display()
             ));
         }
     }
@@ -574,22 +749,164 @@ mod tests {
         }
     }
     #[test]
-    fn ignored_inputs_data_and_dist_are_real_inputs() {
+    fn ignored_inputs_and_dist_are_real_inputs() {
         let fixture = Fixture::new();
         fixture.git(&["init", "-q"]);
-        fixture.write(".gitignore", "/inputs/\n/data/\n/dist/\n");
+        fixture.write(".gitignore", "/inputs/\n/dist/\n");
         fixture.write(
             "src/lib.rs",
             "pub const INPUT: &str = include_str!(\"../inputs/value.txt\");",
         );
         fixture.write("inputs/value.txt", "before");
-        fixture.write("data/state.json", "{}");
         fixture.write("dist/game.wasm", "wasm");
-        for name in ["inputs/value.txt", "data/state.json", "dist/game.wasm"] {
+        for name in ["inputs/value.txt", "dist/game.wasm"] {
             let before = fixture.digest();
             fixture.write(name, "changed");
             assert_ne!(before, fixture.digest(), "{name} was omitted");
         }
+    }
+    #[test]
+    fn what_the_machine_drops_beside_the_sources_is_not_an_input() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        let before = fixture.digest();
+        for name in [
+            ".DS_Store",
+            "src/.DS_Store",
+            "src/._lib.rs",
+            "Thumbs.db",
+            "desktop.ini",
+            "src/lib.rs~",
+            "src/.lib.rs.swp",
+            "src/.#lib.rs",
+        ] {
+            fixture.write(name, "noise");
+            assert_eq!(before, fixture.digest(), "{name} changed the identity");
+        }
+        assert!(
+            source_files(&fixture.0)
+                .unwrap()
+                .excluded
+                .contains(&".DS_Store".to_owned())
+        );
+        fixture.write("src/lib.rs", "pub fn changed() {}");
+        assert_ne!(before, fixture.digest());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn an_editor_lock_symlink_is_noise_and_any_other_symlink_is_still_refused() {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new();
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        symlink("user@host.1234", fixture.0.join("src/.#lib.rs")).unwrap();
+        assert!(source_files(&fixture.0).is_ok());
+        symlink("lib.rs", fixture.0.join("src/other.rs")).unwrap();
+        assert!(source_files(&fixture.0).is_err());
+    }
+    #[test]
+    fn a_personal_note_git_does_not_follow_is_not_an_input() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        let before = fixture.digest();
+        for name in [
+            "notes.md",
+            "NOTES.txt",
+            "mes-notes.md",
+            "TODO.md",
+            "scratch.txt",
+            "notes/2026-10-31.md",
+            "crates/core/notes.md",
+        ] {
+            fixture.write(name, "ce soir");
+            assert_eq!(before, fixture.digest(), "{name} changed the identity");
+        }
+    }
+    #[test]
+    fn a_followed_note_a_new_source_and_any_other_document_stay_inputs() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        fixture.write("notes.md", "suivi");
+        fixture.git(&["add", "notes.md"]);
+        let before = fixture.digest();
+        fixture.write("notes.md", "changed");
+        assert_ne!(before, fixture.digest(), "a tracked note was omitted");
+        for name in ["src/new.rs", "README.md", "ideas.md", "notes.rs"] {
+            let before = fixture.digest();
+            fixture.write(name, "new");
+            assert_ne!(before, fixture.digest(), "{name} was omitted");
+        }
+    }
+    #[test]
+    fn a_note_outside_git_cannot_be_told_from_a_source() {
+        let fixture = Fixture::new();
+        let before = fixture.digest();
+        fixture.write("notes.md", "ce soir");
+        assert_ne!(before, fixture.digest());
+    }
+    #[test]
+    fn only_a_data_folder_git_ignores_is_local_state() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write(".gitignore", "/data\n");
+        fixture.write("data/journal.jsonl", "{}");
+        fixture.write("data/tracked.json", "{}");
+        fixture.write("content/data/words.json", "[]");
+        fixture.git(&["add", "-f", "data/tracked.json"]);
+        let before = fixture.digest();
+        fixture.write("data/journal.jsonl", "{\"more\":1}");
+        fixture.write("data/saves/slot.bin", "state");
+        assert_eq!(before, fixture.digest(), "the running game's state counted");
+        assert!(
+            source_files(&fixture.0)
+                .unwrap()
+                .excluded
+                .contains(&"data/".to_owned())
+        );
+        fixture.write("data/tracked.json", "{\"more\":1}");
+        assert_ne!(before, fixture.digest(), "a tracked file was omitted");
+        let before = fixture.digest();
+        fixture.write("content/data/words.json", "[1]");
+        assert_ne!(before, fixture.digest(), "a data folder Git follows");
+    }
+    #[test]
+    fn a_data_folder_outside_git_stays_an_input() {
+        let fixture = Fixture::new();
+        fixture.write("data/state.json", "{}");
+        let before = fixture.digest();
+        fixture.write("data/state.json", "changed");
+        assert_ne!(before, fixture.digest());
+    }
+    #[test]
+    fn a_changed_input_is_named_and_a_changed_environment_is_not_invented() {
+        let fixture = Fixture::new();
+        fixture.write("src/lib.rs", "pub fn before() {}");
+        fixture.write("src/gone.rs", "pub fn gone() {}");
+        let capture = |fixture: &Fixture| {
+            let mut identity = Identity {
+                value: String::new(),
+                source_roots: vec![],
+                files: 0,
+                excluded: vec![],
+                digests: BTreeMap::new(),
+                assumptions: vec![],
+            };
+            let mut hash = Sha256::new();
+            let sources = hash_sources(&mut hash, &BTreeSet::from([fixture.0.clone()])).unwrap();
+            identity.digests = sources.digests;
+            identity
+        };
+        let before = capture(&fixture);
+        assert_eq!(changes(&before, &before, &fixture.0), "");
+        fixture.write("src/lib.rs", "pub fn after() {}");
+        fixture.write("src/added.rs", "pub fn added() {}");
+        std::fs::remove_file(fixture.0.join("src/gone.rs")).unwrap();
+        assert_eq!(
+            changes(&before, &capture(&fixture), &fixture.0),
+            " : src/added.rs, src/gone.rs, src/lib.rs"
+        );
     }
     #[test]
     fn missing_tracked_sources_fail_closed() {
