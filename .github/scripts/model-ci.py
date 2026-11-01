@@ -17,6 +17,10 @@ parent = Path(os.environ["RUNNER_TEMP"]) / "soiree-model"
 parent.mkdir()
 subprocess.run(["soiree", "new", "ci-model", "--dans", str(parent)], check=True)
 game = parent / "ci-model"
+workflow = (game / ".github" / "workflows" / "soiree.yml").read_text()
+triggers = re.search(r"^on:\n((?:  .*\n)+)", workflow, flags=re.MULTILINE)
+if triggers is None or triggers.group(1) != "  workflow_dispatch:\n  pull_request:\n":
+    raise RuntimeError("the generated game's CI must run by hand or on a pull request only")
 cached_target = Path(os.environ["RUNNER_TEMP"]) / "soiree-model-target"
 if cached_target.exists():
     shutil.move(str(cached_target), str(game / "target"))
