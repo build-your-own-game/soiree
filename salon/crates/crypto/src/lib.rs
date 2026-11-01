@@ -23,6 +23,7 @@ mod sha256;
 mod srtp;
 
 use dtls::RustCryptoDtlsProvider;
+use rand_core::RngCore;
 use sha1::RustCryptoSha1HmacProvider;
 use sha256::RustCryptoSha256Provider;
 use srtp::RustCryptoSrtpProvider;
@@ -41,6 +42,16 @@ pub fn dtls_cert() -> Option<DtlsCert> {
     })
 }
 
+/// `N` bytes from the system's secure generator, on every platform the host
+/// runs on: `rand_core` asks `getrandom`, which does not need `/dev/urandom`.
+pub fn random<const N: usize>() -> Result<[u8; N], String> {
+    let mut bytes = [0; N];
+    rand_core::OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
+
 /// The provider to install once, before the first connection:
 /// `salon_crypto::provider().install_process_default()`.
 pub fn provider() -> CryptoProvider {
@@ -54,5 +65,16 @@ pub fn provider() -> CryptoProvider {
         sha1_hmac_provider: &SHA1_HMAC,
         sha256_provider: &SHA256,
         dtls_provider: &DTLS,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_system_gives_random_bytes() {
+        let first = super::random::<16>().unwrap();
+        let second = super::random::<16>().unwrap();
+        assert_ne!(first, second, "16 bytes drawn twice alike");
+        assert_ne!(first, [0; 16]);
     }
 }

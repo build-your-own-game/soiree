@@ -56,12 +56,6 @@ struct Shared {
     app_page: Option<String>,
 }
 
-fn os_random<const N: usize>() -> std::io::Result<[u8; N]> {
-    let mut bytes = [0; N];
-    fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    Ok(bytes)
-}
-
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut text, byte| {
         let _ = write!(text, "{byte:02x}");
@@ -80,9 +74,9 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         .map_err(|error| format!("cannot open UDP port {port}: {error}"))?;
     let lan = crate::lan_address().unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
     let rtc_address = SocketAddr::new(lan, port);
-    let fresh_key =
-        os_random::<16>().map_err(|error| format!("no secure random numbers: {error}"))?;
-    let epoch = os_random::<4>().map_or(1, u32::from_le_bytes);
+    let fresh_key = salon_crypto::random::<16>()
+        .map_err(|error| format!("no secure random numbers: {error}"))?;
+    let epoch = salon_crypto::random::<4>().map_or(1, u32::from_le_bytes);
     let store = Store::open(options.data.as_deref(), epoch, fresh_key);
     let key = store.tv_key();
     let admission = Admission::for_devices(options.limits.max_devices);
