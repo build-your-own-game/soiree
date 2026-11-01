@@ -1,0 +1,137 @@
+{
+  "warm_attempts": 10,
+  "framing_matrix": [
+    {
+      "mode": "old",
+      "attempts": 10,
+      "rtc_welcomed": 10
+    },
+    {
+      "mode": "fixed",
+      "attempts": 10,
+      "rtc_welcomed": 10
+    }
+  ],
+  "cold_processes": [
+    {
+      "index": 0,
+      "exit_code": 0
+    },
+    {
+      "index": 1,
+      "exit_code": 0
+    },
+    {
+      "index": 2,
+      "exit_code": 0
+    },
+    {
+      "index": 3,
+      "exit_code": 0
+    },
+    {
+      "index": 4,
+      "exit_code": 0
+    }
+  ],
+  "production": [
+    {
+      "engine": "webkit",
+      "device": 2,
+      "cases": [
+        {
+          "name": "SDP delayed 2 s",
+          "passed": true,
+          "elapsed_ms": 2208,
+          "closed_ms": null
+        },
+        {
+          "name": "SDP delayed 4 s",
+          "passed": true,
+          "elapsed_ms": 4145,
+          "closed_ms": null
+        },
+        {
+          "name": "native SDP rejection",
+          "passed": true,
+          "elapsed_ms": 77,
+          "closed_ms": null
+        },
+        {
+          "name": "native DTLS fingerprint rejection",
+          "passed": true,
+          "elapsed_ms": 125,
+          "closed_ms": null
+        },
+        {
+          "name": "absolute deadline after SDP progress",
+          "passed": true,
+          "elapsed_ms": 15055,
+          "closed_ms": 14999.7197265625
+        },
+        {
+          "name": "absolute deadline and late SDP",
+          "passed": true,
+          "elapsed_ms": 16292,
+          "closed_ms": 15000.47998046875
+        },
+        {
+          "name": "deadline registration failure releases attempt",
+          "passed": true,
+          "elapsed_ms": 86,
+          "closed_ms": null
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "device": 3,
+      "cases": [
+        {
+          "name": "SDP delayed 2 s",
+          "passed": true,
+          "elapsed_ms": 2480,
+          "closed_ms": null
+        },
+        {
+          "name": "SDP delayed 4 s",
+          "passed": true,
+          "elapsed_ms": 4148,
+          "closed_ms": null
+        },
+        {
+          "name": "native SDP rejection",
+          "passed": true,
+          "elapsed_ms": 71,
+          "closed_ms": null
+        },
+        {
+          "name": "native DTLS fingerprint rejection",
+          "passed": true,
+          "elapsed_ms": 126,
+          "closed_ms": null
+        },
+        {
+          "name": "absolute deadline after SDP progress",
+          "passed": true,
+          "elapsed_ms": 15075,
+          "closed_ms": 15000.31982421875
+        },
+        {
+          "name": "absolute deadline and late SDP",
+          "passed": true,
+          "elapsed_ms": 16286,
+          "closed_ms": 14999.610107421875
+        },
+        {
+          "name": "deadline registration failure releases attempt",
+          "passed": true,
+          "elapsed_ms": 83,
+          "closed_ms": null
+        }
+      ]
+    }
+  ],
+  "cleanup_failures": [],
+  "historical_7222_cause_proven": false
+}

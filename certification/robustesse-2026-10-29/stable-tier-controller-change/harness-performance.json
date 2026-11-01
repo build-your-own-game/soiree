@@ -1,0 +1,233 @@
+{
+  "frames_lobby": null,
+  "frames_gameplay": [],
+  "probes": [],
+  "joins": [],
+  "browsers": {},
+  "browser_resources": [
+    {
+      "at": 1793296458918,
+      "documents": 4,
+      "nodes": 165,
+      "jsEventListeners": 18,
+      "usedSize": 1195612,
+      "totalSize": 2359296,
+      "embedderHeapUsedSize": 990576,
+      "backingStorageSize": 58471,
+      "wasm_bytes": 1179648,
+      "pages": [
+        {
+          "url": "http://localhost:56158/?salon=ws",
+          "isolate": "164a102273f1ed69",
+          "documents": 4,
+          "nodes": 165,
+          "jsEventListeners": 18,
+          "usedSize": 1195612,
+          "totalSize": 2359296,
+          "embedderHeapUsedSize": 990576,
+          "backingStorageSize": 58471,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 876672,
+      "processes": [
+        {
+          "id": 63488,
+          "type": "browser"
+        },
+        {
+          "id": 64363,
+          "type": "renderer"
+        },
+        {
+          "id": 63511,
+          "type": "renderer"
+        },
+        {
+          "id": 63510,
+          "type": "renderer"
+        },
+        {
+          "id": 63499,
+          "type": "GPU"
+        },
+        {
+          "id": 63500,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 63501,
+          "type": "storage.mojom.StorageService"
+        }
+      ]
+    },
+    {
+      "at": 1793296462681,
+      "documents": 4,
+      "nodes": 166,
+      "jsEventListeners": 18,
+      "usedSize": 1365800,
+      "totalSize": 2097152,
+      "embedderHeapUsedSize": 749648,
+      "backingStorageSize": 58471,
+      "wasm_bytes": 1179648,
+      "pages": [
+        {
+          "url": "http://localhost:56158/?salon=ws",
+          "isolate": "164a102273f1ed69",
+          "documents": 4,
+          "nodes": 166,
+          "jsEventListeners": 18,
+          "usedSize": 1365800,
+          "totalSize": 2097152,
+          "embedderHeapUsedSize": 749648,
+          "backingStorageSize": 58471,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 844736,
+      "processes": [
+        {
+          "id": 63488,
+          "type": "browser"
+        },
+        {
+          "id": 64363,
+          "type": "renderer"
+        },
+        {
+          "id": 63511,
+          "type": "renderer"
+        },
+        {
+          "id": 63510,
+          "type": "renderer"
+        },
+        {
+          "id": 63499,
+          "type": "GPU"
+        },
+        {
+          "id": 63500,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 63501,
+          "type": "storage.mojom.StorageService"
+        }
+      ]
+    },
+    {
+      "at": 1793296466289,
+      "documents": 4,
+      "nodes": 172,
+      "jsEventListeners": 18,
+      "usedSize": 1413536,
+      "totalSize": 2359296,
+      "embedderHeapUsedSize": 923032,
+      "backingStorageSize": 58471,
+      "wasm_bytes": 1310720,
+      "pages": [
+        {
+          "url": "http://localhost:56158/?salon=ws",
+          "isolate": "164a102273f1ed69",
+          "documents": 4,
+          "nodes": 172,
+          "jsEventListeners": 18,
+          "usedSize": 1413536,
+          "totalSize": 2359296,
+          "embedderHeapUsedSize": 923032,
+          "backingStorageSize": 58471,
+          "wasm_bytes": 1310720
+        }
+      ],
+      "chromium_rss_kib": 910912,
+      "processes": [
+        {
+          "id": 63488,
+          "type": "browser"
+        },
+        {
+          "id": 64363,
+          "type": "renderer"
+        },
+        {
+          "id": 63511,
+          "type": "renderer"
+        },
+        {
+          "id": 63510,
+          "type": "renderer"
+        },
+        {
+          "id": 63499,
+          "type": "GPU"
+        },
+        {
+          "id": 63500,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 63501,
+          "type": "storage.mojom.StorageService"
+        }
+      ]
+    },
+    {
+      "at": 1793296469806,
+      "documents": 4,
+      "nodes": 172,
+      "jsEventListeners": 18,
+      "usedSize": 1430400,
+      "totalSize": 2097152,
+      "embedderHeapUsedSize": 798280,
+      "backingStorageSize": 58471,
+      "wasm_bytes": 1310720,
+      "pages": [
+        {
+          "url": "http://localhost:56158/?salon=ws",
+          "isolate": "164a102273f1ed69",
+          "documents": 4,
+          "nodes": 172,
+          "jsEventListeners": 18,
+          "usedSize": 1430400,
+          "totalSize": 2097152,
+          "embedderHeapUsedSize": 798280,
+          "backingStorageSize": 58471,
+          "wasm_bytes": 1310720
+        }
+      ],
+      "chromium_rss_kib": 915504,
+      "processes": [
+        {
+          "id": 63488,
+          "type": "browser"
+        },
+        {
+          "id": 64363,
+          "type": "renderer"
+        },
+        {
+          "id": 63511,
+          "type": "renderer"
+        },
+        {
+          "id": 63510,
+          "type": "renderer"
+        },
+        {
+          "id": 63499,
+          "type": "GPU"
+        },
+        {
+          "id": 63500,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 63501,
+          "type": "storage.mojom.StorageService"
+        }
+      ]
+    }
+  ]
+}

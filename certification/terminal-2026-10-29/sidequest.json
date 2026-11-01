@@ -1,0 +1,160 @@
+{
+  "scope": "one actual TV and phone, two 10-second organizer questions, natural production deadlines, GPU-presented RoundResults and resumed input",
+  "transport": "loopback WebSocket; LAN and physical devices are separate controls",
+  "universal_termination_proved": false,
+  "journey": {
+    "steps": 98,
+    "terminal": {
+      "result": {
+        "round": 1,
+        "question": {
+          "text": "D2 NATURAL DEADLINE 1",
+          "mode": "choice",
+          "labels": [
+            "LEFT",
+            "RIGHT"
+          ],
+          "duration": 10
+        },
+        "counts": [
+          1,
+          0
+        ],
+        "outside": 0,
+        "participants": 1
+      },
+      "players": [
+        0
+      ],
+      "question": "D2 NATURAL DEADLINE 1"
+    },
+    "resumed": {
+      "result": null,
+      "players": [
+        0
+      ],
+      "question": "D2 NATURAL DEADLINE 2"
+    },
+    "states": [
+      {
+        "result": null,
+        "players": [
+          0
+        ],
+        "question": "D2 NATURAL DEADLINE 1"
+      },
+      {
+        "result": {
+          "round": 1,
+          "question": {
+            "text": "D2 NATURAL DEADLINE 1",
+            "mode": "choice",
+            "labels": [
+              "LEFT",
+              "RIGHT"
+            ],
+            "duration": 10
+          },
+          "counts": [
+            1,
+            0
+          ],
+          "outside": 0,
+          "participants": 1
+        },
+        "players": [
+          0
+        ],
+        "question": "D2 NATURAL DEADLINE 1"
+      },
+      {
+        "result": null,
+        "players": [
+          0
+        ],
+        "question": "D2 NATURAL DEADLINE 2"
+      }
+    ],
+    "elapsed_ms": 10100.6985,
+    "max_steps": 250,
+    "timeout_ms": 35000
+  },
+  "second_terminal": {
+    "round": 2,
+    "question": {
+      "text": "D2 NATURAL DEADLINE 2",
+      "mode": "choice",
+      "labels": [
+        "LEFT",
+        "RIGHT"
+      ],
+      "duration": 10
+    },
+    "counts": [
+      1,
+      0
+    ],
+    "outside": 0,
+    "participants": 1
+  },
+  "persisted_records": [
+    {
+      "room": "6BACF0C4",
+      "round": 1,
+      "ended_at": "2026-10-29T19:11:15.000Z",
+      "question": {
+        "text": "D2 NATURAL DEADLINE 1",
+        "mode": "choice",
+        "labels": [
+          "LEFT",
+          "RIGHT"
+        ],
+        "duration": 10
+      },
+      "zones": [
+        {
+          "label": "LEFT",
+          "count": 1
+        },
+        {
+          "label": "RIGHT",
+          "count": 0
+        }
+      ],
+      "outside": 0,
+      "participants": 1
+    },
+    {
+      "room": "6BACF0C4",
+      "round": 2,
+      "ended_at": "2026-10-29T19:11:25.116Z",
+      "question": {
+        "text": "D2 NATURAL DEADLINE 2",
+        "mode": "choice",
+        "labels": [
+          "LEFT",
+          "RIGHT"
+        ],
+        "duration": 10
+      },
+      "zones": [
+        {
+          "label": "LEFT",
+          "count": 1
+        },
+        {
+          "label": "RIGHT",
+          "count": 0
+        }
+      ],
+      "outside": 0,
+      "participants": 1
+    }
+  ],
+  "passed": true,
+  "engines": {
+    "tv": "chromium",
+    "phone": "webkit",
+    "chromium": "156.0.8078.73"
+  }
+}

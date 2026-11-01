@@ -1,0 +1,2884 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-29T17:09:23Z",
+  "finished": "2026-10-29T17:09:57Z",
+  "selection": [
+    "cargo:suite",
+    "command:clippy-native",
+    "command:clippy-wasm",
+    "command:doctests",
+    "command:fmt",
+    "game:autoscroll_distance_does_not_depend_on_display_frequency",
+    "game:damaged_saves_load_as_nothing_or_a_consistent_board",
+    "game:random_actions_keep_the_board_consistent",
+    "game:random_sessions_obey_the_undo_laws",
+    "game:saved_json_requires_objects_and_an_unambiguous_content_tag",
+    "game:thousands_of_seeded_sessions_replay_with_their_history",
+    "game:title_edits_coalesce_like_label_edits",
+    "game:versioned_solo_journal_replays_the_final_board_and_history",
+    "static:common"
+  ],
+  "controller_exit_code": null,
+  "identity_before": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+  "identity_after": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+  "identity_errors": [],
+  "provenance": {
+    "value": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+    "source_roots": [
+      "/Users/axel2/Projects/build-your-own-game/games/tier-list",
+      "/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/web",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web"
+    ],
+    "files": 2447,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Une tuile reste placée une seule fois, même après une suite d’actions refusées ou une sauvegarde abîmée.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:random_actions_keep_the_board_consistent",
+          "game:damaged_saves_load_as_nothing_or_a_consistent_board"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J2",
+        "claim": "Annuler et rétablir respectent les étapes d’édition du texte.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:random_sessions_obey_the_undo_laws",
+          "game:title_edits_coalesce_like_label_edits"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J3",
+        "claim": "Une session enregistrée restitue le plateau et son historique.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:versioned_solo_journal_replays_the_final_board_and_history",
+          "game:thousands_of_seeded_sessions_replay_with_their_history"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Le défilement pendant un glisser garde sa vitesse à 60 comme à 120 Hz.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:autoscroll_distance_does_not_depend_on_display_frequency"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "Le snapshot complet accepte des objets JSON et un seul discriminant de contenu, sans champ obligatoire mal typé ni doublon de clé du plateau.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:saved_json_requires_objects_and_an_unambiguous_content_tag"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:fmt"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-native"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-wasm"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "cargo:suite"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:doctests"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence de phases avec échéance et de joueurs pouvant partir dépend du jeu."
+        },
+        "controls": [
+          "unbound:C6"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:E5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Les champs de texte et la répartition page/hôte dépendent du jeu."
+        },
+        "controls": [
+          "unbound:T1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D3"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence d’une simulation en temps réel et son exécution en natif et en WASM doivent être déclarées."
+        },
+        "controls": [
+          "unbound:D4"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Le sens d’une nouvelle partie dépend du jeu ; un éditeur continu ne possède pas nécessairement ce cycle."
+        },
+        "controls": [
+          "unbound:D5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:health"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:join:C1",
+          "harness:rtc:C1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:panic:C10"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:cut:C2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:freeze:C3",
+          "harness:silent:C3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:reload:C4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:twin:C5"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucune connexion permanente"
+        },
+        "controls": [
+          "harness:restart:C7"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:join:C8"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:storage:C9"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La terminaison dépend du genre ; aucune progression observable n’est déclarée"
+        },
+        "controls": [
+          "harness:monkey:D2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucune connexion permanente"
+        },
+        "controls": [
+          "harness:hostile:E1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucune connexion permanente"
+        },
+        "controls": [
+          "harness:hostile:E2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucune connexion permanente"
+        },
+        "controls": [
+          "harness:hostile:E3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucune connexion permanente"
+        },
+        "controls": [
+          "harness:hostile:E4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:E6"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P1",
+          "harness:monkey:P1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:jitter:R1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:soak:R2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:join:R3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:T2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:layout:T3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "not-applicable",
+          "reason": "cert.json ne déclare aucun écran téléphone"
+        },
+        "controls": [
+          "harness:layout:T4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:ui:U1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S1"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S2"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S3"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S4"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S5"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S6"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S7"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S8"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S9"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S10"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "controls": [
+      {
+        "id": "game:random_actions_keep_the_board_consistent",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::random_actions_keep_the_board_consistent\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-core",
+            "target_kind": "lib",
+            "target": "tier_core",
+            "name": "tests::properties::random_actions_keep_the_board_consistent",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:damaged_saves_load_as_nothing_or_a_consistent_board",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::damaged_saves_load_as_nothing_or_a_consistent_board\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-core",
+            "target_kind": "lib",
+            "target": "tier_core",
+            "name": "tests::properties::damaged_saves_load_as_nothing_or_a_consistent_board",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:random_sessions_obey_the_undo_laws",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::random_sessions_obey_the_undo_laws\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-core",
+            "target_kind": "lib",
+            "target": "tier_core",
+            "name": "tests::properties::random_sessions_obey_the_undo_laws",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:title_edits_coalesce_like_label_edits",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::title_edits_coalesce_like_label_edits\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-core",
+            "target_kind": "lib",
+            "target": "tier_core",
+            "name": "tests::title_edits_coalesce_like_label_edits",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:versioned_solo_journal_replays_the_final_board_and_history",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-host\", target_kind: \"bin\", target: \"tier-host\", name: \"server::tests::versioned_solo_journal_replays_the_final_board_and_history\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-host",
+            "target_kind": "bin",
+            "target": "tier-host",
+            "name": "server::tests::versioned_solo_journal_replays_the_final_board_and_history",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:thousands_of_seeded_sessions_replay_with_their_history",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"journal::tests::thousands_of_seeded_sessions_replay_with_their_history\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-core",
+            "target_kind": "lib",
+            "target": "tier_core",
+            "name": "journal::tests::thousands_of_seeded_sessions_replay_with_their_history",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:autoscroll_distance_does_not_depend_on_display_frequency",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-web\", target_kind: \"lib\", target: \"tier_web\", name: \"drag::tests::autoscroll_distance_does_not_depend_on_display_frequency\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-web",
+            "target_kind": "lib",
+            "target": "tier_web",
+            "name": "drag::tests::autoscroll_distance_does_not_depend_on_display_frequency",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:saved_json_requires_objects_and_an_unambiguous_content_tag",
+        "method": "test",
+        "scope": "TestRef { package: \"tier-web\", target_kind: \"lib\", target: \"tier_web\", name: \"storage::tests::saved_json_requires_objects_and_an_unambiguous_content_tag\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "tier-web",
+            "target_kind": "lib",
+            "target": "tier_web",
+            "name": "storage::tests::saved_json_requires_objects_and_an_unambiguous_content_tag",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      },
+      {
+        "id": "command:fmt",
+        "method": "static",
+        "scope": "command:fmt",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "fmt",
+            "--check"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-native",
+        "method": "static",
+        "scope": "command:clippy-native",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-wasm",
+        "method": "static",
+        "scope": "command:clippy-wasm",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "cargo:suite",
+        "method": "test",
+        "scope": "cargo:suite",
+        "execution": {
+          "kind": "static",
+          "name": "cargo:suite"
+        }
+      },
+      {
+        "id": "command:doctests",
+        "method": "test",
+        "scope": "command:doctests",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "test",
+            "--workspace",
+            "--doc"
+          ]
+        }
+      },
+      {
+        "id": "unbound:C6",
+        "method": "test",
+        "scope": "unbound:C6",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:E5",
+        "method": "test",
+        "scope": "unbound:E5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:T1",
+        "method": "test",
+        "scope": "unbound:T1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D1",
+        "method": "test",
+        "scope": "unbound:D1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D3",
+        "method": "test",
+        "scope": "unbound:D3",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D4",
+        "method": "test",
+        "scope": "unbound:D4",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D5",
+        "method": "test",
+        "scope": "unbound:D5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "harness:health",
+        "method": "test",
+        "scope": "harness:health",
+        "execution": {
+          "kind": "static",
+          "name": "harness:health"
+        }
+      },
+      {
+        "id": "harness:ui:U1",
+        "method": "test",
+        "scope": "harness:ui:U1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "ui",
+          "item": "U1"
+        }
+      },
+      {
+        "id": "harness:performance:P1",
+        "method": "measure",
+        "scope": "harness:performance:P1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:performance:P2",
+        "method": "measure",
+        "scope": "harness:performance:P2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P2"
+        }
+      },
+      {
+        "id": "harness:panic:C10",
+        "method": "test",
+        "scope": "harness:panic:C10;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "panic",
+          "item": "C10"
+        }
+      },
+      {
+        "id": "harness:join:C1",
+        "method": "test",
+        "scope": "harness:join:C1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:join:C8",
+        "method": "test",
+        "scope": "harness:join:C8;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C8"
+        }
+      },
+      {
+        "id": "harness:join:R3",
+        "method": "test",
+        "scope": "harness:join:R3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "R3"
+        }
+      },
+      {
+        "id": "harness:layout:T3",
+        "method": "test",
+        "scope": "harness:layout:T3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T3"
+        }
+      },
+      {
+        "id": "harness:layout:T4",
+        "method": "test",
+        "scope": "harness:layout:T4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T4"
+        }
+      },
+      {
+        "id": "harness:storage:C9",
+        "method": "test",
+        "scope": "harness:storage:C9;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "storage",
+          "item": "C9"
+        }
+      },
+      {
+        "id": "harness:cut:C2",
+        "method": "test",
+        "scope": "harness:cut:C2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "cut",
+          "item": "C2"
+        }
+      },
+      {
+        "id": "harness:freeze:C3",
+        "method": "test",
+        "scope": "harness:freeze:C3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "freeze",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:silent:C3",
+        "method": "test",
+        "scope": "harness:silent:C3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "silent",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:reload:C4",
+        "method": "test",
+        "scope": "harness:reload:C4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "reload",
+          "item": "C4"
+        }
+      },
+      {
+        "id": "harness:twin:C5",
+        "method": "test",
+        "scope": "harness:twin:C5;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "twin",
+          "item": "C5"
+        }
+      },
+      {
+        "id": "harness:rtc:C1",
+        "method": "test",
+        "scope": "harness:rtc:C1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "rtc",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:hostile:E1",
+        "method": "test",
+        "scope": "harness:hostile:E1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E1"
+        }
+      },
+      {
+        "id": "harness:hostile:E2",
+        "method": "test",
+        "scope": "harness:hostile:E2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E2"
+        }
+      },
+      {
+        "id": "harness:hostile:E3",
+        "method": "test",
+        "scope": "harness:hostile:E3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E3"
+        }
+      },
+      {
+        "id": "harness:hostile:E4",
+        "method": "test",
+        "scope": "harness:hostile:E4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E4"
+        }
+      },
+      {
+        "id": "harness:jitter:R1",
+        "method": "test",
+        "scope": "harness:jitter:R1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "jitter",
+          "item": "R1"
+        }
+      },
+      {
+        "id": "harness:monkey:E6",
+        "method": "test",
+        "scope": "harness:monkey:E6;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "E6"
+        }
+      },
+      {
+        "id": "harness:monkey:T2",
+        "method": "test",
+        "scope": "harness:monkey:T2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "T2"
+        }
+      },
+      {
+        "id": "harness:monkey:D2",
+        "method": "test",
+        "scope": "harness:monkey:D2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "D2"
+        }
+      },
+      {
+        "id": "harness:monkey:P1",
+        "method": "measure",
+        "scope": "harness:monkey:P1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:restart:C7",
+        "method": "test",
+        "scope": "harness:restart:C7;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "restart",
+          "item": "C7"
+        }
+      },
+      {
+        "id": "harness:soak:R2",
+        "method": "measure",
+        "scope": "harness:soak:R2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "soak",
+          "item": "R2"
+        }
+      },
+      {
+        "id": "S1",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S2",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S3",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S4",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S5",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S6",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S7",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S8",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S9",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S10",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      }
+    ],
+    "catalogue": [
+      {
+        "id": "AFF-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-12",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-12",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "VOTE-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      }
+    ],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "static:common",
+      "method": "static",
+      "scope": "static:common",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "[(Ok, \".soiree/ écrit : les documents de la version 0.3.0\"), (Ok, \"toolchain 1.99 des règles, avec rustfmt, clippy, wasm32-unknown-unknown\"), (Ok, \"édition, lints et profils des règles\"), (Ok, \"types et méthodes interdits des règles\"), (Ok, \"CI commune épinglée à la version du jeu\"), (Ok, \"tier-core ne dépend ni du navigateur ni du GPU\"), (Warning, \"viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : remote-protocol (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol), salon-core (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core), salon-crypto (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto), salon-host (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host), salon-web (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web). Ce jeu ne compile qu'ici ; ne le pousse pas tant que ce salon n'est pas étiqueté\"), (Ok, \"noms des pages à jour (1 module(s) soiree dom)\"), (Ok, \"verification.toml : 5 engagements ; références exécutables à attester par Cargo\"), (Ok, \"cert.json lisible par le harnais (soiree certify)\"), (Ok, \"contrats de vérification UI : couverture ou non-applicabilité explicite\")]",
+      "command": [],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:fmt",
+      "method": "static",
+      "scope": "command:fmt",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-native",
+      "method": "static",
+      "scope": "command:clippy-native",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "warning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Checking tier-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/core)\n    Checking proptest v1.12.0\n    Checking tier-web v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/web)\n    Checking tier-host v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/host)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.29s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-wasm",
+      "method": "static",
+      "scope": "command:clippy-wasm",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "warning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n    Checking salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n    Checking tier-web v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/web)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.50s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:doctests",
+      "method": "test",
+      "scope": "command:doctests",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nwarning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n   Compiling libc v0.2.191\n   Compiling getrandom v0.2.17\n   Compiling cpufeatures v0.2.17\n   Compiling getrandom v0.4.3\n   Compiling rand v0.10.3\n   Compiling rand_core v0.6.4\n   Compiling crypto-common v0.1.7\n   Compiling digest v0.10.7\n   Compiling sha2 v0.10.9\n   Compiling proptest v1.12.0\n   Compiling salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)\n   Compiling tier-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/core)\n   Compiling salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n   Compiling tier-web v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/tier-list/crates/web)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.08s\n   Doc-tests tier_core\n   Doc-tests tier_web\n",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--doc",
+        "--locked"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:random_actions_keep_the_board_consistent",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::random_actions_keep_the_board_consistent\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "tests::properties::random_actions_keep_the_board_consistent: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:damaged_saves_load_as_nothing_or_a_consistent_board",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::damaged_saves_load_as_nothing_or_a_consistent_board\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "tests::properties::damaged_saves_load_as_nothing_or_a_consistent_board: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:random_sessions_obey_the_undo_laws",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::properties::random_sessions_obey_the_undo_laws\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "tests::properties::random_sessions_obey_the_undo_laws: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:title_edits_coalesce_like_label_edits",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"tests::title_edits_coalesce_like_label_edits\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "tests::title_edits_coalesce_like_label_edits: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:versioned_solo_journal_replays_the_final_board_and_history",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-host\", target_kind: \"bin\", target: \"tier-host\", name: \"server::tests::versioned_solo_journal_replays_the_final_board_and_history\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "server::tests::versioned_solo_journal_replays_the_final_board_and_history: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_host-5c136a0725a0fbdc",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:thousands_of_seeded_sessions_replay_with_their_history",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", name: \"journal::tests::thousands_of_seeded_sessions_replay_with_their_history\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "journal::tests::thousands_of_seeded_sessions_replay_with_their_history: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:autoscroll_distance_does_not_depend_on_display_frequency",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-web\", target_kind: \"lib\", target: \"tier_web\", name: \"drag::tests::autoscroll_distance_does_not_depend_on_display_frequency\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "drag::tests::autoscroll_distance_does_not_depend_on_display_frequency: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_web-74c20e30ef41032b",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:saved_json_requires_objects_and_an_unambiguous_content_tag",
+      "method": "test",
+      "scope": "TestRef { package: \"tier-web\", target_kind: \"lib\", target: \"tier_web\", name: \"storage::tests::saved_json_requires_objects_and_an_unambiguous_content_tag\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "storage::tests::saved_json_requires_objects_and_an_unambiguous_content_tag: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_web-74c20e30ef41032b",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "cargo:suite",
+      "method": "test",
+      "scope": "cargo:suite",
+      "outcome": "passed",
+      "input_identity": "cefa35c33c9df18b6d22054f89d782c055942b774e4f3257a760d7bb7b33a1bf",
+      "detail": "[SuiteExecution { package: \"tier-core\", target_kind: \"lib\", target: \"tier_core\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_core-15676c84442567d5\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 25 tests\\ntest tests::default_board_matches_tiermaker ... ok\\ntest tests::no_op_actions_do_not_create_undo_steps ... ok\\ntest tests::new_rows_and_row_order ... ok\\ntest tests::moving_within_and_between_zones ... ok\\ntest tests::cleared_and_deleted_rows_return_items_to_the_end_of_the_pool ... ok\\ntest tests::placements_without_content_are_pruned ... ok\\ntest tests::a_color_outside_the_palette_renders_as_a_new_row ... ok\\ntest tests::invalid_actions_are_rejected_without_changes ... ok\\ntest tests::boards_survive_a_save_and_load ... ok\\ntest tests::properties::a_save_placing_an_item_twice_is_refused ... ok\\ntest tests::properties::a_save_with_a_stale_counter_never_reuses_an_id ... ok\\ntest tests::properties::a_save_at_the_end_of_the_id_range_refuses_new_ids_without_panicking ... ok\\ntest tests::properties::the_page_and_the_model_share_their_limits ... ok\\ntest tests::reset_restores_rows_and_returns_items_in_insertion_order ... ok\\ntest tests::title_edits_coalesce_like_label_edits ... ok\\ntest tests::undo_redo_and_label_edits_coalesce ... ok\\ntest tests::typed_boards_cannot_restore_overlong_labels_or_items ... ok\\ntest tests::properties::nasty_texts_are_kept_as_typed ... ok\\ntest tests::properties::any_text_loads_as_nothing_or_a_consistent_board ... ok\\ntest tests::properties::typed_text_is_cut_to_the_limit_as_the_page_counts ... ok\\ntest tests::replay_digest_does_not_repeat_large_contents_for_each_undo_step ... ok\\ntest tests::properties::damaged_saves_load_as_nothing_or_a_consistent_board ... ok\\ntest tests::properties::random_sessions_obey_the_undo_laws ... ok\\ntest tests::properties::random_actions_keep_the_board_consistent ... ok\\ntest journal::tests::thousands_of_seeded_sessions_replay_with_their_history ... ok\\n\\ntest result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s\\n\\n\", discovered: 25, executed: 25 }, SuiteExecution { package: \"tier-host\", target_kind: \"bin\", target: \"tier-host\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_host-5c136a0725a0fbdc\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 1 test\\ntest server::tests::versioned_solo_journal_replays_the_final_board_and_history ... ok\\n\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 1, executed: 1 }, SuiteExecution { package: \"tier-host\", target_kind: \"test\", target: \"data_root\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/data_root-abebb9e2a755de46\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 1 test\\ntest tier_data_contains_common_diagnostics_without_writing_into_the_working_directory ... ok\\n\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s\\n\\n\", discovered: 1, executed: 1 }, SuiteExecution { package: \"tier-web\", target_kind: \"lib\", target: \"tier_web\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/tier-list/target/debug/deps/tier_web-74c20e30ef41032b\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 5 tests\\ntest drag::tests::autoscroll_distance_does_not_depend_on_display_frequency ... ok\\ntest values::tests::values_read_back_as_written ... ok\\ntest values::tests::every_zone_of_the_page_is_known ... ok\\ntest values::tests::every_action_of_the_page_is_known ... ok\\ntest storage::tests::saved_json_requires_objects_and_an_unambiguous_content_tag ... ok\\n\\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 5, executed: 5 }]",
+      "command": [
+        "Cargo/libtest"
+      ],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Une tuile reste placée une seule fois, même après une suite d’actions refusées ou une sauvegarde abîmée.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:random_actions_keep_the_board_consistent",
+            "satisfied"
+          ],
+          [
+            "game:damaged_saves_load_as_nothing_or_a_consistent_board",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J2",
+        "claim": "Annuler et rétablir respectent les étapes d’édition du texte.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:random_sessions_obey_the_undo_laws",
+            "satisfied"
+          ],
+          [
+            "game:title_edits_coalesce_like_label_edits",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J3",
+        "claim": "Une session enregistrée restitue le plateau et son historique.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:versioned_solo_journal_replays_the_final_board_and_history",
+            "satisfied"
+          ],
+          [
+            "game:thousands_of_seeded_sessions_replay_with_their_history",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Le défilement pendant un glisser garde sa vitesse à 60 comme à 120 Hz.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:autoscroll_distance_does_not_depend_on_display_frequency",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "Le snapshot complet accepte des objets JSON et un seul discriminant de contenu, sans champ obligatoire mal typé ni doublon de clé du plateau.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:saved_json_requires_objects_and_an_unambiguous_content_tag",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "static:common",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:fmt",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-native",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-wasm",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "cargo:suite",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:doctests",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:C6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:E5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:T1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:health",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:join:C1",
+            "not-applicable"
+          ],
+          [
+            "harness:rtc:C1",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:panic:C10",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:cut:C2",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:freeze:C3",
+            "not-applicable"
+          ],
+          [
+            "harness:silent:C3",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:reload:C4",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:twin:C5",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:restart:C7",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:join:C8",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:storage:C9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:D2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:hostile:E1",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:hostile:E2",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:hostile:E3",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:hostile:E4",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:E6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P1",
+            "pending"
+          ],
+          [
+            "harness:monkey:P1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:jitter:R1",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:soak:R2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:join:R3",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:T2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:layout:T3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "assessment": "not-applicable",
+        "controls": [
+          [
+            "harness:layout:T4",
+            "not-applicable"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:ui:U1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S7",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S8",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S10",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  }
+}

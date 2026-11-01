@@ -1,0 +1,20 @@
+✔ controller HTTP, JSON and schema failures remain infrastructure failures (15.418292ms)
+✔ only idempotent DELETE accepts a missing object (2.284042ms)
+✔ a controller timeout includes response body consumption (51.60775ms)
+✔ a success response must confirm proxy creation and each injected fault (3.284541ms)
+✔ upstream connector preserves bytes, half-close and ownership (1.940709ms)
+✔ a pending upstream dial has a deadline and teardown cancels it (2201.866ms)
+✔ connector bounds pending sockets and closes them even when admin deletion fails (178.64175ms)
+✔ connector dials the requested LAN address without substituting loopback (4.389459ms)
+✔ official fault engine remains isolated and responsive with an unconnectable upstream (953.006333ms)
+ℹ official 2.13.0: direct negative control exceeded 250 ms, bounded cut 1.81 ms
+✔ spawn error and unexpected child exit are retained for the next operation (0.359541ms)
+✔ a child exit during an HTTP response cannot be a successful controller operation (1.504333ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4496.202042

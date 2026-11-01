@@ -1,0 +1,3 @@
+{"targetPort":65369,"backlogConnected":1,"pid":69750,"version":{"ms":1.48112500000002,"status":200,"body":"{\"version\": \"2.13.0\"}\n"}}
+{"disable":{"ms":7582.027542000001,"status":200,"body":"{\"name\":\"blocked\",\"listen\":\"127.0.0.1:65407\",\"upstream\":\"127.0.0.1:65369\",\"enabled\":false,\"Logger\":{},\"toxics\":[]}"},"independent":{"ms":0.9827909999999065,"status":200,"body":"{\"version\": \"2.13.0\"}\n"},"totalMs":7582.045042000001}
+saved /private/tmp/toxiproxy-backlog-go.log

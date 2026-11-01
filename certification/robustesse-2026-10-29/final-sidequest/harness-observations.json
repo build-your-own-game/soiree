@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "arguments": {
+    "dir": "/Users/axel2/Projects/build-your-own-game/games/sidequest",
+    "only": [
+      "rtc",
+      "ui",
+      "resources"
+    ],
+    "phones": 2,
+    "soak": 0,
+    "seed": 7232,
+    "prepareOnly": false
+  },
+  "completed": true,
+  "infrastructure_error": null,
+  "navigation_failure": null,
+  "transport": {
+    "mode": "lan",
+    "upstream": "172.20.10.4",
+    "explicit": false,
+    "preflight": {
+      "status": "passed",
+      "response": {
+        "url": "http://172.20.10.4:62488/play?salon=ws",
+        "status": 200
+      }
+    }
+  },
+  "records": [
+    {
+      "scenario": "rtc",
+      "item": "C1",
+      "status": "ok",
+      "note": "WebRTC réel : action causale saine puis sous pertes/délai/réordonnancement dans chaque sens sans repli TCP ; silence 25 s détecté en 3310 ms (1 repli(s) TCP autorisé(s)), puis nouvelle négociation UDP et même identité ; {\"upstream\":240,\"downstream\":125,\"dropped\":195,\"delayed\":113,\"reordered\":38,\"forwarded\":170,\"directions\":{\"upstream\":{\"received\":240,\"dropped\":154,\"delayed\":55,\"reordered\":18,\"forwarded\":86},\"downstream\":{\"received\":125,\"dropped\":41,\"delayed\":58,\"reordered\":20,\"forwarded\":84}}}",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "finite question deck progresses in both directions from its end : effects",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "real GPU device/context loss restores pixels; retries and late acquisition are bounded : lifecycle, async",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "same authoritative view cannot duplicate actions or feedback : effects",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "real selector and remote continuity, composition and takeover resource cleanup : editing, lifecycle, async",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "resources",
+      "item": "R4",
+      "status": "ok",
+      "note": "4 mesures après GC : DOM, listeners, tas JS, mémoire externe/WASM et RSS Chromium/GPU dans les budgets ; ce cycle court ne remplace pas l'endurance de 30 min",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "soak",
+      "item": "R2",
+      "status": "skip",
+      "note": "lance --soak 30 pour l'endurance",
+      "explicit_exclusion": false
+    }
+  ]
+}

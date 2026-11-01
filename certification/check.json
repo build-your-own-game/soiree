@@ -1,21 +1,21 @@
 {
   "schema": 1,
   "soiree": "0.3.0",
-  "started": "2026-10-28T09:59:32Z",
-  "finished": "2026-10-28T09:59:33Z",
+  "started": "2026-10-29T16:38:48Z",
+  "finished": "2026-10-29T16:38:50Z",
   "selection": [
     "static:common"
   ],
   "controller_exit_code": null,
-  "identity_before": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
-  "identity_after": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+  "identity_before": "0b60fb7645c10957ae6326431ed0b351feb45ff5e297458155612bfb9f1492b7",
+  "identity_after": "0b60fb7645c10957ae6326431ed0b351feb45ff5e297458155612bfb9f1492b7",
   "identity_errors": [],
   "provenance": {
-    "value": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+    "value": "0b60fb7645c10957ae6326431ed0b351feb45ff5e297458155612bfb9f1492b7",
     "source_roots": [
       "/Users/axel2/Projects/build-your-own-game/soiree"
     ],
-    "files": 6800,
+    "files": 6818,
     "assumptions": [
       "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
       "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
@@ -60,7 +60,7 @@
       "method": "static",
       "scope": "static:common",
       "outcome": "passed",
-      "input_identity": "4375483cafd28985f5d1cd314b5bef546a197ac6d8ea30e3b782d874afca1774",
+      "input_identity": "0b60fb7645c10957ae6326431ed0b351feb45ff5e297458155612bfb9f1492b7",
       "detail": "[(Info, \"pas de Cargo.toml : seulement le catalogue des certifications\"), (Ok, \"catalogue : 97 item(s) dans 10 fichier(s), README.md à jour\")]",
       "command": [],
       "artifacts": []

@@ -1,0 +1,74 @@
+{
+  "arguments": [
+    "--seed",
+    "6839"
+  ],
+  "exit_code": 0,
+  "fingerprint": {
+    "algorithm": "sha256 de « chemin\\0sha256(contenu)\\n » des fichiers suivis ou non ignorés par git, triés, hors certification/",
+    "files": 43,
+    "uncommitted": true,
+    "value": "d44f0b34ce7eac01a052375556b535ac86f0d8e9c06b4de4539cc438d559146c"
+  },
+  "finished": "2026-10-28T02:19:19Z",
+  "harness_sha256": "f33beed61e5356fbf86744ca84f9245c6d40fe3e76e20cb68763071ff6f7cd49",
+  "harness_unchanged": true,
+  "machine": {
+    "arch": "aarch64",
+    "cpus": 10,
+    "node": "v26.12.1",
+    "os": "macos",
+    "os_version": "25.6.0",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+  },
+  "passed": true,
+  "performance": {
+    "browsers": {
+      "chromium": 0,
+      "webkit": 0
+    },
+    "frames_gameplay": [
+      {
+        "duration_ms": 3016.545000000002,
+        "fps": 60.00241998710442,
+        "frames": 181,
+        "gestures": 6,
+        "max_ms": 16.67000000000189,
+        "observer": "raf",
+        "p50_ms": 16.665000000000873,
+        "p95_ms": 16.67000000000189,
+        "trailing_gap_ms": 0
+      }
+    ],
+    "frames_lobby": {
+      "duration_ms": 3016.545,
+      "fps": 60.00241998710445,
+      "frames": 181,
+      "max_ms": 16.670000000000073,
+      "observer": "raf",
+      "p50_ms": 16.665000000000873,
+      "p95_ms": 16.670000000000073,
+      "trailing_gap_ms": 0
+    },
+    "joins": [],
+    "probes": [
+      {
+        "baseline": "\"\"",
+        "budget_ms": 50,
+        "engine": "chromium",
+        "index": 1,
+        "latency_ms": 34.85498046875,
+        "rendered": "\"Certification\"",
+        "screen": "tv"
+      }
+    ]
+  },
+  "salon": {
+    "source": "chemin local",
+    "version": "0.2.0"
+  },
+  "seed": 6839,
+  "soiree": "0.2.0",
+  "source_unchanged": true,
+  "started": "2026-10-28T02:16:54Z"
+}

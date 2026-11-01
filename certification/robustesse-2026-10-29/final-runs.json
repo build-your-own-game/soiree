@@ -1,0 +1,38 @@
+[
+  {
+    "game": "tier-list",
+    "report": "final-tier/verification.json",
+    "started": "2026-10-29T18:02:22Z",
+    "finished": "2026-10-29T18:04:20Z",
+    "identity_errors": [],
+    "controller_exit_code": 0,
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  },
+  {
+    "game": "punchline",
+    "report": "final-punchline/verification.json",
+    "started": "2026-10-29T18:04:30Z",
+    "finished": "2026-10-29T18:06:27Z",
+    "identity_errors": [],
+    "controller_exit_code": 0,
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  },
+  {
+    "game": "sidequest",
+    "report": "final-sidequest/verification.json",
+    "started": "2026-10-29T18:06:35Z",
+    "finished": "2026-10-29T18:08:57Z",
+    "identity_errors": [],
+    "controller_exit_code": 0,
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  }
+]

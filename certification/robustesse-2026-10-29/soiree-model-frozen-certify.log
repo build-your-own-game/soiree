@@ -1,0 +1,38 @@
+Préparation des artefacts servis avant l’empreinte…
+Observations : /private/tmp/soiree-seven-final-vcobst_6/robustesse/certification/harness-observations.json
+   0s /private/tmp/soiree-seven-final-vcobst_6/robustesse : lancement (cargo run --release -p robustesse-host) sur le port 53631, graine 7209
+   1s prêt (pid 54963) ; captures dans /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/cert-robustesse-2026-10-29T17-15-40-207Z
+   1s transport téléphones : lan (172.20.10.4)
+   3s     ✗ H1 arrêt du passage : phone-upstream http://172.20.10.4:53631/play?salon=ws : aucune réponse HTTP après 2000 ms ; les cas suivants ne sont pas vérifiés
+
+# Observations du harnais de soiree-seven-final-vcobst_6/robustesse
+
+Graine 7209, 0.0 min. Captures : /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/cert-robustesse-2026-10-29T17-15-40-207Z
+
+| Item | État | Détail |
+|---|---|---|
+| H1 | ✗ | arrêt du passage : phone-upstream http://172.20.10.4:53631/play?salon=ws : aucune réponse HTTP après 2000 ms ; les cas suivants ne sont pas vérifiés |
+
+✓ observé · ✗ échec · ~ à juger par un humain, ou vérifié en partie · – non exécuté ou exclusion explicitée
+
+Dernières lignes d'erreur de l'hôte :
+
+```
+warning: patch `remote-web v0.2.0 (/private/tmp/soiree-seven-final-vcobst_6/soiree/remote/crates/web)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+warning: patch `remote-web v0.2.0 (/private/tmp/soiree-seven-final-vcobst_6/soiree/remote/crates/web)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+```
+NavigationFailure: phone-upstream http://172.20.10.4:53631/play?salon=ws : aucune réponse HTTP après 2000 ms
+    at unavailable (file:///private/tmp/soiree-seven-final-vcobst_6/soiree/tools/cert/browser.mjs:49:44)
+    at Timeout.<anonymous> (file:///private/tmp/soiree-seven-final-vcobst_6/soiree/tools/cert/browser.mjs:59:39)
+    at listOnTimeout (node:internal/timers:585:17)
+    at process.processTimers (node:internal/timers:521:7)
+
+Périmètre demandé non satisfait ; voir certification/verification.json. Les contrôles absents restent non attestés.

@@ -1,0 +1,8 @@
+{
+  "reason": "LAN preflight unavailable; explicit local UI/storage/resources scope only",
+  "overrides": {
+    "robustesse/cert.json": {
+      "phone_upstream": "loopback"
+    }
+  }
+}

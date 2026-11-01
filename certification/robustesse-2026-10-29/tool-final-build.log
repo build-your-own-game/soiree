@@ -1,0 +1,11 @@
+warning: patch `remote-protocol v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol)` was not used in the crate graph
+warning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph
+warning: patch `salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)` was not used in the crate graph
+warning: patch `salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)` was not used in the crate graph
+warning: patch `salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+      with the dependency requirements. If the patch has a different version from
+      what is locked in the Cargo.lock file, run `cargo update` to use the new
+      version. This may also occur with an optional dependency that is not enabled.
+   Compiling soiree v0.3.0 (/Users/axel2/Projects/build-your-own-game/soiree/outil)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.42s

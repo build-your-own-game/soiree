@@ -1,0 +1,216 @@
+{
+  "schema": 1,
+  "arguments": {
+    "dir": "/Users/axel2/Projects/build-your-own-game/games/tier-list",
+    "only": [
+      "join",
+      "rtc",
+      "ui",
+      "performance",
+      "panic",
+      "layout",
+      "cut",
+      "freeze",
+      "silent",
+      "reload",
+      "twin",
+      "hostile",
+      "jitter",
+      "monkey",
+      "restart",
+      "storage"
+    ],
+    "phones": 8,
+    "soak": 0,
+    "seed": 6839,
+    "prepareOnly": false
+  },
+  "completed": true,
+  "infrastructure_error": null,
+  "navigation_failure": null,
+  "transport": {
+    "mode": "none",
+    "upstream": null,
+    "explicit": false,
+    "preflight": {
+      "status": "not-run"
+    }
+  },
+  "records": [
+    {
+      "scenario": "join",
+      "item": "C1",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "rtc",
+      "item": "C1",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "real WASM async exports, independent imports, editing and resource release : async, editing, lifecycle, effects",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "a row keeps its identity, focus and selection across another edit (webkit) : editing",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "a row keeps its identity, focus and selection across another edit (chromium) : editing",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "view cycles neither accumulate handlers nor duplicate edits (webkit) : lifecycle, effects",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "view cycles neither accumulate handlers nor duplicate edits (chromium) : lifecycle, effects",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "performance",
+      "item": "P1",
+      "status": "ok",
+      "note": "avant partie : 181 images, 60.0 images/s, p50 16.7 ms, p95 16.7 ms, maximum 16.7 ms ; téléphones 0 WebKit + 0 Chromium",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "performance",
+      "item": "P2",
+      "status": "ok",
+      "note": "sonde 1 (tv, chromium) : entrée → rendu 35.9 ms, budget 50 ms",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "panic",
+      "item": "C10",
+      "status": "skip",
+      "note": "pas de téléphones : le hook solo est exercé par ses tests",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "layout",
+      "item": "T3",
+      "status": "skip",
+      "note": "page d'ordinateur, pas un écran de TV",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "cut",
+      "item": "C2",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "freeze",
+      "item": "C3",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "silent",
+      "item": "C3",
+      "status": "skip",
+      "note": "il faut au moins 5 téléphones pour ce scénario",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "reload",
+      "item": "C4",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "twin",
+      "item": "C5",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "hostile",
+      "item": "E1",
+      "status": "skip",
+      "note": "pas de WebSocket déclaré (`socket`)",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "jitter",
+      "item": "R1",
+      "status": "skip",
+      "note": "pas de téléphones",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "monkey",
+      "item": "P1",
+      "status": "ok",
+      "note": "en jeu sous entrées : 181 images, 60.0 images/s, p50 16.7 ms, p95 16.7 ms, maximum 16.7 ms, 6 gestes pendant l'échantillon",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "monkey",
+      "item": "E6",
+      "status": "ok",
+      "note": "120 s de gestes au hasard sur la page",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "monkey",
+      "item": "D2",
+      "status": "skip",
+      "note": "pas de touche « advance » : la progression se juge au salon",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "restart",
+      "item": "C7",
+      "status": "skip",
+      "note": "pas de connexion permanente avec l'hôte",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "8 clé(s) remplacée(s) par 5 contenus abîmés, page rechargée à chaque fois",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "stockage refusé : la page s'ouvre",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "soak",
+      "item": "R2",
+      "status": "skip",
+      "note": "lance --soak 30 pour l'endurance",
+      "explicit_exclusion": false
+    }
+  ]
+}

@@ -1,0 +1,4067 @@
+{
+  "schema": 1,
+  "soiree": "0.3.0",
+  "started": "2026-10-29T17:24:13Z",
+  "finished": "2026-10-29T17:26:01Z",
+  "selection": [
+    "cargo:suite",
+    "command:clippy-native",
+    "command:clippy-wasm",
+    "command:doctests",
+    "command:fmt",
+    "game:a_command_from_an_older_phase_is_dropped",
+    "game:a_device_back_after_a_cut_gets_its_character_where_it_stood",
+    "game:a_failed_save_is_reported_to_the_organizer",
+    "game:a_lease_that_is_not_a_number_is_refused",
+    "game:a_press_delivered_late_does_not_move",
+    "game:a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+    "game:a_stalled_host_catches_up_a_few_steps_and_drops_the_rest",
+    "game:a_stop_with_a_nan_lease_replays_bit_for_bit",
+    "game:checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+    "game:counts_online_players_only_and_late_joiners",
+    "game:every_replay_file_replays_and_keeps_the_invariants",
+    "game:finish_and_navigation_bypass_and_clear_pause",
+    "game:finishes_at_the_deadline_from_the_last_positions",
+    "game:jumps_have_a_strict_750_ms_cooldown",
+    "game:keeps_a_crowded_group_inside_the_map",
+    "game:navigates_the_deck_like_the_load_test",
+    "game:never_spawns_on_top_of_anyone_even_past_the_grid",
+    "game:normalizes_diagonals_and_bounds_speed",
+    "game:pause_freezes_everyone_and_shifts_the_deadline",
+    "game:random_sessions_keep_every_invariant",
+    "game:rejects_malformed_movement",
+    "game:repeating_a_view_emits_neither_actions_nor_duplicate_feedback",
+    "game:separates_exact_overlapping_spawns_without_nan",
+    "game:stops_after_a_controller_disappears",
+    "game:the_host_enforces_the_limits",
+    "game:the_rendered_value_changes_with_the_drawn_sprite_only",
+    "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+    "game:time_alone_ends_every_round",
+    "game:what_the_page_allows_the_host_accepts",
+    "static:common"
+  ],
+  "controller_exit_code": null,
+  "identity_before": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+  "identity_after": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+  "identity_errors": [],
+  "provenance": {
+    "value": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+    "source_roots": [
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/art",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/bots",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/controller",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/screen",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol",
+      "/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host",
+      "/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web"
+    ],
+    "files": 17682,
+    "assumptions": [
+      "L’empreinte couvre tous les fichiers des racines du projet, des dépendances path/git et du contrôleur déclaré, y compris les fichiers ignorés par Git et data/dist. Les répertoires .git, target, node_modules, .soiree et certification sont exclus ; leurs contenus ne doivent pas servir d’entrées source non déclarées.",
+      "L’exécution n’est pas hermétique : les lectures hors de ces racines, les autres variables d’environnement, les services réseau, les bibliothèques dynamiques et les commandes invoquées indirectement par les scripts restent des hypothèses du contrôle.",
+      "Les dépendances de registre et les paquets node_modules sont identifiés par leurs verrous et la chaîne d’outillage ; l’intégrité de leurs caches locaux est une hypothèse, leur contenu n’est pas entièrement haché.",
+      "Les empreintes avant/après détectent les changements persistants des entrées couvertes ; elles ne constituent pas une isolation contre une modification temporaire restaurée pendant le passage."
+    ]
+  },
+  "plan": {
+    "schema": 1,
+    "policy_version": "0.3.0",
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Les joueurs et les foules restent dans l’arène.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:random_sessions_keep_every_invariant",
+          "game:keeps_a_crowded_group_inside_the_map"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "La référence historique players_stay_on_the_floor est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J2",
+        "claim": "Aucune poussée ni direction ne dépasse la vitesse maximale.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:random_sessions_keep_every_invariant",
+          "game:normalizes_diagonals_and_bounds_speed"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "La référence historique nobody_outruns_the_speed_cap est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J3",
+        "claim": "Les axes absurdes sont refusés sans contaminer la physique.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:rejects_malformed_movement",
+          "game:a_lease_that_is_not_a_number_is_refused",
+          "game:a_stop_with_a_nan_lease_replays_bit_for_bit"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Des personnages superposés se séparent sans valeur non finie.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:separates_exact_overlapping_spawns_without_nan"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "L’apparition cherche une place libre, même au-delà de la première grille.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:never_spawns_on_top_of_anyone_even_past_the_grid"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J6",
+        "claim": "La diagonale respecte la vitesse et les limites de l’arène.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:normalizes_diagonals_and_bounds_speed"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J7",
+        "claim": "Après un retard de l’hôte, seuls quelques pas sont rattrapés.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_stalled_host_catches_up_a_few_steps_and_drops_the_rest"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J8",
+        "claim": "Un vieux mouvement ne fait plus bouger, et un téléphone silencieux relâche sa direction.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_press_delivered_late_does_not_move",
+          "game:a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+          "game:stops_after_a_controller_disappears"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J9",
+        "claim": "Un saut ne se répète pas pendant son délai de récupération.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:jumps_have_a_strict_750_ms_cooldown"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J10",
+        "claim": "Une pause fige les joueurs et décale l’échéance de la durée passée en pause.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:pause_freezes_everyone_and_shifts_the_deadline",
+          "game:finish_and_navigation_bypass_and_clear_pause"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J11",
+        "claim": "À l’échéance, chaque joueur en ligne compte exactement une fois dans sa zone ou hors des zones.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:finishes_at_the_deadline_from_the_last_positions",
+          "game:counts_online_players_only_and_late_joiners",
+          "game:random_sessions_keep_every_invariant"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "La référence historique rounds_count_up_and_add_up est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J12",
+        "claim": "Une fin de manche n’enregistre qu’un résultat ; naviguer termine proprement la manche précédente.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:navigates_the_deck_like_the_load_test",
+          "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J13",
+        "claim": "Un joueur absent ne vote pas et retrouve son personnage au retour.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_device_back_after_a_cut_gets_its_character_where_it_stood",
+          "game:counts_online_players_only_and_late_joiners"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J14",
+        "claim": "Une manche sans joueur se termine avec des totaux cohérents.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:time_alone_ends_every_round",
+          "game:random_sessions_keep_every_invariant"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "La référence historique rounds_count_up_and_add_up est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J15",
+        "claim": "Une commande d’une ancienne phase ne passe pas à la question suivante.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_command_from_an_older_phase_is_dropped"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J16",
+        "claim": "Prénoms, messages et questions respectent les mêmes limites sur le téléphone et l’hôte.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:the_host_enforces_the_limits",
+          "game:what_the_page_allows_the_host_accepts",
+          "game:random_sessions_keep_every_invariant"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "La référence historique texts_fit_the_protocol est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J17",
+        "claim": "Un replay reproduit toutes les entrées et refuse une empreinte finale fausse.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+          "game:every_replay_file_replays_and_keeps_the_invariants"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J18",
+        "claim": "Coupures, réveils, doublons et échéances gardent identités, écrans et résultats déterministes.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J19",
+        "claim": "Une erreur d’écriture du journal ou des résultats ne bloque pas la partie.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:a_failed_save_is_reported_to_the_organizer"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J20",
+        "claim": "La mesure du canvas projette les sprites dessinés, sans horloge ni compteur d’images.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:the_rendered_value_changes_with_the_drawn_sprite_only"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "J21",
+        "claim": "Réafficher la même vue de résultats ne produit aucune action ni vibration supplémentaire.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "game:repeating_a_view_emits_neither_actions_nor_duplicate_feedback"
+        ],
+        "owner": "game",
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "static:common"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:fmt"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-native"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:clippy-wasm"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "cargo:suite"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "command:doctests"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence de phases avec échéance et de joueurs pouvant partir dépend du jeu."
+        },
+        "controls": [
+          "unbound:C6"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:E5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Les champs de texte et la répartition page/hôte dépendent du jeu."
+        },
+        "controls": [
+          "unbound:T1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D1"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "unbound:D3"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "La présence d’une simulation en temps réel et son exécution en natif et en WASM doivent être déclarées."
+        },
+        "controls": [
+          "unbound:D4"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "applicability": {
+          "status": "unknown",
+          "reason": "Le sens d’une nouvelle partie dépend du jeu ; un éditeur continu ne possède pas nécessairement ce cycle."
+        },
+        "controls": [
+          "unbound:D5"
+        ],
+        "owner": "game",
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:health"
+        ],
+        "owner": "common",
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:join:C1",
+          "harness:rtc:C1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:panic:C10"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:cut:C2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:freeze:C3",
+          "harness:silent:C3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:reload:C4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:twin:C5"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:restart:C7"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:join:C8"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:storage:C9"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:D2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:hostile:E1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:hostile:E2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:hostile:E3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:hostile:E4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:E6"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P1",
+          "harness:monkey:P1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:performance:P2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:jitter:R1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:soak:R2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:join:R3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R4",
+        "claim": "Exigence commune R4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:resources:R4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:monkey:T2"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:layout:T3"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:layout:T4"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "harness:ui:U1"
+        ],
+        "owner": "common",
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S1"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S2"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S3"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S4"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S5"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S6"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S7"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S8"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S9"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "applicability": {
+          "status": "applicable"
+        },
+        "controls": [
+          "S10"
+        ],
+        "owner": "host",
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "controls": [
+      {
+        "id": "game:random_sessions_keep_every_invariant",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::random_sessions_keep_every_invariant\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "certification",
+            "name": "sessions::random_sessions_keep_every_invariant",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:keeps_a_crowded_group_inside_the_map",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::keeps_a_crowded_group_inside_the_map\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "physics::keeps_a_crowded_group_inside_the_map",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:normalizes_diagonals_and_bounds_speed",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::normalizes_diagonals_and_bounds_speed\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "physics::normalizes_diagonals_and_bounds_speed",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:rejects_malformed_movement",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"protocol::rejects_malformed_movement\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "protocol::rejects_malformed_movement",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_lease_that_is_not_a_number_is_refused",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::a_lease_that_is_not_a_number_is_refused\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "certification",
+            "name": "sessions::a_lease_that_is_not_a_number_is_refused",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_stop_with_a_nan_lease_replays_bit_for_bit",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"replays\", name: \"a_stop_with_a_nan_lease_replays_bit_for_bit\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "replays",
+            "name": "a_stop_with_a_nan_lease_replays_bit_for_bit",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:separates_exact_overlapping_spawns_without_nan",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::separates_exact_overlapping_spawns_without_nan\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "physics::separates_exact_overlapping_spawns_without_nan",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:never_spawns_on_top_of_anyone_even_past_the_grid",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::never_spawns_on_top_of_anyone_even_past_the_grid\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::never_spawns_on_top_of_anyone_even_past_the_grid",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_stalled_host_catches_up_a_few_steps_and_drops_the_rest",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-host\", target_kind: \"bin\", target: \"sidequest-host\", name: \"schedule::tests::a_stalled_host_catches_up_a_few_steps_and_drops_the_rest\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-host",
+            "target_kind": "bin",
+            "target": "sidequest-host",
+            "name": "schedule::tests::a_stalled_host_catches_up_a_few_steps_and_drops_the_rest",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_press_delivered_late_does_not_move",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"movement::a_press_delivered_late_does_not_move\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "movement::a_press_delivered_late_does_not_move",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"movement::a_press_resent_with_its_old_time_stops_when_its_budget_runs_out\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "movement::a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:stops_after_a_controller_disappears",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::stops_after_a_controller_disappears\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "physics::stops_after_a_controller_disappears",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:jumps_have_a_strict_750_ms_cooldown",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::jumps_have_a_strict_750_ms_cooldown\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::jumps_have_a_strict_750_ms_cooldown",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:pause_freezes_everyone_and_shifts_the_deadline",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::pause_freezes_everyone_and_shifts_the_deadline\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::pause_freezes_everyone_and_shifts_the_deadline",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:finish_and_navigation_bypass_and_clear_pause",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::finish_and_navigation_bypass_and_clear_pause\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::finish_and_navigation_bypass_and_clear_pause",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:finishes_at_the_deadline_from_the_last_positions",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::finishes_at_the_deadline_from_the_last_positions\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::finishes_at_the_deadline_from_the_last_positions",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:counts_online_players_only_and_late_joiners",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::counts_online_players_only_and_late_joiners\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::counts_online_players_only_and_late_joiners",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:navigates_the_deck_like_the_load_test",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::navigates_the_deck_like_the_load_test\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::navigates_the_deck_like_the_load_test",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-host\", target_kind: \"bin\", target: \"sidequest-host\", name: \"room::simulation::thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-host",
+            "target_kind": "bin",
+            "target": "sidequest-host",
+            "name": "room::simulation::thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_device_back_after_a_cut_gets_its_character_where_it_stood",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::a_device_back_after_a_cut_gets_its_character_where_it_stood\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "original",
+            "name": "rules::a_device_back_after_a_cut_gets_its_character_where_it_stood",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:time_alone_ends_every_round",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::time_alone_ends_every_round\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "certification",
+            "name": "sessions::time_alone_ends_every_round",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_command_from_an_older_phase_is_dropped",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-host\", target_kind: \"test\", target: \"e2e\", name: \"a_command_from_an_older_phase_is_dropped\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-host",
+            "target_kind": "test",
+            "target": "e2e",
+            "name": "a_command_from_an_older_phase_is_dropped",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:the_host_enforces_the_limits",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"text::the_host_enforces_the_limits\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "certification",
+            "name": "text::the_host_enforces_the_limits",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:what_the_page_allows_the_host_accepts",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"text::what_the_page_allows_the_host_accepts\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "certification",
+            "name": "text::what_the_page_allows_the_host_accepts",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-host\", target_kind: \"lib\", target: \"sidequest_host\", name: \"replay::tests::checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-host",
+            "target_kind": "lib",
+            "target": "sidequest_host",
+            "name": "replay::tests::checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:every_replay_file_replays_and_keeps_the_invariants",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"replays\", name: \"every_replay_file_replays_and_keeps_the_invariants\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-core",
+            "target_kind": "test",
+            "target": "replays",
+            "name": "every_replay_file_replays_and_keeps_the_invariants",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:a_failed_save_is_reported_to_the_organizer",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-host\", target_kind: \"test\", target: \"e2e\", name: \"a_failed_save_is_reported_to_the_organizer\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-host",
+            "target_kind": "test",
+            "target": "e2e",
+            "name": "a_failed_save_is_reported_to_the_organizer",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:the_rendered_value_changes_with_the_drawn_sprite_only",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-screen\", target_kind: \"lib\", target: \"sidequest_screen\", name: \"rendered::tests::the_rendered_value_changes_with_the_drawn_sprite_only\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-screen",
+            "target_kind": "lib",
+            "target": "sidequest_screen",
+            "name": "rendered::tests::the_rendered_value_changes_with_the_drawn_sprite_only",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "game:repeating_a_view_emits_neither_actions_nor_duplicate_feedback",
+        "method": "test",
+        "scope": "TestRef { package: \"sidequest-controller\", target_kind: \"lib\", target: \"sidequest_controller\", name: \"session::tests::repeating_a_view_emits_neither_actions_nor_duplicate_feedback\", features: [], default_features: true, profile: \"dev\" }",
+        "execution": {
+          "kind": "cargo-test",
+          "test": {
+            "package": "sidequest-controller",
+            "target_kind": "lib",
+            "target": "sidequest_controller",
+            "name": "session::tests::repeating_a_view_emits_neither_actions_nor_duplicate_feedback",
+            "features": [],
+            "default_features": true,
+            "profile": "dev"
+          }
+        }
+      },
+      {
+        "id": "static:common",
+        "method": "static",
+        "scope": "static:common",
+        "execution": {
+          "kind": "static",
+          "name": "static:common"
+        }
+      },
+      {
+        "id": "command:fmt",
+        "method": "static",
+        "scope": "command:fmt",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "fmt",
+            "--check"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-native",
+        "method": "static",
+        "scope": "command:clippy-native",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "command:clippy-wasm",
+        "method": "static",
+        "scope": "command:clippy-wasm",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "clippy",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        }
+      },
+      {
+        "id": "cargo:suite",
+        "method": "test",
+        "scope": "cargo:suite",
+        "execution": {
+          "kind": "static",
+          "name": "cargo:suite"
+        }
+      },
+      {
+        "id": "command:doctests",
+        "method": "test",
+        "scope": "command:doctests",
+        "execution": {
+          "kind": "command",
+          "program": "cargo",
+          "arguments": [
+            "test",
+            "--workspace",
+            "--doc"
+          ]
+        }
+      },
+      {
+        "id": "unbound:C6",
+        "method": "test",
+        "scope": "unbound:C6",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:E5",
+        "method": "test",
+        "scope": "unbound:E5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:T1",
+        "method": "test",
+        "scope": "unbound:T1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D1",
+        "method": "test",
+        "scope": "unbound:D1",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D3",
+        "method": "test",
+        "scope": "unbound:D3",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D4",
+        "method": "test",
+        "scope": "unbound:D4",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "unbound:D5",
+        "method": "test",
+        "scope": "unbound:D5",
+        "execution": {
+          "kind": "unbound",
+          "reason": "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        }
+      },
+      {
+        "id": "harness:health",
+        "method": "test",
+        "scope": "harness:health",
+        "execution": {
+          "kind": "static",
+          "name": "harness:health"
+        }
+      },
+      {
+        "id": "harness:ui:U1",
+        "method": "test",
+        "scope": "harness:ui:U1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "ui",
+          "item": "U1"
+        }
+      },
+      {
+        "id": "harness:performance:P1",
+        "method": "measure",
+        "scope": "harness:performance:P1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:performance:P2",
+        "method": "measure",
+        "scope": "harness:performance:P2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "performance",
+          "item": "P2"
+        }
+      },
+      {
+        "id": "harness:panic:C10",
+        "method": "test",
+        "scope": "harness:panic:C10;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "panic",
+          "item": "C10"
+        }
+      },
+      {
+        "id": "harness:join:C1",
+        "method": "test",
+        "scope": "harness:join:C1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:join:C8",
+        "method": "test",
+        "scope": "harness:join:C8;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "C8"
+        }
+      },
+      {
+        "id": "harness:join:R3",
+        "method": "test",
+        "scope": "harness:join:R3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "join",
+          "item": "R3"
+        }
+      },
+      {
+        "id": "harness:layout:T3",
+        "method": "test",
+        "scope": "harness:layout:T3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T3"
+        }
+      },
+      {
+        "id": "harness:layout:T4",
+        "method": "test",
+        "scope": "harness:layout:T4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "layout",
+          "item": "T4"
+        }
+      },
+      {
+        "id": "harness:storage:C9",
+        "method": "test",
+        "scope": "harness:storage:C9;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "storage",
+          "item": "C9"
+        }
+      },
+      {
+        "id": "harness:cut:C2",
+        "method": "test",
+        "scope": "harness:cut:C2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "cut",
+          "item": "C2"
+        }
+      },
+      {
+        "id": "harness:freeze:C3",
+        "method": "test",
+        "scope": "harness:freeze:C3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "freeze",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:silent:C3",
+        "method": "test",
+        "scope": "harness:silent:C3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "silent",
+          "item": "C3"
+        }
+      },
+      {
+        "id": "harness:reload:C4",
+        "method": "test",
+        "scope": "harness:reload:C4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "reload",
+          "item": "C4"
+        }
+      },
+      {
+        "id": "harness:twin:C5",
+        "method": "test",
+        "scope": "harness:twin:C5;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "twin",
+          "item": "C5"
+        }
+      },
+      {
+        "id": "harness:rtc:C1",
+        "method": "test",
+        "scope": "harness:rtc:C1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "rtc",
+          "item": "C1"
+        }
+      },
+      {
+        "id": "harness:hostile:E1",
+        "method": "test",
+        "scope": "harness:hostile:E1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E1"
+        }
+      },
+      {
+        "id": "harness:hostile:E2",
+        "method": "test",
+        "scope": "harness:hostile:E2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E2"
+        }
+      },
+      {
+        "id": "harness:hostile:E3",
+        "method": "test",
+        "scope": "harness:hostile:E3;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E3"
+        }
+      },
+      {
+        "id": "harness:hostile:E4",
+        "method": "test",
+        "scope": "harness:hostile:E4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "hostile",
+          "item": "E4"
+        }
+      },
+      {
+        "id": "harness:jitter:R1",
+        "method": "test",
+        "scope": "harness:jitter:R1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "jitter",
+          "item": "R1"
+        }
+      },
+      {
+        "id": "harness:monkey:E6",
+        "method": "test",
+        "scope": "harness:monkey:E6;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "E6"
+        }
+      },
+      {
+        "id": "harness:monkey:T2",
+        "method": "test",
+        "scope": "harness:monkey:T2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "T2"
+        }
+      },
+      {
+        "id": "harness:monkey:D2",
+        "method": "test",
+        "scope": "harness:monkey:D2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "D2"
+        }
+      },
+      {
+        "id": "harness:monkey:P1",
+        "method": "measure",
+        "scope": "harness:monkey:P1;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "monkey",
+          "item": "P1"
+        }
+      },
+      {
+        "id": "harness:restart:C7",
+        "method": "test",
+        "scope": "harness:restart:C7;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "restart",
+          "item": "C7"
+        }
+      },
+      {
+        "id": "harness:resources:R4",
+        "method": "measure",
+        "scope": "harness:resources:R4;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "resources",
+          "item": "R4"
+        }
+      },
+      {
+        "id": "harness:soak:R2",
+        "method": "measure",
+        "scope": "harness:soak:R2;phone_upstream=lan",
+        "execution": {
+          "kind": "harness",
+          "scenario": "soak",
+          "item": "R2"
+        }
+      },
+      {
+        "id": "S1",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S2",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S3",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S4",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S5",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S6",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S7",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S8",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S9",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      },
+      {
+        "id": "S10",
+        "method": "justification",
+        "scope": "rehearsal",
+        "execution": {
+          "kind": "manual"
+        }
+      }
+    ],
+    "catalogue": [
+      {
+        "id": "PHY-06",
+        "status": "adopted",
+        "reason": "Adapté par J1 : Les joueurs et les foules restent dans l’arène."
+      },
+      {
+        "id": "PHY-03",
+        "status": "adopted",
+        "reason": "Adapté par J2 : Aucune poussée ni direction ne dépasse la vitesse maximale."
+      },
+      {
+        "id": "PHY-04",
+        "status": "adopted",
+        "reason": "Adapté par J3 : Les axes absurdes sont refusés sans contaminer la physique."
+      },
+      {
+        "id": "PHY-05",
+        "status": "adopted",
+        "reason": "Adapté par J4 : Des personnages superposés se séparent sans valeur non finie."
+      },
+      {
+        "id": "PHY-09",
+        "status": "adopted",
+        "reason": "Adapté par J5 : L’apparition cherche une place libre, même au-delà de la première grille."
+      },
+      {
+        "id": "TR-08",
+        "status": "adopted",
+        "reason": "Adapté par J6 : La diagonale respecte la vitesse et les limites de l’arène."
+      },
+      {
+        "id": "TR-02",
+        "status": "adopted",
+        "reason": "Adapté par J7 : Après un retard de l’hôte, seuls quelques pas sont rattrapés."
+      },
+      {
+        "id": "TR-11",
+        "status": "adopted",
+        "reason": "Adapté par J8 : Un vieux mouvement ne fait plus bouger, et un téléphone silencieux relâche sa direction."
+      },
+      {
+        "id": "TR-04",
+        "status": "adopted",
+        "reason": "Adapté par J9 : Un saut ne se répète pas pendant son délai de récupération."
+      },
+      {
+        "id": "TR-10",
+        "status": "adopted",
+        "reason": "Adapté par J10 : Une pause fige les joueurs et décale l’échéance de la durée passée en pause."
+      },
+      {
+        "id": "VOTE-01",
+        "status": "adopted",
+        "reason": "Adapté par J11 : À l’échéance, chaque joueur en ligne compte exactement une fois dans sa zone ou hors des zones."
+      },
+      {
+        "id": "VOTE-03",
+        "status": "adopted",
+        "reason": "Adapté par J12 : Une fin de manche n’enregistre qu’un résultat ; naviguer termine proprement la manche précédente."
+      },
+      {
+        "id": "VOTE-04",
+        "status": "adopted",
+        "reason": "Adapté par J13 : Un joueur absent ne vote pas et retrouve son personnage au retour."
+      },
+      {
+        "id": "VOTE-11",
+        "status": "adopted",
+        "reason": "Adapté par J14 : Une manche sans joueur se termine avec des totaux cohérents."
+      },
+      {
+        "id": "VOTE-09",
+        "status": "adopted",
+        "reason": "Adapté par J15 : Une commande d’une ancienne phase ne passe pas à la question suivante."
+      },
+      {
+        "id": "PHY-02",
+        "status": "not-applicable",
+        "reason": "aucune collision sur un assemblage de tuiles ; le sol est une seule arène rectangulaire."
+      },
+      {
+        "id": "PHY-07",
+        "status": "not-applicable",
+        "reason": "la poussée de foule est une règle d’arcade bornée par la vitesse maximale, sans conservation d’énergie mécanique."
+      },
+      {
+        "id": "PHY-08",
+        "status": "not-applicable",
+        "reason": "aucun empilement vertical ni corps rigide ; la foule peut rester au contact tant qu’on pousse, avec la séparation et les limites de la physique de référence."
+      },
+      {
+        "id": "PHY-11",
+        "status": "not-applicable",
+        "reason": "aucun support mobile ; le saut est une animation et ne change pas la position physique sur le sol."
+      },
+      {
+        "id": "TR-05",
+        "status": "not-applicable",
+        "reason": "aucun rebord de plateforme ; le saut est visuel."
+      },
+      {
+        "id": "TR-06",
+        "status": "not-applicable",
+        "reason": "aucun atterrissage physique ; le saut est visuel."
+      },
+      {
+        "id": "TR-07",
+        "status": "not-applicable",
+        "reason": "le saut a une durée fixe et ne dépend pas du maintien du bouton."
+      },
+      {
+        "id": "TR-12",
+        "status": "not-applicable",
+        "reason": "aucune fenêtre de rythme ou de précision."
+      },
+      {
+        "id": "VOTE-02",
+        "status": "not-applicable",
+        "reason": "on peut changer de zone jusqu’à l’échéance ; aucun bulletin ponctuel n’est conservé."
+      },
+      {
+        "id": "VOTE-05",
+        "status": "not-applicable",
+        "reason": "aucun joueur n’est le sujet central d’un vote."
+      },
+      {
+        "id": "VOTE-06",
+        "status": "not-applicable",
+        "reason": "aucun buzzer ni attribution exclusive de la main."
+      },
+      {
+        "id": "VOTE-07",
+        "status": "not-applicable",
+        "reason": "la question est commune à tous les joueurs présents."
+      },
+      {
+        "id": "VOTE-08",
+        "status": "not-applicable",
+        "reason": "les joueurs ne créent pas le paquet de questions."
+      },
+      {
+        "id": "VOTE-10",
+        "status": "not-applicable",
+        "reason": "positions et zones sont publiques pendant toute la manche ; aucun secret à protéger."
+      },
+      {
+        "id": "TXT-01",
+        "status": "not-applicable",
+        "reason": "aucune comparaison de réponses textuelles."
+      },
+      {
+        "id": "TXT-02",
+        "status": "not-applicable",
+        "reason": "aucune clé de comparaison textuelle."
+      },
+      {
+        "id": "TXT-03",
+        "status": "not-applicable",
+        "reason": "aucun classement ou jugement linguistique des réponses."
+      },
+      {
+        "id": "TXT-06",
+        "status": "not-applicable",
+        "reason": "les prénoms ne sont pas uniques ; le personnage et l’identité d’appareil distinguent les joueurs."
+      },
+      {
+        "id": "TXT-07",
+        "status": "not-applicable",
+        "reason": "un prénom ne donne aucun droit ni aucune identité ; seul l’appareil de salon possède son personnage."
+      },
+      {
+        "id": "TXT-08",
+        "status": "not-applicable",
+        "reason": "aucun filtre de mots."
+      },
+      {
+        "id": "TXT-10",
+        "status": "not-applicable",
+        "reason": "aucun nom réservé ni contrôle des doublons."
+      },
+      {
+        "id": "TOUR-01",
+        "status": "not-applicable",
+        "reason": "tous les joueurs se déplacent simultanément, sans tour de joueur."
+      },
+      {
+        "id": "TOUR-02",
+        "status": "not-applicable",
+        "reason": "aucune annulation de coup."
+      },
+      {
+        "id": "TOUR-03",
+        "status": "not-applicable",
+        "reason": "aucune annulation de coup."
+      },
+      {
+        "id": "TOUR-04",
+        "status": "not-applicable",
+        "reason": "aucun joueur actif unique à remplacer."
+      },
+      {
+        "id": "EGA-01",
+        "status": "not-applicable",
+        "reason": "le résultat est un comptage de positions, sans vainqueur exclusif d’une simultanéité ; le numéro départage seulement des centres superposés dans la physique de référence."
+      },
+      {
+        "id": "EGA-03",
+        "status": "not-applicable",
+        "reason": "aucune course chronométrée."
+      },
+      {
+        "id": "EGA-04",
+        "status": "not-applicable",
+        "reason": "aucun score ni classement de joueurs."
+      },
+      {
+        "id": "EGA-05",
+        "status": "not-applicable",
+        "reason": "aucun classement de joueurs."
+      },
+      {
+        "id": "EGA-06",
+        "status": "not-applicable",
+        "reason": "aucun rang de joueur affiché."
+      },
+      {
+        "id": "EGA-07",
+        "status": "not-applicable",
+        "reason": "une égalité de totaux est un résultat valide, sans départage."
+      },
+      {
+        "id": "AFF-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "AFF-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "ECO-11",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "EGA-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "HAS-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-10",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PHY-12",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-02",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "PROG-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-06",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-07",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-08",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TOUR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-01",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-03",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TR-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-04",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-05",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      },
+      {
+        "id": "TXT-09",
+        "status": "unreviewed",
+        "reason": "Aucune décision explicite ; ni adopté, ni exclu"
+      }
+    ],
+    "diagnostics": []
+  },
+  "observations": [
+    {
+      "control_id": "static:common",
+      "method": "static",
+      "scope": "static:common",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "[(Ok, \".soiree/ écrit : les documents de la version 0.3.0\"), (Ok, \"toolchain 1.99 des règles, avec rustfmt, clippy, wasm32-unknown-unknown\"), (Ok, \"édition, lints et profils des règles\"), (Ok, \"types et méthodes interdits des règles\"), (Ok, \"CI commune épinglée à la version du jeu\"), (Ok, \"sidequest-core ne dépend ni du navigateur ni du GPU\"), (Warning, \"viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : remote-protocol (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol), remote-web (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web), salon-core (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core), salon-crypto (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto), salon-host (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host), salon-web (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web). Ce jeu ne compile qu'ici ; ne le pousse pas tant que ce salon n'est pas étiqueté\"), (Ok, \"noms des pages à jour (2 module(s) soiree dom)\"), (Ok, \"verification.toml : 21 engagements ; références exécutables à attester par Cargo\"), (Ok, \"cert.json lisible par le harnais (soiree certify)\"), (Ok, \"contrats de vérification UI : couverture ou non-applicabilité explicite\")]",
+      "command": [],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:fmt",
+      "method": "static",
+      "scope": "command:fmt",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-native",
+      "method": "static",
+      "scope": "command:clippy-native",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "   Compiling libc v0.2.191\n   Compiling nix v0.30.1\n    Checking getrandom v0.2.17\n    Checking cpufeatures v0.2.17\n    Checking getrandom v0.4.3\n    Checking getrandom v0.3.4\n    Checking cpufeatures v0.3.1\n    Checking sha1 v0.11.0\n    Checking rand v0.10.3\n    Checking rand_core v0.6.4\n    Checking rand_core v0.9.5\n    Checking rand_chacha v0.9.0\n    Checking crypto-common v0.1.7\n    Checking ff v0.13.1\n    Checking crypto-bigint v0.5.5\n    Checking x25519-dalek v2.0.1\n    Checking tungstenite v0.30.0\n    Checking proptest v1.12.0\n    Checking digest v0.10.7\n    Checking cipher v0.4.4\n    Checking universal-hash v0.5.1\n    Checking aead v0.5.2\n    Checking group v0.13.0\n    Checking rand v0.9.5\n    Checking polyval v0.6.2\n    Checking poly1305 v0.8.0\n    Checking ctr v0.9.2\n    Checking chacha20 v0.9.1\n    Checking aes v0.8.4\n    Checking sha2 v0.10.9\n    Checking hmac v0.12.1\n    Checking signature v2.2.0\n    Checking sha1 v0.10.7\n    Checking sctp-proto v0.10.7\n    Checking ghash v0.5.1\n    Checking chacha20poly1305 v0.10.1\n    Checking hkdf v0.12.4\n    Checking rfc6979 v0.4.0\n    Checking salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)\n    Checking ccm v0.5.0\n    Checking x509-cert v0.2.5\n    Checking aes-gcm v0.10.3\n    Checking elliptic-curve v0.13.8\n    Checking sidequest-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/core)\n    Checking remote-protocol v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol)\n    Checking salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n    Checking primeorder v0.13.6\n    Checking ecdsa v0.16.9\n    Checking p256 v0.13.2\n    Checking p384 v0.13.1\n    Checking remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)\n    Checking sidequest-art v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/art)\n    Checking dimpl v0.7.6\n    Checking sidequest-controller v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/controller)\n    Checking sidequest-screen v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/screen)\n    Checking str0m-proto v0.7.0\n    Checking is v0.11.1\n    Checking salon-crypto v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto)\n    Checking str0m v0.24.1\n    Checking salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)\n    Checking sidequest-bots v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/bots)\n    Checking sidequest-host v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/host)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.23s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:clippy-wasm",
+      "method": "static",
+      "scope": "command:clippy-wasm",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "    Checking salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n    Checking remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)\n    Checking sidequest-screen v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/screen)\n    Checking sidequest-controller v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/controller)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.52s\n",
+      "command": [
+        "cargo",
+        "clippy",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "command:doctests",
+      "method": "test",
+      "scope": "command:doctests",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 1 test\ntest crates/core/src/game.rs - game (line 18) ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nall doctests ran in 0.93s; merged doctests compilation took 0.60s\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Compiling libc v0.2.191\n   Compiling getrandom v0.2.17\n   Compiling cpufeatures v0.2.17\n   Compiling getrandom v0.3.4\n   Compiling getrandom v0.4.3\n   Compiling cpufeatures v0.3.1\n   Compiling nix v0.30.1\n   Compiling sha1 v0.11.0\n   Compiling rand_core v0.6.4\n   Compiling rand v0.10.3\n   Compiling rand_core v0.9.5\n   Compiling crypto-common v0.1.7\n   Compiling ff v0.13.1\n   Compiling crypto-bigint v0.5.5\n   Compiling x25519-dalek v2.0.1\n   Compiling rand_chacha v0.9.0\n   Compiling tungstenite v0.30.0\n   Compiling proptest v1.12.0\n   Compiling group v0.13.0\n   Compiling rand v0.9.5\n   Compiling digest v0.10.7\n   Compiling cipher v0.4.4\n   Compiling universal-hash v0.5.1\n   Compiling aead v0.5.2\n   Compiling sctp-proto v0.10.7\n   Compiling polyval v0.6.2\n   Compiling sha2 v0.10.9\n   Compiling hmac v0.12.1\n   Compiling signature v2.2.0\n   Compiling ctr v0.9.2\n   Compiling ghash v0.5.1\n   Compiling hkdf v0.12.4\n   Compiling rfc6979 v0.4.0\n   Compiling chacha20 v0.9.1\n   Compiling salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)\n   Compiling aes v0.8.4\n   Compiling elliptic-curve v0.13.8\n   Compiling sha1 v0.10.7\n   Compiling poly1305 v0.8.0\n   Compiling ccm v0.5.0\n   Compiling aes-gcm v0.10.3\n   Compiling chacha20poly1305 v0.10.1\n   Compiling x509-cert v0.2.5\n   Compiling primeorder v0.13.6\n   Compiling ecdsa v0.16.9\n   Compiling sidequest-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/core)\n   Compiling remote-protocol v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol)\n   Compiling salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n   Compiling p256 v0.13.2\n   Compiling p384 v0.13.1\n   Compiling dimpl v0.7.6\n   Compiling sidequest-art v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/art)\n   Compiling remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)\n   Compiling sidequest-screen v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/screen)\n   Compiling str0m-proto v0.7.0\n   Compiling sidequest-controller v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/controller)\n   Compiling is v0.11.1\n   Compiling salon-crypto v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto)\n   Compiling str0m v0.24.1\n   Compiling salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)\n   Compiling sidequest-bots v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/bots)\n   Compiling sidequest-host v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/sidequest/crates/host)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.25s\n   Doc-tests sidequest_art\n   Doc-tests sidequest_bots\n   Doc-tests sidequest_controller\n   Doc-tests sidequest_core\n   Doc-tests sidequest_host\n   Doc-tests sidequest_screen\n",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--doc",
+        "--locked"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:random_sessions_keep_every_invariant",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::random_sessions_keep_every_invariant\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "sessions::random_sessions_keep_every_invariant: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:keeps_a_crowded_group_inside_the_map",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::keeps_a_crowded_group_inside_the_map\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "physics::keeps_a_crowded_group_inside_the_map: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:normalizes_diagonals_and_bounds_speed",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::normalizes_diagonals_and_bounds_speed\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "physics::normalizes_diagonals_and_bounds_speed: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:rejects_malformed_movement",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"protocol::rejects_malformed_movement\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "protocol::rejects_malformed_movement: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_lease_that_is_not_a_number_is_refused",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::a_lease_that_is_not_a_number_is_refused\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "sessions::a_lease_that_is_not_a_number_is_refused: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_stop_with_a_nan_lease_replays_bit_for_bit",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"replays\", name: \"a_stop_with_a_nan_lease_replays_bit_for_bit\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "a_stop_with_a_nan_lease_replays_bit_for_bit: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/replays-452ae4818593ea4d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:separates_exact_overlapping_spawns_without_nan",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::separates_exact_overlapping_spawns_without_nan\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "physics::separates_exact_overlapping_spawns_without_nan: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:never_spawns_on_top_of_anyone_even_past_the_grid",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::never_spawns_on_top_of_anyone_even_past_the_grid\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::never_spawns_on_top_of_anyone_even_past_the_grid: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_stalled_host_catches_up_a_few_steps_and_drops_the_rest",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-host\", target_kind: \"bin\", target: \"sidequest-host\", name: \"schedule::tests::a_stalled_host_catches_up_a_few_steps_and_drops_the_rest\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "schedule::tests::a_stalled_host_catches_up_a_few_steps_and_drops_the_rest: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_host-85c5f34e0cd0dfce",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_press_delivered_late_does_not_move",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"movement::a_press_delivered_late_does_not_move\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "movement::a_press_delivered_late_does_not_move: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"movement::a_press_resent_with_its_old_time_stops_when_its_budget_runs_out\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "movement::a_press_resent_with_its_old_time_stops_when_its_budget_runs_out: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:stops_after_a_controller_disappears",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"physics::stops_after_a_controller_disappears\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "physics::stops_after_a_controller_disappears: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:jumps_have_a_strict_750_ms_cooldown",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::jumps_have_a_strict_750_ms_cooldown\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::jumps_have_a_strict_750_ms_cooldown: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:pause_freezes_everyone_and_shifts_the_deadline",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::pause_freezes_everyone_and_shifts_the_deadline\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::pause_freezes_everyone_and_shifts_the_deadline: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:finish_and_navigation_bypass_and_clear_pause",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::finish_and_navigation_bypass_and_clear_pause\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::finish_and_navigation_bypass_and_clear_pause: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:finishes_at_the_deadline_from_the_last_positions",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::finishes_at_the_deadline_from_the_last_positions\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::finishes_at_the_deadline_from_the_last_positions: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:counts_online_players_only_and_late_joiners",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::counts_online_players_only_and_late_joiners\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::counts_online_players_only_and_late_joiners: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:navigates_the_deck_like_the_load_test",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::navigates_the_deck_like_the_load_test\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::navigates_the_deck_like_the_load_test: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-host\", target_kind: \"bin\", target: \"sidequest-host\", name: \"room::simulation::thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "room::simulation::thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_host-85c5f34e0cd0dfce",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_device_back_after_a_cut_gets_its_character_where_it_stood",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", name: \"rules::a_device_back_after_a_cut_gets_its_character_where_it_stood\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rules::a_device_back_after_a_cut_gets_its_character_where_it_stood: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:time_alone_ends_every_round",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"sessions::time_alone_ends_every_round\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "sessions::time_alone_ends_every_round: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_command_from_an_older_phase_is_dropped",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-host\", target_kind: \"test\", target: \"e2e\", name: \"a_command_from_an_older_phase_is_dropped\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "a_command_from_an_older_phase_is_dropped: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/e2e-88991c01268d17bd",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:the_host_enforces_the_limits",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"text::the_host_enforces_the_limits\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "text::the_host_enforces_the_limits: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:what_the_page_allows_the_host_accepts",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", name: \"text::what_the_page_allows_the_host_accepts\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "text::what_the_page_allows_the_host_accepts: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-host\", target_kind: \"lib\", target: \"sidequest_host\", name: \"replay::tests::checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "replay::tests::checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_host-1992b4b24a8b2cbd",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:every_replay_file_replays_and_keeps_the_invariants",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-core\", target_kind: \"test\", target: \"replays\", name: \"every_replay_file_replays_and_keeps_the_invariants\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "every_replay_file_replays_and_keeps_the_invariants: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/replays-452ae4818593ea4d",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:a_failed_save_is_reported_to_the_organizer",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-host\", target_kind: \"test\", target: \"e2e\", name: \"a_failed_save_is_reported_to_the_organizer\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "a_failed_save_is_reported_to_the_organizer: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/e2e-88991c01268d17bd",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:the_rendered_value_changes_with_the_drawn_sprite_only",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-screen\", target_kind: \"lib\", target: \"sidequest_screen\", name: \"rendered::tests::the_rendered_value_changes_with_the_drawn_sprite_only\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "rendered::tests::the_rendered_value_changes_with_the_drawn_sprite_only: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_screen-84c7926af13b3d3f",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "game:repeating_a_view_emits_neither_actions_nor_duplicate_feedback",
+      "method": "test",
+      "scope": "TestRef { package: \"sidequest-controller\", target_kind: \"lib\", target: \"sidequest_controller\", name: \"session::tests::repeating_a_view_emits_neither_actions_nor_duplicate_feedback\", features: [], default_features: true, profile: \"dev\" }",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "session::tests::repeating_a_view_emits_neither_actions_nor_duplicate_feedback: Passed",
+      "command": [
+        "/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_controller-834ce768cd664b23",
+        "--test",
+        "--format=pretty",
+        "--color=never"
+      ],
+      "artifacts": []
+    },
+    {
+      "control_id": "cargo:suite",
+      "method": "test",
+      "scope": "cargo:suite",
+      "outcome": "passed",
+      "input_identity": "a70aa517666555e19874aa8ba64dfffe044732aa88c8b9457a99c9f36a10fce8",
+      "detail": "[SuiteExecution { package: \"sidequest-art\", target_kind: \"lib\", target: \"sidequest_art\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_art-fc7e66508c0e503c\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 11 tests\\ntest text::tests::emojis_keep_their_colors ... ok\\ntest text::tests::drawing_scales_and_places_glyphs ... ok\\ntest text::tests::board_capitals_are_reused_and_trimmed ... ok\\ntest text::tests::monospaced_cells_line_up ... ok\\ntest text::tests::unknown_characters_and_other_emojis_are_dropped ... ok\\ntest text::tests::accents_sit_over_the_letter ... ok\\ntest avatar::tests::pixels_match_the_bundled_json ... ok\\ntest text::tests::long_words_are_cut_where_they_overflow ... ok\\ntest text::tests::french_text_draws_every_character ... ok\\ntest text::tests::wrapping_fills_lines_greedily ... ok\\ntest text::tests::every_glyph_fits_the_line_box ... ok\\n\\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 11, executed: 11 }, SuiteExecution { package: \"sidequest-art\", target_kind: \"test\", target: \"reference\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/reference-e9948900ec3aed87\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 4 tests\\ntest pixel_text_matches_the_original ... ok\\ntest room_matches_the_original ... ok\\ntest question_boards_match_the_original ... ok\\ntest avatars_match_the_original ... ok\\n\\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s\\n\\n\", discovered: 4, executed: 4 }, SuiteExecution { package: \"sidequest-bots\", target_kind: \"bin\", target: \"sidequest-bots\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: NotRun, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_bots-106b9290ff07b561\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 0, executed: 0 }, SuiteExecution { package: \"sidequest-bots\", target_kind: \"lib\", target: \"sidequest_bots\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_bots-6e617bcefed0a55f\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 6 tests\\ntest load::tests::summarizes_like_the_original_scripts ... ok\\ntest load::tests::host_diagnostics_use_the_same_views_as_the_observer_window ... ok\\ntest net::tests::endpoints_accept_what_people_paste ... ok\\ntest http::tests::reads_status_and_body ... ok\\ntest scenario::tests::rejoin_does_not_accept_an_old_online_projection_when_the_arrival_buffer_is_full ... ok\\ntest scenario::tests::rejoin_waits_for_the_tv_after_the_phone_has_its_character ... ok\\n\\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\\n\\n\", discovered: 6, executed: 6 }, SuiteExecution { package: \"sidequest-controller\", target_kind: \"lib\", target: \"sidequest_controller\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_controller-834ce768cd664b23\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 23 tests\\ntest pad::tests::combines_held_directions_into_a_stick ... ok\\ntest pad::tests::maps_qwerty_and_azerty_keys ... ok\\ntest selection::tests::neighbors_wear_the_current_accessories ... ok\\ntest selection::tests::browsing_wraps_and_takes_the_default_color ... ok\\ntest session::tests::a_direction_waits_for_the_host_clock_but_a_stop_does_not ... ok\\ntest session::tests::a_cut_releases_everything_and_sends_nothing_until_salon_is_back ... ok\\ntest selection::tests::hops_until_the_look_changes ... ok\\ntest session::tests::a_second_tab_or_a_refusal_ends_the_session ... ok\\ntest session::tests::a_held_direction_is_set_again_every_150_ms_and_a_stop_once ... ok\\ntest selection::tests::keeps_two_accessories_first_in_first_out ... ok\\ntest selection::tests::turns_and_describes ... ok\\ntest session::tests::disabled_controls_ignore_presses_and_release_what_is_held ... ok\\ntest session::tests::presses_are_states_stamped_with_the_host_clock_and_repeats_send_nothing ... ok\\ntest session::tests::hidden_pages_repeat_nothing ... ok\\ntest session::tests::vibrates_when_results_appear_not_when_joining_into_them ... ok\\ntest session::tests::repeating_a_view_emits_neither_actions_nor_duplicate_feedback ... ok\\ntest text::tests::counts_untrimmed_text_and_shows_the_sent_state ... ok\\ntest text::tests::prefers_the_app_name_and_fits_it_in_the_field ... ok\\ntest text::tests::refuses_blank_repeated_or_disabled_sends ... ok\\ntest web::storage::tests::a_stored_character_round_trips_and_damage_is_refused ... ok\\ntest web::storage::tests::hex_round_trips_and_rejects_foreign_values ... ok\\ntest web::storage::tests::the_apps_player_is_the_token_and_anything_else_is_not ... ok\\ntest web::style_tests::every_model_palette_color_has_the_same_typed_css_value ... ok\\n\\ntest result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 23, executed: 23 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"lib\", target: \"sidequest_core\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_core-f2a88985824a9722\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 9 tests\\ntest client::movement::tests::negative_zero_is_a_stop_and_the_state_carries_its_time ... ok\\ntest physics::tests::blend_is_the_original_exponential ... ok\\ntest text::tests::counts_code_points ... ok\\ntest text::tests::strips_only_c0_controls_and_del ... ok\\ntest protocol::tests::message_tags_follow_declaration_order ... ok\\ntest protocol::tests::sticks_stay_small_and_cut_ones_are_refused ... ok\\ntest journal::tests::another_version_or_file_is_refused_before_its_deck_is_read ... ok\\ntest journal::tests::a_journal_reads_back_bit_for_bit_and_replays ... ok\\ntest journal::tests::a_cut_or_corrupted_journal_is_refused_with_the_line_at_fault ... ok\\n\\ntest result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 9, executed: 9 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"certification\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/certification-4d986acd488cf99d\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 13 tests\\ntest decode::huge_lengths_are_refused ... ok\\ntest decode::framed_actions_and_views_refuse_trailing_messages ... ok\\ntest text::lengths_are_code_points ... ok\\ntest sessions::a_lease_that_is_not_a_number_is_refused ... ok\\ntest decode::random_bytes_never_panic ... ok\\ntest text::what_the_page_allows_the_host_accepts ... ok\\ntest sessions::a_journal_has_one_entry_per_hashed_event ... ok\\ntest text::the_host_enforces_the_limits ... ok\\ntest decode::damaged_json_never_panics ... ok\\ntest decode::damaged_messages_never_panic ... ok\\ntest sessions::time_alone_ends_every_round ... ok\\ntest sessions::the_same_calls_give_the_same_hashes ... ok\\ntest sessions::random_sessions_keep_every_invariant ... ok\\n\\ntest result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s\\n\\n\", discovered: 13, executed: 13 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"original\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/original-e9e0dd4b7cf5311c\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 50 tests\\ntest movement::old_sticks_have_no_budget_and_movement_stops_near_its_end ... ok\\ntest physics::faces_the_dominant_axis_and_keeps_facing_when_released ... ok\\ntest physics::normalizes_diagonals_and_bounds_speed ... ok\\ntest physics::separates_exact_overlapping_spawns_without_nan ... ok\\ntest physics::offline_bodies_neither_move_nor_collide ... ok\\ntest physics::counts_shared_boundaries_once_and_leaves_outside_and_corridors_neutral ... ok\\ntest physics::stops_after_a_controller_disappears ... ok\\ntest protocol::assigns_every_internal_scale_boundary_to_exactly_one_answer ... ok\\ntest movement::a_device_that_left_is_not_heard_until_it_comes_back ... ok\\ntest movement::a_press_resent_with_its_old_time_stops_when_its_budget_runs_out ... ok\\ntest movement::a_press_delivered_late_does_not_move ... ok\\ntest protocol::keeps_invalid_or_outside_coordinates_neutral ... ok\\ntest protocol::keeps_choice_targets_disjoint_and_inside_the_playable_world ... ok\\ntest protocol::lays_zones_out_exactly_like_the_original ... ok\\ntest protocol::reads_commands_in_their_json_form ... ok\\ntest protocol::preserves_the_fifth_character_and_both_accessories_when_joining ... ok\\ntest protocol::rejects_empty_and_long_nicknames ... ok\\ntest protocol::rejects_invalid_avatar_choices ... ok\\ntest protocol::rejects_malformed_movement ... ok\\ntest protocol::rejects_malformed_commands ... ok\\ntest protocol::trims_questions_and_counts_code_points ... ok\\ntest protocol::rejects_questions_that_cannot_be_safely_presented ... ok\\ntest questions::loads_the_hackathon_deck ... ok\\ntest questions::keeps_room_cursors_independent_and_stops_after_the_last_question ... ok\\ntest questions::retraces_the_deck_without_skipping_questions_or_moving_past_either_boundary ... ok\\ntest record::formats_timestamps_in_iso_8601_utc ... ok\\ntest questions::the_old_closing_flag_is_refused ... ok\\ntest questions::uses_an_injected_source_and_rejects_questions_that_cannot_be_presented ... ok\\ntest questions::rejects_duplicate_or_empty_ids_and_an_empty_deck ... ok\\ntest record::labels_scale_bands_after_their_endpoints ... ok\\ntest record::writes_one_documented_line_per_round ... ok\\ntest rules::applies_the_original_input_acceptance_rules ... ok\\ntest rules::chat_applies_cooldown_limits_and_strips_controls ... ok\\ntest rules::a_device_back_after_a_cut_gets_its_character_where_it_stood ... ok\\ntest rules::deletes_characters_offline_for_more_than_90_seconds ... ok\\ntest rules::finish_and_navigation_bypass_and_clear_pause ... ok\\ntest rules::a_device_that_joins_again_keeps_its_character_and_ignores_the_new_name_and_look ... ok\\ntest rules::freezes_positions_during_results ... ok\\ntest rules::jumps_have_a_strict_750_ms_cooldown ... ok\\ntest rules::lobby_records_the_running_round_and_keeps_the_cursor ... ok\\ntest rules::finishes_at_the_deadline_from_the_last_positions ... ok\\ntest rules::navigates_the_deck_like_the_load_test ... ok\\ntest rules::physics_runs_in_the_lobby_and_snapshots_show_online_players ... ok\\ntest rules::counts_online_players_only_and_late_joiners ... ok\\ntest rules::pause_freezes_everyone_and_shifts_the_deadline ... ok\\ntest rules::refuses_a_second_round_and_invalid_questions ... ok\\ntest rules::results_keep_question_and_zones_on_screen ... ok\\ntest rules::spawns_on_free_grid_points_counting_offline_players ... ok\\ntest rules::never_spawns_on_top_of_anyone_even_past_the_grid ... ok\\ntest physics::keeps_a_crowded_group_inside_the_map ... ok\\n\\ntest result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s\\n\\n\", discovered: 50, executed: 50 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"phone_link\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/phone_link-87feda2f27826545\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest a_page_woken_from_a_freeze_reconnects_at_once ... ok\\ntest a_phone_keeps_trying_until_the_host_is_back ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"physics_reference\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/physics_reference-aab5d00d77c1ff50\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 3 tests\\ntest fixture_matches_our_constants ... ok\\ntest physics_reproduces_the_original_trajectories ... ok\\ntest game_reproduces_the_original_trajectories ... ok\\n\\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s\\n\\n\", discovered: 3, executed: 3 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"replays\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/replays-452ae4818593ea4d\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 3 tests\\ntest a_second_tab_takes_the_character_over ... ok\\ntest every_replay_file_replays_and_keeps_the_invariants ... ok\\ntest a_stop_with_a_nan_lease_replays_bit_for_bit ... ok\\n\\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 3, executed: 3 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"sessions\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sessions-c112fd7376620f7d\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest sixty_players_for_ten_minutes ... ok\\ntest random_sessions_keep_the_invariants_and_replay_identically_from_their_journal ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"sidequest-core\", target_kind: \"test\", target: \"state_hash\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/state_hash-8691563b65c1f220\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest the_hash_sees_hidden_state ... ok\\ntest state_hashes_match_the_golden_file ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"sidequest-host\", target_kind: \"bin\", target: \"sidequest-host\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_host-85c5f34e0cd0dfce\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 14 tests\\ntest options::tests::defaults_build_and_serve_the_original_port_everywhere ... ok\\ntest options::tests::phones_get_a_reachable_address ... ok\\ntest options::tests::flags_override_the_environment ... ok\\ntest options::tests::mistakes_are_explained ... ok\\ntest schedule::tests::a_stalled_host_catches_up_a_few_steps_and_drops_the_rest ... ok\\ntest schedule::tests::ticks_land_on_exact_sixtieths_of_a_second ... ok\\ntest api::tests::health_is_for_everyone_and_the_rest_for_this_computer ... ok\\ntest persist::tests::a_data_dir_that_cannot_be_written_still_gives_a_code ... ok\\ntest schedule::tests::every_deadline_is_reached_at_its_own_microsecond ... ok\\ntest api::tests::a_command_waits_for_the_room_and_reports_its_refusal ... ok\\ntest persist::tests::the_room_code_is_kept_between_runs ... ok\\ntest persist::tests::a_damaged_room_file_gets_a_new_code ... ok\\ntest persist::tests::results_are_appended_and_a_failure_is_raised ... ok\\ntest room::simulation::thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections ... ok\\n\\ntest result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.22s\\n\\n\", discovered: 14, executed: 14 }, SuiteExecution { package: \"sidequest-host\", target_kind: \"lib\", target: \"sidequest_host\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_host-1992b4b24a8b2cbd\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 2 tests\\ntest replay::tests::checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected ... ok\\ntest replay::tests::source_versions_are_diagnostic_and_tails_follow_the_common_reader ... ok\\n\\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n\\n\", discovered: 2, executed: 2 }, SuiteExecution { package: \"sidequest-host\", target_kind: \"test\", target: \"e2e\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/e2e-88991c01268d17bd\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 10 tests\\ntest refuses_to_start_with_an_invalid_deck ... ok\\ntest a_failed_save_is_reported_to_the_organizer ... ok\\ntest every_response_is_isolated_and_revalidated ... ok\\ntest fifty_phones_move_at_once ... ok\\ntest a_command_from_an_older_phase_is_dropped ... ok\\ntest only_this_computer_organizes_even_through_a_proxy_or_another_site ... ok\\ntest the_iphone_app_is_shown_the_phone_page ... ok\\ntest a_restarted_host_keeps_its_room_and_its_devices ... ok\\ntest the_tv_shows_each_phones_round_trip ... ok\\ntest the_original_load_test_assertions_hold_and_the_journal_replays_them ... ok\\n\\ntest result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.89s\\n\\n\", discovered: 10, executed: 10 }, SuiteExecution { package: \"sidequest-screen\", target_kind: \"lib\", target: \"sidequest_screen\", features: [], resolved_features: [], default_features: true, profile: \"dev\", phase: Execution, outcome: Passed, command: [\"/Users/axel2/Projects/build-your-own-game/games/sidequest/target/debug/deps/sidequest_screen-84c7926af13b3d3f\", \"--test\", \"--format=pretty\", \"--color=never\"], detail: \"\\nrunning 26 tests\\ntest fit::tests::device_pixels_map_back_to_the_world ... ok\\ntest geometry::tests::rounding_and_rectangles ... ok\\ntest fit::tests::small_windows_and_fit_mode_use_fractional_scales ... ok\\ntest fit::tests::whole_scales_only_when_they_fill_most_of_the_window ... ok\\ntest floor::tests::one_zone_paints_fill_strokes_and_marks ... ok\\ntest overlay::tests::hidden_until_toggled_then_lists_phones_slowest_first ... ok\\ntest rendered::tests::the_rendered_value_changes_with_the_drawn_sprite_only ... ok\\ntest overlay::tests::windows_keep_the_latest_values ... ok\\ntest renderer::tests::persistent_loss_is_bounded_and_manual_retry_is_explicit ... ok\\ntest overlay::tests::long_lists_are_capped ... ok\\ntest renderer::tests::stale_results_cannot_replace_a_new_renderer ... ok\\ntest scene::tests::geometry_follows_the_sprite_origin ... ok\\ntest scene::tests::positions_are_interpolated_between_snapshots ... ok\\ntest scene::tests::jump_arc_walk_cycle_and_bubbles ... ok\\ntest scene::tests::lower_players_draw_last_and_ties_keep_arrival_order ... ok\\ntest timeline::tests::delays_from_the_url ... ok\\ntest timeline::tests::interpolates_and_never_extrapolates ... ok\\ntest timeline::tests::keeps_a_few_snapshots_and_restarts_when_time_goes_back ... ok\\ntest timeline::tests::the_clock_follows_the_quickest_recent_arrival ... ok\\ntest scene::tests::bubbles_wrap_and_point_at_the_speaker ... ok\\ntest ui::tests::qr_codes_have_a_quiet_zone_and_finder_patterns ... ok\\ntest ui::tests::arena_has_the_corner_card_and_organizer_buttons ... ok\\ntest ui::tests::images_are_kept_while_used_and_status_sits_bottom_left ... ok\\ntest ui::tests::failure_offers_to_try_again_and_diagnostics_come_last ... ok\\ntest floor::tests::labels_are_outlined_centered_and_counted ... ok\\ntest ui::tests::welcome_centers_the_qr_code_code_and_play ... ok\\n\\ntest result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\\n\\n\", discovered: 26, executed: 26 }]",
+      "command": [
+        "Cargo/libtest"
+      ],
+      "artifacts": []
+    }
+  ],
+  "evaluation": {
+    "obligations": [
+      {
+        "id": "J1",
+        "claim": "Les joueurs et les foules restent dans l’arène.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:random_sessions_keep_every_invariant",
+            "satisfied"
+          ],
+          [
+            "game:keeps_a_crowded_group_inside_the_map",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "La référence historique players_stay_on_the_floor est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J2",
+        "claim": "Aucune poussée ni direction ne dépasse la vitesse maximale.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:random_sessions_keep_every_invariant",
+            "satisfied"
+          ],
+          [
+            "game:normalizes_diagonals_and_bounds_speed",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "La référence historique nobody_outruns_the_speed_cap est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J3",
+        "claim": "Les axes absurdes sont refusés sans contaminer la physique.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:rejects_malformed_movement",
+            "satisfied"
+          ],
+          [
+            "game:a_lease_that_is_not_a_number_is_refused",
+            "satisfied"
+          ],
+          [
+            "game:a_stop_with_a_nan_lease_replays_bit_for_bit",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J4",
+        "claim": "Des personnages superposés se séparent sans valeur non finie.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:separates_exact_overlapping_spawns_without_nan",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J5",
+        "claim": "L’apparition cherche une place libre, même au-delà de la première grille.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:never_spawns_on_top_of_anyone_even_past_the_grid",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J6",
+        "claim": "La diagonale respecte la vitesse et les limites de l’arène.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:normalizes_diagonals_and_bounds_speed",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J7",
+        "claim": "Après un retard de l’hôte, seuls quelques pas sont rattrapés.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:a_stalled_host_catches_up_a_few_steps_and_drops_the_rest",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J8",
+        "claim": "Un vieux mouvement ne fait plus bouger, et un téléphone silencieux relâche sa direction.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:a_press_delivered_late_does_not_move",
+            "satisfied"
+          ],
+          [
+            "game:a_press_resent_with_its_old_time_stops_when_its_budget_runs_out",
+            "satisfied"
+          ],
+          [
+            "game:stops_after_a_controller_disappears",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J9",
+        "claim": "Un saut ne se répète pas pendant son délai de récupération.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:jumps_have_a_strict_750_ms_cooldown",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J10",
+        "claim": "Une pause fige les joueurs et décale l’échéance de la durée passée en pause.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:pause_freezes_everyone_and_shifts_the_deadline",
+            "satisfied"
+          ],
+          [
+            "game:finish_and_navigation_bypass_and_clear_pause",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J11",
+        "claim": "À l’échéance, chaque joueur en ligne compte exactement une fois dans sa zone ou hors des zones.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:finishes_at_the_deadline_from_the_last_positions",
+            "satisfied"
+          ],
+          [
+            "game:counts_online_players_only_and_late_joiners",
+            "satisfied"
+          ],
+          [
+            "game:random_sessions_keep_every_invariant",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "La référence historique rounds_count_up_and_add_up est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J12",
+        "claim": "Une fin de manche n’enregistre qu’un résultat ; naviguer termine proprement la manche précédente.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:navigates_the_deck_like_the_load_test",
+            "satisfied"
+          ],
+          [
+            "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J13",
+        "claim": "Un joueur absent ne vote pas et retrouve son personnage au retour.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:a_device_back_after_a_cut_gets_its_character_where_it_stood",
+            "satisfied"
+          ],
+          [
+            "game:counts_online_players_only_and_late_joiners",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J14",
+        "claim": "Une manche sans joueur se termine avec des totaux cohérents.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:time_alone_ends_every_round",
+            "satisfied"
+          ],
+          [
+            "game:random_sessions_keep_every_invariant",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "La référence historique rounds_count_up_and_add_up est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J15",
+        "claim": "Une commande d’une ancienne phase ne passe pas à la question suivante.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:a_command_from_an_older_phase_is_dropped",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J16",
+        "claim": "Prénoms, messages et questions respectent les mêmes limites sur le téléphone et l’hôte.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:the_host_enforces_the_limits",
+            "satisfied"
+          ],
+          [
+            "game:what_the_page_allows_the_host_accepts",
+            "satisfied"
+          ],
+          [
+            "game:random_sessions_keep_every_invariant",
+            "satisfied"
+          ]
+        ],
+        "assumptions": [
+          "La référence historique texts_fit_the_protocol est un helper de crates/core/tests/certification/invariants.rs, appelé par invariants::all après chaque étape des sessions ; son contrôle exécutable est sessions::random_sessions_keep_every_invariant (sidequest-core, cible test certification)."
+        ]
+      },
+      {
+        "id": "J17",
+        "claim": "Un replay reproduit toutes les entrées et refuse une empreinte finale fausse.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:checkpoint_fixture_replays_and_a_wrong_fingerprint_is_rejected",
+            "satisfied"
+          ],
+          [
+            "game:every_replay_file_replays_and_keeps_the_invariants",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J18",
+        "claim": "Coupures, réveils, doublons et échéances gardent identités, écrans et résultats déterministes.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:thousands_of_seeds_replay_the_real_room_network_deadline_and_reconnections",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J19",
+        "claim": "Une erreur d’écriture du journal ou des résultats ne bloque pas la partie.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:a_failed_save_is_reported_to_the_organizer",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J20",
+        "claim": "La mesure du canvas projette les sprites dessinés, sans horloge ni compteur d’images.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:the_rendered_value_changes_with_the_drawn_sprite_only",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "J21",
+        "claim": "Réafficher la même vue de résultats ne produit aucune action ni vibration supplémentaire.",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "game:repeating_a_view_emits_neither_actions_nor_duplicate_feedback",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "static:common",
+        "claim": "Règles communes, versions, provenance et déclarations valides",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "static:common",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:fmt",
+        "claim": "Le code respecte le format commun",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:fmt",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-native",
+        "claim": "Les cibles natives respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-native",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:clippy-wasm",
+        "claim": "Les cibles WASM respectent les lints communs",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:clippy-wasm",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "cargo:suite",
+        "claim": "La suite native ne contient aucun test en échec",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "cargo:suite",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "command:doctests",
+        "claim": "Les exemples Rust compilables passent leurs tests",
+        "assessment": "satisfied",
+        "controls": [
+          [
+            "command:doctests",
+            "satisfied"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C6",
+        "claim": "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:C6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "E5",
+        "claim": "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:E5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "T1",
+        "claim": "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:T1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D1",
+        "claim": "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D3",
+        "claim": "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D4",
+        "claim": "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "D5",
+        "claim": "On relance une partie sans rien redémarrer.",
+        "assessment": "pending",
+        "controls": [
+          [
+            "unbound:D5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement."
+        ]
+      },
+      {
+        "id": "H1",
+        "claim": "Le contrôleur a terminé sans panne ni anomalie hors scénario",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:health",
+            "pending"
+          ]
+        ],
+        "assumptions": []
+      },
+      {
+        "id": "C1",
+        "claim": "Exigence commune C1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:C1",
+            "pending"
+          ],
+          [
+            "harness:rtc:C1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C10",
+        "claim": "Exigence commune C10 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:panic:C10",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C2",
+        "claim": "Exigence commune C2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:cut:C2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C3",
+        "claim": "Exigence commune C3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:freeze:C3",
+            "pending"
+          ],
+          [
+            "harness:silent:C3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C4",
+        "claim": "Exigence commune C4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:reload:C4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C5",
+        "claim": "Exigence commune C5 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:twin:C5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C7",
+        "claim": "Exigence commune C7 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:restart:C7",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C8",
+        "claim": "Exigence commune C8 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:C8",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "C9",
+        "claim": "Exigence commune C9 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:storage:C9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "D2",
+        "claim": "Exigence commune D2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:D2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E1",
+        "claim": "Exigence commune E1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E2",
+        "claim": "Exigence commune E2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E3",
+        "claim": "Exigence commune E3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E4",
+        "claim": "Exigence commune E4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:hostile:E4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "E6",
+        "claim": "Exigence commune E6 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:E6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P1",
+        "claim": "Exigence commune P1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P1",
+            "pending"
+          ],
+          [
+            "harness:monkey:P1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "P2",
+        "claim": "Exigence commune P2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:performance:P2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R1",
+        "claim": "Exigence commune R1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:jitter:R1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R2",
+        "claim": "Exigence commune R2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:soak:R2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R3",
+        "claim": "Exigence commune R3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:join:R3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "R4",
+        "claim": "Exigence commune R4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:resources:R4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T2",
+        "claim": "Exigence commune T2 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:monkey:T2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T3",
+        "claim": "Exigence commune T3 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:layout:T3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "T4",
+        "claim": "Exigence commune T4 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:layout:T4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "U1",
+        "claim": "Exigence commune U1 (.soiree/CERTIFICATION.md)",
+        "assessment": "pending",
+        "controls": [
+          [
+            "harness:ui:U1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Observation sur les moteurs, paramètres et appareils du passage ; voir les limites de l’oracle"
+        ]
+      },
+      {
+        "id": "S1",
+        "claim": "Répétition sur appareils réels : S1",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S1",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S2",
+        "claim": "Répétition sur appareils réels : S2",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S2",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S3",
+        "claim": "Répétition sur appareils réels : S3",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S3",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S4",
+        "claim": "Répétition sur appareils réels : S4",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S4",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S5",
+        "claim": "Répétition sur appareils réels : S5",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S5",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S6",
+        "claim": "Répétition sur appareils réels : S6",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S6",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S7",
+        "claim": "Répétition sur appareils réels : S7",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S7",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S8",
+        "claim": "Répétition sur appareils réels : S8",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S8",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S9",
+        "claim": "Répétition sur appareils réels : S9",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S9",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      },
+      {
+        "id": "S10",
+        "claim": "Répétition sur appareils réels : S10",
+        "assessment": "pending",
+        "controls": [
+          [
+            "S10",
+            "pending"
+          ]
+        ],
+        "assumptions": [
+          "Un compte rendu explicite reste un jugement humain"
+        ]
+      }
+    ],
+    "selected_scope_satisfied": true,
+    "all_automated_obligations_satisfied": false,
+    "complete": false,
+    "diagnostics": []
+  }
+}

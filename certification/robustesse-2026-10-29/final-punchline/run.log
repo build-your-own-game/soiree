@@ -1,0 +1,85 @@
+Préparation des artefacts servis avant l’empreinte…
+Observations : /Users/axel2/Projects/build-your-own-game/games/punchline/certification/harness-observations.json
+   0s /Users/axel2/Projects/build-your-own-game/games/punchline : lancement (cargo run --release -p punch-host) sur le port 62195, graine 7231
+   1s prêt (pid 66521) ; captures dans /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/cert-punchline-2026-10-29T18-04-32-959Z
+   1s transport téléphones : lan (172.20.10.4)
+   1s préflight LAN : HTTP 200
+   5s ▶ rtc
+  39s     ✓ C1 WebRTC réel : action causale saine puis sous pertes/délai/réordonnancement dans chaque sens sans repli TCP ; silence 25 s détecté en 5940 ms (1 repli(s) TCP autorisé(s)), puis nouvelle négociation UDP et même identité ; {"upstream":260,"downstream":137,"dropped":229,"delayed":105,"reordered":34,"forwarded":168,"directions":{"upstream":{"received":260,"dropped":179,"delayed":50,"reordered":16,"forwarded":81},"downstream":{"received":137,"dropped":50,"delayed":55,"reordered":18,"forwarded":87}}}
+  39s ▶ ui
+  50s     webkit: composition, form identity/caret, 20 redraws and stale native wake-lock completion passed
+    webkit: native resize during Starting frees an oversized cached lobby
+    webkit: native countdown ticks update both connected nodes without repeated text mutations or phase audio
+    webkit: character/roster changes replace the projection, starting retains it inert, next phase frees it
+    webkit: writing textarea/caret survives validation, composition blocks submission, next task replaces editor
+    chromium: composition, form identity/caret, 20 redraws and stale native wake-lock completion passed
+    chromium: native resize during Starting frees an oversized cached lobby
+    chromium: native countdown ticks update both connected nodes without repeated text mutations or phase audio
+    chromium: character/roster changes replace the projection, starting retains it inert, next phase frees it
+    chromium: writing textarea/caret survives validation, composition blocks submission, next task replaces editor
+  50s     ✓ U1 Saisie et ressources de la page téléphone : editing, lifecycle, async
+  50s     – U1 effects : Aucun son ni vibration dans cette page ; les actions de jeu partent des gestes, jamais de la projection des vues. Les effets ponctuels futurs devront déclarer leur scénario.
+  50s ▶ layout
+  51s     ✓ T3 TV 1920×1080 : tout le texte tient
+  51s     ✓ T3 TV 1280×720 : tout le texte tient
+  52s     ✓ T3 TV 3840×2160 : tout le texte tient
+  53s     ✓ T3 TV 1280×1024 : tout le texte tient
+  53s     ✓ T3 TV 2560×1080 : tout le texte tient
+  54s     ✓ T3 TV 900×1200 : tout le texte tient
+  54s     ✓ T4 aucun champ visible sous 16 px
+  54s ▶ cut
+  58s     ✓ C2 reconnecté à sa place 1.5 s après une coupure de 3 s
+  58s ▶ freeze
+  91s     ✓ C3 l'hôte a remarqué le téléphone endormi en 6.0 s
+  92s     ✓ C3 au réveil, reconnecté à sa place en 0.1 s
+  92s ▶ reload
+  92s     ✓ C4 après un rechargement, de retour à sa place en 0.2 s
+  92s ▶ hostile
+  94s     ✓ E1 300 messages illisibles (58 en octets au hasard, 50 en frames texte, 192 paquets réels mutés, sur 820 capturés) : ignorés, les autres continuent
+  94s     ✓ E2 une frame de 64 Kio + 1 octet ferme sa connexion en 0.00 s, code 1009, et elle seule
+  95s     ✓ E2 une frame de 4 Mio ferme sa connexion en 0.24 s, code 1009, et elle seule
+  99s     ✓ E3 102000 messages en 3 s d'un appareil accueilli : la TV et les téléphones reçoivent toujours (plus long silence vu : 0.3 s)
+ 100s     ✓ E4 un appareil du réseau qui rejoue le premier paquet de la TV reçoit Refused(NotAllowed) (13 octets au plus) et sa connexion se ferme en 1.0 s
+ 102s     ✓ E4 un jeton inventé devient un appareil neuf (Welcome (appareil 8), le vrai téléphone est l'appareil 2) et ne prend la place de personne
+ 102s ▶ resources
+ 113s     ✓ R4 4 mesures après GC : DOM, listeners, tas JS, mémoire externe/WASM et RSS Chromium/GPU dans les budgets ; ce cycle court ne remplace pas l'endurance de 30 min
+ 113s     – R2 lance --soak 30 pour l'endurance
+
+# Observations du harnais de games/punchline
+
+Graine 7231, 1.9 min. Captures : /var/folders/bj/9vhl4y7s36d0brk50ms41z440000gp/T/cert-punchline-2026-10-29T18-04-32-959Z
+
+| Item | État | Détail |
+|---|---|---|
+| U1 | ✓ | ✓ Saisie et ressources de la page téléphone : editing, lifecycle, async<br>– effects : Aucun son ni vibration dans cette page ; les actions de jeu partent des gestes, jamais de la projection des vues. Les effets ponctuels futurs devront déclarer leur scénario. |
+| C1 | ✓ | WebRTC réel : action causale saine puis sous pertes/délai/réordonnancement dans chaque sens sans repli TCP ; silence 25 s détecté en 5940 ms (1 repli(s) TCP autorisé(s)), puis nouvelle négociation UDP et même identité ; {"upstream":260,"downstream":137,"dropped":229,"delayed":105,"reordered":34,"forwarded":168,"directions":{"upstream":{"received":260,"dropped":179,"delayed":50,"reordered":16,"forwarded":81},"downstream":{"received":137,"dropped":50,"delayed":55,"reordered":18,"forwarded":87}}} |
+| C2 | ✓ | reconnecté à sa place 1.5 s après une coupure de 3 s |
+| C3 | ✓ | l'hôte a remarqué le téléphone endormi en 6.0 s<br>au réveil, reconnecté à sa place en 0.1 s |
+| C4 | ✓ | après un rechargement, de retour à sa place en 0.2 s |
+| E1 | ✓ | 300 messages illisibles (58 en octets au hasard, 50 en frames texte, 192 paquets réels mutés, sur 820 capturés) : ignorés, les autres continuent |
+| E2 | ✓ | une frame de 64 Kio + 1 octet ferme sa connexion en 0.00 s, code 1009, et elle seule<br>une frame de 4 Mio ferme sa connexion en 0.24 s, code 1009, et elle seule |
+| E3 | ✓ | 102000 messages en 3 s d'un appareil accueilli : la TV et les téléphones reçoivent toujours (plus long silence vu : 0.3 s) |
+| E4 | ✓ | un appareil du réseau qui rejoue le premier paquet de la TV reçoit Refused(NotAllowed) (13 octets au plus) et sa connexion se ferme en 1.0 s<br>un jeton inventé devient un appareil neuf (Welcome (appareil 8), le vrai téléphone est l'appareil 2) et ne prend la place de personne |
+| T3 | ✓ | TV 1920×1080 : tout le texte tient<br>TV 1280×720 : tout le texte tient<br>TV 3840×2160 : tout le texte tient<br>TV 1280×1024 : tout le texte tient<br>TV 2560×1080 : tout le texte tient<br>TV 900×1200 : tout le texte tient |
+| T4 | ✓ | aucun champ visible sous 16 px |
+| R2 | – | lance --soak 30 pour l'endurance |
+| R4 | ✓ | 4 mesures après GC : DOM, listeners, tas JS, mémoire externe/WASM et RSS Chromium/GPU dans les budgets ; ce cycle court ne remplace pas l'endurance de 30 min |
+
+✓ observé · ✗ échec · ~ à juger par un humain, ou vérifié en partie · – non exécuté ou exclusion explicitée
+
+Dernières lignes d'erreur de l'hôte :
+
+```
+help: Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+warning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+salon: WebRTC link 6 dropped (stalled: true)
+```
+
+Périmètre demandé satisfait ; voir certification/verification.json. Les contrôles absents restent non attestés.

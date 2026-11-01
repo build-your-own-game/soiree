@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "arguments": {
+    "dir": "/private/tmp/soiree-seven-final-vcobst_6/robustesse",
+    "only": [
+      "ui",
+      "storage",
+      "resources"
+    ],
+    "phones": 2,
+    "soak": 0,
+    "seed": 7212,
+    "prepareOnly": false
+  },
+  "completed": true,
+  "infrastructure_error": null,
+  "navigation_failure": null,
+  "transport": {
+    "mode": "loopback",
+    "upstream": "127.0.0.1",
+    "explicit": true,
+    "preflight": {
+      "status": "not-run"
+    }
+  },
+  "records": [
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "Le bouton reste le même après une mise à jour (webkit) : lifecycle",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "ok",
+      "note": "Le bouton reste le même après une mise à jour (chromium) : lifecycle",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "editing : Le modèle ne propose aucun champ de saisie. Ajouter un parcours editing dès qu’un éditeur est ajouté.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "effects : Le modèle projette des compteurs ; aucun son ni vibration déclenché par une vue.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "ui",
+      "item": "U1",
+      "status": "skip",
+      "note": "async : Aucun import, export ou chargement asynchrone propre au jeu ; le transport commun est exercé séparément.",
+      "explicit_exclusion": true
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "stockage refusé : la page s'ouvre et le joueur est dans la partie, en appareil neuf (téléphone 1 (webkit) avait une place : le harnais ne refait pas les étapes pour rejoindre, l'ancienne place resterait prise ; puis son stockage revient, et sa place avec)",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "stockage revenu : téléphone 1 (webkit) garde son jeton et l'appareil 2 après rechargement, à sa place",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "1 clé(s) du stockage corrompue(s) : la page s'ouvre et le joueur est dans la partie, en appareil neuf (téléphone 2 (chromium) avait une place : le harnais ne refait pas les étapes pour rejoindre, l'ancienne place resterait prise ; puis son stockage est remis, et sa place avec)",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "storage",
+      "item": "C9",
+      "status": "ok",
+      "note": "2/2 téléphones à leur place après les essais de stockage",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "resources",
+      "item": "R4",
+      "status": "ok",
+      "note": "4 mesures après GC : DOM, listeners, tas JS, mémoire externe/WASM et RSS Chromium/GPU dans les budgets ; ce cycle court ne remplace pas l'endurance de 30 min",
+      "explicit_exclusion": false
+    },
+    {
+      "scenario": "soak",
+      "item": "R2",
+      "status": "skip",
+      "note": "lance --soak 30 pour l'endurance",
+      "explicit_exclusion": false
+    }
+  ]
+}

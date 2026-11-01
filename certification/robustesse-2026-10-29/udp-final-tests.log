@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: failed route registration still closes its UDP relay and keeps the original failure
+ok 1 - failed route registration still closes its UDP relay and keeps the original failure
+  ---
+  duration_ms: 0.69825
+  type: 'test'
+  ...
+# Subtest: failed unroute cannot prevent UDP closure or hide the primary product error
+ok 2 - failed unroute cannot prevent UDP closure or hide the primary product error
+  ---
+  duration_ms: 0.8525
+  type: 'test'
+  ...
+# Subtest: browser close rejection and timeout remain infrastructure failures
+ok 3 - browser close rejection and timeout remain infrastructure failures
+  ---
+  duration_ms: 15.85925
+  type: 'test'
+  ...
+# Subtest: a fresh ACK cannot make an old live RTC packet fresh
+ok 4 - a fresh ACK cannot make an old live RTC packet fresh
+  ---
+  duration_ms: 0.790458
+  type: 'test'
+  ...
+# Subtest: UDP relay applies actual loss, delay, reordering, silence and recovery
+ok 5 - UDP relay applies actual loss, delay, reordering, silence and recovery
+  ---
+  duration_ms: 1510.380875
+  type: 'test'
+  ...
+# Subtest: failed route registration and unroute always close a real UDP socket
+ok 6 - failed route registration and unroute always close a real UDP socket
+  ---
+  duration_ms: 1.0565
+  type: 'test'
+  ...
+# Subtest: failed UDP bind releases the native socket and remains a fixture failure
+ok 7 - failed UDP bind releases the native socket and remains a fixture failure
+  ---
+  duration_ms: 30.807667
+  type: 'test'
+  ...
+# Subtest: rewritten JSON fulfillment replaces entity framing with the exact UTF-8 body
+ok 8 - rewritten JSON fulfillment replaces entity framing with the exact UTF-8 body
+  ---
+  duration_ms: 0.295708
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1627.358417

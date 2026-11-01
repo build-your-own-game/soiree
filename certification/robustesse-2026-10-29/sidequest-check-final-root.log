@@ -1,0 +1,23 @@
+
+== /Users/axel2/Projects/build-your-own-game/games/sidequest
+  ✓ .soiree/ écrit : les documents de la version 0.3.0
+  ✓ toolchain 1.99 des règles, avec rustfmt, clippy, wasm32-unknown-unknown
+  ✓ édition, lints et profils des règles
+  ✓ types et méthodes interdits des règles
+  ✓ CI commune épinglée à la version du jeu
+  ✓ sidequest-core ne dépend ni du navigateur ni du GPU
+  ! viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : remote-protocol (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol), remote-web (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web), salon-core (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core), salon-crypto (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/crypto), salon-host (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host), salon-web (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web). Ce jeu ne compile qu'ici ; ne le pousse pas tant que ce salon n'est pas étiqueté
+  ✓ noms des pages à jour (2 module(s) soiree dom)
+  ✓ verification.toml : 21 engagements ; références exécutables à attester par Cargo
+  ✓ cert.json lisible par le harnais (soiree certify)
+  ✓ contrats de vérification UI : couverture ou non-applicabilité explicite
+
+command:fmt
+
+command:clippy-native
+
+command:clippy-wasm
+
+command:doctests
+
+27 / 70 obligations satisfaites ou non applicables ; périmètre demandé satisfait. Les autres restent non attestées.

@@ -1,0 +1,91 @@
+{
+  "frames_lobby": null,
+  "frames_gameplay": [],
+  "probes": [],
+  "joins": [],
+  "browsers": {},
+  "rtc_sdp": {
+    "offer": "{\"sdp\":\"v=0\\r\\no=- 341642205145960187 2 IN IP4 127.0.0.1\\r\\ns=-\\r\\nt=0 0\\r\\na=group:BUNDLE 0\\r\\na=extmap-allow-mixed\\r\\na=msid-semantic: WMS\\r\\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\\r\\nc=IN IP4 0.0.0.0\\r\\na=ice-ufrag:yyPM\\r\\na=ice-pwd:GI/BVyUlf9Jf47LlTI6na/Y6\\r\\na=ice-options:trickle\\r\\na=fingerprint:sha-256 64:96:03:2E:F2:57:49:0D:86:82:8C:05:CF:90:AC:97:51:32:97:22:BF:AC:30:C8:AC:9C:66:BF:2C:39:F1:96\\r\\na=setup:actpass\\r\\na=mid:0\\r\\na=sctp-port:5000\\r\\na=max-message-size:262144\\r\\n\",\"type\":\"offer\"}",
+    "raw": {
+      "type": "answer",
+      "sdp": "v=0\r\no=str0m-0.24.1 3106702045593232236 2 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS \r\na=ice-lite\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:fffeff7ecb9fdcad5dbfc666 1 udp 2130706175 172.20.10.4 59134 typ host ufrag KajlDfuf19EATEkk\r\na=candidate:fffcff7e32c583ef85edbb1a 1 udp 2130705663 127.0.0.1 59134 typ host ufrag KajlDfuf19EATEkk\r\na=ice-ufrag:KajlDfuf19EATEkk\r\na=ice-pwd:vpmKIkDlggiF23plcjV6HJ\r\na=ice-options:trickle\r\na=fingerprint:sha-256 4D:90:88:D4:CC:D6:87:D7:06:E3:38:DA:60:2C:A4:D6:EA:12:D0:92:C0:29:2A:6A:14:EF:2F:BF:24:C6:47:E1\r\na=setup:passive\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+    },
+    "rewritten": {
+      "type": "answer",
+      "sdp": "v=0\r\no=str0m-0.24.1 3106702045593232236 2 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS \r\na=ice-lite\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=candidate:fffeff7ecb9fdcad5dbfc666 1 udp 2130706175 172.20.10.4 62800 typ host ufrag KajlDfuf19EATEkk\r\na=candidate:fffcff7e32c583ef85edbb1a 1 udp 2130705663 172.20.10.4 62800 typ host ufrag KajlDfuf19EATEkk\r\na=ice-ufrag:KajlDfuf19EATEkk\r\na=ice-pwd:vpmKIkDlggiF23plcjV6HJ\r\na=ice-options:trickle\r\na=fingerprint:sha-256 4D:90:88:D4:CC:D6:87:D7:06:E3:38:DA:60:2C:A4:D6:EA:12:D0:92:C0:29:2A:6A:14:EF:2F:BF:24:C6:47:E1\r\na=setup:passive\r\na=mid:0\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n"
+    },
+    "headers": {
+      "content-type": "application/json",
+      "content-length": "764",
+      "cache-control": "no-cache",
+      "cross-origin-opener-policy": "same-origin",
+      "cross-origin-embedder-policy": "require-corp",
+      "connection": "close"
+    },
+    "bytes": 766
+  },
+  "rtc_causal": {
+    "latency_ms": 19.465087890625,
+    "screen": "phone",
+    "baseline": "false",
+    "rendered": "true"
+  },
+  "rtc_causal_impaired": {
+    "latency_ms": 54.3251953125,
+    "screen": "phone",
+    "baseline": "false",
+    "rendered": "true"
+  },
+  "rtc_impaired": {
+    "upstream": 72,
+    "downstream": 81,
+    "dropped": 22,
+    "delayed": 94,
+    "reordered": 31,
+    "forwarded": 131,
+    "directions": {
+      "upstream": {
+        "received": 72,
+        "dropped": 10,
+        "delayed": 44,
+        "reordered": 15,
+        "forwarded": 62
+      },
+      "downstream": {
+        "received": 81,
+        "dropped": 12,
+        "delayed": 50,
+        "reordered": 16,
+        "forwarded": 69
+      }
+    }
+  },
+  "rtc": {
+    "upstream": 254,
+    "downstream": 133,
+    "dropped": 228,
+    "delayed": 94,
+    "reordered": 31,
+    "forwarded": 159,
+    "directions": {
+      "upstream": {
+        "received": 254,
+        "dropped": 178,
+        "delayed": 44,
+        "reordered": 15,
+        "forwarded": 76
+      },
+      "downstream": {
+        "received": 133,
+        "dropped": 50,
+        "delayed": 50,
+        "reordered": 16,
+        "forwarded": 83
+      }
+    },
+    "device": 2,
+    "reconnect_device": 2,
+    "silent_closed_ms": 5789,
+    "fallback_sockets_during_long_silence": 1
+  }
+}

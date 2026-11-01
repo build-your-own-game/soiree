@@ -1,0 +1,393 @@
+{
+  "frames_lobby": null,
+  "frames_gameplay": [],
+  "probes": [],
+  "joins": [],
+  "browsers": {},
+  "rtc_causal": {
+    "latency_ms": 57.760009765625,
+    "screen": "phone",
+    "baseline": "0",
+    "rendered": "3.7942676593638827"
+  },
+  "rtc_causal_impaired": {
+    "latency_ms": 171.830078125,
+    "screen": "phone",
+    "baseline": "0",
+    "rendered": "3.6888802260620195"
+  },
+  "rtc_impaired": {
+    "upstream": 84,
+    "downstream": 86,
+    "dropped": 27,
+    "delayed": 113,
+    "reordered": 38,
+    "forwarded": 142,
+    "directions": {
+      "upstream": {
+        "received": 84,
+        "dropped": 13,
+        "delayed": 55,
+        "reordered": 18,
+        "forwarded": 71
+      },
+      "downstream": {
+        "received": 86,
+        "dropped": 14,
+        "delayed": 58,
+        "reordered": 20,
+        "forwarded": 71
+      }
+    }
+  },
+  "rtc": {
+    "upstream": 240,
+    "downstream": 125,
+    "dropped": 195,
+    "delayed": 113,
+    "reordered": 38,
+    "forwarded": 170,
+    "directions": {
+      "upstream": {
+        "received": 240,
+        "dropped": 154,
+        "delayed": 55,
+        "reordered": 18,
+        "forwarded": 86
+      },
+      "downstream": {
+        "received": 125,
+        "dropped": 41,
+        "delayed": 58,
+        "reordered": 20,
+        "forwarded": 84
+      }
+    },
+    "device": 3,
+    "reconnect_device": 3,
+    "silent_closed_ms": 3310,
+    "fallback_sockets_during_long_silence": 1
+  },
+  "browser_resources": [
+    {
+      "at": 1793297323891,
+      "documents": 2,
+      "nodes": 141,
+      "jsEventListeners": 105,
+      "usedSize": 3555952,
+      "totalSize": 5062656,
+      "embedderHeapUsedSize": 1599056,
+      "backingStorageSize": 198553,
+      "wasm_bytes": 8585216,
+      "pages": [
+        {
+          "url": "http://localhost:62488/?cert-render=1&salon=ws",
+          "isolate": "ed851e129506e478",
+          "documents": 1,
+          "nodes": 57,
+          "jsEventListeners": 55,
+          "usedSize": 2228640,
+          "totalSize": 2965504,
+          "embedderHeapUsedSize": 937936,
+          "backingStorageSize": 151343,
+          "wasm_bytes": 7405568
+        },
+        {
+          "url": "http://127.0.0.1:62523/play?salon=ws",
+          "isolate": "fd423b100f691bd9",
+          "documents": 1,
+          "nodes": 84,
+          "jsEventListeners": 50,
+          "usedSize": 1327312,
+          "totalSize": 2097152,
+          "embedderHeapUsedSize": 661120,
+          "backingStorageSize": 47210,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 1166240,
+      "processes": [
+        {
+          "id": 67448,
+          "type": "browser"
+        },
+        {
+          "id": 67483,
+          "type": "renderer"
+        },
+        {
+          "id": 67481,
+          "type": "renderer"
+        },
+        {
+          "id": 67480,
+          "type": "renderer"
+        },
+        {
+          "id": 67469,
+          "type": "renderer"
+        },
+        {
+          "id": 67468,
+          "type": "renderer"
+        },
+        {
+          "id": 67455,
+          "type": "GPU"
+        },
+        {
+          "id": 67456,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 67457,
+          "type": "storage.mojom.StorageService"
+        },
+        {
+          "id": 67495,
+          "type": "audio.mojom.AudioService"
+        }
+      ]
+    },
+    {
+      "at": 1793297327353,
+      "documents": 2,
+      "nodes": 141,
+      "jsEventListeners": 105,
+      "usedSize": 3642992,
+      "totalSize": 4800512,
+      "embedderHeapUsedSize": 1100016,
+      "backingStorageSize": 198012,
+      "wasm_bytes": 8585216,
+      "pages": [
+        {
+          "url": "http://localhost:62488/?cert-render=1&salon=ws",
+          "isolate": "ed851e129506e478",
+          "documents": 1,
+          "nodes": 57,
+          "jsEventListeners": 55,
+          "usedSize": 2230508,
+          "totalSize": 2703360,
+          "embedderHeapUsedSize": 423472,
+          "backingStorageSize": 150802,
+          "wasm_bytes": 7405568
+        },
+        {
+          "url": "http://127.0.0.1:62523/play?salon=ws",
+          "isolate": "fd423b100f691bd9",
+          "documents": 1,
+          "nodes": 84,
+          "jsEventListeners": 50,
+          "usedSize": 1412484,
+          "totalSize": 2097152,
+          "embedderHeapUsedSize": 676544,
+          "backingStorageSize": 47210,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 1188432,
+      "processes": [
+        {
+          "id": 67448,
+          "type": "browser"
+        },
+        {
+          "id": 67483,
+          "type": "renderer"
+        },
+        {
+          "id": 67481,
+          "type": "renderer"
+        },
+        {
+          "id": 67480,
+          "type": "renderer"
+        },
+        {
+          "id": 67469,
+          "type": "renderer"
+        },
+        {
+          "id": 67468,
+          "type": "renderer"
+        },
+        {
+          "id": 67455,
+          "type": "GPU"
+        },
+        {
+          "id": 67456,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 67457,
+          "type": "storage.mojom.StorageService"
+        },
+        {
+          "id": 67495,
+          "type": "audio.mojom.AudioService"
+        }
+      ]
+    },
+    {
+      "at": 1793297330869,
+      "documents": 2,
+      "nodes": 144,
+      "jsEventListeners": 105,
+      "usedSize": 3693012,
+      "totalSize": 5062656,
+      "embedderHeapUsedSize": 1120528,
+      "backingStorageSize": 198012,
+      "wasm_bytes": 8585216,
+      "pages": [
+        {
+          "url": "http://localhost:62488/?cert-render=1&salon=ws",
+          "isolate": "ed851e129506e478",
+          "documents": 1,
+          "nodes": 57,
+          "jsEventListeners": 55,
+          "usedSize": 2236492,
+          "totalSize": 2703360,
+          "embedderHeapUsedSize": 424152,
+          "backingStorageSize": 150802,
+          "wasm_bytes": 7405568
+        },
+        {
+          "url": "http://127.0.0.1:62523/play?salon=ws",
+          "isolate": "fd423b100f691bd9",
+          "documents": 1,
+          "nodes": 87,
+          "jsEventListeners": 50,
+          "usedSize": 1456520,
+          "totalSize": 2359296,
+          "embedderHeapUsedSize": 696376,
+          "backingStorageSize": 47210,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 1193008,
+      "processes": [
+        {
+          "id": 67448,
+          "type": "browser"
+        },
+        {
+          "id": 67483,
+          "type": "renderer"
+        },
+        {
+          "id": 67481,
+          "type": "renderer"
+        },
+        {
+          "id": 67480,
+          "type": "renderer"
+        },
+        {
+          "id": 67469,
+          "type": "renderer"
+        },
+        {
+          "id": 67468,
+          "type": "renderer"
+        },
+        {
+          "id": 67455,
+          "type": "GPU"
+        },
+        {
+          "id": 67456,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 67457,
+          "type": "storage.mojom.StorageService"
+        },
+        {
+          "id": 67495,
+          "type": "audio.mojom.AudioService"
+        }
+      ]
+    },
+    {
+      "at": 1793297334754,
+      "documents": 2,
+      "nodes": 144,
+      "jsEventListeners": 105,
+      "usedSize": 3718524,
+      "totalSize": 5062656,
+      "embedderHeapUsedSize": 1121032,
+      "backingStorageSize": 198012,
+      "wasm_bytes": 8585216,
+      "pages": [
+        {
+          "url": "http://localhost:62488/?cert-render=1&salon=ws",
+          "isolate": "ed851e129506e478",
+          "documents": 1,
+          "nodes": 57,
+          "jsEventListeners": 55,
+          "usedSize": 2237580,
+          "totalSize": 2703360,
+          "embedderHeapUsedSize": 424280,
+          "backingStorageSize": 150802,
+          "wasm_bytes": 7405568
+        },
+        {
+          "url": "http://127.0.0.1:62523/play?salon=ws",
+          "isolate": "fd423b100f691bd9",
+          "documents": 1,
+          "nodes": 87,
+          "jsEventListeners": 50,
+          "usedSize": 1480944,
+          "totalSize": 2359296,
+          "embedderHeapUsedSize": 696752,
+          "backingStorageSize": 47210,
+          "wasm_bytes": 1179648
+        }
+      ],
+      "chromium_rss_kib": 1210848,
+      "processes": [
+        {
+          "id": 67448,
+          "type": "browser"
+        },
+        {
+          "id": 67483,
+          "type": "renderer"
+        },
+        {
+          "id": 67481,
+          "type": "renderer"
+        },
+        {
+          "id": 67480,
+          "type": "renderer"
+        },
+        {
+          "id": 67469,
+          "type": "renderer"
+        },
+        {
+          "id": 67468,
+          "type": "renderer"
+        },
+        {
+          "id": 67455,
+          "type": "GPU"
+        },
+        {
+          "id": 67456,
+          "type": "network.mojom.NetworkService"
+        },
+        {
+          "id": 67457,
+          "type": "storage.mojom.StorageService"
+        },
+        {
+          "id": 67495,
+          "type": "audio.mojom.AudioService"
+        }
+      ]
+    }
+  ]
+}

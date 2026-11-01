@@ -1,0 +1,3836 @@
+{
+  "lan": "172.20.10.4",
+  "port": 53505,
+  "results": [
+    {
+      "engine": "webkit",
+      "expectedDevice": 2,
+      "cases": [
+        {
+          "name": "SDP delayed 2 s",
+          "expected": "rtc",
+          "elapsed_ms": 2208,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 1,
+              "sent": 2,
+              "lastAt": 1793299287737.0798,
+              "packets": [
+                {
+                  "at": 1793299287737.0798,
+                  "bytes": [
+                    1,
+                    180,
+                    41,
+                    0,
+                    1,
+                    1,
+                    2,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    1,
+                    4,
+                    0,
+                    1,
+                    47,
+                    1,
+                    0,
+                    1,
+                    1,
+                    3,
+                    3,
+                    8,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    1,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    2,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    51,
+                    3,
+                    0,
+                    4,
+                    0,
+                    5,
+                    0,
+                    6,
+                    0,
+                    7,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    0,
+                    139,
+                    24
+                  ]
+                }
+              ],
+              "events": [
+                {
+                  "at": 1793299285641.98,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299285644.3198,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299285644.88,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299285646.5,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299285646.6199,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299285648,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299285648,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299285648.0999,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299285648.8398,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299285695.24,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299285778.4,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299285778.4,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287677.22,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299287678.4,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299287678.68,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299287679.44,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287679.46,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287679.5999,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299287679.6199,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299287687.5598,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299287732.4,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connected",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299287736.0598,
+                  "kind": "channel:open",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [],
+              "packets": []
+            }
+          },
+          "relay": {
+            "upstream": 10,
+            "downstream": 9,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 19,
+            "directions": {
+              "upstream": {
+                "received": 10,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 10
+              },
+              "downstream": {
+                "received": 9,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 9
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "SDP delayed 4 s",
+          "expected": "rtc",
+          "elapsed_ms": 4145,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 1,
+              "sent": 2,
+              "lastAt": 1793299291866.84,
+              "packets": [
+                {
+                  "at": 1793299291866.84,
+                  "bytes": [
+                    1,
+                    214,
+                    73,
+                    0,
+                    1,
+                    1,
+                    2,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    1,
+                    4,
+                    0,
+                    1,
+                    47,
+                    1,
+                    0,
+                    1,
+                    1,
+                    3,
+                    3,
+                    8,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    1,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    2,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    51,
+                    3,
+                    0,
+                    4,
+                    0,
+                    5,
+                    0,
+                    6,
+                    0,
+                    7,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    0,
+                    139,
+                    24
+                  ]
+                }
+              ],
+              "events": [
+                {
+                  "at": 1793299287803.26,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299287803.34,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299287803.4402,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299287803.52,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299287803.56,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299287804.4402,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287804.46,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287804.54,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299287804.96,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299287819.12,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299287920.2002,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299287920.24,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291811.84,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299291812.22,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299291812.46,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299291813.2,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291813.22,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291813.3,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299291813.34,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299291820.78,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299291863.96,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connected",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299291866.02,
+                  "kind": "channel:open",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [],
+              "packets": []
+            }
+          },
+          "relay": {
+            "upstream": 10,
+            "downstream": 9,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 19,
+            "directions": {
+              "upstream": {
+                "received": 10,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 10
+              },
+              "downstream": {
+                "received": 9,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 9
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "native SDP rejection",
+          "expected": "ws",
+          "elapsed_ms": 77,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299291929.8198,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299291929.92,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299291930,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299291930.0798,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299291930.0999,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299291930.94,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291930.96,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291931.0198,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299291931.44,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291943.74,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "60"
+                },
+                {
+                  "at": 1793299291943.8398,
+                  "kind": "offer:body",
+                  "bytes": 60,
+                  "valid": true
+                },
+                {
+                  "at": 1793299291943.88,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299291944.38,
+                  "kind": "setRemoteDescription:rejected",
+                  "id": 1,
+                  "error": "Expect line: v="
+                },
+                {
+                  "at": 1793299291944.5798,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299291945.24,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299291945.18,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  168,
+                  74,
+                  0,
+                  1,
+                  1,
+                  2,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  4,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  1,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "native DTLS fingerprint rejection",
+          "expected": "ws",
+          "elapsed_ms": 125,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299292004.3599,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292004.44,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299292004.5398,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299292008.26,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299292008.2998,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299292008.96,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292008.98,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292009.02,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299292009.2,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292018.8398,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299292028.18,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299292028.24,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299292028.3198,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299292028.5598,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292028.5598,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292028.6199,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292028.6199,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292031.6199,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292031.66,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299292031.68,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292077.8398,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "failed",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292077.92,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "failed",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292078.42,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299292078.3398,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  173,
+                  75,
+                  0,
+                  1,
+                  1,
+                  2,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  4,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  1,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 4,
+            "downstream": 3,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 7,
+            "directions": {
+              "upstream": {
+                "received": 4,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 4
+              },
+              "downstream": {
+                "received": 3,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 3
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "absolute deadline after SDP progress",
+          "expected": "ws",
+          "elapsed_ms": 15055,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299292129.36,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299292129.4802,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299292129.6602,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299292129.8,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299292129.84,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299292130.6602,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292130.6602,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292130.7002,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299292131.1,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299292142.26,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299292265.8801,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299292265.9001,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299296138.5,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299296138.6602,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299296138.8,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299296139.06,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299296139.06,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299296139.12,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299296139.1401,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299307129.0798,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299307131.38,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299307130.5598,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  128,
+                  193,
+                  1,
+                  0,
+                  1,
+                  1,
+                  2,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  4,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  1,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 212,
+            "downstream": 0,
+            "dropped": 212,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 212,
+                "dropped": 212,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "closed_ms": 14999.7197265625,
+          "passed": true
+        },
+        {
+          "name": "absolute deadline and late SDP",
+          "expected": "ws",
+          "elapsed_ms": 16292,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299307208.34,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299307208.44,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299307208.56,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299307209.36,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299307209.4001,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299307209.74,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299307209.76,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299307209.8,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299307209.94,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299307227.94,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299307331.02,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299307331.02,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299322208.82,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299322209.9402,
+                  "kind": "channel:close",
+                  "id": 1
+                },
+                {
+                  "at": 1793299323222.54,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299323222.78,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299323223.08,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299323223.32,
+                  "kind": "setRemoteDescription:rejected",
+                  "id": 1,
+                  "error": "The object is in an invalid state."
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299322209.6602,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  227,
+                  182,
+                  2,
+                  0,
+                  1,
+                  1,
+                  2,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  4,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  1,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ],
+                [
+                  1,
+                  221,
+                  184,
+                  2,
+                  1,
+                  194,
+                  117,
+                  248,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  215,
+                  186,
+                  2,
+                  1,
+                  190,
+                  119,
+                  246,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  209,
+                  188,
+                  2,
+                  1,
+                  184,
+                  121,
+                  246,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  203,
+                  190,
+                  2,
+                  1,
+                  178,
+                  123,
+                  245,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "closed_ms": 15000.47998046875,
+          "passed": true
+        },
+        {
+          "name": "deadline registration failure releases attempt",
+          "expected": "ws",
+          "elapsed_ms": 86,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299323506.32,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299323506.4402,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299323506.56,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299323506.9202,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299323506.84,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  242,
+                  192,
+                  2,
+                  0,
+                  1,
+                  1,
+                  2,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  4,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  1,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        }
+      ],
+      "remaining": []
+    },
+    {
+      "engine": "chromium",
+      "expectedDevice": 3,
+      "cases": [
+        {
+          "name": "SDP delayed 2 s",
+          "expected": "rtc",
+          "elapsed_ms": 2480,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 1,
+              "sent": 2,
+              "lastAt": 1793299326019.14,
+              "packets": [
+                {
+                  "at": 1793299326019.14,
+                  "bytes": [
+                    1,
+                    190,
+                    212,
+                    2,
+                    0,
+                    1,
+                    1,
+                    3,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    1,
+                    3,
+                    0,
+                    1,
+                    47,
+                    1,
+                    0,
+                    0,
+                    1,
+                    3,
+                    3,
+                    8,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    1,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    2,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    51,
+                    3,
+                    0,
+                    4,
+                    0,
+                    5,
+                    0,
+                    6,
+                    0,
+                    7,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    1,
+                    139,
+                    24
+                  ]
+                }
+              ],
+              "events": [
+                {
+                  "at": 1793299323918.4448,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299323919.7349,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299323920.2148,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299323924.555,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299323924.6848,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299323931.01,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299323931.015,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299323931.3398,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299323931.775,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299323933.9548,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299324057.44,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299324057.4448,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299325948.315,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299325949.075,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299325949.8699,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299325953.4,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299325954.2449,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299325954.265,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299325954.385,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299325959.9648,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299326014.045,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connected",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299326017.9548,
+                  "kind": "channel:open",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [],
+              "packets": []
+            }
+          },
+          "relay": {
+            "upstream": 11,
+            "downstream": 9,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 20,
+            "directions": {
+              "upstream": {
+                "received": 11,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 11
+              },
+              "downstream": {
+                "received": 9,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 9
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "SDP delayed 4 s",
+          "expected": "rtc",
+          "elapsed_ms": 4148,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 1,
+              "sent": 2,
+              "lastAt": 1793299330157.39,
+              "packets": [
+                {
+                  "at": 1793299330157.39,
+                  "bytes": [
+                    1,
+                    230,
+                    244,
+                    2,
+                    0,
+                    1,
+                    1,
+                    3,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    1,
+                    3,
+                    0,
+                    1,
+                    47,
+                    1,
+                    0,
+                    0,
+                    1,
+                    3,
+                    3,
+                    8,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    49,
+                    1,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    2,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    51,
+                    3,
+                    0,
+                    4,
+                    0,
+                    5,
+                    0,
+                    6,
+                    0,
+                    7,
+                    0,
+                    1,
+                    4,
+                    82,
+                    84,
+                    67,
+                    50,
+                    1,
+                    139,
+                    24
+                  ]
+                }
+              ],
+              "events": [
+                {
+                  "at": 1793299326084.095,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299326084.17,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299326084.22,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299326084.38,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299326084.4,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299326084.615,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299326084.6199,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299326084.645,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299326084.8398,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299326085.365,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299326212.5498,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299326212.5598,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299330093.5698,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299330093.7898,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299330093.8599,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330094.295,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330094.3599,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330094.3699,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330094.4,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330097.93,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330151.9849,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connected",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330153.895,
+                  "kind": "channel:open",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [],
+              "packets": []
+            }
+          },
+          "relay": {
+            "upstream": 13,
+            "downstream": 10,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 23,
+            "directions": {
+              "upstream": {
+                "received": 13,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 13
+              },
+              "downstream": {
+                "received": 10,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 10
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "native SDP rejection",
+          "expected": "ws",
+          "elapsed_ms": 71,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299330231.7598,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330231.8198,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330231.8699,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330232.0098,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330232.035,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330232.24,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330232.24,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330232.2598,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299330232.46,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330233.0798,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299330240.105,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "60"
+                },
+                {
+                  "at": 1793299330240.2349,
+                  "kind": "offer:body",
+                  "bytes": 60,
+                  "valid": true
+                },
+                {
+                  "at": 1793299330240.2698,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330241.045,
+                  "kind": "setRemoteDescription:rejected",
+                  "id": 1,
+                  "error": "Failed to execute 'setRemoteDescription' on 'RTCPeerConnection': Failed to parse SessionDescription. invalid owned SDP negative control Expect line: v="
+                },
+                {
+                  "at": 1793299330241.43,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330241.825,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299330241.765,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  191,
+                  245,
+                  2,
+                  0,
+                  1,
+                  1,
+                  3,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  3,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  0,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "native DTLS fingerprint rejection",
+          "expected": "ws",
+          "elapsed_ms": 126,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299330305.2751,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330305.345,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330305.4001,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330305.5352,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330305.56,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330305.7852,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330305.79,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330305.805,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299330305.975,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330306.44,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299330315.645,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299330315.7651,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299330315.81,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330316.0151,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330316.1,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330316.105,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330316.125,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330319.695,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "gathering",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330319.705,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330319.71,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299330372.04,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "failed",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330372.075,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "connected",
+                  "gathering": "complete",
+                  "connection": "failed",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330372.5251,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299330372.46,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  195,
+                  246,
+                  2,
+                  0,
+                  1,
+                  1,
+                  3,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  3,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  0,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 5,
+            "downstream": 3,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 8,
+            "directions": {
+              "upstream": {
+                "received": 5,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 5
+              },
+              "downstream": {
+                "received": 3,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 3
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        },
+        {
+          "name": "absolute deadline after SDP progress",
+          "expected": "ws",
+          "elapsed_ms": 15075,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299330426.995,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299330427.05,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330427.095,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299330428.5051,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330428.545,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299330428.73,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330428.735,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330428.75,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299330428.94,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330429.97,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299330555.815,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299330555.825,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299334438.9102,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299334439.08,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299334439.135,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299334439.455,
+                  "kind": "iceconnectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299334439.5151,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299334439.52,
+                  "kind": "setRemoteDescription:fulfilled",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299334439.545,
+                  "kind": "connectionstatechange",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299345427.315,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "checking",
+                  "gathering": "complete",
+                  "connection": "connecting",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299345428.3,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299345428.19,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  149,
+                  236,
+                  3,
+                  0,
+                  1,
+                  1,
+                  3,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  3,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  0,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 176,
+            "downstream": 0,
+            "dropped": 176,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 176,
+                "dropped": 176,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "closed_ms": 15000.31982421875,
+          "passed": true
+        },
+        {
+          "name": "absolute deadline and late SDP",
+          "expected": "ws",
+          "elapsed_ms": 16286,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299345506.71,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299345506.78,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299345506.845,
+                  "kind": "createOffer",
+                  "id": 1
+                },
+                {
+                  "at": 1793299345507.0151,
+                  "kind": "createOffer:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable",
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299345507.05,
+                  "kind": "setLocalDescription",
+                  "id": 1,
+                  "descriptionType": "offer",
+                  "candidates": 0,
+                  "iceLite": false,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299345507.235,
+                  "kind": "signalingstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299345507.24,
+                  "kind": "setLocalDescription:fulfilled",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299345507.28,
+                  "kind": "offer:fetch"
+                },
+                {
+                  "at": 1793299345507.46,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "gathering",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299345508.29,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": true
+                },
+                {
+                  "at": 1793299345634,
+                  "kind": "icegatheringstatechange",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299345634.01,
+                  "kind": "icecandidate",
+                  "id": 1,
+                  "present": false
+                },
+                {
+                  "at": 1793299360506.32,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "complete",
+                  "connection": "new",
+                  "signaling": "have-local-offer"
+                },
+                {
+                  "at": 1793299360507.75,
+                  "kind": "channel:close",
+                  "id": 1
+                },
+                {
+                  "at": 1793299361517.31,
+                  "kind": "offer:response",
+                  "status": 200,
+                  "length": "766"
+                },
+                {
+                  "at": 1793299361517.5051,
+                  "kind": "offer:body",
+                  "bytes": 766,
+                  "valid": true
+                },
+                {
+                  "at": 1793299361517.57,
+                  "kind": "setRemoteDescription",
+                  "id": 1,
+                  "descriptionType": "answer",
+                  "candidates": 2,
+                  "iceLite": true,
+                  "endOfCandidates": false
+                },
+                {
+                  "at": 1793299361518.2852,
+                  "kind": "setRemoteDescription:rejected",
+                  "id": 1,
+                  "error": "Failed to execute 'setRemoteDescription' on 'RTCPeerConnection': The RTCPeerConnection's signalingState is 'closed'."
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299360507.57,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  253,
+                  225,
+                  4,
+                  0,
+                  1,
+                  1,
+                  3,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  3,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  0,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ],
+                [
+                  1,
+                  247,
+                  227,
+                  4,
+                  1,
+                  179,
+                  117,
+                  250,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  241,
+                  229,
+                  4,
+                  1,
+                  173,
+                  119,
+                  250,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  235,
+                  231,
+                  4,
+                  1,
+                  167,
+                  121,
+                  250,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  229,
+                  233,
+                  4,
+                  1,
+                  161,
+                  123,
+                  250,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  223,
+                  235,
+                  4,
+                  1,
+                  155,
+                  125,
+                  250,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "closed_ms": 14999.610107421875,
+          "passed": true
+        },
+        {
+          "name": "deadline registration failure releases attempt",
+          "expected": "ws",
+          "elapsed_ms": 83,
+          "state": {
+            "rtc": {
+              "observerVersion": 2,
+              "received": 0,
+              "sent": 0,
+              "lastAt": 0,
+              "packets": [],
+              "events": [
+                {
+                  "at": 1793299361807.56,
+                  "kind": "peer",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299361807.6199,
+                  "kind": "channel",
+                  "id": 1
+                },
+                {
+                  "at": 1793299361807.78,
+                  "kind": "close",
+                  "id": 1,
+                  "ice": "new",
+                  "gathering": "new",
+                  "connection": "new",
+                  "signaling": "stable"
+                },
+                {
+                  "at": 1793299361808.095,
+                  "kind": "channel:close",
+                  "id": 1
+                }
+              ]
+            },
+            "ws": {
+              "ws": [
+                {
+                  "at": 1793299361807.96,
+                  "open": true,
+                  "closed": false
+                }
+              ],
+              "packets": [
+                [
+                  1,
+                  142,
+                  236,
+                  4,
+                  0,
+                  1,
+                  1,
+                  3,
+                  1,
+                  1,
+                  0,
+                  1,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  3,
+                  0,
+                  1,
+                  47,
+                  1,
+                  0,
+                  0,
+                  1,
+                  3,
+                  3,
+                  8,
+                  0,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  49,
+                  1,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  50,
+                  2,
+                  1,
+                  4,
+                  82,
+                  84,
+                  67,
+                  51,
+                  3,
+                  0,
+                  4,
+                  0,
+                  5,
+                  0,
+                  6,
+                  0,
+                  7,
+                  0,
+                  1,
+                  4,
+                  82
+                ]
+              ]
+            }
+          },
+          "relay": {
+            "upstream": 0,
+            "downstream": 0,
+            "dropped": 0,
+            "delayed": 0,
+            "reordered": 0,
+            "forwarded": 0,
+            "directions": {
+              "upstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              },
+              "downstream": {
+                "received": 0,
+                "dropped": 0,
+                "delayed": 0,
+                "reordered": 0,
+                "forwarded": 0
+              }
+            }
+          },
+          "relay_errors": [],
+          "route_errors": [],
+          "passed": true
+        }
+      ],
+      "remaining": []
+    }
+  ],
+  "output": "warning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n   Compiling salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)\n   Compiling remote-protocol v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/protocol)\n   Compiling punch-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/punchline/crates/core)\n   Compiling salon-host v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/host)\n   Compiling punch-host v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/punchline/crates/host)\n    Finished `release` profile [optimized] target(s) in 3.85s\n     Running `target/release/punch-host`\nwarning: patch `remote-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/remote/crates/web)` was not used in the crate graph\nhelp: Check that the patched package version and available features are compatible\n      with the dependency requirements. If the patch has a different version from\n      what is locked in the Cargo.lock file, run `cargo update` to use the new\n      version. This may also occur with an optional dependency that is not enabled.\n   Compiling salon-core v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/core)\n   Compiling punch-core v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/punchline/crates/core)\n   Compiling salon-web v0.2.0 (/Users/axel2/Projects/build-your-own-game/soiree/salon/crates/web)\n   Compiling punch-web v0.1.0 (/Users/axel2/Projects/build-your-own-game/games/punchline/crates/web)\n    Finished `release` profile [optimized] target(s) in 2.27s\n  TV (this computer):  http://localhost:53505\n  phones:              http://172.20.10.4:53505/play\n  Replay journal: /tmp/rtc-sdk-new-NwpUc1/journals/punchline-1793299282435-73411-1.jsonl\nPunchline ready\n  TV (this computer): http://localhost:53505\nsalon: link 1 opened (WebSocket, 16384 bytes)\nsalon: link 2 opened (WebSocket, 16384 bytes)\nsalon: link 3 opened (WebSocket, 16384 bytes)\nsalon: link 4 opened (WebSocket, 16384 bytes)\nsalon: link 2 closed\nsalon: link 5 opened (WebRTC, 1100 bytes)\nsalon: link 6 opened (WebRTC, 1100 bytes)\nsalon: link 8 opened (WebSocket, 16384 bytes)\nsalon: link 8 closed\nsalon: WebRTC link 9 dropped (stalled: false)\nsalon: link 10 opened (WebSocket, 16384 bytes)\nsalon: link 10 closed\nsalon: link 5 closed by host\nsalon: link 6 closed by host\nsalon: WebRTC link 7 dropped (stalled: true)\nsalon: WebRTC link 11 dropped (stalled: true)\nsalon: link 12 opened (WebSocket, 16384 bytes)\nsalon: link 12 closed\nsalon: link 14 opened (WebSocket, 16384 bytes)\nsalon: WebRTC link 13 dropped (stalled: true)\nsalon: link 14 closed\nsalon: link 15 opened (WebSocket, 16384 bytes)\nsalon: link 15 closed\nsalon: link 16 opened (WebSocket, 16384 bytes)\nsalon: link 3 closed\nsalon: link 17 opened (WebRTC, 1100 bytes)\nsalon: link 18 opened (WebRTC, 1100 bytes)\nsalon: link 20 opened (WebSocket, 16384 bytes)\nsalon: link 20 closed\nsalon: WebRTC link 21 dropped (stalled: false)\nsalon: link 22 opened (WebSocket, 16384 bytes)\nsalon: link 22 closed\nsalon: link 17 closed by host\nsalon: link 18 closed by host\nsalon: WebRTC link 19 dropped (stalled: true)\nsalon: link 24 opened (WebSocket, 16384 bytes)\nsalon: WebRTC link 23 dropped (stalled: true)\nsalon: link 24 closed\nsalon: link 26 opened (WebSocket, 16384 bytes)\nsalon: WebRTC link 25 dropped (stalled: true)\nsalon: link 26 closed\nsalon: link 27 opened (WebSocket, 16384 bytes)\nsalon: link 27 closed\nsalon: link 16 closed\nsalon: link 4 closed\n",
+  "cleanup": []
+}

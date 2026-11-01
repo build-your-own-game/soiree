@@ -1,0 +1,402 @@
+{"level":"info","version":"2.13.0","caller":"server.go:79","time":"2026-10-29T18:17:25Z","message":"Starting Toxiproxy"}
+{"level":"info","address":"127.0.0.1:63299","caller":"api.go:73","time":"2026-10-29T18:17:25Z","message":"Starting Toxiproxy HTTP server"}
+{"level":"debug","request_id":"dbhorddlki5grqgsgrs0","client":"127.0.0.1:63336","method":"GET","url":"/version","user_agent":"node","status":200,"size":22,"duration":0.130333,"handler":"Version","caller":"api.go:147","time":"2026-10-29T18:17:25Z"}
+{"level":"info","name":"blocked","listen":"127.0.0.1:0","upstream":"127.0.0.1:63300","caller":"proxy.go:123","time":"2026-10-29T18:17:25Z","message":"Started proxy"}
+{"level":"debug","request_id":"dbhorddlki5grqgsgrsg","client":"127.0.0.1:63337","method":"POST","url":"/proxies","user_agent":"node","status":201,"size":113,"duration":4.275416,"handler":"ProxyCreate","caller":"api.go:147","time":"2026-10-29T18:17:25Z"}
+{"level":"info","name":"blocked","listen":"127.0.0.1:0","upstream":"127.0.0.1:63300","client":"127.0.0.1:63339","caller":"proxy.go:204","time":"2026-10-29T18:17:25Z","message":"Accepted client"}
+{"level":"debug","request_id":"dbhorddlki5grqgsgrt0","client":"127.0.0.1:63336","method":"GET","url":"/version","user_agent":"node","status":200,"size":22,"duration":2.937708,"handler":"Version","caller":"api.go:147","time":"2026-10-29T18:17:25Z"}
+{"level":"warn","request_id":"dbhorddlki5grqgsgrtg","caller":"api.go:342","time":"2026-10-29T18:17:25Z","message":"ProxyUpdate: HTTP method POST is deprecated. Use HTTP PATCH instead."}
+{"level":"debug","request_id":"dbhorddlki5grqgsgru0","client":"127.0.0.1:63336","method":"GET","url":"/version","user_agent":"node","status":200,"size":22,"duration":0.011917,"handler":"Version","caller":"api.go:147","time":"2026-10-29T18:17:25Z"}
+SIGQUIT: quit
+PC=0x18f76350c m=0 sigcode=0
+
+goroutine 0 gp=0x105748cc0 m=0 mp=0x1057498e0 [idle]:
+runtime.pthread_cond_wait(0x105749e48, 0x105749e08)
+	runtime/sys_darwin.go:470 +0x20 fp=0x16b12e780 sp=0x16b12e750 pc=0x104d3c150
+runtime.semasleep(0xffffffffffffffff)
+	runtime/os_darwin.go:72 +0x9c fp=0x16b12e7e0 sp=0x16b12e780 pc=0x104d1923c
+runtime.notesleep(0x105749a38)
+	runtime/lock_sema.go:62 +0xac fp=0x16b12e810 sp=0x16b12e7e0 pc=0x104cec79c
+runtime.mPark(...)
+	runtime/proc.go:1985
+runtime.stoplockedm()
+	runtime/proc.go:3278 +0x64 fp=0x16b12e870 sp=0x16b12e810 pc=0x104d239f4
+runtime.schedule()
+	runtime/proc.go:4158 +0x34 fp=0x16b12e8b0 sp=0x16b12e870 pc=0x104d262a4
+runtime.park_m(0x6b75c39c6000)
+	runtime/proc.go:4319 +0x23c fp=0x16b12e910 sp=0x16b12e8b0 pc=0x104d2677c
+runtime.mcall()
+	runtime/asm_arm64.s:319 +0x54 fp=0x16b12e920 sp=0x16b12e910 pc=0x104d58ee4
+
+goroutine 1 gp=0x6b75c37c01e0 m=nil [chan receive]:
+runtime.gopark(0x6b75c3932858?, 0x104e23ae8?, 0x2?, 0x0?, 0x1077c74f8?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3932830 sp=0x6b75c3932810 pc=0x104d53f18
+runtime.chanrecv(0x6b75c399eb60, 0x0, 0x1)
+	runtime/chan.go:667 +0x470 fp=0x6b75c39328b0 sp=0x6b75c3932830 pc=0x104ce7920
+runtime.chanrecv1(0x28?, 0x6b75c3933e08?)
+	runtime/chan.go:509 +0x14 fp=0x6b75c39328e0 sp=0x6b75c39328b0 pc=0x104ce7474
+main.run()
+	github.com/Shopify/toxiproxy/v2/cmd/server/server.go:105 +0x764 fp=0x6b75c3933e40 sp=0x6b75c39328e0 pc=0x1050f4804
+main.main()
+	github.com/Shopify/toxiproxy/v2/cmd/server/server.go:55 +0x1c fp=0x6b75c3933ea0 sp=0x6b75c3933e40 pc=0x1050f402c
+runtime.main()
+	runtime/proc.go:302 +0x380 fp=0x6b75c3933fd0 sp=0x6b75c3933ea0 pc=0x104d1e760
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3933fd0 sp=0x6b75c3933fd0 pc=0x104d5b004
+
+goroutine 2 gp=0x6b75c37c0d20 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c382af90 sp=0x6b75c382af70 pc=0x104d53f18
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.forcegchelper()
+	runtime/proc.go:387 +0xb4 fp=0x6b75c382afd0 sp=0x6b75c382af90 pc=0x104d1ea44
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c382afd0 sp=0x6b75c382afd0 pc=0x104d5b004
+created by runtime.init.7 in goroutine 1
+	runtime/proc.go:375 +0x24
+
+goroutine 18 gp=0x6b75c38843c0 m=nil [GC sweep wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3826770 sp=0x6b75c3826750 pc=0x104d53f18
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.bgsweep(0x6b75c3892000)
+	runtime/mgcsweep.go:279 +0x9c fp=0x6b75c38267b0 sp=0x6b75c3826770 pc=0x104d094dc
+runtime.gcenable.gowrap1()
+	runtime/mgc.go:214 +0x20 fp=0x6b75c38267d0 sp=0x6b75c38267b0 pc=0x104d4ab90
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c38267d0 sp=0x6b75c38267d0 pc=0x104d5b004
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:214 +0x6c
+
+goroutine 19 gp=0x6b75c38845a0 m=nil [GC scavenge wait]:
+runtime.gopark(0x6b75c3892000?, 0x10517bce8?, 0x1?, 0x0?, 0x6b75c38845a0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3826f60 sp=0x6b75c3826f40 pc=0x104d53f18
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.(*scavengerState).park(0x105748820)
+	runtime/mgcscavenge.go:425 +0x5c fp=0x6b75c3826f90 sp=0x6b75c3826f60 pc=0x104d0712c
+runtime.bgscavenge(0x6b75c3892000)
+	runtime/mgcscavenge.go:653 +0x44 fp=0x6b75c3826fb0 sp=0x6b75c3826f90 pc=0x104d07654
+runtime.gcenable.gowrap2()
+	runtime/mgc.go:215 +0x20 fp=0x6b75c3826fd0 sp=0x6b75c3826fb0 pc=0x104d4ab50
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3826fd0 sp=0x6b75c3826fd0 pc=0x104d5b004
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:215 +0xac
+
+goroutine 3 gp=0x6b75c37c1680 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c382b770 sp=0x6b75c382b750 pc=0x104d53f18
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.updateMaxProcsGoroutine()
+	runtime/proc.go:7146 +0xf4 fp=0x6b75c382b7d0 sp=0x6b75c382b770 pc=0x104d2c294
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c382b7d0 sp=0x6b75c382b7d0 pc=0x104d5b004
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	runtime/proc.go:7134 +0x48
+
+goroutine 4 gp=0x6b75c37c1c20 m=nil [finalizer wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c382bd80 sp=0x6b75c382bd60 pc=0x104d53f18
+runtime.runFinalizers()
+	runtime/mfinal.go:210 +0x100 fp=0x6b75c382bfd0 sp=0x6b75c382bd80 pc=0x104cfa6c0
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c382bfd0 sp=0x6b75c382bfd0 pc=0x104d5b004
+created by runtime.createfing in goroutine 1
+	runtime/mfinal.go:172 +0x78
+
+goroutine 21 gp=0x6b75c3884b40 m=nil [cleanup wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3827750 sp=0x6b75c3827730 pc=0x104d53f18
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.(*cleanupQueue).dequeue(0x105748b00)
+	runtime/mcleanup.go:522 +0x160 fp=0x6b75c3827790 sp=0x6b75c3827750 pc=0x104cf6ec0
+runtime.runCleanups()
+	runtime/mcleanup.go:718 +0x40 fp=0x6b75c38277d0 sp=0x6b75c3827790 pc=0x104cf7610
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c38277d0 sp=0x6b75c38277d0 pc=0x104d5b004
+created by runtime.(*cleanupQueue).createGs in goroutine 1
+	runtime/mcleanup.go:672 +0x108
+
+goroutine 34 gp=0x6b75c3884d20 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3935b30 sp=0x6b75c3935b10 pc=0x104d53f18
+runtime.netpollblock(0x6b75c3935bc8?, 0x4cf5c24?, 0x1?)
+	runtime/netpoll.go:575 +0x150 fp=0x6b75c3935b70 sp=0x6b75c3935b30 pc=0x104d18420
+internal/poll.runtime_pollWait(0x107df8e00, 0x72)
+	runtime/netpoll.go:351 +0xa0 fp=0x6b75c3935ba0 sp=0x6b75c3935b70 pc=0x104d53150
+internal/poll.(*pollDesc).wait(0x6b75c3922f80?, 0x104cf0184?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x28 fp=0x6b75c3935be0 sp=0x6b75c3935ba0 pc=0x104db5ef8
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Accept(0x6b75c3922f80)
+	internal/poll/fd_unix.go:618 +0x210 fp=0x6b75c3935c90 sp=0x6b75c3935be0 pc=0x104db9b10
+net.(*netFD).accept(0x6b75c3922f80)
+	net/fd_unix.go:149 +0x28 fp=0x6b75c3935d50 sp=0x6b75c3935c90 pc=0x104e05688
+net.(*TCPListener).accept(0x6b75c3924640)
+	net/tcpsock_posix.go:159 +0x24 fp=0x6b75c3935da0 sp=0x6b75c3935d50 pc=0x104e166f4
+net.(*TCPListener).Accept(0x6b75c3924640)
+	net/tcpsock.go:387 +0x2c fp=0x6b75c3935df0 sp=0x6b75c3935da0 pc=0x104e15b6c
+net/http.(*Server).Serve(0x6b75c3974640, {0x1056d6d58, 0x6b75c3924640})
+	net/http/server.go:3574 +0x2a8 fp=0x6b75c3935f20 sp=0x6b75c3935df0 pc=0x105070318
+net/http.(*Server).ListenAndServe(0x6b75c3974640)
+	net/http/server.go:3485 +0x80 fp=0x6b75c3935f50 sp=0x6b75c3935f20 pc=0x10506ff60
+github.com/Shopify/toxiproxy/v2.(*ApiServer).Listen(0x6b75c39a2300, {0x6b75c39aa070, 0xf})
+	github.com/Shopify/toxiproxy/v2/api.go:84 +0x128 fp=0x6b75c3935fa0 sp=0x6b75c3935f50 pc=0x1050e5428
+main.run.func1(...)
+	github.com/Shopify/toxiproxy/v2/cmd/server/server.go:97
+main.run.gowrap1()
+	github.com/Shopify/toxiproxy/v2/cmd/server/server.go:101 +0x28 fp=0x6b75c3935fd0 sp=0x6b75c3935fa0 pc=0x1050f4f98
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3935fd0 sp=0x6b75c3935fd0 pc=0x104d5b004
+created by main.run in goroutine 1
+	github.com/Shopify/toxiproxy/v2/cmd/server/server.go:96 +0x700
+
+goroutine 35 gp=0x6b75c39c6000 m=nil [select, locked to thread]:
+runtime.gopark(0x6b75c382a7a0?, 0x2?, 0xa8?, 0xa6?, 0x6b75c382a790?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c382a610 sp=0x6b75c382a5f0 pc=0x104d53f18
+runtime.selectgo(0x6b75c382a7a0, 0x6b75c382a78c, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0x838 fp=0x6b75c382a750 sp=0x6b75c382a610 pc=0x104d30eb8
+runtime.ensureSigM.func1()
+	runtime/signal_unix.go:1093 +0x144 fp=0x6b75c382a7d0 sp=0x6b75c382a750 pc=0x104d4e774
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c382a7d0 sp=0x6b75c382a7d0 pc=0x104d5b004
+created by runtime.ensureSigM in goroutine 1
+	runtime/signal_unix.go:1076 +0xcc
+
+goroutine 36 gp=0x6b75c39c61e0 m=3 mp=0x6b75c382f008 [syscall]:
+runtime.sigNoteSleep(0x0?)
+	runtime/os_darwin.go:133 +0x20 fp=0x6b75c39cc790 sp=0x6b75c39cc750 pc=0x104d194b0
+os/signal.signal_recv()
+	runtime/sigqueue.go:149 +0x104 fp=0x6b75c39cc7b0 sp=0x6b75c39cc790 pc=0x104d561f4
+os/signal.loop()
+	os/signal/signal_unix.go:23 +0x1c fp=0x6b75c39cc7d0 sp=0x6b75c39cc7b0 pc=0x104e23dfc
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c39cc7d0 sp=0x6b75c39cc7d0 pc=0x104d5b004
+created by os/signal.Notify.func2.1 in goroutine 1
+	os/signal/signal.go:164 +0x28
+
+goroutine 6 gp=0x6b75c392a5a0 m=nil [IO wait]:
+runtime.gopark(0xffffffffffffffff?, 0xffffffffffffffff?, 0xb8?, 0xf8?, 0x104d9c198?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c392f850 sp=0x6b75c392f830 pc=0x104d53f18
+runtime.netpollblock(0x6b75c392f8e8?, 0x7?, 0x0?)
+	runtime/netpoll.go:575 +0x150 fp=0x6b75c392f890 sp=0x6b75c392f850 pc=0x104d18420
+internal/poll.runtime_pollWait(0x107df8c00, 0x72)
+	runtime/netpoll.go:351 +0xa0 fp=0x6b75c392f8c0 sp=0x6b75c392f890 pc=0x104d53150
+internal/poll.(*pollDesc).wait(0x6b75c3923000?, 0x6b75c3955000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x28 fp=0x6b75c392f900 sp=0x6b75c392f8c0 pc=0x104db5ef8
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x6b75c3923000, {0x6b75c3955000, 0x1000, 0x1000})
+	internal/poll/fd_unix.go:170 +0x22c fp=0x6b75c392f9a0 sp=0x6b75c392f900 pc=0x104db6edc
+net.(*netFD).Read(0x6b75c3923000, {0x6b75c3955000?, 0x6b75c392fa28?, 0x104dbc7b0?})
+	net/fd_posix.go:68 +0x28 fp=0x6b75c392f9f0 sp=0x6b75c392f9a0 pc=0x104e04088
+net.(*conn).Read(0x6b75c37be200, {0x6b75c3955000?, 0x107df8c00?, 0xdf8475800?})
+	net/net.go:196 +0x34 fp=0x6b75c392fa40 sp=0x6b75c392f9f0 pc=0x104e0e744
+net/http.(*connReader).Read(0x6b75c39246c0, {0x6b75c3955000, 0x1000, 0x1000})
+	net/http/server.go:856 +0x228 fp=0x6b75c392faa0 sp=0x6b75c392fa40 pc=0x1050668a8
+bufio.(*Reader).fill(0x6b75c385c300)
+	bufio/bufio.go:113 +0xdc fp=0x6b75c392fae0 sp=0x6b75c392faa0 pc=0x104ec52ec
+bufio.(*Reader).Peek(0x6b75c385c300, 0x4)
+	bufio/bufio.go:152 +0x58 fp=0x6b75c392fb00 sp=0x6b75c392fae0 pc=0x104ec5428
+net/http.(*conn).serve(0x6b75c39507e0, {0x1056d7660, 0x6b75c3972630})
+	net/http/server.go:2193 +0x6cc fp=0x6b75c392ffa0 sp=0x6b75c392fb00 pc=0x10506bcfc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3604 +0x24 fp=0x6b75c392ffd0 sp=0x6b75c392ffa0 pc=0x105078ed4
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c392ffd0 sp=0x6b75c392ffd0 pc=0x104d5b004
+created by net/http.(*Server).Serve in goroutine 34
+	net/http/server.go:3604 +0x3e8
+
+goroutine 50 gp=0x6b75c3a043c0 m=nil [select]:
+runtime.gopark(0x6b75c3a414c0?, 0x3?, 0xd8?, 0x12?, 0x6b75c3a41422?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3a412a0 sp=0x6b75c3a41280 pc=0x104d53f18
+runtime.selectgo(0x6b75c3a414c0, 0x6b75c3a4141c, 0x5d21dba00?, 0x0, 0x8000000000ff?, 0x1)
+	runtime/select.go:351 +0x838 fp=0x6b75c3a413e0 sp=0x6b75c3a412a0 pc=0x104d30eb8
+net/http.(*timeoutHandler).ServeHTTP(0x6b75c3a22680, {0x107963e80, 0x6b75c3a22740}, 0x6b75c3a297c0)
+	net/http/server.go:4082 +0x288 fp=0x6b75c3a41580 sp=0x6b75c3a413e0 pc=0x105071c58
+github.com/Shopify/toxiproxy/v2.stopBrowsersMiddleware.func1({0x107963e80, 0x6b75c3a22740}, 0x6b75c3a297c0)
+	github.com/Shopify/toxiproxy/v2/api.go:26 +0xa8 fp=0x6b75c3a415d0 sp=0x6b75c3a41580 pc=0x1050f0e78
+net/http.HandlerFunc.ServeHTTP(0x105730700?, {0x107963e80?, 0x6b75c3a22740?}, 0x6b75c3880808?)
+	net/http/server.go:2358 +0x38 fp=0x6b75c3a41600 sp=0x6b75c3a415d0 pc=0x10506d528
+github.com/rs/zerolog/hlog.AccessHandler.func1.1({0x1056d6ff8, 0x6b75c3a345a0}, 0x6b75c3a297c0)
+	github.com/rs/zerolog@v1.35.1/hlog/hlog.go:300 +0xd4 fp=0x6b75c3a416c0 sp=0x6b75c3a41600 pc=0x1050f1024
+net/http.HandlerFunc.ServeHTTP(0x6b75c3a16c60?, {0x1056d6ff8?, 0x6b75c3a345a0?}, 0x6b75c3a2a138?)
+	net/http/server.go:2358 +0x38 fp=0x6b75c3a416f0 sp=0x6b75c3a416c0 pc=0x10506d528
+github.com/rs/zerolog/hlog.RequestIDHandler.func1.1({0x1056d6ff8, 0x6b75c3a345a0}, 0x6b75c3a29680)
+	github.com/rs/zerolog@v1.35.1/hlog/hlog.go:233 +0x1a8 fp=0x6b75c3a417c0 sp=0x6b75c3a416f0 pc=0x1050f1348
+net/http.HandlerFunc.ServeHTTP(0x6b75c3a29540?, {0x1056d6ff8?, 0x6b75c3a345a0?}, 0x0?)
+	net/http/server.go:2358 +0x38 fp=0x6b75c3a417f0 sp=0x6b75c3a417c0 pc=0x10506d528
+github.com/rs/zerolog/hlog.NewHandler.func1.1({0x1056d6ff8, 0x6b75c3a345a0}, 0x6b75c3a29540)
+	github.com/rs/zerolog@v1.35.1/hlog/hlog.go:31 +0x158 fp=0x6b75c3a41970 sp=0x6b75c3a417f0 pc=0x1050f1748
+net/http.HandlerFunc.ServeHTTP(0x6b75c3a29400?, {0x1056d6ff8?, 0x6b75c3a345a0?}, 0x10506b9a0?)
+	net/http/server.go:2358 +0x38 fp=0x6b75c3a419a0 sp=0x6b75c3a41970 pc=0x10506d528
+github.com/gorilla/mux.(*Router).ServeHTTP(0x6b75c3916180, {0x1056d6ff8, 0x6b75c3a345a0}, 0x6b75c3a292c0)
+	github.com/gorilla/mux@v1.8.1/mux.go:212 +0x190 fp=0x6b75c3a41ad0 sp=0x6b75c3a419a0 pc=0x1050c6fc0
+net/http.serverHandler.ServeHTTP({0x10?}, {0x1056d6ff8?, 0x6b75c3a345a0?}, 0x1?)
+	net/http/server.go:3436 +0xb0 fp=0x6b75c3a41b00 sp=0x6b75c3a41ad0 pc=0x10507a6f0
+net/http.(*conn).serve(0x6b75c3a18000, {0x1056d7660, 0x6b75c3972630})
+	net/http/server.go:2157 +0x5a0 fp=0x6b75c3a41fa0 sp=0x6b75c3a41b00 pc=0x10506bbd0
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3604 +0x24 fp=0x6b75c3a41fd0 sp=0x6b75c3a41fa0 pc=0x105078ed4
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3a41fd0 sp=0x6b75c3a41fd0 pc=0x104d5b004
+created by net/http.(*Server).Serve in goroutine 34
+	net/http/server.go:3604 +0x3e8
+
+goroutine 58 gp=0x6b75c3a045a0 m=nil [IO wait]:
+runtime.gopark(0xffffffffffffffff?, 0xffffffffffffffff?, 0xd8?, 0x85?, 0x104d9c198?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c39c8570 sp=0x6b75c39c8550 pc=0x104d53f18
+runtime.netpollblock(0xa8?, 0x8?, 0x0?)
+	runtime/netpoll.go:575 +0x150 fp=0x6b75c39c85b0 sp=0x6b75c39c8570 pc=0x104d18420
+internal/poll.runtime_pollWait(0x107df8a00, 0x72)
+	runtime/netpoll.go:351 +0xa0 fp=0x6b75c39c85e0 sp=0x6b75c39c85b0 pc=0x104d53150
+internal/poll.(*pollDesc).wait(0x6b75c3a14000?, 0x6b75c3a22021?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x28 fp=0x6b75c39c8620 sp=0x6b75c39c85e0 pc=0x104db5ef8
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x6b75c3a14000, {0x6b75c3a22021, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x22c fp=0x6b75c39c86c0 sp=0x6b75c39c8620 pc=0x104db6edc
+net.(*netFD).Read(0x6b75c3a14000, {0x6b75c3a22021?, 0x6b75c3a3aa10?, 0x6b75c3a29900?})
+	net/fd_posix.go:68 +0x28 fp=0x6b75c39c8710 sp=0x6b75c39c86c0 pc=0x104e04088
+net.(*conn).Read(0x6b75c3a02008, {0x6b75c3a22021?, 0x0?, 0x1056d6f68?})
+	net/net.go:196 +0x34 fp=0x6b75c39c8760 sp=0x6b75c39c8710 pc=0x104e0e744
+net/http.(*connReader).backgroundRead(0x6b75c3a22000)
+	net/http/server.go:746 +0x38 fp=0x6b75c39c87b0 sp=0x6b75c39c8760 pc=0x105066388
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:742 +0x20 fp=0x6b75c39c87d0 sp=0x6b75c39c87b0 pc=0x1050783b0
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c39c87d0 sp=0x6b75c39c87d0 pc=0x104d5b004
+created by net/http.(*connReader).startBackgroundRead in goroutine 57
+	net/http/server.go:742 +0xc0
+
+goroutine 57 gp=0x6b75c3a04780 m=nil [chan receive]:
+runtime.gopark(0x6b75c3980ba8?, 0x6b75c3a3a540?, 0xa8?, 0xb?, 0x1050e4f08?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3980b70 sp=0x6b75c3980b50 pc=0x104d53f18
+runtime.chanrecv(0x6b75c3a30230, 0x0, 0x1)
+	runtime/chan.go:667 +0x470 fp=0x6b75c3980bf0 sp=0x6b75c3980b70 pc=0x104ce7920
+runtime.chanrecv1(0x6b75c3a46108?, 0x1050ec66c?)
+	runtime/chan.go:509 +0x14 fp=0x6b75c3980c20 sp=0x6b75c3980bf0 pc=0x104ce7474
+gopkg.in/tomb%2ev1.(*Tomb).Wait(0x6b75c3a46108)
+	gopkg.in/tomb.v1@v1.0.0-20141024135613-dd632973f1e7/tomb.go:113 +0x30 fp=0x6b75c3980c50 sp=0x6b75c3980c20 pc=0x1050e4c20
+github.com/Shopify/toxiproxy/v2.stop(0x6b75c3a460b0)
+	github.com/Shopify/toxiproxy/v2/proxy.go:255 +0x60 fp=0x6b75c3980d20 sp=0x6b75c3980c50 pc=0x1050ed0e0
+github.com/Shopify/toxiproxy/v2.(*Proxy).Update(0x6b75c3a460b0, 0x6b75c3a46210)
+	github.com/Shopify/toxiproxy/v2/proxy.go:99 +0x128 fp=0x6b75c3980d70 sp=0x6b75c3980d20 pc=0x1050ec2e8
+github.com/Shopify/toxiproxy/v2.(*ApiServer).ProxyUpdate(0x6b75c39a2300, {0x1056d6f68, 0x6b75c3a3aa10}, 0x6b75c3a29900)
+	github.com/Shopify/toxiproxy/v2/api.go:359 +0x2c8 fp=0x6b75c3980f10 sp=0x6b75c3980d70 pc=0x1050e7af8
+github.com/Shopify/toxiproxy/v2.(*ApiServer).ProxyUpdate-fm({0x1056d6f68?, 0x6b75c3a3aa10?}, 0x6b75c39c87a8?)
+	<autogenerated>:1 +0x38 fp=0x6b75c3980f40 sp=0x6b75c3980f10 pc=0x1050f38c8
+net/http.HandlerFunc.ServeHTTP(0x0?, {0x1056d6f68?, 0x6b75c3a3aa10?}, 0x0?)
+	net/http/server.go:2358 +0x38 fp=0x6b75c3980f70 sp=0x6b75c3980f40 pc=0x10506d528
+net/http.(*timeoutHandler).ServeHTTP.func1()
+	net/http/server.go:4079 +0x60 fp=0x6b75c3980fd0 sp=0x6b75c3980f70 pc=0x1050792b0
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3980fd0 sp=0x6b75c3980fd0 pc=0x104d5b004
+created by net/http.(*timeoutHandler).ServeHTTP in goroutine 50
+	net/http/server.go:4073 +0x230
+
+goroutine 53 gp=0x6b75c3a04960 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x83efc2000001?, 0xd8?, 0x33?, 0x104db5d04?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c3a43370 sp=0x6b75c3a43350 pc=0x104d53f18
+runtime.netpollblock(0x107df8400?, 0x7df8430?, 0x1?)
+	runtime/netpoll.go:575 +0x150 fp=0x6b75c3a433b0 sp=0x6b75c3a43370 pc=0x104d18420
+internal/poll.runtime_pollWait(0x107df8400, 0x77)
+	runtime/netpoll.go:351 +0xa0 fp=0x6b75c3a433e0 sp=0x6b75c3a433b0 pc=0x104d53150
+internal/poll.(*pollDesc).wait(0x6b75c3a14180?, 0x10514ea34?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x28 fp=0x6b75c3a43420 sp=0x6b75c3a433e0 pc=0x104db5ef8
+internal/poll.(*pollDesc).waitWrite(...)
+	internal/poll/fd_poll_runtime.go:93
+internal/poll.(*FD).WaitWrite(...)
+	internal/poll/fd_unix.go:690
+net.(*netFD).connect(0x6b75c3a14180, {0x1056d7548, 0x105770460}, {0x104d51990?, 0x105768968?}, {0x1056d36e8?, 0x6b75c3a120c0?})
+	net/fd_unix.go:118 +0x49c fp=0x6b75c3a43590 sp=0x6b75c3a43420 pc=0x104e0539c
+net.(*netFD).dial(0x6b75c3a14180, {0x1056d7548, 0x105770460}, {0x1056d8ae0?, 0x0?}, {0x1056d8ae0, 0x6b75c3a169c0}, 0x105770460?)
+	net/sock_posix.go:121 +0x304 fp=0x6b75c3a43670 sp=0x6b75c3a43590 pc=0x104e12cd4
+net.socket({0x1056d7548, 0x105770460}, {0x10514ea34, 0x3}, 0x2, 0x1, 0x10514ebfc?, 0x0, {0x1056d8ae0, 0x0}, ...)
+	net/sock_posix.go:67 +0x210 fp=0x6b75c3a43720 sp=0x6b75c3a43670 pc=0x104e128f0
+net.internetSocket({0x1056d7548, 0x105770460}, {0x10514ea34, 0x3}, {0x1056d8ae0, 0x0}, {0x1056d8ae0, 0x6b75c3a169c0}, 0x1, 0x0, ...)
+	net/ipsock_posix.go:173 +0xa4 fp=0x6b75c3a437a0 sp=0x6b75c3a43720 pc=0x104e0c684
+net.(*sysDialer).doDialTCPProto(0x6b75c3a6a0c0, {0x1056d7548, 0x105770460}, 0x0, 0x6b75c3a169c0, 0x0)
+	net/tcpsock_posix.go:85 +0x9c fp=0x6b75c3a43850 sp=0x6b75c3a437a0 pc=0x104e1642c
+net.(*sysDialer).doDialTCP(...)
+	net/tcpsock_posix.go:75
+net.(*sysDialer).dialTCP(0x6b75c39808f8?, {0x1056d7548?, 0x105770460?}, 0x104ce7dfc?, 0x6b75c3980928?)
+	net/tcpsock_posix.go:71 +0x6c fp=0x6b75c3a43890 sp=0x6b75c3a43850 pc=0x104e1632c
+net.(*sysDialer).dialSingle(0x6b75c3a6a0c0, {0x1056d7548, 0x105770460}, {0x1056d5900, 0x6b75c3a169c0})
+	net/dial.go:795 +0x2b8 fp=0x6b75c3a43960 sp=0x6b75c3a43890 pc=0x104dfdca8
+net.(*sysDialer).dialSerial(0x6b75c3a6a0c0, {0x1056d7548, 0x105770460}, {0x6b75c3a200c0?, 0x1, 0x6b75c3a1c1e0?})
+	net/dial.go:760 +0x1a0 fp=0x6b75c3a43a70 sp=0x6b75c3a43960 pc=0x104dfd6d0
+net.(*sysDialer).dialParallel(0x0?, {0x1056d7548?, 0x105770460?}, {0x6b75c3a200c0?, 0x105676828?, 0x10514ea34?}, {0x0?, 0x6b75c3a1c1e0?, 0xf?})
+	net/dial.go:661 +0x210 fp=0x6b75c3a43c90 sp=0x6b75c3a43a70 pc=0x104dfd310
+net.(*Dialer).DialContext(0x6b75c3980e08, {0x1056d7548?, 0x105770460?}, {0x10514ea34, 0x3}, {0x6b75c3a1c1e0, 0xf})
+	net/dial.go:560 +0x358 fp=0x6b75c3a43dc0 sp=0x6b75c3a43c90 pc=0x104dfcc78
+net.(*Dialer).Dial(...)
+	net/dial.go:508
+net.Dial({0x10514ea34?, 0x10515308f?}, {0x6b75c3a1c1e0?, 0x6b75c3a1c410?})
+	net/dial.go:475 +0x74 fp=0x6b75c3a43ea0 sp=0x6b75c3a43dc0 pc=0x104dfc8f4
+github.com/Shopify/toxiproxy/v2.(*Proxy).server(0x6b75c3a460b0)
+	github.com/Shopify/toxiproxy/v2/proxy.go:207 +0x168 fp=0x6b75c3a43fb0 sp=0x6b75c3a43ea0 pc=0x1050ec918
+github.com/Shopify/toxiproxy/v2.start.gowrap1()
+	github.com/Shopify/toxiproxy/v2/proxy.go:240 +0x20 fp=0x6b75c3a43fd0 sp=0x6b75c3a43fb0 pc=0x1050f1cc0
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c3a43fd0 sp=0x6b75c3a43fd0 pc=0x104d5b004
+created by github.com/Shopify/toxiproxy/v2.start in goroutine 51
+	github.com/Shopify/toxiproxy/v2/proxy.go:240 +0x9c
+
+goroutine 54 gp=0x6b75c3a04b40 m=nil [chan receive]:
+runtime.gopark(0x0?, 0x0?, 0xc8?, 0x8e?, 0x104e15cb0?)
+	runtime/proc.go:474 +0xb8 fp=0x6b75c39c8e80 sp=0x6b75c39c8e60 pc=0x104d53f18
+runtime.chanrecv(0x6b75c3a305b0, 0x0, 0x1)
+	runtime/chan.go:667 +0x470 fp=0x6b75c39c8f00 sp=0x6b75c39c8e80 pc=0x104ce7920
+runtime.chanrecv1(0x6b75c3a166c0?, 0x0?)
+	runtime/chan.go:509 +0x14 fp=0x6b75c39c8f30 sp=0x6b75c39c8f00 pc=0x104ce7474
+gopkg.in/tomb%2ev1.(*Tomb).Wait(0x6b75c3a166c0)
+	gopkg.in/tomb.v1@v1.0.0-20141024135613-dd632973f1e7/tomb.go:113 +0x30 fp=0x6b75c39c8f60 sp=0x6b75c39c8f30 pc=0x1050e4c20
+github.com/Shopify/toxiproxy/v2.(*Proxy).freeBlocker(0x6b75c3a460b0, 0x6b75c3a166c0)
+	github.com/Shopify/toxiproxy/v2/proxy.go:163 +0x70 fp=0x6b75c39c8fb0 sp=0x6b75c39c8f60 pc=0x1050ec770
+github.com/Shopify/toxiproxy/v2.(*Proxy).server.gowrap2()
+	github.com/Shopify/toxiproxy/v2/proxy.go:180 +0x20 fp=0x6b75c39c8fd0 sp=0x6b75c39c8fb0 pc=0x1050f1bb0
+runtime.goexit({})
+	runtime/asm_arm64.s:1039 +0x4 fp=0x6b75c39c8fd0 sp=0x6b75c39c8fd0 pc=0x104d5b004
+created by github.com/Shopify/toxiproxy/v2.(*Proxy).server in goroutine 53
+	github.com/Shopify/toxiproxy/v2/proxy.go:180 +0xb8
+
+r0      0x104
+r1      0x0
+r2      0x900
+r3      0x0
+r4      0x0
+r5      0xa0
+r6      0x0
+r7      0x0
+r8      0x16b12e668
+r9      0x0
+r10     0x0
+r11     0x2
+r12     0x2
+r13     0x0
+r14     0x0
+r15     0x0
+r16     0x131
+r17     0x1fd823310
+r18     0x0
+r19     0x105749e08
+r20     0x105749e48
+r21     0x1fc1e2260
+r22     0x0
+r23     0x0
+r24     0x900
+r25     0x901
+r26     0xa00
+r27     0x10572d000
+r28     0x105748cc0
+r29     0x16b12e6e0
+lr      0x18f7a4128
+sp      0x16b12e650
+pc      0x18f76350c
+fault   0x18f76350c
