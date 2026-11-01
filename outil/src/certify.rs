@@ -1,5 +1,5 @@
 //! Run the versioned observer and evaluate its scoped observations through the common policy.
-//! Reports live in certification/verification.{json,md}; historical rapport files remain intact.
+//! Reports live in certification/verification.{json,md}.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

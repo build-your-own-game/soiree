@@ -128,7 +128,7 @@ fn run_static(
                     Outcome::Failed
                 },
                 input.map(str::to_owned),
-                format!("{:?}", report.lines),
+                static_detail(&report),
                 vec![],
             )
         })
@@ -359,6 +359,21 @@ fn finish(
     }
     println!("\n{}", render::summary(&result));
     passed
+}
+
+/// Errors first, one per line: the summary quotes the first.
+fn static_detail(report: &Report) -> String {
+    let errors: Vec<&str> = report
+        .lines
+        .iter()
+        .filter(|(level, _)| *level == Level::Error)
+        .map(|(_, line)| line.as_str())
+        .collect();
+    if errors.is_empty() {
+        format!("{:?}", report.lines)
+    } else {
+        errors.join("\n")
+    }
 }
 
 pub fn observe(

@@ -96,8 +96,9 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
     let has_catalogue = dir.join("certifications").join("README.md").is_file();
     if !dir.join("Cargo.toml").is_file() {
         if has_catalogue {
-            report.info("pas de Cargo.toml : seulement le catalogue des certifications");
+            report.info("pas de Cargo.toml : le catalogue et les documents du commun");
             catalogue::check(dir, report);
+            crate::docs::check(dir, report);
         } else {
             report.error("pas de Cargo.toml");
         }
@@ -443,7 +444,7 @@ fn check_doc_paths(dir: &Path, report: &mut Report) {
 /// The code spans that look like a path with a `/`, like the `grep -o` of
 /// the former shell check: `` `[A-Za-z0-9_.][A-Za-z0-9_./-]*/[A-Za-z0-9_./-]*` ``, with a
 /// letter, sorted and without duplicates.
-fn cited_paths(text: &str) -> BTreeSet<String> {
+pub(crate) fn cited_paths(text: &str) -> BTreeSet<String> {
     let allowed = |c: char| c.is_ascii_alphanumeric() || "_./-".contains(c);
     let mut found = BTreeSet::new();
     for line in text.lines() {

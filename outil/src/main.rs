@@ -4,6 +4,7 @@ mod catalogue;
 mod certify;
 mod check;
 mod ci;
+mod docs;
 mod doctor;
 mod dom;
 mod embedded;
@@ -39,6 +40,7 @@ const HELP: &str = "soiree : l'outil de la soirée
   soiree mutants [dossier] [--in-diff FICHIER] [--re REGEX] [--timeout S]
                                      mutation du core, à la demande ; rapport diagnostic
   soiree dom <fichier.rs> [--html H…] [--css C…] [--id ID BALISE…] [--data D…] [--attr A…]
+                         [--tag T…] [--class C…]
                                      écrit le module typé des noms d'une page :
                                      ids, classes, data-*, attributs, propriétés CSS
   soiree upgrade [--dry-run] [dossier] aligne le jeu sur la version de ce binaire

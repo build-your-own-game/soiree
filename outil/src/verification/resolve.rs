@@ -322,48 +322,51 @@ fn harness_health(plan: &mut Plan) {
     });
 }
 
+/// Common requirements nothing runs yet. They stay visible as not attested.
+pub const UNBOUND: [(&str, &str, Option<&str>); 7] = [
+    (
+        "C6",
+        "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
+        Some("La présence de phases avec échéance et de joueurs pouvant partir dépend du jeu."),
+    ),
+    (
+        "E5",
+        "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
+        None,
+    ),
+    (
+        "T1",
+        "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
+        Some("Les champs de texte et la répartition page/hôte dépendent du jeu."),
+    ),
+    (
+        "D1",
+        "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
+        None,
+    ),
+    (
+        "D3",
+        "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
+        None,
+    ),
+    (
+        "D4",
+        "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
+        Some(
+            "La présence d’une simulation en temps réel et son exécution en natif et en WASM doivent être déclarées.",
+        ),
+    ),
+    (
+        "D5",
+        "On relance une partie sans rien redémarrer.",
+        Some(
+            "Le sens d’une nouvelle partie dépend du jeu ; un éditeur continu ne possède pas nécessairement ce cycle.",
+        ),
+    ),
+];
+
 fn unbound_game_requirements(plan: &mut Plan) {
-    for (id, claim, condition) in [
-        (
-            "C6",
-            "Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance.",
-            Some("La présence de phases avec échéance et de joueurs pouvant partir dépend du jeu."),
-        ),
-        (
-            "E5",
-            "Une action hors de sa phase, ou d’un joueur qui n’est pas concerné, est refusée sans rien changer.",
-            None,
-        ),
-        (
-            "T1",
-            "Chaque limite de longueur est appliquée par l’hôte, pas seulement par la page, et comptée de la même façon des deux côtés.",
-            Some("Les champs de texte et la répartition page/hôte dépendent du jeu."),
-        ),
-        (
-            "D1",
-            "L’état initial, les contenus et versions, la graine et les entrées externes datées et ordonnées déterminent les états et effets logiques de la partie.",
-            None,
-        ),
-        (
-            "D3",
-            "Les invariants du jeu tiennent après chaque pas. Le jeu les énumère dans son test.",
-            None,
-        ),
-        (
-            "D4",
-            "Pour une simulation en temps réel, le hash de l’état est le même en natif et en WASM sur un replay.",
-            Some(
-                "La présence d’une simulation en temps réel et son exécution en natif et en WASM doivent être déclarées.",
-            ),
-        ),
-        (
-            "D5",
-            "On relance une partie sans rien redémarrer.",
-            Some(
-                "Le sens d’une nouvelle partie dépend du jeu ; un éditeur continu ne possède pas nécessairement ce cycle.",
-            ),
-        ),
-    ] {
+    for (id, claim, condition) in UNBOUND {
         let control = format!("unbound:{id}");
         let reason = "Aucun contrôle relié explicitement à cette exigence commune ; les garanties J ne sont pas assimilées automatiquement.";
         plan.controls.push(Control {
