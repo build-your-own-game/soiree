@@ -399,26 +399,11 @@ fn personal_note(relative: &Path) -> bool {
 }
 
 /// `--no-index`: a followed file inside must not hide the folder's own rule.
+/// Any failure, such as a submodule, leaves the folder an input.
 fn ignored_by_git(root: &Path, relative: &Path) -> Result<bool> {
-    let output = util::run(
-        root,
-        "git",
-        &[
-            "check-ignore",
-            "--quiet",
-            "--no-index",
-            "--",
-            path_text(relative)?,
-        ],
-    )?;
-    match output.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(format!(
-            "git check-ignore impossible pour {}",
-            relative.display()
-        )),
-    }
+    let path = path_text(relative)?;
+    let args = ["check-ignore", "--quiet", "--no-index", "--", path];
+    Ok(util::run(root, "git", &args)?.status.success())
 }
 
 fn has_git_ancestor(root: &Path) -> Result<bool> {
@@ -870,6 +855,13 @@ mod tests {
         let before = fixture.digest();
         fixture.write("content/data/words.json", "[1]");
         assert_ne!(before, fixture.digest(), "a data folder Git follows");
+    }
+    #[test]
+    fn a_data_folder_git_cannot_judge_stays_an_input() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        // `git check-ignore` refuses a path outside its work tree.
+        assert!(!ignored_by_git(&fixture.0, Path::new("../data")).unwrap());
     }
     #[test]
     fn a_data_folder_outside_git_stays_an_input() {
