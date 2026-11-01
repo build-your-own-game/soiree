@@ -1477,14 +1477,14 @@ mod tests {
         let fixture = Fixture::new();
         std::fs::write(
             fixture.root.join("src/lib.rs"),
-            r#"
+            r"
 #[cfg(test)]
 mod tests {
     #[test]
     #[should_panic]
     fn does_not_panic() {}
 }
-"#,
+",
         )
         .unwrap();
         let report = run_with_suites(
