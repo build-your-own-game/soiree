@@ -7,12 +7,22 @@ test("frame budgets reject an isolated stall and low cadence", () => {
   const smooth = summarizeFrames(Array(180).fill(1000 / 60));
   assert.deepEqual(frameFailures(smooth), []);
   assert.match(frameFailures(summarizeFrames([...Array(179).fill(1000 / 60), 45]))[0], /45.0 ms/);
-  assert.match(frameFailures(summarizeFrames(Array(90).fill(1000 / 30)))[1], /30.0 images/);
+  assert.match(frameFailures(summarizeFrames(Array(90).fill(1000 / 30))).at(-1), /30.0 images/);
   assert.throws(() => summarizeFrames([]));
   assert.throws(() => summarizeFrames([NaN]));
   assert.throws(() => frameFailures(smooth, { min_fps: "fast" }), /nombre positif/);
   assert.throws(() => frameFailures(smooth, { max_frame_ms: -1 }), /nombre positif/);
   assert.throws(() => positiveBudget("80", 80, "budget"), /nombre positif/);
+});
+
+test("one skipped 60 Hz vsync fits the 33 ms budget; a really slow image does not", () => {
+  const withWorst = (worst) => frameFailures(summarizeFrames([...Array(179).fill(1000 / 60), worst]));
+  // 33.3 and 33.4 ms are what Chrome really reports for one skipped vsync.
+  for (const skippedVsync of [1000 / 30, 33.3, 33.4, 34]) assert.deepEqual(withWorst(skippedVsync), [], `${skippedVsync} ms`);
+  // Just past the resolution, a 120 Hz image, and two skipped vsyncs at 60 Hz.
+  for (const slow of [34.1, 41.7, 45, 50]) assert.match(withWorst(slow)[0], /image .* ms > 33 ms/, `${slow} ms`);
+  assert.deepEqual(frameFailures(summarizeFrames([20.5]), { max_frame_ms: 20, min_fps: 1 }), []);
+  assert.match(frameFailures(summarizeFrames([21.5]), { max_frame_ms: 20, min_fps: 1 })[0], /> 20 ms/);
 });
 
 test("both engines preserve removable init scripts and measure a causal rendered response", { timeout: 120000 }, async (t) => {
@@ -51,6 +61,25 @@ test("both engines preserve removable init scripts and measure a causal rendered
         await tab.close();
       });
     }
+  } finally { await browser.close(); }
+});
+
+test("a real long image in the renderer breaches the budget despite the measurement tolerance", { timeout: 10000 }, async () => {
+  const browser = await launchBrowser({ webkitPhones: false });
+  try {
+    const tab = await browser.open("data:text/html,<p>stall</p>");
+    await tab.page.evaluate(() => {
+      let frame = 0;
+      const tick = () => {
+        if (++frame === 20) { const began = performance.now(); while (performance.now() - began < 60) { /* deliberate long image */ } }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const sample = await measureFrames(tab.page, 600);
+    assert.ok(sample.max_ms >= 40, `the stall was observed at ${sample.max_ms} ms`);
+    assert.ok(frameFailures(sample).some((failure) => failure.startsWith("image ")));
+    await tab.close();
   } finally { await browser.close(); }
 });
 

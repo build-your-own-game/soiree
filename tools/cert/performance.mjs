@@ -17,11 +17,17 @@ export function positiveBudget(value, fallback, label) {
   return result;
 }
 
+/** rAF timestamps land on vsyncs: one skipped vsync at 60 Hz is 33.33 ms, which
+ * the 33 ms budget names rounded down, and Chrome reports it as 33.3 or 33.4 ms.
+ * This 1 ms is that resolution, not extra budget. Adding a whole vsync (16.7 ms)
+ * instead would accept a 45 ms image, which is a real slow frame on a 120 Hz grid. */
+export const FRAME_RESOLUTION_MS = 1;
+
 export function frameFailures(sample, options = {}) {
   const max_frame_ms = positiveBudget(options.max_frame_ms, 33, "performance.max_frame_ms");
   const min_fps = positiveBudget(options.min_fps, 60, "performance.min_fps");
   const failures = [];
-  if (sample.max_ms > max_frame_ms) failures.push(`image ${sample.max_ms.toFixed(1)} ms > ${max_frame_ms} ms`);
+  if (sample.max_ms > max_frame_ms + FRAME_RESOLUTION_MS) failures.push(`image ${sample.max_ms.toFixed(1)} ms > ${max_frame_ms} ms`);
   // rAF timestamps are quantized; half an image/second is the measurement
   // resolution of the short certification sample, not a performance budget.
   if (sample.fps < min_fps - 0.5) failures.push(`${sample.fps.toFixed(1)} images/s < ${min_fps}`);
