@@ -1,8 +1,7 @@
-//! Deterministic evaluation. The final finite decision is the proved production kernel.
+//! Deterministic evaluation. The final finite decision is in [`super::decision`].
 use std::collections::{BTreeMap, BTreeSet};
 
-use verification_kernel as kernel;
-
+use super::decision as kernel;
 use super::model::{
     Applicability, AssessedObligation, Assessment, Evaluation, ExecutionSpec, Observation, Outcome,
     Plan,

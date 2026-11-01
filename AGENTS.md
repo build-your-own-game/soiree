@@ -59,11 +59,10 @@ Reprises de `salon/AGENTS.md`, qui reste la référence :
 - Les items du catalogue sans décision restent non revus. Une justification
   d’agent ou une revue humaine garde sa méthode et ses hypothèses ; elle ne
   devient pas un test ni une preuve par sa seule rédaction.
-- Le noyau `outil/verification-kernel/` est le code de décision de production
-  vérifié par Verus. Résolution, empreintes, adaptateurs et vérité des oracles
-  restent hors de cette preuve. Suis son README et `tools/verify-policy.sh` pour
-  reproduire la preuve et ses mutations ; des tests Rust verts ne la remplacent
-  pas. Aucun vérificateur formel n’est nécessaire pour compiler un jeu.
+- La décision finale est dans `outil/src/verification/decision.rs`. Ses tests
+  parcourent tout son domaine : garde-les exhaustifs quand il change.
+  Résolution, empreintes, adaptateurs et vérité des oracles restent hors de
+  ces tests.
 
 Les tests de l’outil exercent réellement une petite campagne de mutations du modèle.
 Avant `cargo test` dans `outil/`, installe `cargo-mutants` à la version documentée
@@ -112,8 +111,6 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
    Lancer `soiree check salon`, `soiree check remote` et `soiree check .` (le
    catalogue). Dans `outil/` : `cargo fmt --check`,
    `cargo clippy --all-targets -- -D warnings`, `cargo test --locked`.
-   Exécuter aussi les tests du noyau puis `tools/verify-policy.sh --mutations`
-   avec la version de Verus figée dans son README.
 3. `soiree check` puis `soiree certify` sur `modele/`.
 4. Les mêmes sur chaque jeu du dossier de l'hôte (`games/*`). Le `[patch]` de son `.cargo/config.toml` les fait compiler contre ce salon-ci, avant toute étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
 5. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
