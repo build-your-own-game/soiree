@@ -2,7 +2,10 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use super::model::{AssessedObligation, Assessment, Contract, ExecutionSpec, VerificationReport};
+use super::model::{
+    AssessedObligation, Assessment, Contract, ExecutionSpec, LoadSample, LoadState, MachineLoad,
+    VerificationReport,
+};
 use crate::util::{self, Result};
 
 pub const START: &str = "<!-- soiree:guarantees:start -->";
@@ -200,7 +203,31 @@ pub fn summary(report: &VerificationReport) -> String {
             "\n\nHors de ce passage : {at_the_table} à vérifier au salon avec de vrais téléphones, {elsewhere} que cette commande ne lance pas, {unbound} sans contrôle relié."
         );
     }
+    if let Some(warning) = report.machine_load.as_ref().and_then(load_warning) {
+        let _: std::fmt::Result = write!(text, "\n\n{warning}");
+    }
     text
+}
+
+/// A verdict stays what it is; this says which timings not to trust.
+fn load_warning(load: &MachineLoad) -> Option<String> {
+    let share = |sample: &LoadSample| {
+        sample
+            .cpu_share
+            .map_or_else(|| "?".to_owned(), |share| format!("{:.0} %", share * 100.0))
+    };
+    match load.state {
+        LoadState::Calm => None,
+        LoadState::Unknown => Some(
+            "⚠ Charge de la machine non mesurée : un délai dépassé peut venir d’elle.".to_owned(),
+        ),
+        LoadState::Loaded => Some(format!(
+            "⚠ Machine chargée pendant ce passage : processeur occupé à {} au début et {} à la fin (seuil {:.0} %). Les délais et les mesures de ce passage ne sont pas fiables : relance sur une machine au repos avant de conclure.",
+            share(&load.start),
+            share(&load.end),
+            load.threshold * 100.0
+        )),
+    }
 }
 
 fn line(report: &VerificationReport, o: &AssessedObligation) -> String {
@@ -270,6 +297,7 @@ mod tests {
             identity_after: None,
             identity_errors: vec![],
             provenance: None,
+            machine_load: None,
             plan: Plan {
                 schema: 1,
                 policy_version: "test".to_owned(),
@@ -422,6 +450,44 @@ mod tests {
         };
         let text = summary(&report(&[("D1", Assessment::Pending, unbound)], ""));
         assert!(text.contains("1 sans contrôle relié"), "{text}");
+    }
+
+    #[test]
+    fn a_loaded_machine_is_said_whatever_the_verdict() {
+        let sample = |share| LoadSample {
+            cores: 8,
+            cpu_share: share,
+            load_1m: 9.0,
+        };
+        let load = |state, start, end| MachineLoad {
+            start: sample(start),
+            end: sample(end),
+            threshold: 0.5,
+            state,
+        };
+        for assessment in [Assessment::Satisfied, Assessment::Failed] {
+            let mut passage = report(&[("P1", assessment, automatic())], "");
+            passage.machine_load = Some(load(LoadState::Loaded, Some(0.824), None));
+            let text = summary(&passage);
+            assert!(
+                text.contains("Machine chargée pendant ce passage"),
+                "{text}"
+            );
+            assert!(text.contains("82 % au début et ? à la fin"), "{text}");
+            assert!(text.contains("seuil 50 %"), "{text}");
+            assert_eq!(
+                text.starts_with('✓'),
+                assessment == Assessment::Satisfied,
+                "{text}"
+            );
+        }
+        let mut calm = report(&[("A", Assessment::Satisfied, automatic())], "");
+        calm.machine_load = Some(load(LoadState::Calm, Some(0.01), Some(0.02)));
+        assert!(!summary(&calm).contains('⚠'));
+        calm.machine_load = None;
+        assert!(!summary(&calm).contains('⚠'));
+        calm.machine_load = Some(load(LoadState::Unknown, None, Some(0.02)));
+        assert!(summary(&calm).contains("non mesurée"));
     }
 
     #[test]

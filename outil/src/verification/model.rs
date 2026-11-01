@@ -215,6 +215,32 @@ pub struct Evaluation {
     pub diagnostics: Vec<String>,
 }
 
+/// How busy the machine was, outside the controller. It qualifies the timings
+/// of a passage for its reader and never enters an evaluation.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MachineLoad {
+    pub start: LoadSample,
+    pub end: LoadSample,
+    pub threshold: f64,
+    pub state: LoadState,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LoadSample {
+    pub cores: u32,
+    /// Share of all cores busy over the window; `None` if it could not be read.
+    pub cpu_share: Option<f64>,
+    pub load_1m: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoadState {
+    Calm,
+    Loaded,
+    Unknown,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VerificationReport {
     pub schema: u32,
@@ -227,6 +253,9 @@ pub struct VerificationReport {
     pub identity_after: Option<String>,
     pub identity_errors: Vec<String>,
     pub provenance: Option<super::identity::Identity>,
+    /// Only the harness measures it: `check` has no timing to qualify.
+    #[serde(default)]
+    pub machine_load: Option<MachineLoad>,
     pub plan: Plan,
     pub observations: Vec<Observation>,
     pub evaluation: Evaluation,

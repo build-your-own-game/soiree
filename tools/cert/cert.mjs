@@ -41,6 +41,7 @@ import { browserResources, resourceFailures, resourceCycle } from "./resources.m
 import { AdvanceCycle, advanceOnce } from "./progression.mjs";
 import { refusalMessage, phoneFieldSizes, fieldSizeFailures, seatAfterReturn } from "./presentation.mjs";
 import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
+import { measureLoad, loadSummary, loadWarning } from "./load.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NASTY = JSON.parse(readFileSync(join(HERE, "nasty.json"), "utf8")).texts;
@@ -2109,7 +2110,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 let crashed = null;
+let loadAtStart = null;
 try {
+  if (!args.prepareOnly) loadAtStart = await measureLoad();
   await main();
 } catch (error) {
   crashed = error;
@@ -2138,6 +2141,7 @@ if (args.prepareOnly) {
 }
 
 checkBrowserPanics("fin");
+evidence.machine_load = loadSummary(loadAtStart, await measureLoad());
 evidence.completed = true;
 persistEvidence();
 
@@ -2158,6 +2162,8 @@ for (const item of ITEMS) {
   lines.push(`| ${item} | ${MARK[r.status]} | ${text.join("<br>").replaceAll("|", "\\|")} |`);
 }
 lines.push("", "✓ observé · ✗ échec · ? à juger par un humain · ~ vérifié en partie seulement · – non exécuté ou exclusion explicitée", "");
+const loadNote = loadWarning(evidence.machine_load);
+if (loadNote) lines.push(loadNote, "");
 if (host?.stderr.length) lines.push("Dernières lignes d'erreur de l'hôte :", "", "```", ...host.stderr.slice(-10), "```");
 writeFileSync(join(outDir, "performance.json"), `${JSON.stringify(measurements, null, 2)}\n`);
 writeFileSync(join(outDir, "rapport.md"), lines.join("\n"));

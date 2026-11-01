@@ -82,6 +82,11 @@ pub const HARNESS: &[(&str, &str)] = &[
         "capacity.test.mjs",
         include_str!("../../tools/cert/capacity.test.mjs"),
     ),
+    ("load.mjs", include_str!("../../tools/cert/load.mjs")),
+    (
+        "load.test.mjs",
+        include_str!("../../tools/cert/load.test.mjs"),
+    ),
     ("cleanup.mjs", include_str!("../../tools/cert/cleanup.mjs")),
     (
         "cleanup.test.mjs",

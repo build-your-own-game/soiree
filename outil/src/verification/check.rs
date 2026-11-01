@@ -347,6 +347,7 @@ fn finish(
         identity_after: after.ok().map(|identity| identity.value),
         identity_errors: errors,
         provenance: before.ok(),
+        machine_load: None,
         plan,
         observations,
         evaluation,

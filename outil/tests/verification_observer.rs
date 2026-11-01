@@ -32,8 +32,11 @@ if (mode === 'stdout-only') {
   console.log('ALL CHECKS PASSED: this green text is not structured evidence');
   process.exit(0);
 }
+const load = (share) => ({ cores: 8, cpu_share: share, load_1m: 12.5 });
 writeFileSync(output, JSON.stringify({
   schema: 1,
+  ...(mode === 'loaded' ? { machine_load: { start: load(0.82), end: load(0.12), threshold: 0.5, state: 'loaded' } } : {}),
+  ...(mode === 'calm' ? { machine_load: { start: load(0.02), end: load(0.03), threshold: 0.5, state: 'calm' } } : {}),
   completed: mode !== 'abort',
   infrastructure_error: mode === 'abort' ? 'fixture controller aborted after C2' : null,
   records: [{
@@ -260,6 +263,34 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_eq!(report["evaluation"]["complete"], false);
         assert_eq!(obligation(&report, "C2")["assessment"], "review-required");
         assert!(String::from_utf8_lossy(&output.stdout).contains("À juger par un humain"));
+    }
+
+    #[test]
+    fn a_loaded_machine_is_said_without_changing_the_verdict() {
+        let fixture = Fixture::new("loaded");
+        let output = fixture.run();
+        assert_success(&output);
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], true);
+        assert_eq!(obligation(&report, "C2")["assessment"], "satisfied");
+        assert_eq!(report["machine_load"]["start"]["cpu_share"], 0.82);
+        assert_eq!(report["machine_load"]["end"]["load_1m"], 12.5);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Machine chargée"), "{stdout}");
+        assert!(stdout.contains("82 %"), "{stdout}");
+        let markdown =
+            std::fs::read_to_string(fixture.game.join("certification/verification.md")).unwrap();
+        assert!(markdown.contains("Machine chargée"), "{markdown}");
+    }
+
+    #[test]
+    fn a_calm_machine_keeps_its_measure_and_adds_no_warning() {
+        let fixture = Fixture::new("calm");
+        let output = fixture.run();
+        assert_success(&output);
+        assert_eq!(fixture.report()["machine_load"]["state"], "calm");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("Machine chargée"), "{stdout}");
     }
 
     #[test]

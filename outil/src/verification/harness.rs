@@ -24,6 +24,8 @@ struct Evidence {
     completed: bool,
     infrastructure_error: Option<String>,
     records: Vec<Record>,
+    #[serde(default)]
+    machine_load: Option<model::MachineLoad>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -78,6 +80,10 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
     errors.extend(transport_errors);
     let evidence: Result<Evidence> =
         util::read(&raw).and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()));
+    let machine_load = evidence
+        .as_ref()
+        .ok()
+        .and_then(|evidence| evidence.machine_load.clone());
     let observations = collect(
         &plan,
         &selected,
@@ -118,6 +124,7 @@ pub fn run(dir: &Path, harness: &Path, extra: &[String]) -> Result<bool> {
         identity_after: after.ok().map(|i| i.value),
         identity_errors: errors,
         provenance: before.ok(),
+        machine_load,
         plan,
         observations,
         evaluation,
@@ -520,6 +527,7 @@ mod tests {
             completed: true,
             infrastructure_error: None,
             records,
+            machine_load: None,
         };
         let observations = collect(
             &plan,
