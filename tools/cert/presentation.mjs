@@ -41,3 +41,11 @@ export function fieldSizeFailures(samples) {
     .filter(field => !Number.isFinite(field.font_px) || field.font_px < 16)
     .map(field => `${sample.label} ${field.tag}${field.id ? `#${field.id}` : ''} : ${field.font_px} px`));
 }
+
+/** Whether a page came back to the seat it had: the same token, and the same
+ * device in a Welcome that arrived after the reload. "unknown" is not a pass. */
+export function seatAfterReturn(before, after) {
+  if (before.token === null || !Number.isInteger(before.device)) return "unknown";
+  if (after.token === null || !Number.isInteger(after.device) || !after.welcomed) return "unknown";
+  return after.token === before.token && after.device === before.device ? "same" : "other";
+}

@@ -93,6 +93,12 @@ def mutations(source):
             "if priority(left) >= priority(right) { left } else { left }",
             "Lose an unresolved right-hand obligation during aggregation.",
         ),
+        (
+            "unverified-passes-run",
+            "matches!(verdict, Verdict::Satisfied | Verdict::NotApplicable | Verdict::ReviewRequired)",
+            "matches!(verdict, Verdict::Satisfied | Verdict::NotApplicable | Verdict::ReviewRequired | Verdict::Incomplete)",
+            "Let a check that could not finish pass its run.",
+        ),
     ]
     for name, before, after, description in changes:
         if source.count(before) != 1:
@@ -103,7 +109,7 @@ def mutations(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verus", default=os.environ.get("SOIREE_VERUS", "verus"))
-    parser.add_argument("--mutations", action="store_true", help="Also require three real bad policies to fail verification")
+    parser.add_argument("--mutations", action="store_true", help="Also require four real bad policies to fail verification")
     parser.add_argument("--output", type=Path, help="Report directory (default: soiree/target/verification-policy)")
     args = parser.parse_args()
     kernel = Path(__file__).resolve().parent

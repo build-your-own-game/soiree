@@ -67,9 +67,10 @@ SOIREE_VERUS=/absolute/path/to/verus tools/verify-policy.sh --mutations
 ```
 
 The second command additionally mutates copies of the exact production source:
-it accepts stale evidence, treats an unexecuted check as successful, and drops
-an unresolved obligation during aggregation. The unchanged postconditions must
-reject all three mutations. A syntax error or a missing tool does not count as
+it accepts stale evidence, treats an unexecuted check as successful, drops an
+unresolved obligation during aggregation, and lets a check that could not
+finish pass its run. The unchanged postconditions must reject all four
+mutations. A syntax error or a missing tool does not count as
 detecting a mutant. Mutants are never compiled into the CLI.
 
 Logs and a structured `report.json` are written under the ignored

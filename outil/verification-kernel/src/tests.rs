@@ -1,4 +1,6 @@
-use super::{Applicability, Execution, Facts, Freshness, Match, Verdict, assess, combine};
+use super::{
+    Applicability, Execution, Facts, Freshness, Match, Verdict, assess, combine, passes_run,
+};
 
 const APPLICABILITIES: [Applicability; 3] = [
     Applicability::Applies,
@@ -88,6 +90,20 @@ fn a_current_execution_keeps_its_distinct_outcome() {
                 freshness: Freshness::Current,
             }),
             expected
+        );
+    }
+}
+
+#[test]
+fn only_an_unresolved_verdict_fails_a_run() {
+    for verdict in VERDICTS {
+        assert_eq!(
+            passes_run(verdict),
+            matches!(
+                verdict,
+                Verdict::Satisfied | Verdict::NotApplicable | Verdict::ReviewRequired
+            ),
+            "{verdict:?}"
         );
     }
 }

@@ -33,7 +33,7 @@ Depuis 0.3.0, les engagements propres au jeu vivent dans `verification.toml`.
 `soiree contracts` les combine avec les contrôles communs pour produire le plan ;
 `soiree contracts --write-view` actualise leur vue dans le `CERTIFICATION.md` du
 jeu. Ce document commun reste la description du socle, pas un rapport de passage.
-Le format, la migration et les limites sont dans
+Le format et les limites sont dans
 [`VERIFICATION.md`](VERIFICATION.md), aussi distribué dans `.soiree/`.
 
 Les méthodes et les résultats restent séparés : un test, une mesure, une preuve

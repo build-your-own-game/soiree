@@ -39,7 +39,7 @@ import { freeHostPort } from "./ports.mjs";
 import { cleanupAll, runWithCleanup } from "./cleanup.mjs";
 import { browserResources, resourceFailures, resourceCycle } from "./resources.mjs";
 import { AdvanceCycle, advanceOnce } from "./progression.mjs";
-import { refusalMessage, phoneFieldSizes, fieldSizeFailures } from "./presentation.mjs";
+import { refusalMessage, phoneFieldSizes, fieldSizeFailures, seatAfterReturn } from "./presentation.mjs";
 import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1253,7 +1253,7 @@ const scenarios = {
     if (bSeated) {
       await b.tab.evaluate(`localStorage.clear(); for (const [k, v] of ${saved}) localStorage.setItem(k, v);`).catch(() => {});
       await b.tab.reload();
-      if ((await waitJoined(b, 10_000)) === null) partial("C9", `stockage remis, ${b.tab.label} ne retrouve pas sa place ; il lit « ${(await pageText(b.tab)).slice(0, 100)} »`);
+      if ((await waitJoined(b, 10_000)) === null) fail("C9", `stockage remis, ${b.tab.label} ne retrouve pas sa place ; il lit « ${(await pageText(b.tab)).slice(0, 100)} »`);
     }
     await invariants("storage");
     const missing = await rejoinAll();
@@ -1368,11 +1368,16 @@ const scenarios = {
   async reload() {
     if (!phones.length) return skip("C4", "pas de téléphones");
     const phone = phones[Math.min(2, phones.length - 1)];
+    const seatBefore = { token: tokenInUse(phone.tab), device: deviceOf(phone.tab) };
+    const welcomesBefore = phone.tab.welcomes;
     await phone.tab.reload();
     const seat = await waitJoined(phone, 10_000);
     if (seat !== null) ok("C4", `après un rechargement, de retour à sa place en ${(seat / 1000).toFixed(1)} s`);
     else if ((await runJoin(phone, phone.name)) && (await waitJoined(phone, 10_000)) !== null) {
-      review("C4", "après un rechargement, il faut repasser par l'écran pour rejoindre : vérifie que le joueur y retrouve son personnage et son score");
+      const back = seatAfterReturn(seatBefore, { token: tokenInUse(phone.tab), device: deviceOf(phone.tab), welcomed: phone.tab.welcomes > welcomesBefore });
+      if (back === "same") review("C4", "après un rechargement, il faut repasser par l'écran pour rejoindre : même jeton et même appareil ; vérifie que le joueur y retrouve son personnage et son score");
+      else if (back === "other") fail("C4", "après un rechargement, l'écran pour rejoindre a donné une autre place");
+      else partial("C4", "après un rechargement, le joueur rejoint mais le jeton ou l'appareil n'ont pas pu être comparés");
     } else fail("C4", "après un rechargement, le joueur a perdu sa place");
     await invariants("reload");
   },
@@ -1382,13 +1387,19 @@ const scenarios = {
     if (!phones.length) return skip("C5", "pas de téléphones");
     const phone = phones[Math.min(3, phones.length - 1)];
     const before = phone.tab.sockets;
+    const seatBefore = { token: tokenInUse(phone.tab), device: deviceOf(phone.tab) };
     const twin = await browser.open(phone.url, { width: 390, height: 844, mobile: true, context: phone.tab.context });
     twin.label = `${phone.tab.label} (2ᵉ onglet)`;
     extraTabs.push(twin);
     let twinSeat = await waitJoined({ tab: twin }, 10_000);
     if (twinSeat === null && (await runJoin({ tab: twin }, phone.name))) {
       twinSeat = await waitJoined({ tab: twin }, 10_000);
-      if (twinSeat !== null) review("C5", "le nouvel onglet doit repasser par l'écran pour rejoindre");
+      if (twinSeat !== null) {
+        const back = seatAfterReturn(seatBefore, { token: tokenInUse(twin), device: deviceOf(twin), welcomed: twin.welcomes > 0 });
+        if (back === "same") review("C5", "le nouvel onglet doit repasser par l'écran pour rejoindre : même jeton et même appareil");
+        else if (back === "other") fail("C5", "le nouvel onglet a rejoint sur une autre place au lieu de prendre celle du joueur");
+        else partial("C5", "le nouvel onglet rejoint mais le jeton ou l'appareil n'ont pas pu être comparés");
+      }
     }
     await sleep(10_000);
     const connections = phone.tab.sockets - before + twin.sockets;
@@ -1903,7 +1914,8 @@ const scenarios = {
     }
     if (told.length) {
       const text = (await told[0].tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-      review("C7", `${told.length} téléphone(s) ne se reconnectent pas mais ont quitté l'écran de jeu ; ils lisent : « ${text.slice(0, 120)} » (clair ?)`);
+      if (text) review("C7", `${told.length} téléphone(s) ne se reconnectent pas mais ont quitté l'écran de jeu ; ils lisent : « ${text.slice(0, 120)} » (clair ?)`);
+      else fail("C7", `${told.length} téléphone(s) ne se reconnectent pas et leur écran est vide`);
     }
     if (!frozen.length && !told.length) ok("C7", "après le redémarrage de l'hôte, la TV et tous les téléphones se sont reconnectés");
     const lost = [];

@@ -57,14 +57,7 @@ pub fn evaluate(
                 facts.execution = kernel::Execution::InfrastructureError;
             }
             let verdict = kernel::assess(facts);
-            if selected.contains(id)
-                && !matches!(
-                    verdict,
-                    kernel::Verdict::Satisfied
-                        | kernel::Verdict::NotApplicable
-                        | kernel::Verdict::ReviewRequired
-                )
-            {
+            if selected.contains(id) && !kernel::passes_run(verdict) {
                 selected_ok = false;
             }
             total = kernel::combine(total, verdict);

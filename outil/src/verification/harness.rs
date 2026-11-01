@@ -250,7 +250,10 @@ fn collect(
                         })
                         .collect::<Vec<_>>();
                     let outcome = summarize(&records);
-                    let detail = records
+                    // The worst note first: the summary quotes the first line.
+                    let mut notes = records.clone();
+                    notes.sort_by_key(|r| severity(&r.status));
+                    let detail = notes
                         .iter()
                         .map(|r| r.note.as_str())
                         .collect::<Vec<_>>()
@@ -290,6 +293,16 @@ fn collect(
         ));
     }
     observations
+}
+
+fn severity(status: &str) -> u8 {
+    match status {
+        "fail" => 0,
+        "partial" => 1,
+        "review" => 2,
+        "skip" => 3,
+        _ => 4,
+    }
 }
 
 fn summarize(records: &[&Record]) -> Outcome {

@@ -69,8 +69,13 @@ et aucun thread supplémentaire conservé.
 
 - `soiree check` et `soiree certify` finissent par un résumé en clair. Ce qu’un
   humain doit juger (`?` dans le rapport du harnais) ne fait plus échouer la
-  commande. Une vérification qui n’a pas pu finir (`~`) la fait toujours
-  échouer, avec le statut « pas pu vérifier ».
+  commande : T2, C7 et C9 quand la page dit quelque chose, C4 et C5 quand le
+  jeton et l’appareil ont été retrouvés. Cette décision vit dans le noyau
+  prouvé (`passes_run`). Une vérification qui n’a pas pu finir (`~`) fait
+  toujours échouer, avec le statut « pas pu vérifier ». Le harnais échoue
+  maintenant si un retour donne une autre place, si un téléphone reste sur un
+  écran vide après un redémarrage de l’hôte, ou si le stockage rétabli ne rend
+  pas sa place.
 - Une tentative WebRTC dispose maintenant de la même fenêtre absolue de 15 s
   côté page et côté hôte, au lieu d'être détruite par la page après 3 s pendant
   une négociation encore viable. Les erreurs natives déclenchent immédiatement

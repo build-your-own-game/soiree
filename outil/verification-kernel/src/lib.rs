@@ -149,6 +149,27 @@ fn priority(verdict: Verdict) -> (result: u8)
     }
 }
 
+/// What a selected control may conclude while its run still passes. A person's
+/// judgement stays visible without failing the run; anything unresolved fails it.
+pub open spec fn passes_run_spec(verdict: Verdict) -> bool {
+    verdict == Verdict::Satisfied
+        || verdict == Verdict::NotApplicable
+        || verdict == Verdict::ReviewRequired
+}
+
+/// Whether one selected control lets its run pass. This is not a success: the
+/// verdict itself stays what it is in the report.
+#[must_use]
+pub fn passes_run(verdict: Verdict) -> (result: bool)
+    ensures
+        result == passes_run_spec(verdict),
+        verdict == Verdict::Incomplete ==> !result,
+        verdict == Verdict::Failed ==> !result,
+        verdict == Verdict::InfrastructureError ==> !result,
+{
+    matches!(verdict, Verdict::Satisfied | Verdict::NotApplicable | Verdict::ReviewRequired)
+}
+
 pub open spec fn combined(left: Verdict, right: Verdict) -> Verdict {
     if priority_spec(left) >= priority_spec(right) { left } else { right }
 }

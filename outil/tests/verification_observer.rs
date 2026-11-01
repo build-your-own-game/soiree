@@ -31,7 +31,7 @@ writeFileSync(output, JSON.stringify({
   infrastructure_error: mode === 'abort' ? 'fixture controller aborted after C2' : null,
   records: [{
     scenario: mode === 'wrong-scenario' ? 'reload' : 'cut',
-    item: 'C2', status: 'ok', note: 'fixture completed the cut observation',
+    item: 'C2', status: ['partial', 'review'].includes(mode) ? mode : 'ok', note: 'fixture completed the cut observation',
   }],
 }));
 process.exit(mode === 'abort' ? 2 : 0);
@@ -212,6 +212,29 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_selected_cut(&report);
         assert_current_sources(&report, &fixture);
         fixture.assert_prepare_then_observe();
+    }
+
+    #[test]
+    fn a_human_judgement_passes_the_command_without_counting_as_verified() {
+        let fixture = Fixture::new("review");
+        let output = fixture.run();
+        assert_success(&output);
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], true);
+        assert_eq!(report["evaluation"]["complete"], false);
+        assert_eq!(obligation(&report, "C2")["assessment"], "review-required");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("À juger par un humain"));
+    }
+
+    #[test]
+    fn a_check_that_could_not_finish_fails_the_real_command() {
+        let fixture = Fixture::new("partial");
+        let output = fixture.run();
+        assert!(!output.status.success());
+        let report = fixture.report();
+        assert_eq!(report["evaluation"]["selected_scope_satisfied"], false);
+        assert_eq!(obligation(&report, "C2")["assessment"], "pending");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("Pas pu vérifier"));
     }
 
     #[test]

@@ -453,5 +453,8 @@ chiffré et sa renégociation, en plus des simulations du protocole applicatif.
 L'enquête macOS est close par la minuterie kqueue : les scripts et les deux
 workflows qu'elle a utilisés sont sortis du dépôt, avec l'historique git pour
 les retrouver au commit `fff8061`. Les mesures restent dans
-`certification/ci-timers-2026-10-29/`, et `host-deadlines.yml` garde la
-régression. Les chemins cités plus haut désignent donc ces fichiers historiques.
+`certification/ci-timers-2026-10-29/`. `host-deadlines.yml` lance désormais la
+sonde `steps_come_on_time`, qui imprime les retards sans seuil : elle n'est donc
+pas une régression de cadence. `NOTE_CRITICAL` n'a toujours pas de test : le
+retirer resterait vert. Les chemins cités plus haut désignent ces fichiers
+historiques.

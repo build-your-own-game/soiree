@@ -31,3 +31,4 @@ jobs:
           cargo fmt --all --check
           cargo clippy --locked -p salon-host --all-targets -- -D warnings
           cargo test --locked -p salon-host
+          cargo test --locked -p salon-host steps_come_on_time -- --ignored --nocapture

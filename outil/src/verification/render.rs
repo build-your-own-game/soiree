@@ -80,12 +80,26 @@ pub fn save(dir: &Path, report: &VerificationReport, stem: &str) -> Result<()> {
     let out = dir.join("certification");
     let json = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
     util::write(&out.join(format!("{stem}.json")), &format!("{json}\n"))?;
+    let evaluation = &report.evaluation;
     let mut text = format!(
-        "# Vérification\n\n{}\n\n| Exigence | Résultat |\n|---|---|\n",
-        summary(report)
+        "# Vérification\n\n{}\n\nPérimètre demandé : **{}**. Ensemble des obligations automatisées : **{}**.\n\nUn périmètre réussi ne valide pas les contrôles non exécutés.\n\n| Exigence | Résultat |\n|---|---|\n",
+        summary(report),
+        if evaluation.selected_scope_satisfied {
+            "satisfait"
+        } else {
+            "non satisfait"
+        },
+        if evaluation.all_automated_obligations_satisfied {
+            "satisfait"
+        } else {
+            "incomplet"
+        }
     );
-    for o in &report.evaluation.obligations {
+    for o in &evaluation.obligations {
         let _: std::fmt::Result = writeln!(text, "| {} | {} |", o.id, label(o.assessment));
+    }
+    for d in &evaluation.diagnostics {
+        let _: std::fmt::Result = writeln!(text, "\n- {}", cell(d));
     }
     let reviewed = report
         .plan
@@ -110,39 +124,49 @@ pub fn summary(report: &VerificationReport) -> String {
             .iter()
             .any(|(id, a)| *a == Assessment::Pending && report.selection.contains(id))
     };
-    let manual = |o: &AssessedObligation| {
+    let has = |o: &AssessedObligation, kind: fn(&ExecutionSpec) -> bool| {
         o.controls.iter().any(|(id, _)| {
             report
                 .plan
                 .controls
                 .iter()
-                .any(|c| &c.id == id && matches!(c.execution, ExecutionSpec::Manual))
+                .any(|c| &c.id == id && kind(&c.execution))
         })
     };
     let (mut verified, mut not_applicable) = (0_usize, 0_usize);
-    let (mut at_the_table, mut elsewhere) = (0_usize, 0_usize);
+    let (mut at_the_table, mut unbound, mut elsewhere) = (0_usize, 0_usize, 0_usize);
     let (mut to_fix, mut broken, mut unverified, mut judged) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut health = None;
     for o in &evaluation.obligations {
         match o.assessment {
             Assessment::Satisfied => verified = verified.saturating_add(1),
             Assessment::NotApplicable => not_applicable = not_applicable.saturating_add(1),
+            // The harness's exit code repeats the failures it reports.
+            Assessment::Failed if o.id == "H1" => health = Some(line(report, o)),
             Assessment::Failed => to_fix.push(line(report, o)),
             Assessment::InfrastructureError => broken.push(line(report, o)),
             Assessment::Pending | Assessment::ReviewRequired if selected_pending(o) => {
                 unverified.push(line(report, o));
             }
             Assessment::ReviewRequired => judged.push(line(report, o)),
-            Assessment::Pending if manual(o) => at_the_table = at_the_table.saturating_add(1),
+            Assessment::Pending if has(o, |e| matches!(e, ExecutionSpec::Manual)) => {
+                at_the_table = at_the_table.saturating_add(1);
+            }
+            Assessment::Pending if has(o, |e| matches!(e, ExecutionSpec::Unbound { .. })) => {
+                unbound = unbound.saturating_add(1);
+            }
             Assessment::Pending => elsewhere = elsewhere.saturating_add(1),
         }
     }
-    let troubles = !evaluation.diagnostics.is_empty() || !broken.is_empty();
+    if to_fix.is_empty() {
+        to_fix.extend(health);
+    }
     let mut text = if evaluation.selected_scope_satisfied {
         format!(
             "✓ Aucun problème trouvé dans ce passage : {verified} vérifiées, {not_applicable} non applicables."
         )
-    } else if troubles {
+    } else if to_fix.is_empty() && unverified.is_empty() {
         "⚠ Le passage n’a pas abouti : le jeu n’est pas forcément en cause.".to_owned()
     } else {
         format!(
@@ -166,10 +190,14 @@ pub fn summary(report: &VerificationReport) -> String {
             let _: std::fmt::Result = write!(text, "\n\n{title} :\n- {}", lines.join("\n- "));
         }
     }
-    if at_the_table.saturating_add(elsewhere) > 0 {
+    if at_the_table
+        .saturating_add(unbound)
+        .saturating_add(elsewhere)
+        > 0
+    {
         let _: std::fmt::Result = write!(
             text,
-            "\n\nHors de ce passage : {at_the_table} à vérifier au salon avec de vrais téléphones, {elsewhere} que cette commande ne lance pas."
+            "\n\nHors de ce passage : {at_the_table} à vérifier au salon avec de vrais téléphones, {elsewhere} que cette commande ne lance pas, {unbound} sans contrôle relié."
         );
     }
     text
@@ -181,7 +209,7 @@ fn line(report: &VerificationReport, o: &AssessedObligation) -> String {
         .iter()
         .filter(|(_, a)| !matches!(a, Assessment::Satisfied | Assessment::NotApplicable))
         .filter_map(|(id, _)| report.observations.iter().find(|x| &x.control_id == id))
-        .map(|x| x.detail.as_str())
+        .filter_map(|x| x.detail.lines().next())
         .find(|d| !d.is_empty());
     format!("{} : {}", o.id, shorten(detail.unwrap_or(&o.claim)))
 }
@@ -232,7 +260,9 @@ mod tests {
             finished: String::new(),
             selection: assessments
                 .iter()
-                .filter(|(_, _, spec)| !matches!(spec, ExecutionSpec::Manual))
+                .filter(|(_, _, spec)| {
+                    !matches!(spec, ExecutionSpec::Manual | ExecutionSpec::Unbound { .. })
+                })
                 .map(|(name, _, _)| id(name))
                 .collect(),
             controller_exit_code: None,
@@ -293,7 +323,8 @@ mod tests {
                 selected_scope_satisfied: assessments.iter().all(|(_, a, spec)| {
                     satisfied(*a)
                         || *a == Assessment::ReviewRequired
-                        || (matches!(spec, ExecutionSpec::Manual) && *a == Assessment::Pending)
+                        || (matches!(spec, ExecutionSpec::Manual | ExecutionSpec::Unbound { .. })
+                            && *a == Assessment::Pending)
                 }),
                 all_automated_obligations_satisfied: false,
                 complete: false,
@@ -357,6 +388,50 @@ mod tests {
         ));
         assert!(text.starts_with("⚠ Le passage n’a pas abouti"), "{text}");
         assert!(text.contains("Panne de l’outil, pas du jeu"), "{text}");
+    }
+
+    #[test]
+    fn a_real_failure_is_named_even_when_the_run_had_trouble() {
+        let mut broken = report(&[("P1", Assessment::Failed, automatic())], "image lente");
+        broken
+            .evaluation
+            .diagnostics
+            .push("cert.json illisible".to_owned());
+        let text = summary(&broken);
+        assert!(text.starts_with("✗ À corriger : 1 point(s)."), "{text}");
+        assert!(text.contains("Problèmes du passage"), "{text}");
+    }
+
+    #[test]
+    fn the_harness_exit_code_does_not_count_as_one_more_point() {
+        let text = summary(&report(
+            &[
+                ("H1", Assessment::Failed, automatic()),
+                ("C1", Assessment::Failed, automatic()),
+            ],
+            "détail",
+        ));
+        assert!(text.starts_with("✗ À corriger : 1 point(s)."), "{text}");
+        assert!(!text.contains("H1"), "{text}");
+    }
+
+    #[test]
+    fn a_requirement_nothing_can_run_is_not_blamed_on_this_command() {
+        let unbound = ExecutionSpec::Unbound {
+            reason: "aucune liaison".to_owned(),
+        };
+        let text = summary(&report(&[("D1", Assessment::Pending, unbound)], ""));
+        assert!(text.contains("1 sans contrôle relié"), "{text}");
+    }
+
+    #[test]
+    fn only_the_first_line_of_a_detail_is_quoted() {
+        let text = summary(&report(
+            &[("C1", Assessment::Failed, automatic())],
+            "le pire\nle reste",
+        ));
+        assert!(text.contains("C1 : le pire"), "{text}");
+        assert!(!text.contains("le reste"), "{text}");
     }
 
     #[test]

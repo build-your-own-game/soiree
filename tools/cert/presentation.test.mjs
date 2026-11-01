@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { launchBrowser } from './browser.mjs';
-import { refusalMessage, phoneFieldSizes, fieldSizeFailures } from './presentation.mjs';
+import { refusalMessage, phoneFieldSizes, fieldSizeFailures, seatAfterReturn } from './presentation.mjs';
+
+test('a returning page keeps its seat only when token and device are both seen again', () => {
+  const before = { token: 'a', device: 3 };
+  const after = { token: 'a', device: 3, welcomed: true };
+  assert.equal(seatAfterReturn(before, after), 'same');
+  assert.equal(seatAfterReturn(before, { ...after, device: 4 }), 'other');
+  assert.equal(seatAfterReturn(before, { ...after, token: 'b' }), 'other');
+  assert.equal(seatAfterReturn(before, { ...after, welcomed: false }), 'unknown');
+  assert.equal(seatAfterReturn({ token: null, device: 3 }, after), 'unknown');
+  assert.equal(seatAfterReturn(before, { ...after, device: null }), 'unknown');
+});
 
 test('refusal requires the declared visible message, not an empty or disconnected page', async () => {
   const browser = await launchBrowser();
