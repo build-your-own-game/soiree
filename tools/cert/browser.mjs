@@ -5,6 +5,7 @@
 
 import { chromium, webkit } from "playwright-core";
 import http from "node:http";
+import { observeWasmMemory } from "./resources.mjs";
 import { FixtureFailure } from "./performance.mjs";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,6 +160,7 @@ export async function launchBrowser({ live = () => true, remember = () => false,
       const ctx = context ?? (await selected.newContext(mobile ? IPHONE : { viewport: { width, height } }));
       if (!context) {
         await ctx.addInitScript(FRAME_COUNTER);
+        await ctx.addInitScript(observeWasmMemory);
         await ctx.addInitScript(observeWebSockets);
       }
       const actualEngine = ctx.browser().browserType().name();

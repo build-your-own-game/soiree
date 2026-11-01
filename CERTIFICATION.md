@@ -75,7 +75,7 @@ soiree certify -- --seed 12             # rejoue le hasard d'un passage
 soiree certify -- --soak 30             # 30 min d'endurance (R2)
 ```
 
-Les scénarios, dans l'ordre : `join`, `rtc`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `monkey`, `restart`, `storage`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais conserve ses observations, mais l’évaluateur commun décide si le périmètre demandé est satisfait. `soiree certify` écrit `certification/verification.json` et `certification/verification.md` : plan, sélection, observations, hypothèses et provenance des entrées. Le détail brut reste dans `certification/harness-observations.json` et, lorsqu’il est produit, `certification/harness-observations.md`. Ces rapports datés accompagnent le code ; aucun ancien rapport n’est repris comme une observation fraîche. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
+Les scénarios, dans l'ordre : `capacity`, `join`, `rtc`, `text`, `ui`, `performance`, `panic`, `layout`, `cut`, `freeze`, `silent`, `reload`, `twin`, `hostile`, `jitter`, `progression`, `monkey`, `restart`, `storage`, `resources`. La TV lance la partie (`start`) après les scénarios de salon : `join`, `rtc`, `performance` et `panic`. Les sondes de performance décrivent donc des actions possibles avant le lancement. Seul `rtc` ouvre un téléphone sans `?salon=ws` : l'hôte tourne avec `SALON_LOG=1`, et sa sortie dit si WebRTC l'a porté ; si la salle est pleine, seul le transport est jugé, jamais le refus du joueur en trop. Un écran n'est « reconnecté » que s'il reçoit de l'hôte un `Welcome` ou un paquet du jeu : un refus seul ne compte pas (C7). Un téléphone au stockage refusé ou corrompu arrive en appareil neuf, et le jeu garde un moment la place qu'il avait : `storage` ne le fait donc entrer en appareil neuf que s'il n'avait pas de place (après `restart`, une partie neuve), sinon il lui rend son stockage et sa place, pour ne jamais asseoir N + 1 joueurs sur N places ; à la fin, chaque téléphone doit avoir retrouvé une place. `hostile` ne mesure que sur une connexion encore ouverte au moment d'envoyer (E2 : jamais une fermeture antérieure). Le rapport s'affiche à la fin, avec une ligne par item qui garde **toutes** ses notes, les ✗ d'abord puis les ~, les ✓ et les – (une note répétée, par l'endurance par exemple, n'y est qu'une fois, avec son nombre), et s'enregistre dans `rapport.md` à côté des captures. Le harnais conserve ses observations, mais l’évaluateur commun décide si le périmètre demandé est satisfait. `soiree certify` écrit `certification/verification.json` et `certification/verification.md` : plan, sélection, observations, hypothèses et provenance des entrées. Le détail brut reste dans `certification/harness-observations.json` et, lorsqu’il est produit, `certification/harness-observations.md`. Ces rapports datés accompagnent le code ; aucun ancien rapport n’est repris comme une observation fraîche. Le harnais écrit aussi `performance.json` à côté de ses captures : intervalles entre images, débits, temps pour rejoindre depuis l’ouverture et latences entrée → rendu, avec leurs budgets et leur moteur de navigateur. Les nombres figurent aussi dans le rapport Markdown.
 
 Si le harnais doit fermer de force un contexte après une commande native bloquée, le passage s’arrête avec **H1**, une panne de l’infrastructure de test. Les observations déjà terminées restent dans le rapport ; les scénarios restants sont explicitement non vérifiés. Un contexte détruit ne doit jamais produire ensuite de faux verdicts sur la reconnexion ou le stockage. Le diagnostic conserve l’opération native, son historique récent et l’état observable de la page.
 
@@ -222,6 +222,17 @@ bloqué restent inchangés.
 
 **Une limite de Toxiproxy.** Un proxy qui avale les paquets transmet quand même la fermeture décidée par l'hôte, alors qu'un vrai Wi-Fi mort ne la transmettrait jamais. Et l'hôte de salon renonce après le même silence que la page. Le scénario `silent` n'avale donc que ce que l'hôte envoie : l'hôte entend toujours la page et ne ferme rien, et seule une page qui a son propre délai de silence s'en aperçoit (C3). Le harnais observe les appels natifs `WebSocket` avant les scripts du jeu : la page doit appeler `close()` sur sa connexion encore `OPEN` avant tout événement natif `close` ou `error`, puis construire une nouvelle connexion vers la même adresse en moins de 20 s. Un contrôle négatif ferme le socket côté serveur et ne satisfait pas cet oracle. Le signal `page.websocket` de l’inspecteur WebKit peut attendre la fin d’un upgrade avalé ; sa date n’est donc pas la date de la tentative de la page.
 
+Toxiproxy 2.13 connecte son amont sans délai propre et attend cette connexion
+avant de confirmer une coupure. Le harnais intercale donc un connecteur TCP
+possédé, auquel Toxiproxy se connecte localement : lui seul joint la vraie
+destination LAN, avec une échéance de deux secondes, au plus 128 connexions
+par proxy et annulation à l'arrêt. Il ne réessaie pas et ne remplace jamais la
+destination par loopback. Les octets et fins de flux traversent toujours les
+toxics officiels ; `cut`, `reset`, latence, perte bidirectionnelle et perte
+descendante gardent leurs contrôles négatifs et l'isolation du téléphone voisin.
+Les cinq secondes de délai d'administration ne changent pas ; HTTP 503, réponse
+invalide ou perte de l'adresse LAN invalident toujours le passage concerné.
+
 ## Les exigences
 
 **Format d'un item.** Chaque item a :
@@ -260,7 +271,7 @@ Jackbox admet que sa reconnexion marche « 90 % du temps », et c'est la premiè
 | C5 | Deux onglets pour le même joueur : le dernier gagne, et l'autre ne se reconnecte pas en boucle. | Sidequest Live (code 4001) | salon, 2 `twin` |
 | C6 | Un joueur parti pour de bon ne bloque pas la partie : chaque phase finit à son échéance. | Jackbox, AirConsole | 1 |
 | C7 | L'hôte qui redémarre en pleine partie ne laisse aucun écran figé. La TV et les téléphones se reconnectent, ou disent clairement quoi faire. | rocketcrab #70 | salon, 2 `restart` |
-| C8 | Une salle pleine, une partie déjà lancée ou une mauvaise version donnent un message clair au joueur, jamais un « lobby fantôme ». | Drawphone #57 | salon, 1, 2 `join` |
+| C8 | Une salle pleine, une partie déjà lancée ou une mauvaise version donnent un message clair, jamais un lobby fantôme. Le contrôle de capacité exige le refus visible déclaré ; les autres refus gardent leurs tests salon/jeu. | Drawphone #57 | salon, 1, 2 `capacity` |
 | C9 | Les données gardées par le navigateur (jeton, sauvegarde), corrompues ou inaccessibles, n'empêchent pas la page de s'ouvrir. | rocketcrab #105 | 1, 2 `storage` |
 
 ### E — Entrées hostiles
@@ -292,7 +303,7 @@ Les **textes vicieux** sont ceux de `tools/cert/nasty.json`, dans le dépôt com
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
 | T1 | Chaque limite de longueur est appliquée par l'hôte, pas seulement par la page, et comptée de la même façon des deux côtés. | Drawphone #134 | 1 |
-| T2 | Aucun texte vicieux ne fait planter un écran, n'injecte du HTML, ni ne sort de son cadre. | XR-046, Sivonen (« la longueur d'une chaîne ») | 1, 2 `monkey` + `layout` |
+| T2 | Aucun texte vicieux ne fait planter un écran, injecte du HTML ou sort de son cadre. | XR-046, Sivonen | 1, 2 `text` + `layout` |
 | T3 | Le texte de la TV reste dans la zone sûre, aux formats 16:9, 4:3, ultra-large et portrait, de 1280×720 à 3840×2160. | Xbox (zone sûre), Punchline | 2 `layout` |
 | T4 | Sur le téléphone, un champ de saisie a un texte d'au moins 16 px : sinon iOS zoome et la page se décale. | Safari iOS | 2 `layout` |
 
@@ -303,7 +314,7 @@ Age of Empires appelait la désynchronisation « le bug têtu », jusqu'à la so
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
 | D1 | Le même état initial, les mêmes contenus et versions, la même graine et les mêmes entrées externes datées et ordonnées donnent les mêmes états et effets logiques. Le rendu au pixel près et les délais physiques demandent des contrôles distincts. | manifeste (principe 3) | 1 |
-| D2 | Une partie se termine toujours, quelles que soient les entrées, les absences et les déconnexions : aucun état ne bloque. | Drawphone #70 | 1, 2 `monkey` |
+| D2 | Une partie se termine toujours, quelles que soient les entrées, les absences et les déconnexions : aucun état ne bloque. Le parcours navigateur observe une fin réelle puis une reprise ; les propriétés natives éprouvent les autres suites. | Drawphone #70 | 1, 2 `progression` ; watchdog `monkey` |
 | D3 | Les invariants du jeu tiennent après chaque pas. Exemples : scores cohérents, un joueur par place, chaque consigne attribuée. Le jeu les énumère dans son test. | Sea of Thieves (tests d'acteurs) | 1 |
 | D4 | Pour une simulation en temps réel, le hash de l'état est le même en natif et en WASM sur un replay. | Factorio, Fiedler, League of Legends | 1 |
 | D5 | On relance une partie sans rien redémarrer. | manifeste (« Le soir même ») | 1, 2 `monkey` |
@@ -314,9 +325,10 @@ Avant la sortie de Diablo IV, Blizzard a organisé un « Server Slam » : un wee
 
 | # | Exigence | Origine | Vérifié par |
 |---|---|---|---|
-| R1 | Avec 200 ms de latence variable (±100 ms) sur chaque téléphone, la partie reste jouable de bout en bout. | AoE, Gaffer on Games | 2 `jitter` |
+| R1 | Avec 200 ms de latence variable (±100 ms), la partie reste jouable de bout en bout. Le contrôle automatisé observe les actions téléphone → TV en moins de 3 s et la continuité sous gestes ; le ressenti physique garde sa revue humaine explicite. | AoE, Gaffer on Games | 2 `jitter` + revue au salon |
 | R2 | Pendant 30 min de partie avec du chaos, la mémoire de l'hôte n'enfle pas : sa pente, de la 5ᵉ à la dernière minute, projetée sur une soirée de 6 h, reste sous 256 Mio. Son nombre de threads ne grandit pas. | Server Slam | 2 `--soak 30` |
-| R3 | La salle pleine (le maximum de joueurs) se joue, et le joueur en trop reçoit un refus clair. | Drawphone #70 | 2 `join` |
+| R3 | La salle pleine se joue, et le joueur en trop reçoit un refus clair. | Drawphone #70 | 2 `capacity` |
+| R4 | Les cycles répétés de jeu libèrent leurs ressources navigateur : DOM, listeners, tas JS, mémoires WASM vivantes et RSS des processus Chromium (dont GPU). Mesures après GC, croissance bornée sur quatre cycles ; ne vaut pas endurance ni mesure VRAM. | Chrome DevTools Protocol | 2 `resources` |
 
 ### Étage 3 — Le salon (un humain, de vrais appareils, 15 min)
 
@@ -334,6 +346,69 @@ Avant la sortie de Diablo IV, Blizzard a organisé un « Server Slam » : un wee
 | S8 | Lire la TV depuis le canapé, à 3 m. | Tout est lisible, et rien n'est coupé par le bord de l'écran. |
 | S9 | Le premier son. | Il joue dès le premier geste (déblocage de l'audio). |
 | S10 | Une partie entière avec de vrais joueurs. | Elle est drôle. C'est le seul item qu'aucune machine ne vérifiera. |
+
+## Parcours explicites et isolation
+
+`capacity` ouvre le maximum de téléphones déclaré, vérifie les gestes natifs
+sur chacun, les connexions, les sondes causales et le rendu dans les budgets,
+puis le refus visible du joueur en trop. Il repart ensuite sur des données
+propres. `--phones` règle les parcours ordinaires, sans réduire R3.
+`refused` déclare `{ "selector": "…", "text": "…" }` ; l'élément doit être
+visible à l'écran, et ce téléphone ne doit pas être accueilli dans le jeu.
+
+`text.checks` et `progression.checks` contiennent les mêmes commandes bornées
+que `ui.checks`, avec les mêmes variables d'environnement. Chacune reçoit un
+hôte frais via `{url}` ; elle ne dépend pas des places ou de l'état du parcours
+principal. Un échec/signal/timeout reste un échec même avec une phrase verte.
+Le corpus `text` est déterministe : effet ou refus observé, texte littéral ou
+aperçu annoncé, intégralité accessible/préservée, cadres réels et négatifs.
+
+Une progression `{"kind":"finite","checks":[…]}` éprouve une fin réelle
+puis une reprise. Trois changements ou un cycle A↔B ne suffisent pas. Un
+compteur ou éditeur sans manches peut déclarer
+`{"kind":"continuous","reason":"…"}` : la raison est obligatoire et
+aucune commande `start`/`advance` ne peut coexister. Cela n'exclut ni P1 ni T2.
+
+La zone sûre T3 s'applique par défaut à la TV. Un éditeur solo défilant peut
+expliciter `display: {"role":"desktop","reason":"…"}`, uniquement sans
+`phone`, `socket`, `start` et `advance` ; ses cadres/scroll restent vérifiés
+par T2. `layout:false` seul ne produit aucune exclusion. Pour un canvas TV,
+`layout: {"name":"…","command":[…],"timeout_ms":120000}` doit observer les
+cadres vraiment présentés ; un parcours DOM vide ne suffit pas. T4 inspecte
+les champs à l'arrivée et en partie même si la TV utilise un autre oracle.
+
+Les ports sont sélectionnés libres pour TCP et UDP avant lancement, sans
+retenter un jeu échoué. L'arrêt vérifie l'enfant et son groupe de processus
+possédé, pas un PID découvert sur un port. Une fermeture non vérifiée est H1.
+
+## Ressources navigateur et vrai transport UDP
+
+`resources` mesure quatre frontières après collecte du tas, séparément des
+mesures de cadence. Il exerce des gestes et changements de phase réels. Les
+régressions UI propres aux jeux éprouvent aussi leurs imports/exports et
+reconstructions GPU. Les budgets de croissance sont : 1 000 nœuds, 100 listeners,
+32 Mio de tas JS, 32 Mio de stockage externe, 32 Mio de mémoires WASM vivantes
+et 128 Mio de RSS Chromium. Le RSS englobe les processus GPU sans mesurer leur
+VRAM. Ces seuils sont des détecteurs de rétention, pas une preuve d'absence de
+fuite. WebKit reste éprouvé par les parcours et régressions propres aux jeux ;
+les mesures CDP ne lui sont pas attribuées.
+
+`--soak 30` conserve les séries brutes du serveur et du navigateur. Durée et
+pentes utilisent le temps monotone ; les dates restent des repères d'archive.
+La chauffe commence avec l'endurance effective ; un thread supplémentaire
+conservé est refusé. Des scénarios tous sautés ne constituent pas du chaos. Un cycle court `resources` satisfait R4 uniquement, jamais R2.
+L'observateur WASM conserve des références faibles aux mémoires réellement
+construites/exportées ; ses contrôles négatifs retiennent volontairement du
+DOM et 48 Mio WASM et doivent échouer aux budgets.
+
+`rtc` réutilise un siège déjà présent avec une sonde causale déclarée, redirige les candidats SDP vers
+un relais UDP et perturbe les vrais datagrammes DTLS/SCTP dans les deux sens :
+pertes déterministes, délai, réordonnancement et silence court, puis silence
+de 25 s avec expiration côté hôte et nouvelle négociation. Le repli TCP est
+interdit pendant les fautes courtes et permis/documenté pendant cette longue
+coupure. Une action réelle est reliée à son effet affiché sur la TV.
+Les compteurs établissent que les fautes ont eu lieu, que des paquets salon
+reviennent par DataChannel, que l'identité est conservée et quel transport a repris. Les autres scénarios Toxiproxy gardent leur portée TCP.
 
 ## Sources
 

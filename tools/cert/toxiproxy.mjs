@@ -23,15 +23,87 @@
 
 import { spawn, execFileSync } from "node:child_process";
 import net from "node:net";
+import { FixtureFailure } from "./performance.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Toxiproxy 2.13 performs an uncancellable net.Dial in its accept loop;
+// stopping that proxy waits for the OS's connect timeout. Keep its fault
+// engine, but let it dial an owned local acceptor. Only this connector dials
+// the real upstream, with an explicit deadline and cancellation on teardown.
+// No retries, address substitution or idle timeout: bytes/FIN still travel
+// through the official toxics, with Node streams providing backpressure.
+const CONNECT_TIMEOUT_MS = 2000;
+const MAX_CONNECTIONS = 128;
+
+class UpstreamConnector {
+  static async start(owner, host, port) {
+    const connector = new UpstreamConnector(owner, host, port);
+    try {
+      await new Promise((resolve, reject) => {
+        connector.server.once("error", reject);
+        connector.server.listen({ host: "127.0.0.1", port: 0, backlog: 512 }, () => {
+          connector.server.removeListener("error", reject);
+          resolve();
+        });
+      });
+    } catch (error) {
+      throw new FixtureFailure(`écoute du connecteur Toxiproxy : ${error.message}`);
+    }
+    connector.address = `127.0.0.1:${connector.server.address().port}`;
+    return connector;
+  }
+
+  constructor(owner, host, port) {
+    this.host = host;
+    this.port = port;
+    this.sockets = new Set();
+    this.closed = null;
+    this.server = net.createServer({ allowHalfOpen: true }, client => {
+      const upstream = new net.Socket({ allowHalfOpen: true });
+      const destroy = () => { client.destroy(); upstream.destroy(); };
+      const deadline = setTimeout(destroy, CONNECT_TIMEOUT_MS);
+      for (const socket of [client, upstream]) {
+        this.sockets.add(socket);
+        socket.on("error", destroy);
+        socket.once("close", () => {
+          clearTimeout(deadline);
+          this.sockets.delete(socket);
+          destroy();
+        });
+      }
+      client.pause();
+      upstream.once("connect", () => {
+        clearTimeout(deadline);
+        client.pipe(upstream);
+        upstream.pipe(client);
+      });
+      upstream.connect({ host, port });
+    });
+    this.server.maxConnections = MAX_CONNECTIONS;
+    this.server.on("error", error => {
+      owner.failure = new FixtureFailure(`connecteur Toxiproxy ${host}:${port} : ${error.message}`);
+    });
+  }
+
+  close() {
+    this.closed ??= (async () => {
+      const socketClosures = [...this.sockets].map(socket => new Promise(resolve => socket.once("close", resolve)));
+      const serverClosed = new Promise((resolve, reject) => this.server.close(error => error ? reject(error) : resolve()));
+      for (const socket of this.sockets) socket.destroy();
+      await Promise.all([serverClosed, ...socketClosures]);
+    })();
+    return this.closed;
+  }
+}
+
 async function freePort() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = net.createServer();
+    server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address();
-      server.close(() => resolve(port));
+      server.close((error) => error ? reject(error) : resolve(port));
     });
   });
 }
@@ -41,64 +113,123 @@ export class Toxiproxy {
     try {
       execFileSync("which", ["toxiproxy-server"]);
     } catch {
-      throw new Error("toxiproxy-server introuvable : brew install toxiproxy");
+      throw new FixtureFailure("toxiproxy-server introuvable : brew install toxiproxy");
     }
-    const port = await freePort();
-    const server = spawn("toxiproxy-server", ["-host", "127.0.0.1", "-port", String(port)], { stdio: "ignore" });
-    const toxiproxy = new Toxiproxy(`http://127.0.0.1:${port}`, server);
-    for (let tries = 0; ; tries++) {
-      try {
-        await toxiproxy.api("GET", "/version");
-        return toxiproxy;
-      } catch (error) {
-        if (tries > 50) throw new Error(`toxiproxy-server ne répond pas : ${error.message}`);
-        await sleep(100);
+    let toxiproxy;
+    try {
+      const port = await freePort();
+      const server = spawn("toxiproxy-server", ["-host", "127.0.0.1", "-port", String(port)], { stdio: "ignore" });
+      toxiproxy = new Toxiproxy(`http://127.0.0.1:${port}`, server);
+      const deadline = Date.now() + 5000;
+      let lastError;
+      while (Date.now() < deadline) {
+        try {
+          const version = await toxiproxy.api("GET", "/version", undefined, Math.min(500, Math.max(1, deadline - Date.now())));
+          if (typeof version.version !== "string" || !version.version) throw new FixtureFailure("Toxiproxy /version : version absente");
+          return toxiproxy;
+        } catch (error) {
+          lastError = error;
+          if (toxiproxy.failure) throw toxiproxy.failure;
+          await sleep(100);
+        }
       }
+      throw new FixtureFailure(`toxiproxy-server ne répond pas après 5 s : ${lastError?.message ?? "aucune réponse"}`);
+    } catch (error) {
+      await toxiproxy?.stop();
+      throw error instanceof FixtureFailure ? error : new FixtureFailure(`démarrage Toxiproxy : ${error.message}`);
     }
   }
 
-  constructor(base, server) {
+  constructor(base, server, { timeoutMs = 5000 } = {}) {
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new FixtureFailure("délai Toxiproxy invalide");
     this.base = base;
     this.server = server;
+    this.timeoutMs = timeoutMs;
     this.count = 0;
+    this.failure = null;
+    this.stopping = false;
+    this.connectors = new Set();
+    server?.once("error", error => { this.failure = new FixtureFailure(`toxiproxy-server : ${error.message}`); });
+    server?.once("exit", (code, signal) => {
+      if (!this.stopping) this.failure = new FixtureFailure(`toxiproxy-server arrêté (${signal ?? code})`);
+    });
   }
 
-  async api(method, path, body) {
-    const response = await fetch(`${this.base}${path}`, {
-      method,
-      headers: body ? { "content-type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!response.ok && response.status !== 404) throw new Error(`Toxiproxy ${method} ${path} : ${response.status} ${await response.text()}`);
-    return response.status === 204 ? null : response.json().catch(() => null);
+  async api(method, path, body, timeoutMs = this.timeoutMs) {
+    if (this.failure) throw this.failure;
+    try {
+      const response = await fetch(`${this.base}${path}`, {
+        method,
+        headers: body ? { "content-type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (this.failure) throw this.failure;
+      // Only an idempotent deletion may legitimately find nothing to delete.
+      if (method === "DELETE" && (response.status === 404 || response.status === 204)) {
+        await response.body?.cancel();
+        return null;
+      }
+      const text = await response.text();
+      if (this.failure) throw this.failure;
+      if (!response.ok) throw new FixtureFailure(`Toxiproxy ${method} ${path} : HTTP ${response.status} ${text.slice(0, 300)}`);
+      let result;
+      try { result = JSON.parse(text); }
+      catch { throw new FixtureFailure(`Toxiproxy ${method} ${path} : réponse JSON invalide (${text.slice(0, 120)})`); }
+      if (!result || typeof result !== "object" || Array.isArray(result)) throw new FixtureFailure(`Toxiproxy ${method} ${path} : objet JSON attendu`);
+      return result;
+    } catch (error) {
+      throw error instanceof FixtureFailure ? error : new FixtureFailure(`Toxiproxy ${method} ${path} : ${error.message}`);
+    }
   }
 
   /** A new proxy toward `host:port`, listening on a free local port. */
   async proxy(host, port) {
+    if (typeof host !== "string" || !host || !Number.isInteger(port) || port < 1 || port > 65535) throw new FixtureFailure("destination Toxiproxy invalide");
     const name = `cert-${++this.count}`;
-    const created = await this.api("POST", "/proxies", { name, listen: "127.0.0.1:0", upstream: `${host}:${port}`, enabled: true });
-    return new Proxy(this, name, Number(created.listen.split(":").pop()));
+    const connector = await UpstreamConnector.start(this, host, port);
+    this.connectors.add(connector);
+    try {
+      const created = await this.api("POST", "/proxies", { name, listen: "127.0.0.1:0", upstream: connector.address, enabled: true });
+      const listen = created.listen;
+      const actualPort = typeof listen === "string" ? Number(listen.split(":").pop()) : NaN;
+      if (created.name !== name || created.upstream !== connector.address || created.enabled !== true || !Number.isInteger(actualPort) || actualPort < 1 || actualPort > 65535) {
+        throw new FixtureFailure("Toxiproxy POST /proxies : création non confirmée par le contrôleur");
+      }
+      return new Proxy(this, name, actualPort, connector);
+    } catch (error) {
+      await connector.close();
+      this.connectors.delete(connector);
+      throw error;
+    }
   }
 
-  stop() {
-    this.server.kill();
+  async stop() {
+    this.stopping = true;
+    this.server?.kill();
+    await Promise.all([...this.connectors].map(connector => connector.close()));
+    this.connectors.clear();
   }
 }
 
 class Proxy {
-  constructor(toxiproxy, name, port) {
+  constructor(toxiproxy, name, port, connector) {
     this.toxiproxy = toxiproxy;
     this.name = name;
     this.port = port;
     this.toxics = new Set();
+    this.connector = connector;
   }
 
-  set(enabled) {
-    return this.toxiproxy.api("POST", `/proxies/${this.name}`, { enabled });
+  async set(enabled) {
+    const result = await this.toxiproxy.api("POST", `/proxies/${this.name}`, { enabled });
+    if (result.name !== this.name || result.enabled !== enabled) throw new FixtureFailure(`Toxiproxy ${this.name} : changement d’état non confirmé`);
+    return result;
   }
 
   async toxic(name, type, stream, attributes) {
-    await this.toxiproxy.api("POST", `/proxies/${this.name}/toxics`, { name, type, stream, attributes });
+    const result = await this.toxiproxy.api("POST", `/proxies/${this.name}/toxics`, { name, type, stream, attributes });
+    if (result.name !== name || result.type !== type || result.stream !== stream) throw new FixtureFailure(`Toxiproxy ${this.name} : panne ${name} non confirmée`);
     this.toxics.add(name);
   }
 
@@ -141,7 +272,12 @@ class Proxy {
     await this.set(true);
   }
 
-  close() {
-    return this.toxiproxy.api("DELETE", `/proxies/${this.name}`);
+  async close() {
+    try {
+      return await this.toxiproxy.api("DELETE", `/proxies/${this.name}`);
+    } finally {
+      await this.connector.close();
+      this.toxiproxy.connectors.delete(this.connector);
+    }
   }
 }

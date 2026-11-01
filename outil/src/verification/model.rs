@@ -82,6 +82,35 @@ pub enum Applicability {
     Unknown(String),
 }
 
+/// The TV safe area is not the domain of a scrollable desktop editor.
+/// An explicit reason is retained with that narrower display scope.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Display {
+    pub role: DisplayRole,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DisplayRole {
+    Tv,
+    Desktop,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Progression {
+    Continuous {
+        reason: String,
+    },
+    Finite {
+        #[serde(default)]
+        checks: Vec<serde_json::Value>,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Obligation {
     pub id: String,

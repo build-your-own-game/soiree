@@ -165,21 +165,19 @@ Les conditions de genre ou de mécanique qui ne sont pas déclarées restent
 inconnues, notamment pour les phases, les champs texte et la simulation en temps
 réel. La réussite du périmètre statique ne les transforme pas en garanties.
 
-Le raccordement actuel conserve des manques réels. T2 n’a pas encore
-d’observation positive dédiée dans le harnais : des défaillances et des notes
-partielles existent, sans permettre de satisfaire automatiquement ce contrôle.
-Une configuration `layout: false` saute T3 ; cela ne fournit pas l’observation
-T4 sur les champs téléphone. Chez Sidequest, T4 reste donc en attente ; chez
-Tier-list, son absence de téléphone permet la non-applicabilité propre à T4.
-La capacité de 71 joueurs déclarée par Sidequest ne peut pas être attestée par
-un passage à huit téléphones : R3 reste en attente. Les appréciations de refus
-C8 et de jouabilité sous latence R1 comportent encore des observations partielles
-et demandent une revue.
+Le harnais distingue désormais `text` (corpus, effets/refus, cadres et négatifs),
+`progression` (fin réelle puis reprise) et `capacity` (maximum réel, indépendant
+du nombre de téléphones ordinaires). Les commandes de contrôle possèdent un
+hôte isolé : les états et places des autres parcours ne les contaminent pas.
+R1 observe la causalité fonctionnelle sous latence, son appréciation physique
+reste au salon. T4 est observé indépendamment de la stratégie de rendu TV.
+Les domaines explicites desktop/interaction continue ont leurs négatifs :
+une désactivation seule ou un jeu à phases ne peut pas les usurper.
 
-Un passage complet peut donc échouer pour un contrôle non attesté ou une revue
-nécessaire, même sans bug constaté pendant les scénarios. Le rapport conserve
-cette distinction. La CI du modèle exerce explicitement `ui,panic` ; son succès
-n’est pas présenté comme la couverture de ces lacunes ou de tous les jeux.
+Les sept exigences sans liaison ci-dessus restent non attestées. Les rapports
+`check` et `certify` ne se fusionnent pas automatiquement ; leurs sélections
+restent visibles. Le succès de la CI ciblée du modèle n'est pas présenté comme
+celui de tous les scénarios, ni de toutes les exigences.
 
 ## Provenance et hypothèses
 

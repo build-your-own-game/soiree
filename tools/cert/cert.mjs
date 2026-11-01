@@ -23,21 +23,30 @@
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import net from "node:net";
 import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { launchBrowser, sleep, silenceReaction, NavigationFailure, phoneTransport, preflightPhoneUpstream } from "./browser.mjs";
-import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard } from "./performance.mjs";
+import { measureFrames, frameFailures, measureProbe, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
+import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment } from "./udp.mjs";
+import { verifyRtcNegotiation } from "./rtc-negotiation.mjs";
+import { capacityActivityFailures } from "./capacity.mjs";
+import { killOwnedGroup } from "./processes.mjs";
+import { recurringScenarios, serverEndurance } from "./endurance.mjs";
+import { freeHostPort } from "./ports.mjs";
+import { cleanupAll, runWithCleanup } from "./cleanup.mjs";
+import { browserResources, resourceFailures, resourceCycle } from "./resources.mjs";
+import { AdvanceCycle, advanceOnce } from "./progression.mjs";
+import { refusalMessage, phoneFieldSizes, fieldSizeFailures } from "./presentation.mjs";
 import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NASTY = JSON.parse(readFileSync(join(HERE, "nasty.json"), "utf8")).texts;
 NASTY.push("é".repeat(500));
 
-const ALL = ["join", "rtc", "ui", "performance", "panic", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "monkey", "restart", "storage"];
+const ALL = ["capacity", "join", "rtc", "text", "ui", "performance", "panic", "layout", "cut", "freeze", "silent", "reload", "twin", "hostile", "jitter", "progression", "monkey", "restart", "storage", "resources"];
 // Scenarios that run in the lobby, before the TV presses `start`: a new
 // player may still join there.
 const LOBBY = ["join", "rtc", "ui", "performance", "panic"];
@@ -195,10 +204,15 @@ const MARK = { ok: "✓", fail: "✗", partial: "~", skip: "–" };
 let activeScenario = "setup";
 const evidence = { schema: 1, arguments: args, completed: false, infrastructure_error: null, navigation_failure: null, transport: null, records: [] };
 const evidencePath = process.env.SOIREE_OBSERVATIONS_PATH ?? join(outDir, "observations.json");
-const persistEvidence = () => writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+let measurementsReady = false;
+const persistEvidence = () => {
+  writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  if (measurementsReady) writeFileSync(join(outDir, "performance.json"), `${JSON.stringify(measurements, null, 2)}\n`);
+};
 persistEvidence();
 console.log(`Observations : ${evidencePath}`);
 function record(item, status, note, explicitExclusion = false) {
+  if(item!=="H1" && !evidence.infrastructure_error) fixture.check();
   evidence.records.push({ scenario: activeScenario, item, status, note: note ?? "", explicit_exclusion: explicitExclusion });
   persistEvidence();
   // The worst outcome wins; "not applicable" only stands alone.
@@ -234,18 +248,16 @@ function lanAddress() {
 }
 
 async function freePort() {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.listen(0, () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
-  });
+  return freeHostPort({ onBusy: candidate => {
+    evidence.port_candidates ??= [];
+    evidence.port_candidates.push(candidate);
+  } });
 }
 
 class Host {
-  constructor(port) {
+  constructor(port, dataDirectory = join(outDir, "data")) {
     this.port = port;
+    this.dataDirectory = dataDirectory;
     this.panics = [];
     this.browserPanics = [];
     this.stderr = [];
@@ -263,7 +275,8 @@ class Host {
   }
 
   async start(command, timeoutMs) {
-    const fill = (s) => s.replaceAll("{port}", String(this.port)).replaceAll("{tmp}", join(outDir, "data"));
+    mkdirSync(this.dataDirectory, { recursive: true });
+    const fill = (s) => s.replaceAll("{port}", String(this.port)).replaceAll("{tmp}", this.dataDirectory);
     // Salon prints each link with its transport: the `rtc` scenario reads it.
     const env = { ...process.env, SALON_LOG: "1" };
     for (const [k, v] of Object.entries(config.env ?? {})) env[k] = fill(v);
@@ -329,6 +342,7 @@ class Host {
   }
 
   alive() {
+    if (!this.process || this.exitedUnexpectedly || this.process.exitCode !== null || this.process.signalCode !== null) return false;
     if (!this.pid) return !this.exitedUnexpectedly;
     try {
       process.kill(this.pid, 0);
@@ -368,13 +382,7 @@ class Host {
 
   async kill() {
     this.expectExit = true;
-    const exited = new Promise((resolve) => this.process.once("exit", resolve));
-    for (const target of [-this.process.pid, this.pid ?? this.listeningPid()]) {
-      try {
-        if (target) process.kill(target, "SIGKILL");
-      } catch {}
-    }
-    await Promise.race([exited, sleep(5_000)]);
+    if (this.process) this.shutdown = await killOwnedGroup(this.process);
   }
 }
 
@@ -393,9 +401,34 @@ let host;
 let transport;
 let browser;
 let toxiproxy;
+let networkMonitor;
 let tv;
+const probeHosts = new Set();
+let probeSequence = 0;
+
+/** Command checks own a fresh game, so a full ordinary room cannot consume
+ * their seats and one check cannot leave state in the following check. */
+async function isolatedCheck(check) {
+  const probe = new Host(await freePort(), join(outDir, "checks", String(++probeSequence)));
+  probeHosts.add(probe);
+  return runWithCleanup(async () => {
+    await probe.start(config.relaunch ?? config.launch, 120_000);
+    const url = `http://localhost:${probe.port}${withSalonWs(probe.path(config.tv))}`;
+    const output = await runUiCommand(check, { cwd: gameDir, url, tmp: outDir });
+    if (!probe.alive() || probe.panics.length || probe.browserPanics.length) {
+      throw new Error(`le jeu isolé de « ${check.name} » a échoué : ${JSON.stringify({ panics: probe.panics, browser: probe.browserPanics })}`);
+    }
+    return output;
+  }, [{ name: `isolated host ${check.name}`, run: async () => { await probe.kill(); probeHosts.delete(probe); } }], {
+    onFailure: (error, primary) => {
+      if (primary && !(primary instanceof FixtureFailure)) fail(scenarioFailureItem(activeScenario, primary), primary.message);
+      fixture.invalidate(error.message);
+    },
+  });
+}
 const fixture = new FixtureGuard();
-const measurements = { frames_lobby: null, frames_gameplay: [], probes: [], joins: [], browsers: {} };
+const measurements = { frames_lobby: null, frames_gameplay: [], probes: [], joins: [], browsers: {}, phone_fields: [] };
+measurementsReady = true;
 const phones = []; // { index, name, tab, proxy, sent: [], context }
 /** The TV pressed `start` (cert.json): a new player may be refused from then on. */
 let gameStarted = false;
@@ -435,6 +468,7 @@ async function openPhone(index, { webrtc = false } = {}) {
   phone.url = phoneUrl(phone);
   phone.tab = await browser.open(phone.url, { width: 390, height: 844, mobile: true, engine: index % 2 === 1 ? "webkit" : "chromium" });
   phone.tab.label = `téléphone ${index} (${phone.tab.engine})`;
+  measurements.phone_fields.push({ label: `${phone.tab.label} avant de rejoindre`, fields: await phone.tab.page.evaluate(phoneFieldSizes) });
   return phone;
 }
 
@@ -462,6 +496,7 @@ async function runJoin(phone, name) {
     if (step.fill) {
       try {
         await phone.tab.fill(step.fill, step.text.replaceAll("{name}", name));
+        measurements.phone_fields.push({ label: `${phone.tab.label} formulaire actif`, fields: await phone.tab.page.evaluate(phoneFieldSizes) });
       } catch {
         return false;
       }
@@ -667,13 +702,15 @@ function monkey(busy = new Set()) {
   const pending = new Set();
   // A game without phones is played on its only page.
   const players = phones.length ? phones : [tv];
-  const loops = players.map(async (phone) => {
+  const perPhone = players.map(phone => ({ index: phone.index ?? 0, label: phone.tab.label, engine: phone.tab.engine, gestures: 0 }));
+  const loops = players.map(async (phone, index) => {
     while (running) {
       if (!busy.has(phone)) {
         try {
           pending.add(phone);
           await gesture(phone);
           gestures++;
+          perPhone[index].gestures++;
         } catch {} finally { pending.delete(phone); }
       }
       await sleep(150 + random() * 600);
@@ -703,6 +740,7 @@ function monkey(busy = new Set()) {
     if (!stopped) fail("E6", `un geste du singe n'a pas terminé : contexte bloqué fermé, arrêt borné ; ${JSON.stringify(blocked)}`);
   };
   Object.defineProperty(stop, "gestures", { get: () => gestures });
+  Object.defineProperty(stop, "participants", { get: () => perPhone.map(row => ({ ...row })) });
   return stop;
 }
 
@@ -715,15 +753,27 @@ async function stopActors(...stops) {
 
 function advancer(everyMs) {
   let running = true;
+  let failure;
+  let changes = 0;
+  const cycle = new AdvanceCycle();
   let timer;
   let wake;
   const loop = (async () => {
     while (running && config.advance) {
       await new Promise((resolve) => { wake = resolve; timer = setTimeout(resolve, everyMs); });
-      if (running) await press(tv.tab, config.advance).catch(() => {});
+      if (running) {
+        try {
+          if (config.advance.progress) { await advanceOnce(tv.tab, config.advance, cycle, press); changes++; }
+          else await press(tv.tab, config.advance);
+        } catch(error) {
+          failure=error;
+          running=false;
+          fail("D2", `commande de progression : ${error.message}`);
+        }
+      }
     }
   })();
-  return async () => {
+  const stop = async () => {
     running = false;
     clearTimeout(timer);
     wake?.();
@@ -735,6 +785,8 @@ function advancer(everyMs) {
     });
     if (!stopped) fail("E6", `la commande d'avance de la TV n'a pas terminé : contexte bloqué fermé, arrêt borné ; ${JSON.stringify(blocked)}`);
   };
+  Object.defineProperties(stop,{changes:{get:()=>changes},failure:{get:()=>failure}});
+  return stop;
 }
 
 /** `{ key }` presses a key; `{ text }` clicks the button that says it. */
@@ -746,7 +798,8 @@ async function press(tab, action) {
     const r = e.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   })()`);
-  if (at) await tab.click(at.x, at.y);
+  if (!at) throw new Error(`commande visible absente : ${action.text}`);
+  await tab.click(at.x, at.y);
 }
 
 async function tvHash() {
@@ -756,19 +809,27 @@ async function tvHash() {
 // ---------------------------------------------------------------- scenarios
 
 /** A browser that refuses storage (private mode, blocked cookies). */
-const BLOCK_STORAGE = `for (const name of ["localStorage", "sessionStorage"]) Object.defineProperty(window, name, { get() { throw new DOMException("refusé", "SecurityError"); } });`;
+const BLOCK_STORAGE = `for (const name of ["localStorage", "sessionStorage", "indexedDB"]) Object.defineProperty(window, name, { get() { throw new DOMException("refusé", "SecurityError"); } });`;
 
 /** C9 for a game without phones: its page with damaged or refused storage. */
 async function storageOfPage(page) {
   const keys = await page.tab.evaluate("Object.keys(localStorage)").catch(() => []);
+  const storage=config.storage;
+  if(storage && storage.kind!=="indexeddb") throw new FixtureFailure("cert.json.storage.kind non reconnu");
+  const corrupt=async value=>{
+    if(!storage) return page.tab.evaluate(`for (const k of Object.keys(localStorage)) localStorage.setItem(k, ${JSON.stringify(value)});`);
+    await page.tab.page.evaluate(async ({storage,value})=>{
+      await new Promise((resolve,reject)=>{const request=indexedDB.open(storage.database);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;try{const tx=db.transaction(storage.store,'readwrite');tx.objectStore(storage.store).put(value,storage.key);tx.oncomplete=()=>{db.close();resolve();};tx.onerror=tx.onabort=()=>{db.close();reject(tx.error??new Error('IDB corruption transaction aborted'));};}catch(error){db.close();reject(error);}};});
+    },{storage,value});
+  };
   for (const garbage of [NASTY[2] + "\u0000{[\"", "{}", "[]", "null", JSON.stringify({ version: 1e308, rows: "x" })]) {
-    await page.tab.evaluate(`for (const k of Object.keys(localStorage)) localStorage.setItem(k, ${JSON.stringify(garbage)});`).catch(() => {});
+    await corrupt(garbage);
     await page.tab.reload();
     await sleep(800);
     const text = (await page.tab.evaluate("document.body.innerText").catch(() => "")).trim();
     if (!text) fail("C9", `stockage remplacé par ${JSON.stringify(garbage).slice(0, 30)} : la page est vide`);
   }
-  ok("C9", `${keys.length} clé(s) remplacée(s) par 5 contenus abîmés, page rechargée à chaque fois`);
+  ok("C9", `${storage ? "IndexedDB déclaré" : `${keys.length} clé(s) localStorage`} remplacé par 5 contenus abîmés, page rechargée à chaque fois`);
   const allowStorage = await page.tab.beforeScripts(BLOCK_STORAGE);
   await page.tab.reload();
   await sleep(800);
@@ -781,10 +842,31 @@ async function storageOfPage(page) {
 }
 
 const scenarios = {
+  async progression() {
+    if (config.progression?.kind === "continuous") return skip("D2", `interaction continue : ${config.progression.reason}`);
+    if (config.progression?.kind !== "finite" || !Array.isArray(config.progression.checks) || !config.progression.checks.length) {
+      throw new Error("progression finie : un contrôle de fin réelle puis de reprise doit être déclaré");
+    }
+    for (const check of config.progression.checks) {
+      const output = await isolatedCheck(check);
+      if (output) log(`    ${output.split("\n").join("\n    ")}`);
+      ok("D2", check.name);
+    }
+  },
+  async text() {
+    if (!Array.isArray(config.text?.checks) || !config.text.checks.length) {
+      throw new Error("cert.json.text.checks doit éprouver le corpus hostile, son effet ou refus, la literalité et les cadres");
+    }
+    for (const check of config.text.checks) {
+      const output = await isolatedCheck(check);
+      if (output) log(`    ${output.split("\n").join("\n    ")}`);
+      ok("T2", check.name);
+    }
+  },
   async ui() {
     validateUi(config.ui);
     for (const check of config.ui.checks ?? []) {
-      const output = await runUiCommand(check, { cwd: gameDir, url: tv.tab.page.url(), tmp: outDir });
+      const output = await isolatedCheck(check);
       if (output) log(`    ${output.split("\n").join("\n    ")}`);
       ok("U1", `${check.name} : ${check.covers.join(", ")}`);
     }
@@ -822,13 +904,21 @@ const scenarios = {
     // Start-up and page navigation are measured by C1, not by the in-game
     // frame budget. No resizing, chaos, or screenshot runs during this sample.
     await sleep(1000);
-    const sample = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
-    measurements.frames_lobby = sample;
+    let sample;
+    try {
+      sample = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
+      measurements.frames_lobby = sample;
+    } catch (error) {
+      measurements.frames_lobby = { error: error.message, diagnostics: error.diagnostics ?? null };
+      fail("P1", `avant partie : ${error.message}`);
+    }
     measurements.browsers = Object.fromEntries(["chromium", "webkit"].map((engine) => [engine, phones.filter((p) => p.tab.engine === engine).length]));
-    const line = `avant partie : ${sample.frames} images, ${sample.fps.toFixed(1)} images/s, p50 ${sample.p50_ms.toFixed(1)} ms, p95 ${sample.p95_ms.toFixed(1)} ms, maximum ${sample.max_ms.toFixed(1)} ms ; téléphones ${measurements.browsers.webkit} WebKit + ${measurements.browsers.chromium} Chromium`;
-    const failures = frameFailures(sample, config.performance);
-    if (failures.length) fail("P1", `${line} (${failures.join(" ; ")})`);
-    else ok("P1", line);
+    if (sample) {
+      const line = `avant partie : ${sample.frames} images, ${sample.fps.toFixed(1)} images/s, p50 ${sample.p50_ms.toFixed(1)} ms, p95 ${sample.p95_ms.toFixed(1)} ms, maximum ${sample.max_ms.toFixed(1)} ms ; téléphones ${measurements.browsers.webkit} WebKit + ${measurements.browsers.chromium} Chromium`;
+      const failures = frameFailures(sample, config.performance);
+      if (failures.length) fail("P1", `${line} (${failures.join(" ; ")})`);
+      else ok("P1", line);
+    }
     const probes = config.performance?.probes;
     if (!Array.isArray(probes) || !probes.length) {
       fail("P2", "cert.json doit décrire performance.probes : une entrée et son effet visible causal sur la TV");
@@ -918,28 +1008,98 @@ const scenarios = {
       if (took === null || elapsed > 30_000) fail("C1", `${phone.tab.label} n'a pas rejoint en 30 s (${(elapsed / 1000).toFixed(1)} s depuis l'ouverture)`);
       else ok("C1", `${phone.tab.label} a rejoint en ${(elapsed / 1000).toFixed(1)} s depuis l'ouverture`);
     }
-    const max = config.players?.max;
-    if (max && args.phones >= max) {
-      const extra = await openPhone(args.phones + 1);
+    await invariants("join");
+  },
+
+  /** Capacity is a real full-room session, with its own clean lifetime. The
+   * ordinary --phones count controls later fault scenarios, never R3 scope. */
+  async capacity() {
+    if (!config.phone) return skip("R3", "aucun écran téléphone");
+    const maximum = config.players?.max;
+    if (!Number.isSafeInteger(maximum) || maximum < 1) throw new Error("players.max doit déclarer la capacité à éprouver");
+    let extra;
+    let stop = async () => {};
+    const currentHost = host;
+    const currentTv = tv;
+    try {
+      for (let index = 1; index <= maximum; index++) {
+        const phone = await openPhone(index);
+        phones.push(phone);
+        await runJoin(phone, `Cap${index}`);
+        if (await waitJoined(phone, 10_000) === null) throw new Error(`${phone.tab.label} n'obtient pas de place dans la salle de ${maximum}`);
+      }
+      extra = await openPhone(maximum + 1);
       extraTabs.push(extra.tab);
       await runJoin(extra, "EnTrop");
-      await sleep(2_000);
-      if (await joined(extra)) fail("R3", `un ${max + 1}ᵉ joueur a été accepté (maximum ${max})`);
-      else {
-        const text = (await extra.tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-        partial("C8", `le ${max + 1}ᵉ joueur est refusé ; ce qu'il lit : « ${text.slice(0, 120)} » (clair ?)`);
-        ok("R3", `salle pleine à ${max}`);
+      await sleep(2000);
+      if (await joined(extra)) throw new Error(`un ${maximum + 1}ᵉ joueur a été accepté`);
+      const refusal = await refusalMessage(extra.tab.page, config.refused);
+      measurements.full_room_refusal = { ...refusal, engine: extra.tab.engine, joined: false };
+      ok("C8", `le joueur en trop reste hors de la partie et voit : « ${refusal.text} »`);
+      for (const setup of config.performance?.setup ?? []) {
+        const target = setup.screen === "tv" ? tv : phones[(setup.phone ?? 1) - 1];
+        await performAction(target.tab, setup.action ?? {});
       }
-      await extra.proxy.close();
-      await extra.tab.close();
-    } else if (!max) skip("R3", "cert.json ne déclare pas de maximum (`players.max`) : la salle pleine n'est pas essayée");
-    else skip("R3", `--phones ${args.phones} < maximum ${max} : la salle pleine n'est pas essayée`);
-    await invariants("join");
+      const causal = [];
+      for (const probe of config.performance?.probes ?? []) {
+        const target = probe.screen === "tv" ? tv : phones[(probe.phone ?? 1) - 1];
+        causal.push({ engine: target.tab.engine, ...await measureProbe(tv.tab, target.tab, probe) });
+      }
+      if (!causal.length) throw new Error("aucune action causale pour jouer dans la salle pleine");
+      if (config.start) await press(tv.tab, config.start);
+      await sleep(1000);
+      stop = monkey();
+      const before = stop.gestures;
+      const frames = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
+      const failures = frameFailures(frames, config.performance);
+      await sleep(5000);
+      await stop();
+      const gestures = stop.gestures - before;
+      const participants = [];
+      for (const row of stop.participants) {
+        const phone = phones.find(phone => phone.index === row.index);
+        participants.push({ ...row, live: isLive(phone, 3000), joined: await joined(phone) });
+      }
+      stop = async () => {};
+      failures.push(...capacityActivityFailures(participants, maximum));
+      measurements.capacity = { maximum, phones: phones.length, causal, frames, gestures, participants, failures };
+      await invariants("capacity");
+      if (failures.length) fail("R3", `salle de ${maximum} : ${failures.join(" ; ")}`);
+      else ok("R3", `${maximum} téléphones accueillis ont chacun terminé des gestes natifs et gardé leur place ; sondes causales rendues, cadence dans les budgets et joueur en trop refusé`);
+    } catch (error) {
+      measurements.capacity_failure = { error: error.message, diagnostics: error.diagnostics ?? null, joined: phones.length, maximum };
+      fail("R3", `salle de ${maximum} : ${error.message}`);
+      throw error;
+    } finally {
+      const failures = await cleanupAll([
+        { name: "capacity actors", run: () => stop() },
+        ...phones.flatMap(phone => [{ name: phone.tab.label, run: () => phone.tab.context.close() }, { name: `proxy ${phone.index}`, run: () => phone.proxy.close() }]),
+        ...(extra ? [{ name: "extra phone", run: () => extra.tab.context.close() }, { name: "extra proxy", run: () => extra.proxy.close() }] : []),
+        { name: "capacity TV", run: () => currentTv.tab.context.close() },
+        { name: "capacity host", run: () => currentHost.kill() },
+      ]);
+      if (failures.length) throw new FixtureFailure(`nettoyage capacité : ${failures.join(" ; ")}`);
+      phones.length = 0;
+      if (extra && extraTabs.includes(extra.tab)) extraTabs.splice(extraTabs.indexOf(extra.tab), 1);
+      host = new Host(currentHost.port, join(outDir, "ordinary"));
+      await host.start(config.relaunch ?? config.launch, 120_000);
+      await openTv();
+      tvFrames = 0;
+      gameStarted = false;
+    }
   },
 
   /** T2, T3, T4: no text leaves its frame or the TV's safe area. */
   async layout() {
-    if (config.layout === false) return skip("T3", config.layout_reason ?? "désactivé dans cert.json");
+    const custom = config.layout && typeof config.layout === "object";
+    if (custom) {
+      if (!Array.isArray(config.layout.command) || !config.layout.command.length) throw new Error("layout.command doit observer le vrai rendu canvas et ses cadres");
+      const check = { name: "zone sûre du rendu canvas", ...config.layout };
+      const output = await isolatedCheck(check);
+      if (output) log(`    ${output.split("\n").join("\n    ")}`);
+      ok("T3", check.name);
+    }
+    if (config.layout === false) skip("T3", config.layout_reason ?? "désactivé dans cert.json");
     const SIZES = [[1920, 1080], [1280, 720], [3840, 2160], [1280, 1024], [2560, 1080], [900, 1200]];
     const check = `(() => {
       const problems = [];
@@ -967,7 +1127,7 @@ const scenarios = {
       }
       return [...new Set(problems)].slice(0, 8);
     })()`;
-    for (const [width, height] of SIZES) {
+    for (const [width, height] of config.layout === false || custom ? [] : SIZES) {
       await tv.tab.resize(width, height);
       await sleep(600);
       const problems = await tv.tab.evaluate(check);
@@ -978,9 +1138,10 @@ const scenarios = {
     }
     await tv.tab.resize(1920, 1080);
     if (phones.length) {
-      const small = await phones[0].tab.evaluate(`[...document.querySelectorAll("input, textarea, select")].filter((e) => parseFloat(getComputedStyle(e).fontSize) < 16).map((e) => e.outerHTML.slice(0, 60))`).catch(() => []);
-      if (small.length) fail("T4", `champ en moins de 16 px (iOS zoomera) : ${small[0]}`);
-      else ok("T4", "aucun champ visible sous 16 px");
+      for (const phone of phones) measurements.phone_fields.push({ label: `${phone.tab.label} en partie`, fields: await phone.tab.page.evaluate(phoneFieldSizes) });
+      const small = fieldSizeFailures(measurements.phone_fields);
+      if (small.length) fail("T4", `champ en moins de 16 px (iOS zoomera) : ${small.join(" ; ")}`);
+      else ok("T4", "les champs visibles à l'arrivée et en partie, dans chaque moteur, ont au moins 16 px");
     }
     await invariants("layout");
   },
@@ -1238,46 +1399,139 @@ const scenarios = {
     await invariants("twin");
   },
 
-  /** C1: a phone on salon's usual path, WebRTC, which Toxiproxy cannot
-   * carry (UDP): the host's `SALON_LOG` says which transport opened. It runs
-   * in the lobby, before `start`. With a seat free, the phone must join; with
-   * the room full (or the game already started, under `--only`), only the
-   * transport is judged: a game may refuse a player it has no room for. */
+  /** Exercise the production UDP/DTLS/SCTP path, reusing an existing seat. */
   async rtc() {
     if (!config.phone) return skip("C1", "pas de téléphones");
-    const max = config.players?.max;
-    const seatFree = !gameStarted && (!max || phones.length < max);
-    const since = host.links.length;
-    const phone = await openPhone(args.phones + 2, { webrtc: true });
-    phone.tab.label = "téléphone WebRTC";
-    extraTabs.push(phone.tab);
-    const start = Date.now();
-    await runJoin(phone, "Datagramme");
-    const took = seatFree ? await waitJoined(phone, 20_000) : null;
-    if (!seatFree) await sleep(5_000);
-    const opened = host.links.slice(since).map((l) => l.line).filter((l) => / opened \(/.test(l));
-    const webrtc = opened.filter((l) => / opened \(WebRTC/.test(l));
-    const seconds = ((Date.now() - start) / 1000).toFixed(1);
-    const text = (await phone.tab.evaluate("document.body.innerText").catch(() => "")).replace(/\s+/g, " ").trim();
-    const why = gameStarted ? "la partie est lancée" : `la salle est pleine (${phones.length}/${max})`;
-    if (webrtc.length && !seatFree) {
-      // A refused page may try again on WebSocket: the transport was judged
-      // on the first link, the one WebRTC opened.
-      ok("C1", `[rtc] un téléphone sans \`?salon=ws\` ouvre son lien par WebRTC (« ${webrtc[0]} ») ; ${why}, son entrée n'est pas jugée (il lit « ${text.slice(0, 80)} »${phone.tab.sockets ? `, puis ouvre ${phone.tab.sockets} WebSocket(s)` : ""})`);
-    } else if (webrtc.length && phone.tab.sockets === 0) {
-      if (!seatFree) ok("C1", `[rtc] un téléphone sans \`?salon=ws\` ouvre son lien par WebRTC (« ${webrtc[0]} ») ; ${why}, son entrée n'est pas jugée (il lit « ${text.slice(0, 80)} »)`);
-      else if (took !== null) ok("C1", `[rtc] un téléphone sans \`?salon=ws\` a rejoint par WebRTC en ${seconds} s (« ${webrtc[0]} »)`);
-      else fail("C1", `[rtc] un téléphone sans \`?salon=ws\` ouvre son lien par WebRTC (« ${webrtc[0]} ») mais n'a pas rejoint en 20 s, une place libre ; il lit « ${text.slice(0, 100)} »`);
-    } else if (phone.tab.sockets > 0) {
-      partial("C1", `[rtc] un téléphone sans \`?salon=ws\` ${took !== null ? `a rejoint en ${seconds} s` : seatFree ? "n'a pas rejoint en 20 s" : "s'est connecté"}, mais par WebSocket (${opened.length ? `« ${opened[opened.length - 1]} »` : "aucune ligne `SALON_LOG` de l'hôte"}) : WebRTC n'a pas ouvert. Sur macOS, le pare-feu bloque l'UDP de chaque nouveau binaire tant qu'on ne l'a pas autorisé ; ailleurs, c'est à creuser`);
-      if (seatFree && took === null) fail("C1", `[rtc] le téléphone repli sur WebSocket n'a pas rejoint en 20 s, une place libre ; il lit « ${text.slice(0, 100)} »`);
-    } else if (opened.length === 0 && took === null) {
-      fail("C1", `[rtc] un téléphone sans \`?salon=ws\` n'a ouvert aucun lien en ${seconds} s (ni WebRTC ni WebSocket) ; il lit « ${text.slice(0, 100)} »`);
-    } else {
-      partial("C1", `[rtc] un téléphone sans \`?salon=ws\` ${took !== null ? "a rejoint" : "s'est connecté"} sans WebSocket, mais l'hôte n'a écrit aucune ligne « salon: link N opened (WebRTC » (SALON_LOG)`);
+    measurements.rtc_negotiation = [];
+    for (const engine of ["webkit", "chromium"]) {
+      const representative = phones.find(phone => phone.tab.engine === engine);
+      if (!representative) {
+        measurements.rtc_negotiation.push({ engine, not_run: "aucun téléphone dans ce moteur" });
+        partial("C1", `négociation ${engine} non exécutée : aucun téléphone dans ce moteur`);
+        continue;
+      }
+      try {
+        await verifyRtcNegotiation({
+          page: representative.tab.page, url: representative.url,
+          upstream: transport.upstream, port: host.port, expectedDevice: representative.tab.device,
+          onCase: result => { measurements.rtc_negotiation.push({ engine, result }); persistEvidence(); },
+          onCleanupFailure: (error, primary) => {
+            if (primary && !(primary instanceof FixtureFailure)) fail("C1", `négociation ${engine} : ${primary.message}`);
+            fixture.invalidate(error.message);
+            fail("H1", `négociation ${engine} : ${error.message}`);
+          },
+        });
+        if (await waitJoined(representative, 10000) === null) throw new Error(`négociation ${engine} : le retour WebSocket a perdu la place`);
+      } catch (error) {
+        measurements.rtc_negotiation_failure = { engine, error: error.message, evidence: error.rtcNegotiation ?? null };
+        throw error;
+      }
     }
-    await phone.tab.close();
-    await phone.proxy.close();
+    const probes = (config.performance?.probes ?? []).filter(probe => probe.screen !== "tv");
+    const causal = probes.find(probe => phones[(probe.phone ?? 1)-1]?.tab.engine === "chromium") ?? probes.find(probe => phones[(probe.phone ?? 1)-1]);
+    const phone = causal ? phones[(causal.phone ?? 1)-1] : phones.find(p => p.tab.engine === "chromium");
+    if (!phone) return partial("C1", "WebRTC sous pertes : aucun téléphone disponible");
+    const relay = await UdpProxy.open(transport.upstream, host.port);
+    const originalDevice = phone.tab.device;
+    const sockets = phone.tab.sockets;
+    const route = async request => {
+      const response = await request.fetch();
+      if (!response.ok()) throw new FixtureFailure(`SDP HTTP ${response.status()}`);
+      await request.fulfill(rewrittenJsonFulfillment(response, relay.rewrite(await response.json())));
+    };
+    const trace = () => phone.tab.evaluate("globalThis.__certRtc");
+    const waitUdp = async since => {
+      const until = Date.now() + 15000;
+      while (Date.now() < until) {
+        const state = await trace();
+        if (receivedRtcSince(state, since, bytes => isLivePacket(Buffer.from(bytes)))) return state;
+        await sleep(100);
+      }
+      throw new Error("aucun paquet salon vivant sur le vrai DataChannel UDP en 15 s");
+    };
+    await withRtcRelay(relay,phone.tab.page,route,async()=>{
+     try {
+      phone.webrtc = true;
+      phone.url = phoneUrl(phone);
+      const linkOffset = host.links.length;
+      let since = Date.now();
+      await phone.tab.goto(phone.url);
+      const opening = await waitUdp(since);
+      if (await joinOffered(phone)) await runJoin(phone, phone.name ?? "Datagramme");
+      if (await waitJoined(phone, 10000) === null) throw new Error("le siège existant ne revient pas par WebRTC");
+      const welcomed = opening.packets.map(({ bytes }) => readPacket(Buffer.from(bytes))).find(packet => packet.control === "Welcome");
+      if (!welcomed || (originalDevice !== null && welcomed.device !== originalDevice)) throw new Error("WebRTC a changé l'identité de l'appareil");
+      const openedLink = host.links.slice(linkOffset).map(({line}) => line.match(/^salon: link (\d+) opened \(WebRTC/)).filter(Boolean).at(-1)?.[1];
+      if (!openedLink) throw new FixtureFailure("l'ouverture du lien UDP n'a pas été observée dans SALON_LOG");
+      if (causal) {
+        if (phones.length < (config.players?.min ?? 1)) throw new FixtureFailure("trop peu de joueurs pour la sonde causale UDP déclarée");
+        for (const setup of config.performance?.setup ?? []) {
+          const target = setup.screen === "tv" ? tv : phones[(setup.phone ?? 1)-1];
+          if (!target) throw new FixtureFailure("écran absent pour la préparation UDP");
+          await performAction(target.tab, setup.action ?? {});
+        }
+        measurements.rtc_causal = await measureProbe(tv.tab, phone.tab, causal);
+        // Existing TV probes can restore a lobby changed by a phone probe.
+        for (const probe of config.performance?.probes ?? []) if (probe.screen === "tv") await measureProbe(tv.tab, tv.tab, probe);
+      } else partial("C1", "WebRTC : aucune sonde causale déclarée pour observer une action sur la TV");
+      relay.set({ dropEvery: 5, delayMs: 35, reorderEvery: 3 });
+      if(causal){
+        // A naturally finishing jump must not masquerade as the next input.
+        await tv.tab.page.waitForFunction(({expression,baseline})=>JSON.stringify((0,eval)(expression))===baseline,
+          {expression:causal.rendered,baseline:measurements.rtc_causal.baseline},{timeout:3000,polling:"raf"});
+        measurements.rtc_causal_impaired=await measureProbe(tv.tab,phone.tab,causal);
+        for(const probe of config.performance?.probes??[])if(probe.screen==='tv')await measureProbe(tv.tab,tv.tab,probe);
+      }
+      since = Date.now();
+      for (let i = 0; i < 12; i++) { await gesture(phone); await sleep(350); }
+      await waitUdp(since);
+      const impaired=relay.snapshot();
+      for(const [direction,stats] of Object.entries(impaired.directions)){
+        if(!stats.received||!stats.dropped||!stats.delayed||!stats.reordered||!stats.forwarded)
+          throw new FixtureFailure(`campagne UDP sans pertes/délai/réordonnancement effectifs ${direction}`);
+      }
+      measurements.rtc_impaired=impaired;
+      relay.set({ blackhole: true });
+      await sleep(500); // queued datagrams from before the silence may finish
+      const before = (await trace()).received;
+      await sleep(2000);
+      if ((await trace()).received !== before) throw new FixtureFailure("le relais UDP ne tient pas le silence injecté");
+      relay.set();
+      await waitUdp(Date.now());
+      if (phone.tab.sockets !== sockets) throw new Error("la campagne UDP courte a basculé sur WebSocket");
+      const silenceAt = Date.now();
+      relay.set({blackhole:true});
+      await sleep(25000);
+      const closed = host.links.find(({at,line}) => at >= silenceAt && line.startsWith(`salon: link ${openedLink} closed`));
+      if (!closed) throw new Error("l'hôte n'a pas fermé l'ancien lien UDP après 25 s de silence");
+      if (closed.at-silenceAt > 20000) throw new Error(`l'hôte n'a constaté le silence UDP qu'après ${closed.at-silenceAt} ms`);
+      const fallbackSockets = phone.tab.sockets-sockets;
+      relay.set();
+      // Force a new ICE/DTLS negotiation after destroying the page's old link.
+      since = Date.now();
+      await phone.tab.reload();
+      const reopening = await waitUdp(since);
+      if (await waitJoined(phone, 10000) === null) throw new Error("reconnexion WebRTC : siège perdu");
+      const resumed = reopening.packets.map(({ bytes }) => readPacket(Buffer.from(bytes))).find(packet => packet.control === "Welcome");
+      if (resumed?.device !== welcomed.device) throw new Error("reconnexion WebRTC : identité changée");
+      if (relay.errors.length) throw new FixtureFailure(relay.errors.join(" ; "));
+      if (!relay.stats.dropped || !relay.stats.delayed || !relay.stats.reordered || !relay.stats.upstream || !relay.stats.downstream) throw new FixtureFailure("campagne UDP sans perturbation effective dans les deux sens");
+      measurements.rtc = { ...relay.snapshot(), device: welcomed.device, reconnect_device: resumed.device, silent_closed_ms:closed.at-silenceAt, fallback_sockets_during_long_silence:fallbackSockets };
+      ok("C1", `WebRTC réel : ${causal ? "action causale saine puis sous pertes/délai/réordonnancement dans chaque sens" : "trafic vivant sous perturbations, action causale non attestée"} sans repli TCP ; silence 25 s détecté en ${closed.at-silenceAt} ms (${fallbackSockets} repli(s) TCP autorisé(s)), puis nouvelle négociation UDP et même identité ; ${JSON.stringify(relay.stats)}`);
+    } catch(error) {
+      measurements.rtc_failure={error:error.message,relay:{...relay.stats},relay_errors:[...relay.errors],trace:await trace().catch(()=>null),page_errors:phone.tab.errors,links:host.links.slice(-12)};
+      log(`RTC diagnostics: ${JSON.stringify(measurements.rtc_failure)}`);
+      throw error;
+     }
+    },async()=>{
+      phone.webrtc = false;
+      phone.url = phoneUrl(phone);
+      await restore(phone);
+    },(error,primary)=>{
+      if(primary&&!(primary instanceof FixtureFailure))fail(scenarioFailureItem("rtc", primary),`[rtc] ${primary.message}`);
+      fixture.invalidate(error.message);
+      fail("H1",`[rtc] ${error.message}`);
+    });
     await invariants("rtc");
   },
 
@@ -1506,12 +1760,27 @@ const scenarios = {
     let stopAdvance = async () => {};
     try {
       for (const p of phones) await p.proxy.delay(200, 100);
+      for (const setup of config.jitter?.setup ?? []) {
+        const target = setup.screen === "tv" ? tv : phones[(setup.phone ?? 1) - 1];
+        if (!target) throw new Error("écran absent pour jitter.setup");
+        await performAction(target.tab, setup.action ?? {});
+      }
+      if (config.jitter?.ready) await tv.tab.waitFor(config.jitter.ready, 3000);
+      const probes = config.performance?.probes ?? [];
+      if (!probes.some(probe => probe.screen !== "tv")) throw new Error("aucune action téléphone causale déclarée pour le réseau dégradé");
+      const causal = [];
+      for (const probe of probes) {
+        const target = probe.screen === "tv" ? tv : phones[(probe.phone ?? 1) - 1];
+        if (!target) throw new Error("écran absent pour la sonde réseau dégradé");
+        causal.push({ engine: target.tab.engine, ...await measureProbe(tv.tab, target.tab, probe) });
+      }
+      measurements.jitter_causal = causal;
       stop = monkey();
       stopAdvance = advancer(8_000);
       await sleep(45_000);
       const stale = phones.filter((p) => !isLive(p, 8_000)).map((p) => p.tab.label);
       if (stale.length) fail("R1", `avec 200 ± 100 ms, plus de nouvelles pour : ${stale.join(", ")}`);
-      else partial("R1", "45 s à 200 ± 100 ms sans perte de connexion (« jouable » se juge au salon)");
+      else ok("R1", `actions causales observées sur la TV en moins de 3 s, puis 45 s à 200 ± 100 ms sans perte de connexion ; le ressenti reste une observation au salon`);
     } finally {
       await stopActors(stop, stopAdvance);
       const reset = await Promise.allSettled(phones.map((p) => p.proxy.delay(0, 0)));
@@ -1535,7 +1804,7 @@ const scenarios = {
       const before = stop.gestures;
       const sample = await measureFrames(tv.tab.page, config.performance?.sample_ms ?? 3000, config.painted);
       return { ...sample, gestures: stop.gestures - before };
-    })().catch((error) => ({ error: error.message }));
+    })().catch((error) => ({ error: error.message, diagnostics: error.diagnostics ?? null }));
     let sampled = false;
     const hashes = [];
     const start = Date.now();
@@ -1561,7 +1830,7 @@ const scenarios = {
         if (h !== last) stuckSince = Date.now();
         last = h;
         hashes.push(h);
-        if (config.advance && Date.now() - stuckSince > 40_000) {
+        if (config.advance && !config.advance.progress && Date.now() - stuckSince > 40_000) {
           fail("D2", "la TV n'a pas changé depuis 40 s alors que la partie avance (touche « advance ») : bloquée ?");
           writeFileSync(join(outDir, "monkey-tv-stuck.png"), await tv.tab.screenshot());
           stuckSince = Date.now();
@@ -1574,11 +1843,36 @@ const scenarios = {
     fixture.check();
     const distinct = new Set(hashes).size;
     ok("E6", `${(duration / 1000).toFixed(0)} s de gestes au hasard sur ${phones.length ? `${phones.length} téléphones` : "la page"}`);
-    if (!config.advance) skip("D2", "pas de touche « advance » : la progression se juge au salon");
-    else if (distinct > 3) ok("D2", `${distinct} écrans TV différents vus`);
-    else fail("D2", `seulement ${distinct} écrans TV différents en ${duration / 1000} s`);
+    if (!config.advance) skip("D2", config.progression?.kind === "continuous" ? `interaction continue sans fin de partie : ${config.progression.reason}` : "pas de touche « advance » : la progression se juge au salon");
+    else if (config.advance.progress) {
+      if(stopAdvance.failure) fail("D2", `progression interrompue : ${stopAdvance.failure.message}`);
+      else if(stopAdvance.changes<3) fail("D2", `seulement ${stopAdvance.changes} transitions sémantiques en ${duration/1000} s`);
+      else log(`    progression exercée : ${stopAdvance.changes} commandes ont changé la projection ; la fin/reprise est attestée séparément par progression`);
+    } else partial("D2", `${distinct} écrans TV différents ; advance.progress absent, la progression sémantique n'est pas attestée`);
     if (config.layout !== false) await scenarios.layout();
     writeFileSync(join(outDir, "monkey-tv-end.png"), await tv.tab.screenshot());
+  },
+
+  /** Browser resource retention, including DOM, JS/WASM stores and GPU-process RSS. */
+  async resources() {
+    if(config.phone && phones.length < (config.players?.min ?? 1)) return partial("R4", "pas assez de joueurs pour éprouver les ressources en partie");
+    const samples=[];
+    // Warm allocations before the baseline, then repeat the same settled work.
+    await resourceCycle(tv.tab.page);
+    for(let round=0;round<4;round++) {
+      if(round) {
+        const stop=monkey();
+        const stopAdvance=advancer(700);
+        try { await sleep(3000); } finally { await stopActors(stop,stopAdvance); }
+      }
+      await sleep(200);
+      samples.push(await browserResources(browser,tv.tab));
+    }
+    measurements.browser_resources=samples;
+    const failures=resourceFailures(samples);
+    if(failures.length) fail("R4", `rétention navigateur : ${failures.join(" ; ")}`);
+    else ok("R4", "4 mesures après GC : DOM, listeners, tas JS, mémoire externe/WASM et RSS Chromium/GPU dans les budgets ; ce cycle court ne remplace pas l'endurance de 30 min");
+    await invariants("resources");
   },
 
   /** C7: the host restarts mid-game. */
@@ -1652,13 +1946,21 @@ async function main() {
       throw error;
     } finally { persistEvidence(); }
   }
+  if(transport.mode==="lan") {
+    const checkNetwork=()=>{
+      if(!networkAddressPresent(transport.upstream,networkInterfaces())) fixture.invalidate(`l'adresse LAN testée ${transport.upstream} n'est plus assignée ; le passage perd sa fixture réseau et ne peut plus attester le produit`);
+    };
+    checkNetwork();
+    fixture.check();
+    networkMonitor=setInterval(checkNetwork,250);
+  }
   toxiproxy = await Toxiproxy.start();
   browser = await launchBrowser({ live: isLivePacket, remember: (payload) => readPacket(payload).control === "Hello", identify: (payload) => { const packet = readPacket(payload); return !packet.unreadable && packet.control === "Welcome" && Number.isInteger(packet.device) ? packet.device : null; }, webkitPhones: Boolean(config.phone) || args.only.includes("ui") });
   await openTv();
   await sleep(1_500);
   order = ALL.filter((s) => args.only.includes(s));
   // Phones are needed by almost everything: join first, quietly, if not asked.
-  if (!order.includes("join") && config.phone) {
+  if (!order.includes("join") && !order.includes("capacity") && config.phone) {
     for (let i = 0; i < args.phones; i++) {
       const phone = await openPhone(i + 1);
       phones.push(phone);
@@ -1666,9 +1968,13 @@ async function main() {
     }
   }
   const memory = [];
+  const browserMemory = [];
+  measurements.server_endurance = memory;
+  measurements.browser_endurance = browserMemory;
+  let soakMonotonic;
   const sampleMemory = () => {
     const u = host.usage();
-    if (u) memory.push({ t: Date.now(), ...u });
+    if (u) memory.push({ t: Date.now(), elapsed_ms: soakMonotonic === undefined ? null : performance.now() - soakMonotonic, ...u });
   };
   // The TV presses `start` after the lobby's scenarios, if `join` ran.
   const lastLobby = order.includes("join") ? Math.max(...LOBBY.map((name) => order.indexOf(name))) : -1;
@@ -1689,8 +1995,15 @@ async function main() {
           fail("H1", `[${name}] ${fixture.failure.message} ; cas restants non vérifiés : ${order.slice(index + 1).join(", ") || "aucun"}`);
           throw fixture.failure;
         }
-        fail(name === "ui" ? "U1" : "E1", `[${name}] le scénario s'est interrompu : ${error.message}`);
+        fail(scenarioFailureItem(name, error), `[${name}] le scénario s'est interrompu : ${error.message}`);
         if (!host.alive()) throw error;
+      }
+      if (name === "capacity" && !order.includes("join") && config.phone && index < order.length - 1) {
+        for (let phoneIndex = 1; phoneIndex <= args.phones; phoneIndex++) {
+          const phone = await openPhone(phoneIndex);
+          phones.push(phone);
+          await runJoin(phone, `Joueur${phoneIndex}`);
+        }
       }
       if (index === lastLobby && config.start && !gameStarted) {
         await press(tv.tab, config.start);
@@ -1702,14 +2015,20 @@ async function main() {
   };
   await runOnce();
   if (args.soak) {
-    const end = Date.now() + args.soak * 60_000;
+    const recurring = recurringScenarios(order, { phones: config.phone && phones.length > 0, socket: Boolean(config.socket) });
+    if (!recurring.length) throw new FixtureFailure("endurance sans scénario de chaos applicable sélectionné");
+    if (config.phone && phones.length < (config.players?.min ?? 1)) throw new FixtureFailure("endurance sans assez de joueurs accueillis");
+    const soakStarted = Date.now();
+    soakMonotonic = performance.now();
+    const end = soakMonotonic + args.soak * 60_000;
+    measurements.soak_started = soakStarted;
     let round = 1;
-    while (Date.now() < end) {
+    while (performance.now() < end) {
       round++;
-      log(`— endurance, tour ${round} (${Math.round((end - Date.now()) / 60_000)} min restantes)`);
-      for (const name of ["cut", "freeze", "reload", "hostile", "monkey"]) {
-        if (!order.includes(name)) continue;
+      log(`— endurance, tour ${round} (${Math.round((end - performance.now()) / 60_000)} min restantes)`);
+      for (const name of recurring) {
         sampleMemory();
+        browserMemory.push({ ...await browserResources(browser,tv.tab), elapsed_ms: performance.now() - soakMonotonic });
         activeScenario = name;
         try {
           fixture.check();
@@ -1723,20 +2042,28 @@ async function main() {
         }
       }
     }
+    activeScenario="soak";
+    sampleMemory();
+    measurements.server_endurance = memory.filter(sample => sample.elapsed_ms !== null);
+    browserMemory.push({ ...await browserResources(browser,tv.tab), elapsed_ms: performance.now() - soakMonotonic });
+    measurements.browser_endurance=browserMemory;
+    const warmIndex=browserMemory.findIndex(sample=>sample.elapsed_ms>=5*60_000);
+    const browserFailures=warmIndex < 0 ? ["aucune mesure après cinq minutes d'endurance"] : resourceFailures(browserMemory.slice(warmIndex));
+    if(browserFailures.length) fail("R2", `endurance navigateur : ${browserFailures.join(" ; ")}`);
+    else ok("R2", "endurance navigateur : DOM/listeners/JS/WASM/RSS Chromium-GPU dans les budgets");
     // What matters is the slope: projected over a 6 h evening, the host's
     // memory must stay well within a laptop's. A ratio means nothing for a
     // host of a few MiB, where the allocator alone moves it by half.
-    const warm = memory.find((m) => m.t - started > 5 * 60_000) ?? memory[0];
-    const lastSample = memory[memory.length - 1];
-    if (warm && lastSample && lastSample.t > warm.t) {
-      const perHour = ((lastSample.rss - warm.rss) / 1024) / ((lastSample.t - warm.t) / 3_600_000);
-      const evening = Math.max(0, perHour * 6);
+    try {
+      const evaluated = serverEndurance(measurements.server_endurance);
+      measurements.server_endurance_evaluation = evaluated;
+      const { warm, last: lastSample, evening_mib: evening } = evaluated;
       const series = memory.map((m) => Math.round(m.rss / 1024)).join(" ");
       const line = `mémoire ${Math.round(warm.rss / 1024)} → ${Math.round(lastSample.rss / 1024)} Mio, soit +${evening.toFixed(0)} Mio sur une soirée de 6 h ; threads ${warm.threads} → ${lastSample.threads} (série en Mio : ${series})`;
       activeScenario = "soak";
-      if (evening > 256 || lastSample.threads > warm.threads + 4) fail("R2", line);
+      if (evaluated.failures.length) fail("R2", `${line} (${evaluated.failures.join(" ; ")})`);
       else ok("R2", line);
-    }
+    } catch (error) { fail("R2", error.message); }
   } else { activeScenario = "soak"; skip("R2", "lance --soak 30 pour l'endurance"); }
 }
 
@@ -1744,16 +2071,27 @@ async function main() {
 let cleaning = null;
 function cleanup() {
   cleaning ??= (async () => {
-    await host?.kill().catch(() => {});
-    toxiproxy?.stop();
-    await Promise.race([browser?.close().catch(() => {}), sleep(5_000)]);
+    clearInterval(networkMonitor);
+    const failures=await cleanupAll([
+      {name:"game host",run:()=>host?.kill()},
+      ...[...probeHosts].map(probe => ({ name: "isolated check host", run: () => probe.kill() })),
+      {name:"Toxiproxy",run:()=>toxiproxy?.stop()},
+      {name:"browsers",run:()=>browser?.close()},
+    ]);
+    if(failures.length){
+      const reason=`arrêt incomplet du contrôleur : ${failures.join(" ; ")}`;
+      fixture.invalidate(reason);
+      evidence.infrastructure_error??=reason;
+      if(!args.prepareOnly)fail("H1",reason);
+    }
+    return failures;
   })();
   return cleaning;
 }
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, () => {
     console.error(`\n${signal} : arrêt du harnais, nettoyage…`);
-    cleanup().finally(() => process.exit(130));
+    cleanup().finally(() => {persistEvidence();process.exit(130);});
   });
 }
 
@@ -1775,6 +2113,7 @@ try {
 } finally {
   await cleanup();
 }
+crashed??=fixture.failure;
 
 if (args.prepareOnly) {
   // `completed` belongs to certification. Preparation must never be usable as
@@ -1791,7 +2130,7 @@ persistEvidence();
 
 // ---------------------------------------------------------------- summary
 
-const ITEMS = ["H1", "HTTP", "U1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3"];
+const ITEMS = ["H1", "HTTP", "U1", "P1", "P2", "C10", "C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9", "E1", "E2", "E3", "E4", "E6", "T2", "T3", "T4", "D2", "R1", "R2", "R3", "R4"];
 const lines = [`# Observations du harnais de ${gameDir.split("/").slice(-2).join("/")}`, "", `Graine ${args.seed}, ${((Date.now() - started) / 60_000).toFixed(1)} min. Captures : ${outDir}`, "", "| Item | État | Détail |", "|---|---|---|"];
 let failures = 0;
 for (const item of ITEMS) {

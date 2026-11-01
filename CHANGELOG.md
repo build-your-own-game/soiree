@@ -2,6 +2,69 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
+## v0.4.0 — Non publié
+
+Le serveur borne les connexions avant de créer leurs threads (deux connexions par appareil configuré, 32 places HTTP et 32 places
+réservées au loopback ; au moins 128 places au total), applique une échéance absolue aux lectures HTTP
+et WebSocket et borne les écritures. La fermeture d'un lecteur arrête aussi son
+writer, même si un destinataire conserve sa file. Les événements et états de jeu
+ne changent pas de format.
+
+Le contrôle `rtc` perturbe désormais le vrai transport UDP puis renégocie son
+DataChannel avec la même identité. Le nouveau contrôle R4 observe la rétention
+DOM/JS/WASM et le RSS de Chromium/GPU ; l'endurance R2 conserve aussi ces mesures.
+Les contrôles négatifs éprouvent les détecteurs. Le refus de stockage inclut
+IndexedDB et `cert.json.storage` peut identifier la sauvegarde à corrompre.
+
+Le contrôleur conserve les pannes TCP de Toxiproxy, mais borne sa connexion
+amont par un connecteur possédé : deux secondes pour joindre la vraie adresse
+LAN, sans nouvelle tentative ni repli. Un SYN bloqué ne retient plus la commande
+de coupure jusqu'au délai du système. Le connecteur borne ses ressources et les
+libère à l'arrêt ; les erreurs d'administration restent des pannes d'infrastructure.
+
+`salon_web::audio` ajoute des effets TV bornés, identifiés et périssables,
+débloqués par un geste réel, avec coupure/volume et libération du graphe. Ses
+régressions rendent le vrai signal et éprouvent les navigateurs. L'activation
+et la qualité de la sortie physique restent à contrôler sur les appareils.
+
+La certification complète exerce `capacity` au maximum déclaré, `text` sur
+un corpus déterministe et `progression` jusqu'à une fin réelle puis reprise.
+Les commandes UI/texte/progression ont chacune leur salle propre. Les champs
+16 px sont contrôlés même avec une TV canvas, dont la géométrie exige un oracle
+réel. La cadence garde le reçu d'une mesure déjà terminée si Node est retardé,
+sans nouvel échantillon ni acceptation d'un arrêt réel du rendu. L'endurance
+garde ses séries brutes, un temps monotone, cinq minutes de chauffe effective
+et aucun thread supplémentaire conservé.
+
+### Passer à cette version
+
+1. Après publication : `soiree upgrade` puis `soiree check` et `soiree certify`.
+2. Prévoir `resources` (R4) dans les passages ciblés ; son succès ne remplace
+   pas les trente minutes d'endurance. `rtc` exige un vrai trajet UDP et éprouve les moteurs disponibles,
+   les négociations retardées/défaillantes et le repli dans son domaine prévu.
+3. Pour IndexedDB, déclarer `"storage": {"kind": "indexeddb", "database": "…",
+   "store": "…", "key": "…"}` dans `cert.json` (syntaxe JSON, pas TOML).
+4. Les jeux intégrés à l'audio local ou à ces changements de salon ne doivent
+   être publiés qu'après le commun ; ils gardent leur ancienne étiquette ici.
+
+5. Ajouter `refused: {"selector":"…","text":"…"}`, `text.checks` et, pour
+   un jeu fini, `progression: {"kind":"finite","checks":[…]}` dans `cert.json`.
+   Les commandes fonctionnent sur un hôte frais via `{url}` ; le modèle fournit
+   les fichiers et les variables d'environnement.
+6. Les éditeurs/compteurs continus sans `start`/`advance` motivent
+   `progression.kind="continuous"`. Un éditeur desktop solo peut motiver
+   `display.role="desktop"` ; ses cadres T2 restent requis. Une TV canvas
+   déclare une commande `layout` observant ses cadres réels.
+
+### Change de sens
+
+- Une tentative WebRTC dispose maintenant de la même fenêtre absolue de 15 s
+  côté page et côté hôte, au lieu d'être détruite par la page après 3 s pendant
+  une négociation encore viable. Les erreurs natives déclenchent immédiatement
+  le repli WebSocket. Un résultat SDP tardif ne remplace jamais ce repli et la
+  progression ne prolonge pas la fenêtre. Le délai de connexion C1 de 30 s et
+  les budgets de rendu/latence P1/P2 restent inchangés.
+
 ## v0.3.1 — Non publié
 
 Le projet Xcode déclare les fichiers produits par sa phase de compilation Rust :

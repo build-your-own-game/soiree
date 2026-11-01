@@ -28,23 +28,76 @@ export function frameFailures(sample, options = {}) {
   return failures;
 }
 
+let nextFrameSample = 0;
+
+class FrameSampleTimeout extends Error {
+  constructor() { super("le rendu ne termine pas son échantillon de cadence"); }
+}
+
+async function boundedFrameReceipt(page, id) {
+  let timer;
+  try {
+    return await Promise.race([
+      page.evaluate((id) => {
+        const sample = window.__certFrameSample;
+        if (!sample || sample.id !== id) return { state: "replaced-or-absent" };
+        return {
+          state: sample.completed ? "completed" : sample.active ? "pending" : "stopped",
+          reason: sample.reason,
+          visibility: document.visibilityState,
+          callback_count: sample.callbackCount,
+          elapsed_ms: performance.now() - sample.installedAt,
+          recent_callbacks: sample.callbacks,
+          long_frames: sample.longFrames,
+          completed: sample.completed,
+        };
+      }, id).catch((error) => ({ state: "unreachable", error: error.message })),
+      new Promise((resolve) => { timer = setTimeout(() => resolve({ state: "unreachable" }), 250); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
 export async function measureFrames(page, durationMs = 3000, painted = null) {
   positiveBudget(durationMs, 3000, "performance.sample_ms");
-  const observed = page.evaluate(({ duration, painted }) => new Promise((resolve, reject) => {
-    window.__certFrameSample?.stop();
+  const id = ++nextFrameSample;
+  const controllerStarted = Date.now();
+  const observed = page.evaluate(({ duration, painted, id }) => new Promise((resolve, reject) => {
+    window.__certFrameSample?.stop("superseded");
     let start;
     let previous;
     let previousPaint;
     let lastPaint;
+    let leadingGap = 0;
     let frames = 0;
     const intervals = [];
-    const sample = { active: true, id: null };
-    sample.stop = () => { sample.active = false; cancelAnimationFrame(sample.id); };
+    const sample = { id, active: true, idRaf: null, installedAt: performance.now(), callbackCount: 0, callbacks: [], longFrames: [], completed: null, reason: null };
+    let longObserver;
+    if (typeof PerformanceObserver !== "undefined" && (PerformanceObserver.supportedEntryTypes ?? []).includes("long-animation-frame")) {
+      longObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          sample.longFrames.push({ start_ms: entry.startTime, duration_ms: entry.duration, blocking_ms: entry.blockingDuration, scripts: entry.scripts?.map((script) => ({ duration_ms: script.duration, invoker: script.invoker, source: script.sourceURL })) });
+        }
+        sample.longFrames = sample.longFrames.slice(-16);
+      });
+      longObserver.observe({ type: "long-animation-frame", buffered: false });
+    }
+    sample.stop = (reason = "cancelled", error = null) => {
+      if (!sample.active) return;
+      sample.active = false;
+      sample.reason = reason;
+      cancelAnimationFrame(sample.idRaf);
+      longObserver?.disconnect();
+      if (!sample.completed) reject(error ?? new Error(reason === "superseded" ? "échantillon de cadence remplacé" : "échantillon de cadence annulé"));
+    };
     window.__certFrameSample = sample;
     function frame(now) {
       if (!sample.active) return;
       try {
-        start ??= now;
+        const arrived = performance.now();
+        sample.callbackCount++;
+        sample.callbacks.push({ frame_ms: now, callback_ms: arrived, visibility: document.visibilityState });
+        if (sample.callbacks.length > 16) sample.callbacks.shift();
+        if (start === undefined) { start = now; leadingGap = arrived - sample.installedAt; }
         if (painted) {
           const current = (0, eval)(painted);
           if (typeof current !== "number" || !Number.isFinite(current)) throw new Error("le compteur de présentations GPU est absent ou invalide");
@@ -58,29 +111,51 @@ export async function measureFrames(page, durationMs = 3000, painted = null) {
         } else if (previous !== undefined) { intervals.push(now - previous); frames++; }
         previous = now;
         if (now - start >= duration) {
-          sample.stop();
           const tail = painted ? now - lastPaint : 0;
-          resolve({ intervals, frames, duration_ms: now - start, tail_ms: tail });
-        } else sample.id = requestAnimationFrame(frame);
-      } catch (error) { sample.stop(); reject(error); }
+          // The browser owns this receipt and closes it before resolving the
+          // protocol response. A delayed Node event loop cannot turn an already
+          // completed, timely measurement into a renderer timeout.
+          sample.completed = { intervals, frames, duration_ms: now - start, tail_ms: tail, leading_gap_ms: leadingGap, browser_elapsed_ms: performance.now() - sample.installedAt, long_frames: [...sample.longFrames], recent_callbacks: [...sample.callbacks] };
+          sample.stop("completed");
+          resolve(sample.completed);
+        } else sample.idRaf = requestAnimationFrame(frame);
+      } catch (error) { sample.stop("error", error); }
     }
-    sample.id = requestAnimationFrame(frame);
-  }), { duration: durationMs, painted });
+    sample.idRaf = requestAnimationFrame(frame);
+  }), { duration: durationMs, painted, id });
   let timer;
+  let recovered = false;
   try {
-    const measured = await Promise.race([observed, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error("le rendu ne termine pas son échantillon de cadence")), durationMs + 3000);
-    })]);
+    let measured;
+    try {
+      measured = await Promise.race([observed, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new FrameSampleTimeout()), durationMs + 3000);
+      })]);
+    } catch (error) {
+      if (!(error instanceof FrameSampleTimeout)) throw error;
+      const receipt = await boundedFrameReceipt(page, id);
+      // This recovers the SAME immutable browser sample, never a retry or a
+      // longer rendering budget. A late/absent browser result remains failed.
+      if (receipt.completed?.browser_elapsed_ms <= durationMs + 3000) {
+        measured = receipt.completed;
+        recovered = true;
+      } else {
+        error.diagnostics = receipt;
+        throw error;
+      }
+    }
+    const intervals = [...measured.intervals];
+    if (measured.leading_gap_ms > 0) intervals.push(measured.leading_gap_ms);
     // The terminal gap is still a stall if the renderer stops while the
     // observer's own rAF keeps running. It does not count as another paint.
-    const intervals = measured.tail_ms > 0 ? [...measured.intervals, measured.tail_ms] : measured.intervals;
+    if (measured.tail_ms > 0) intervals.push(measured.tail_ms);
     const summary = summarizeFrames(intervals);
-    return { ...summary, frames: measured.frames, duration_ms: measured.duration_ms, fps: measured.frames * 1000 / measured.duration_ms, observer: painted ? "present" : "raf", trailing_gap_ms: measured.tail_ms };
+    return { ...summary, frames: measured.frames, duration_ms: measured.duration_ms, fps: measured.frames * 1000 / measured.duration_ms, observer: painted ? "present" : "raf", trailing_gap_ms: measured.tail_ms, leading_gap_ms: measured.leading_gap_ms, browser_elapsed_ms: measured.browser_elapsed_ms, controller_elapsed_ms: Date.now() - controllerStarted, recovered_controller_delay: recovered, long_frames: measured.long_frames, recent_callbacks: measured.recent_callbacks };
   } finally {
     clearTimeout(timer);
     let cleanupTimer;
     await Promise.race([
-      page.evaluate(() => window.__certFrameSample?.stop()).catch(() => {}),
+      page.evaluate((id) => { if (window.__certFrameSample?.id === id) window.__certFrameSample.stop(); }, id).catch(() => {}),
       new Promise((resolve) => { cleanupTimer = setTimeout(resolve, 500); }),
     ]);
     clearTimeout(cleanupTimer);
@@ -251,8 +326,25 @@ export class FixtureFailure extends Error {
   }
 }
 
+/** A failed transport exercise belongs to its declared C1 contract, even
+ * when it throws before recording a result. Controller failures stay H1. */
+export function scenarioFailureItem(scenario, error) {
+  if (error instanceof FixtureFailure) return "H1";
+  if (scenario === "rtc") return "C1";
+  if (scenario === "capacity") return "R3";
+  if (scenario === "text") return "T2";
+  if (scenario === "layout") return "T3";
+  if (scenario === "performance") return "P1";
+  return scenario === "ui" ? "U1" : "E1";
+}
+
 export class FixtureGuard {
   constructor() { this.failure = null; }
   invalidate(reason) { this.failure ??= new FixtureFailure(reason); }
   check() { if (this.failure) throw this.failure; }
+}
+
+/** Primary-interface ordering may change without losing the tested address. */
+export function networkAddressPresent(address, interfaces) {
+  return Object.values(interfaces).flat().some(entry => entry && !entry.internal && entry.address === address);
 }

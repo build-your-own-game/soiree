@@ -45,6 +45,90 @@ include!(concat!(env!("OUT_DIR"), "/catalogue.rs"));
 /// certify` into a cache per version, then `npm ci` installs its one
 /// dependency there.
 pub const HARNESS: &[(&str, &str)] = &[
+    ("ports.mjs", include_str!("../../tools/cert/ports.mjs")),
+    (
+        "ports.test.mjs",
+        include_str!("../../tools/cert/ports.test.mjs"),
+    ),
+    (
+        "progression-verification.mjs",
+        include_str!("../../tools/cert/progression-verification.mjs"),
+    ),
+    (
+        "progression-verification.test.mjs",
+        include_str!("../../tools/cert/progression-verification.test.mjs"),
+    ),
+    (
+        "endurance.mjs",
+        include_str!("../../tools/cert/endurance.mjs"),
+    ),
+    (
+        "endurance.test.mjs",
+        include_str!("../../tools/cert/endurance.test.mjs"),
+    ),
+    (
+        "processes.mjs",
+        include_str!("../../tools/cert/processes.mjs"),
+    ),
+    (
+        "processes.test.mjs",
+        include_str!("../../tools/cert/processes.test.mjs"),
+    ),
+    (
+        "capacity.mjs",
+        include_str!("../../tools/cert/capacity.mjs"),
+    ),
+    (
+        "capacity.test.mjs",
+        include_str!("../../tools/cert/capacity.test.mjs"),
+    ),
+    ("cleanup.mjs", include_str!("../../tools/cert/cleanup.mjs")),
+    (
+        "cleanup.test.mjs",
+        include_str!("../../tools/cert/cleanup.test.mjs"),
+    ),
+    (
+        "progression.mjs",
+        include_str!("../../tools/cert/progression.mjs"),
+    ),
+    (
+        "progression.test.mjs",
+        include_str!("../../tools/cert/progression.test.mjs"),
+    ),
+    (
+        "toxiproxy.test.mjs",
+        include_str!("../../tools/cert/toxiproxy.test.mjs"),
+    ),
+    ("udp.mjs", include_str!("../../tools/cert/udp.mjs")),
+    (
+        "presentation.mjs",
+        include_str!("../../tools/cert/presentation.mjs"),
+    ),
+    (
+        "presentation.test.mjs",
+        include_str!("../../tools/cert/presentation.test.mjs"),
+    ),
+    ("text.mjs", include_str!("../../tools/cert/text.mjs")),
+    (
+        "text.test.mjs",
+        include_str!("../../tools/cert/text.test.mjs"),
+    ),
+    (
+        "rtc-negotiation.mjs",
+        include_str!("../../tools/cert/rtc-negotiation.mjs"),
+    ),
+    (
+        "udp.test.mjs",
+        include_str!("../../tools/cert/udp.test.mjs"),
+    ),
+    (
+        "resources.mjs",
+        include_str!("../../tools/cert/resources.mjs"),
+    ),
+    (
+        "resources.test.mjs",
+        include_str!("../../tools/cert/resources.test.mjs"),
+    ),
     (
         "navigation.test.mjs",
         include_str!("../../tools/cert/navigation.test.mjs"),
@@ -114,6 +198,10 @@ pub const MODEL: &[(&str, &str)] = &[
     (
         "tools/press-check.mjs",
         include_str!("../../modele/tools/press-check.mjs"),
+    ),
+    (
+        "tools/text-check.mjs",
+        include_str!("../../modele/tools/text-check.mjs"),
     ),
     (
         "crates/host/tests/replays/session.jsonl",

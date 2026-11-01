@@ -107,6 +107,8 @@ jobs:
           npx playwright-core install webkit
       - name: Exercise shared UI lifetimes in real browsers
         run: node salon/tests/ui-browser.mjs
+      - name: Exercise shared audio signals and lifetimes in real browsers
+        run: node salon/tests/audio-browser.mjs
       - name: Exercise the Swift to WASM bridge
         working-directory: remote
         run: cargo xtask web-contract-browser

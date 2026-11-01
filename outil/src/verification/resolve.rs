@@ -3,14 +3,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-use super::model::{Applicability, Contract, Control, ExecutionSpec, Method, Obligation, Plan};
+use super::model::{
+    Applicability, Contract, Control, Display, DisplayRole, ExecutionSpec, Method, Obligation,
+    Plan, Progression,
+};
 use crate::embedded;
 
 pub const HARNESS: &[(&str, &[&str])] = &[
     ("ui", &["U1"]),
     ("performance", &["P1", "P2"]),
     ("panic", &["C10"]),
-    ("join", &["C1", "C8", "R3"]),
+    ("join", &["C1"]),
+    ("capacity", &["C8", "R3"]),
+    ("text", &["T2"]),
     ("layout", &["T3", "T4"]),
     ("storage", &["C9"]),
     ("cut", &["C2"]),
@@ -21,8 +26,10 @@ pub const HARNESS: &[(&str, &[&str])] = &[
     ("rtc", &["C1"]),
     ("hostile", &["E1", "E2", "E3", "E4"]),
     ("jitter", &["R1"]),
-    ("monkey", &["E6", "T2", "D2", "P1"]),
+    ("progression", &["D2"]),
+    ("monkey", &["E6", "P1"]),
     ("restart", &["C7"]),
+    ("resources", &["R4"]),
     ("soak", &["R2"]),
 ];
 
@@ -380,7 +387,60 @@ fn unbound_game_requirements(plan: &mut Plan) {
     }
 }
 
+fn continuous_reason(config: &Value, plan: &mut Plan) -> Option<String> {
+    config.get("progression").and_then(|value| match serde_json::from_value::<Progression>(value.clone()) {
+        Ok(Progression::Continuous { reason }) if !reason.trim().is_empty()
+            && ["start", "advance"].iter().all(|key| config.get(key).is_none_or(|value| value.is_null() || value == false)) => Some(reason),
+        Ok(Progression::Finite { checks }) => {
+            if checks.is_empty() || checks.iter().any(|check| {
+                check.get("name").and_then(Value::as_str).is_none_or(|name| name.trim().is_empty())
+                    || check.get("command").and_then(Value::as_array).is_none_or(|command| command.is_empty() || command.iter().any(|part| part.as_str().is_none()))
+            }) {
+                plan.diagnostics.push("cert.json.progression : finite exige checks avec name et command non vides".to_owned());
+            }
+            None
+        },
+        Ok(Progression::Continuous { .. }) => {
+            plan.diagnostics.push("cert.json.progression : continuous exige une raison et aucune commande start/advance".to_owned());
+            None
+        }
+        Err(error) => {
+            plan.diagnostics.push(format!("cert.json.progression : {error}"));
+            None
+        }
+    })
+}
+
+fn display_scope(config: &Value, plan: &mut Plan) -> Option<Display> {
+    config.get("display").and_then(|value| {
+        match serde_json::from_value::<Display>(value.clone()) {
+            Ok(display)
+                if display.role != DisplayRole::Desktop
+                    || (!display.reason.trim().is_empty()
+                        && ["phone", "socket", "start", "advance"].iter().all(|key| {
+                            config.get(key).is_none_or(|value| value.is_null() || value == false)
+                        })) =>
+            {
+                Some(display)
+            }
+            Ok(_) => {
+                plan.diagnostics.push(
+                    "cert.json.display : desktop exige une raison et un éditeur solo sans phone, socket, start ou advance".to_owned(),
+                );
+                None
+            }
+            Err(error) => {
+                plan.diagnostics
+                    .push(format!("cert.json.display : {error}"));
+                None
+            }
+        }
+    })
+}
+
 fn harness_controls(config: &Value, plan: &mut Plan) {
+    let progression = continuous_reason(config, plan);
+    let display = display_scope(config, plan);
     let transport = config
         .get("phone_upstream")
         .and_then(Value::as_str)
@@ -403,7 +463,7 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
     for &(scenario, items) in HARNESS {
         for &item in items {
             let id = harness_id(scenario, item);
-            let method = if item.starts_with('P') || item == "R2" {
+            let method = if item.starts_with('P') || ["R2", "R4"].contains(&item) {
                 Method::Measure
             } else {
                 Method::Test
@@ -417,8 +477,18 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
                     item: item.to_owned(),
                 },
             });
-            let applicability = if ["C1", "C2", "C3", "C4", "C5", "C8", "C10", "T4", "R1", "R3"]
-                .contains(&item)
+            let applicability = if item == "T3"
+                && display
+                    .as_ref()
+                    .is_some_and(|display| display.role == DisplayRole::Desktop)
+            {
+                Applicability::NotApplicable(format!(
+                    "Éditeur desktop : {}. Les cadres et textes restent vérifiés par T2.",
+                    display
+                        .as_ref()
+                        .map_or("", |display| display.reason.as_str())
+                ))
+            } else if ["C1", "C2", "C3", "C4", "C5", "C8", "C10", "T4", "R1", "R3"].contains(&item)
                 && !phone
             {
                 Applicability::NotApplicable(
@@ -438,6 +508,11 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
                     "Passage limité au loopback : l’accès depuis le réseau local n’est pas exercé"
                         .to_owned(),
                 )
+            } else if item == "D2" && progression.is_some() {
+                Applicability::NotApplicable(format!(
+                    "Interaction continue, aucune fin de partie : {}",
+                    progression.as_deref().unwrap_or_default()
+                ))
             } else if item == "D2" && config.get("advance").is_none_or(Value::is_null) {
                 Applicability::Unknown(
                     "La terminaison dépend du genre ; aucune progression observable n’est déclarée"
@@ -458,6 +533,22 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
 }
 
 fn rehearsal(plan: &mut Plan) {
+    if let Some(obligation) = plan
+        .obligations
+        .iter_mut()
+        .find(|obligation| obligation.id == "R1")
+    {
+        let id = "review:R1:playability".to_owned();
+        plan.controls.push(Control {
+            id: id.clone(),
+            method: Method::Justification,
+            scope: "Ressenti de jeu de bout en bout sur les appareils et le réseau réels"
+                .to_owned(),
+            execution: ExecutionSpec::Manual,
+        });
+        obligation.controls.push(id);
+        obligation.assumptions.push("Le scénario jitter établit la causalité fonctionnelle et la continuité ; il n'établit pas le ressenti physique.".to_owned());
+    }
     for n in 1..=10 {
         let id = format!("S{n}");
         plan.controls.push(Control {
@@ -492,6 +583,153 @@ fn valid_game_id(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn functional_jitter_does_not_claim_to_measure_physical_playability() {
+        let mut plan = empty_plan(vec![]);
+        harness_controls(&serde_json::json!({"phone": "/play"}), &mut plan);
+        rehearsal(&mut plan);
+        plan.obligations.retain(|obligation| obligation.id == "R1");
+        let ids = plan.obligations.first().unwrap().controls.clone();
+        plan.controls.retain(|control| ids.contains(&control.id));
+        let control = plan
+            .controls
+            .iter()
+            .find(|control| matches!(control.execution, ExecutionSpec::Harness { .. }))
+            .unwrap();
+        let observation = crate::verification::model::Observation {
+            control_id: control.id.clone(),
+            method: control.method,
+            scope: control.scope.clone(),
+            outcome: crate::verification::model::Outcome::Passed,
+            input_identity: Some("current".into()),
+            detail: "causal action and connectivity".into(),
+            command: vec![],
+            artifacts: vec![],
+        };
+        let selected = BTreeSet::from([control.id.clone()]);
+        let evaluation = crate::verification::evaluate::evaluate(
+            &plan,
+            &[observation],
+            &selected,
+            Some("current"),
+        );
+        assert!(evaluation.selected_scope_satisfied);
+        assert!(evaluation.all_automated_obligations_satisfied);
+        assert!(!evaluation.complete);
+        assert_eq!(
+            evaluation.obligations[0].assessment,
+            crate::verification::model::Assessment::Pending
+        );
+    }
+
+    #[test]
+    fn a_continuous_interaction_does_not_claim_to_test_a_finite_game() {
+        let mut plan = empty_plan(vec![]);
+        harness_controls(&serde_json::json!({}), &mut plan);
+        assert!(matches!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "D2")
+                .unwrap()
+                .applicability,
+            Applicability::Unknown(_)
+        ));
+        let declaration = serde_json::json!({"progression": {"kind": "continuous", "reason": "A shared tap counter, with no rounds."}});
+        let mut plan = empty_plan(vec![]);
+        harness_controls(&declaration, &mut plan);
+        assert_eq!(plan.diagnostics, Vec::<String>::new());
+        assert!(matches!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "D2")
+                .unwrap()
+                .applicability,
+            Applicability::NotApplicable(_)
+        ));
+        assert_eq!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "P1")
+                .unwrap()
+                .applicability,
+            Applicability::Applicable
+        );
+        for bad in [
+            serde_json::json!({"progression": {"kind": "continuous", "reason": ""}}),
+            serde_json::json!({"progression": {"kind": "continuous", "reason": "finite"}, "advance": {"key": " "}}),
+            serde_json::json!({"progression": {"kind": "continuous", "reason": "finite"}, "start": {"key": "Enter"}}),
+            serde_json::json!({"progression": {"kind": "continous", "reason": "typo"}}),
+        ] {
+            let mut plan = empty_plan(vec![]);
+            harness_controls(&bad, &mut plan);
+            assert!(!plan.diagnostics.is_empty(), "{bad}");
+            assert!(!matches!(
+                plan.obligations
+                    .iter()
+                    .find(|o| o.id == "D2")
+                    .unwrap()
+                    .applicability,
+                Applicability::NotApplicable(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn desktop_scope_requires_the_editor_domain_and_keeps_text_checks() {
+        let mut plan = empty_plan(vec![]);
+        harness_controls(&serde_json::json!({"layout": false}), &mut plan);
+        assert_eq!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "T3")
+                .unwrap()
+                .applicability,
+            Applicability::Applicable
+        );
+
+        let desktop = serde_json::json!({"layout": false, "display": {"role": "desktop", "reason": "Scrollable local editor; its text frames are tested."}});
+        let mut plan = empty_plan(vec![]);
+        harness_controls(&desktop, &mut plan);
+        assert_eq!(plan.diagnostics, Vec::<String>::new());
+        assert!(matches!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "T3")
+                .unwrap()
+                .applicability,
+            Applicability::NotApplicable(_)
+        ));
+        assert_eq!(
+            plan.obligations
+                .iter()
+                .find(|o| o.id == "T2")
+                .unwrap()
+                .applicability,
+            Applicability::Applicable
+        );
+        assert!(plan.controls.iter().any(|c| c.id == "harness:text:T2"));
+
+        for bad in [
+            serde_json::json!({"display": {"role": "desktop", "reason": ""}}),
+            serde_json::json!({"display": {"role": "desktpo", "reason": "typo"}}),
+            serde_json::json!({"display": {"role": "desktop", "reason": "has phones"}, "phone": "/play"}),
+            serde_json::json!({"display": {"role": "desktop", "reason": "has transport"}, "socket": "/ws"}),
+            serde_json::json!({"display": {"role": "desktop", "reason": "has phases"}, "advance": {"key": " "}}),
+        ] {
+            let mut plan = empty_plan(vec![]);
+            harness_controls(&bad, &mut plan);
+            assert!(!plan.diagnostics.is_empty(), "{bad}");
+            assert_eq!(
+                plan.obligations
+                    .iter()
+                    .find(|o| o.id == "T3")
+                    .unwrap()
+                    .applicability,
+                Applicability::Applicable
+            );
+        }
+    }
 
     #[test]
     fn a_catalogue_has_only_the_static_controller() {

@@ -20,3 +20,13 @@ Un changement de mécanique ajoute ses références et ses tests ici.
 6. **Respecté.** Salon possède les transports, les identités et la reconnexion ; le jeu ne connaît que les appareils et leurs entrées.
 7. **Respecté.** Le harnais mesure la cadence, l’arrivée et le délai du bouton téléphone au compteur TV, avec des téléphones Chromium et WebKit. Les rapports sont propres à chaque passage ; les mesures physiques restent à refaire sur le matériel de la soirée.
 8. **Respecté.** Messages et journaux utilisent leurs types Rust partagés ; les noms du DOM sont générés depuis HTML et CSS. La version salon est calculée depuis les sources.
+
+## Vérifier le texte du modèle
+
+Le modèle n'a pas de saisie libre dans ses pages. Son contrôle `text` observe
+ses vraies sources : noms de joueurs, bouton et compteurs personnels/globaux.
+Vingt-trois clics réels doivent produire chacun la valeur exacte de l'hôte,
+avec texte littéral et cadres natifs valides dans les deux moteurs. Les
+contrôles négatifs sur son vrai compteur détectent une projection HTML ou
+coupée. Ajouter une saisie libre impose de compléter ce parcours par le corpus
+T2 commun ; cette vérification des compteurs ne couvre pas une telle saisie.
