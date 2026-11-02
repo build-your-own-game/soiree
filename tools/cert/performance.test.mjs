@@ -96,7 +96,7 @@ test("a rendered value settles by coming back or by resting, never while it keep
     await renderSettled(tab, read, '"0"', { quietMs: 200, timeoutMs: 1000 });
     // A value moving all the time never counts as finished.
     await tab.page.evaluate(() => { let n = 2; window.__moving = setInterval(() => { document.querySelector("#value").textContent = String(n++); }, 20); });
-    await assert.rejects(renderSettled(tab, read, '"0"', { quietMs: 200, timeoutMs: 800 }), /Timeout/);
+    await assert.rejects(renderSettled(tab, read, '"0"', { quietMs: 200, timeoutMs: 800 }), /Timeout.*attendu "0".*"reads":[1-9]/);
     await tab.page.evaluate(() => clearInterval(window.__moving));
     await tab.close();
   } finally { await browser.close(); }

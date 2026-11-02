@@ -275,14 +275,24 @@ async function observeProbe(tv, target, probe, timeoutMs, control) {
  * or it stopped moving, as a score does. A value that never rests is a failure. */
 export async function renderSettled(tv, expression, baseline, { quietMs = 1500, timeoutMs = 3000 } = {}) {
   await tv.page.evaluate(() => { delete window.__certSettle; });
-  const settled = await tv.page.waitForFunction(({ expression, baseline, quietMs }) => {
-    const value = JSON.stringify((0, eval)(expression));
-    const now = performance.now();
-    const state = window.__certSettle ??= { value, since: now };
-    if (value !== state.value) Object.assign(state, { value, since: now });
-    return value === baseline || now - state.since >= quietMs;
-  }, { expression, baseline, quietMs }, { timeout: timeoutMs, polling: "raf" });
-  await settled.dispose();
+  try {
+    const settled = await tv.page.waitForFunction(({ expression, baseline, quietMs }) => {
+      const value = JSON.stringify((0, eval)(expression));
+      const now = performance.now();
+      const state = window.__certSettle ??= { value, since: now, reads: 0 };
+      state.reads++;
+      if (value !== state.value) Object.assign(state, { value, since: now });
+      return value === baseline || now - state.since >= quietMs;
+    }, { expression, baseline, quietMs }, { timeout: timeoutMs, polling: "raf" });
+    await settled.dispose();
+  } catch (error) {
+    // Few reads mean the page stopped drawing; many mean the value kept moving.
+    const seen = await tv.page.evaluate(() => {
+      const state = window.__certSettle;
+      return state && { ...state, quiet: Math.round(performance.now() - state.since) };
+    }).catch(() => null);
+    throw new Error(`${error.message} (attendu ${baseline} ou un repos de ${quietMs} ms ; vu ${JSON.stringify(seen)})`);
+  }
 }
 
 /** Match a durable panic report to one deliberate target injection. */
