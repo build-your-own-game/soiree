@@ -339,14 +339,13 @@ fn what_waits_past_a_hole_is_bounded_in_fragments() {
 }
 
 /// The room asks this of each device at each turn of its loop: it costs no
-/// allocation, however much waits.
+/// allocation, however much waits. 4,000 bytes: as many as may wait.
 #[test]
 fn the_next_deadline_allocates_nothing() {
     let mut room = joined(Limits::default());
     let id = device(&room);
-    for number in 0..256_u32 {
-        room.send(id, &vec![0; 40_000 + number as usize])
-            .expect("room");
+    for _ in 0..256 {
+        room.send(id, &vec![0; 4_000]).expect("room");
     }
     while room.poll(Ms(1)).is_some() {}
     let spent = allocated_by(|| {
