@@ -1,13 +1,14 @@
 //! `soiree doctor`: what this computer lacks to make and certify a game, each
-//! with its official link. It installs nothing. No C compiler: salon is Rust
-//! from end to end (salon/README.md, « Construire »).
+//! with its official link. It installs nothing. Salon compiles no C
+//! (salon/README.md, « Construire »), but Rust links with the system's linker,
+//! which rustup does not install.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::embedded;
-use crate::report::Report;
+use crate::report::{Level, Report};
 use crate::util;
 
 const RUSTUP: &str = "https://rustup.rs";
@@ -16,14 +17,39 @@ const NODE: &str = "https://nodejs.org/en/download";
 const CHROME: &str = "https://www.google.com/chrome/";
 const TOXIPROXY: &str = "https://github.com/Shopify/toxiproxy#1-installing-toxiproxy";
 const GIT: &str = "https://git-scm.com/downloads";
+const GITHUB_CLI: &str = "https://cli.github.com";
+const WINDOWS_LINKER: &str = "https://rust-lang.github.io/rustup/installation/windows-msvc.html";
 /// The oldest Node the harness is meant to run on (Playwright).
 const NODE_MAJOR: u32 = 20;
+/// Installed Chromium builds, which the harness reaches only through `CHROME`.
+const CHROMIUM: [&str; 3] = [
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+];
+
+#[derive(Clone, Copy)]
+enum System {
+    Mac,
+    Windows,
+    Other,
+}
+
+const SYSTEM: System = if cfg!(target_os = "macos") {
+    System::Mac
+} else if cfg!(windows) {
+    System::Windows
+} else {
+    System::Other
+};
 
 pub fn run(dir: &Path) -> ExitCode {
     let mut report = Report::new();
     let here = util::absolute(dir);
     report.section("cet ordinateur");
     tool(&mut report, &here, "git", &["--version"], GIT);
+    github_cli(&mut report, &here);
+    linker(&mut report, &here);
     rust(&mut report, &here);
     wasm_bindgen(&mut report, &here);
     node(&mut report, &here);
@@ -44,7 +70,91 @@ pub fn run(dir: &Path) -> ExitCode {
     );
     harness_dependencies(&mut report);
     webkit(&mut report);
+    if cfg!(windows) {
+        report.warn(
+            "soiree certify n'est pas encore disponible sous Windows : le harnais dépend de lsof, de ps et des groupes de processus POSIX. Node, Chrome, Toxiproxy et WebKit ne servent qu'à lui.",
+        );
+    }
     report.finish()
+}
+
+fn say(report: &mut Report, (level, message): (Level, String)) {
+    match level {
+        Level::Ok => report.ok(message),
+        Level::Error => report.error(message),
+        Level::Warning => report.warn(message),
+        Level::Info => report.info(message),
+    }
+}
+
+/// On a Mac, `cc` is a stub that exists without Apple's tools, and running it
+/// opens their installer: `xcode-select -p` is asked first.
+fn linker(report: &mut Report, dir: &Path) {
+    let developer = match SYSTEM {
+        System::Mac => {
+            util::stdout_of(dir, "xcode-select", &["-p"]).filter(|path| Path::new(path).is_dir())
+        }
+        System::Windows | System::Other => None,
+    };
+    let cc = match (SYSTEM, &developer) {
+        (System::Mac, None) => None,
+        _ => util::stdout_of(dir, "cc", &["--version"]),
+    };
+    say(
+        report,
+        linker_verdict(SYSTEM, developer.as_deref(), cc.as_deref()),
+    );
+}
+
+fn linker_verdict(system: System, developer: Option<&str>, cc: Option<&str>) -> (Level, String) {
+    match (system, developer, cc) {
+        (System::Mac, None, _) => (
+            Level::Error,
+            "outils de développement d'Apple absents (Rust y prend son éditeur de liens) : xcode-select --install, puis valide la fenêtre qui s'ouvre".to_owned(),
+        ),
+        (_, _, Some(version)) => (
+            Level::Ok,
+            format!(
+                "éditeur de liens : {}",
+                version.lines().next().unwrap_or("cc")
+            ),
+        ),
+        (System::Windows, _, None) => (
+            Level::Info,
+            format!("éditeur de liens : sous Windows, Rust prend celui de Visual Studio, que soiree doctor ne vérifie pas : {WINDOWS_LINKER}"),
+        ),
+        (System::Mac, Some(_), None) => (
+            Level::Error,
+            "cc ne répond pas (l'éditeur de liens de Rust) : réinstalle les outils d'Apple avec xcode-select --install".to_owned(),
+        ),
+        (System::Other, _, None) => (
+            Level::Error,
+            "éditeur de liens cc introuvable : installe build-essential, ou son équivalent sur ta distribution".to_owned(),
+        ),
+    }
+}
+
+/// Optional: the README also says how to create the repository without it.
+fn github_cli(report: &mut Report, dir: &Path) {
+    let version = util::stdout_of(dir, "gh", &["--version"]);
+    let connected = version.is_some()
+        && util::run(dir, "gh", &["auth", "status"]).is_ok_and(|output| output.status.success());
+    say(report, github_verdict(version.as_deref(), connected));
+}
+
+fn github_verdict(version: Option<&str>, connected: bool) -> (Level, String) {
+    match version {
+        None => (
+            Level::Info,
+            format!("gh absent (facultatif, il crée le dépôt du jeu) : {GITHUB_CLI}"),
+        ),
+        Some(_) if connected => (Level::Ok, "gh connecté à GitHub".to_owned()),
+        Some(_) => (
+            Level::Info,
+            "gh n'est pas connecté à GitHub : lance gh auth login toi-même, il ouvre le navigateur"
+                .to_owned(),
+        ),
+    }
 }
 
 /// A program that answers `--version`.
@@ -200,7 +310,7 @@ fn model_wasm_bindgen() -> Option<String> {
 fn node(report: &mut Report, dir: &Path) {
     let Some(version) = util::stdout_of(dir, "node", &["--version"]) else {
         report.error(format!(
-            "Node introuvable (le harnais de certification) : {NODE}"
+            "Node introuvable (soiree certify en a besoin ; soiree check seulement si cert.json déclare ui.checks[].success) : {NODE}"
         ));
         return;
     };
@@ -218,7 +328,9 @@ fn node(report: &mut Report, dir: &Path) {
     }
 }
 
-/// The harness drives the installed Google Chrome (`CHROME` overrides it).
+/// The harness launches Playwright's `chrome` channel, the installed Google
+/// Chrome, unless `CHROME` names a browser (tools/cert/browser.mjs): a Chromium
+/// counts through that variable and no other way.
 fn chrome(report: &mut Report) {
     if let Some(path) = std::env::var_os("CHROME") {
         if Path::new(&path).exists() {
@@ -249,10 +361,24 @@ fn chrome(report: &mut Report) {
     if let Some(found) = candidates.iter().find(|p| p.exists()) {
         report.ok(format!("Chrome ({})", found.display()));
     } else {
-        report.error(format!(
-            "Google Chrome introuvable (le harnais le pilote) : {CHROME}"
-        ));
+        let chromium = CHROMIUM
+            .iter()
+            .map(Path::new)
+            .find(|path| cfg!(target_os = "linux") && path.exists());
+        report.error(missing_chrome(chromium));
     }
+}
+
+fn missing_chrome(chromium: Option<&Path>) -> String {
+    chromium.map_or_else(
+        || format!("Google Chrome introuvable (le harnais le pilote) : {CHROME}"),
+        |path| {
+            format!(
+                "Google Chrome introuvable, mais Chromium est là : le harnais ne le prend que par sa variable, export CHROME={}",
+                path.display()
+            )
+        },
+    )
 }
 
 /// The harness of this version, extracted and installed by `soiree certify`.
@@ -309,6 +435,54 @@ mod tests {
     #[test]
     fn the_model_pins_a_wasm_bindgen() {
         assert_eq!(model_wasm_bindgen().as_deref(), Some("0.2.129"));
+    }
+
+    #[test]
+    fn a_mac_without_apple_tools_is_told_before_cc_is_run() {
+        let (level, message) = linker_verdict(System::Mac, None, Some("the stub answered"));
+        assert_eq!(level, Level::Error);
+        assert!(message.contains("xcode-select --install"), "{message}");
+        let (level, message) = linker_verdict(
+            System::Mac,
+            Some("/Library/Developer"),
+            Some("Apple clang\nx"),
+        );
+        assert_eq!(
+            (level, message.as_str()),
+            (Level::Ok, "éditeur de liens : Apple clang")
+        );
+        let (level, _) = linker_verdict(System::Mac, Some("/Library/Developer"), None);
+        assert_eq!(level, Level::Error);
+    }
+
+    #[test]
+    fn linux_needs_cc_and_windows_links_with_visual_studio() {
+        assert_eq!(
+            linker_verdict(System::Other, None, Some("cc 14")).0,
+            Level::Ok
+        );
+        let (level, message) = linker_verdict(System::Other, None, None);
+        assert_eq!(level, Level::Error);
+        assert!(message.contains("build-essential"), "{message}");
+        assert_eq!(linker_verdict(System::Windows, None, None).0, Level::Info);
+    }
+
+    #[test]
+    fn github_cli_is_only_information_until_it_is_connected() {
+        let (level, message) = github_verdict(None, false);
+        assert_eq!(level, Level::Info);
+        assert!(message.contains(GITHUB_CLI), "{message}");
+        let (level, message) = github_verdict(Some("gh version 2"), false);
+        assert_eq!(level, Level::Info);
+        assert!(message.contains("gh auth login"), "{message}");
+        assert_eq!(github_verdict(Some("gh version 2"), true).0, Level::Ok);
+    }
+
+    #[test]
+    fn a_chromium_the_harness_would_not_find_gets_its_variable() {
+        let message = missing_chrome(Some(Path::new("/usr/bin/chromium")));
+        assert!(message.contains("CHROME=/usr/bin/chromium"), "{message}");
+        assert!(missing_chrome(None).contains(CHROME));
     }
 
     #[test]
