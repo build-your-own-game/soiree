@@ -33,6 +33,7 @@ pub struct Echo {
 pub struct Ack {
     pub events: u32,
     pub state: u32,
+    pub ahead: u64,
     pub event_parts: Option<Parts>,
     pub state_parts: Option<Parts>,
 }

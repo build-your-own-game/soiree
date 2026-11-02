@@ -389,8 +389,9 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         device.presence = Presence::Present;
         device.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
-            device.down.ack(ack.events, ack.event_parts);
-            device.out_state.ack(ack.state, ack.state_parts);
+            let heard = packet.echo.map(|echo| Ms(echo.sent));
+            device.down.ack(&ack, heard);
+            device.out_state.ack(&ack, heard);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = device
@@ -713,6 +714,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                     packet.ack = Some(Ack {
                         events: device.up.next(),
                         state: device.in_state.applied(),
+                        ahead: device.up.ahead(),
                         event_parts: device.up.parts(),
                         state_parts: device.in_state.parts(),
                     });

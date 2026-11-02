@@ -305,3 +305,35 @@ fn the_fullest_packet_a_client_sends_still_reads() {
     let id = room.devices().next().expect("a device").0;
     assert_eq!(room.device(id).expect("a device").garbage, 0);
 }
+
+/// What waits past a hole has a bound in fragments too: a phone that fills
+/// the 64 numbers it may hold with empty ones is not given 65,536 of them.
+#[test]
+fn what_waits_past_a_hole_is_bounded_in_fragments() {
+    let parts = |seq: u32| {
+        encode(&Packet {
+            epoch: EPOCH,
+            events: (0..1024)
+                .map(|index| EventPart {
+                    seq,
+                    index,
+                    count: 1024,
+                    phase: 0,
+                    at: None,
+                    data: Vec::new(),
+                })
+                .collect(),
+            ..Packet::default()
+        })
+    };
+    let mut room = joined(Limits::default());
+    let first = parts(1);
+    let kept = allocated_by(|| room.received(Ms(1), LINK, &first));
+    let mut turned_away = 0;
+    for seq in 2..64 {
+        let next = parts(seq);
+        turned_away = allocated_by(|| room.received(Ms(1), LINK, &next)).max(turned_away);
+    }
+    // Reading a packet costs half of what keeping it does.
+    assert!(turned_away < kept / 4 * 3, "{turned_away} against {kept}");
+}

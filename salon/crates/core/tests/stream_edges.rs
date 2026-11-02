@@ -228,23 +228,118 @@ fn a_message_of_exactly_the_limit_arrives_and_a_longer_one_is_passed_over() {
     assert_eq!(garbage(&room, device), 1);
 }
 
+/// What arrives past a hole waits for it, once, and a repeat of what was
+/// delivered is ignored. None of it is garbage.
 #[test]
-fn a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage() {
+fn a_gap_waits_for_its_turn_and_a_repeat_delivers_nothing() {
     let (mut room, device) = joined(Limits::default());
-    let one = message(&[1]);
-    assert_eq!(
-        events_part(&mut room, Ms(1), vec![event_part(1, 0, 1, &one)]),
-        Vec::<Vec<u8>>::new()
-    );
-    assert_eq!(
-        events_part(&mut room, Ms(2), vec![event_part(0, 0, 1, &one)]),
-        vec![vec![1]]
-    );
+    let (one, two) = (message(&[1]), message(&[2]));
+    for now in [Ms(1), Ms(2)] {
+        assert_eq!(
+            events_part(&mut room, now, vec![event_part(1, 0, 1, &two)]),
+            Vec::<Vec<u8>>::new()
+        );
+    }
     assert_eq!(
         events_part(&mut room, Ms(3), vec![event_part(0, 0, 1, &one)]),
+        vec![vec![1], vec![2]]
+    );
+    assert_eq!(
+        events_part(&mut room, Ms(4), vec![event_part(0, 0, 1, &one)]),
         Vec::<Vec<u8>>::new()
     );
     assert_eq!(garbage(&room, device), 0);
+}
+
+/// The ack says what waits past a hole: whole numbers bit by bit, and the
+/// first message not whole, fragment by fragment.
+#[test]
+fn an_acknowledgement_says_what_waits_past_a_hole() {
+    let (mut room, _) = joined(Limits::default());
+    let one = message(&[1]);
+    let parts = vec![
+        event_part(1, 0, 1, &one),
+        event_part(3, 1, 2, &one),
+        event_part(4, 0, 2, &one),
+        event_part(63, 0, 1, &one),
+    ];
+    let ack = answer(&mut room, Ms(1), parts, Vec::new());
+    assert_eq!((ack.events, ack.ahead), (0, 1 << 1 | 1 << 63));
+    let parts = Parts {
+        seq: 3,
+        first: 0,
+        more: 1,
+    };
+    assert_eq!(ack.event_parts, Some(parts));
+}
+
+/// Past 64 numbers nothing is kept: the sender goes in its order.
+#[test]
+fn nothing_is_kept_past_the_last_number_an_acknowledgement_can_say() {
+    let (mut room, _) = joined(Limits::default());
+    let one = message(&[1]);
+    let parts = vec![event_part(64, 0, 1, &one)];
+    let ack = answer(&mut room, Ms(1), parts, Vec::new());
+    assert_eq!((ack.ahead, ack.event_parts), (0, None));
+}
+
+/// A message too big past a hole is dropped at once, and passed over when its
+/// turn comes: the sender's queue empties all the same.
+#[test]
+fn a_message_too_big_past_a_hole_is_passed_over_in_its_turn() {
+    let limits = Limits {
+        max_up: 8,
+        ..Limits::default()
+    };
+    let (mut room, device) = joined(limits);
+    let (fits, long) = (message(&[1; 7]), message(&[1; 8]));
+    let parts = vec![event_part(1, 0, 1, &long)];
+    let ack = answer(&mut room, Ms(1), parts, Vec::new());
+    assert_eq!((ack.events, ack.ahead), (0, 1 << 1));
+    assert_eq!(garbage(&room, device), 1);
+    assert_eq!(
+        events_part(&mut room, Ms(2), vec![event_part(0, 0, 1, &fits)]),
+        vec![vec![1; 7]]
+    );
+    let parts = vec![event_part(2, 0, 1, &fits)];
+    let ack = answer(&mut room, Ms(3), parts, Vec::new());
+    assert_eq!((ack.events, ack.ahead), (3, 0));
+}
+
+/// What waits past a hole belongs to the page that sent it: another page's
+/// numbers mean something else.
+#[test]
+fn a_new_page_inherits_nothing_of_what_waited_past_a_hole() {
+    let (mut room, _) = joined(Limits::default());
+    let (old, new) = (message(&[1]), message(&[2]));
+    events_part(&mut room, Ms(1), vec![event_part(1, 0, 1, &old)]);
+    let hello = Packet {
+        control: Some(Control::Hello(Hello {
+            protocol: PROTOCOL,
+            game: 7,
+            kind: Kind::Phone,
+            token: Token([1; 16]),
+            name: None,
+            key: None,
+            resume: None,
+        })),
+        ..Packet::default()
+    };
+    room.opened(Ms(2), LinkId(2), Caps::DATAGRAM);
+    room.received(Ms(2), LinkId(2), &encode(&hello));
+    drain(&mut room, Ms(2));
+    let packet = Packet {
+        epoch: EPOCH,
+        sent: 3,
+        events: vec![event_part(0, 0, 1, &new)],
+        ..Packet::default()
+    };
+    room.received(Ms(3), LinkId(2), &encode(&packet));
+    let heard = drain(&mut room, Ms(3)).0;
+    assert!(
+        matches!(heard.as_slice(), [DeviceEvent::Event { event, .. }] if *event == vec![2]),
+        "{heard:?}"
+    );
 }
 
 /// A resend cut for another link: the pieces of the old cut are gone.
@@ -514,16 +609,83 @@ fn an_event_over_budget_goes_with_a_later_packet_of_any_kind() {
         vec![event_part(1, 0, 1, &one)],
         Vec::new(),
     );
-    assert_eq!(held.events, 1);
-    let parts = Parts {
-        seq: 1,
-        first: 1,
-        more: 0,
-    };
-    assert_eq!(held.event_parts, Some(parts));
+    assert_eq!((held.events, held.ahead), (1, 1));
     let later = answer(&mut room, Ms(1_000), Vec::new(), Vec::new());
-    assert_eq!(later.events, 2);
-    assert_eq!(later.event_parts, None);
+    assert_eq!((later.events, later.ahead), (2, 0));
+}
+
+/// An ack written after the fragments left, which says what lies past the
+/// first one arrived.
+fn passed_over(room: &mut Room, now: u64, ahead: u64) {
+    let ack = Packet {
+        epoch: EPOCH,
+        sent: now,
+        echo: Some(Echo { sent: now, held: 0 }),
+        ack: Some(Ack {
+            ahead,
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    };
+    room.received(Ms(now), LINK, &encode(&ack));
+}
+
+/// Three acks that pass over a fragment send it again without its timer, and
+/// nothing else with it. Two may be a packet that is late.
+#[test]
+fn a_fragment_passed_over_three_times_goes_without_its_timer() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1]).unwrap();
+    room.send(device, &vec![2]).unwrap();
+    room.send(device, &vec![3]).unwrap();
+    assert_eq!(sent(&drain(&mut room, Ms(0)).1).0.len(), 3);
+    for now in [1, 2] {
+        passed_over(&mut room, now, 1 << 1);
+        assert_eq!(sent(&drain(&mut room, Ms(now)).1).0, Vec::new());
+    }
+    passed_over(&mut room, 3, 1 << 1);
+    assert_eq!(sent(&drain(&mut room, Ms(3)).1).0, vec![(0, 0)]);
+}
+
+/// A fragment that left after an ack was written is not in it: the echo says
+/// so, and the same report of a hole does not send it a second time.
+#[test]
+fn an_ack_written_before_a_resend_does_not_count_against_it() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1]).unwrap();
+    room.send(device, &vec![2]).unwrap();
+    drain(&mut room, Ms(0));
+    for now in 1..=3 {
+        passed_over(&mut room, now, 1 << 1);
+    }
+    assert_eq!(sent(&drain(&mut room, Ms(3)).1).0, vec![(0, 0)]);
+    for now in 4..=9 {
+        let late = Packet {
+            epoch: EPOCH,
+            sent: now,
+            echo: Some(Echo { sent: 2, held: 0 }),
+            ack: Some(Ack {
+                ahead: 1 << 1,
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        };
+        room.received(Ms(now), LINK, &encode(&late));
+        assert_eq!(sent(&drain(&mut room, Ms(now)).1).0, Vec::new());
+    }
+}
+
+/// A sender stays where its receiver keeps what it sends.
+#[test]
+fn a_sender_stays_within_what_its_receiver_keeps() {
+    let (mut room, device) = joined(Limits::default());
+    for n in 0..100 {
+        room.send(device, &vec![n]).unwrap();
+    }
+    let (first, _) = sent(&drain(&mut room, Ms(0)).1);
+    assert_eq!(first.last(), Some(&(63, 0)));
+    // What may not leave yet is not a reason to wake up at once.
+    assert!(room.next_deadline() > Some(Ms(0)));
 }
 
 /// The resend delay is twice the round trip, between its two bounds.

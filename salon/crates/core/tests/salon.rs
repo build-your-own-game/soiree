@@ -1825,3 +1825,43 @@ fn a_lossless_link_carries_no_copies() {
     assert!(net.deepest < 2 * 60_000, "{} bytes queued", net.deepest);
     assert_eq!(net.phones[phone].states.len(), 15);
 }
+
+/// How long `events` events of `size` bytes take to reach a phone, on average
+/// over a few runs.
+fn delivery(faults: Faults, events: u32, size: usize) -> f64 {
+    const RUNS: u32 = 5;
+    let total: f64 = (0..u64::from(RUNS))
+        .map(|seed| {
+            let mut net = Net::new(seed, faults);
+            let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);
+            let device = joined(&mut net, phone);
+            net.run(500);
+            for n in 0..events {
+                net.host
+                    .send(device, &Down::View(n, vec![0; size]))
+                    .expect("the queue has room");
+            }
+            let start = net.now;
+            let want = usize::try_from(events).expect("a small number");
+            assert!(net.run_until(120_000, |net| net.phones[phone].events.len() == want));
+            Ms(net.now.since(start)).as_f64() / 1_000.0
+        })
+        .sum();
+    total / f64::from(RUNS)
+}
+
+/// T2. A hole holds up what follows, it does not cost it: what arrived past it
+/// stays, and the hole is filled without waiting for the timer. A few
+/// milliseconds of jitter on one burst were enough to send it all again.
+#[test]
+fn a_hole_in_the_queue_does_not_cost_what_follows() {
+    let jitter = Faults {
+        jitter: 5,
+        ..Faults::default()
+    };
+    let unordered = delivery(jitter, 200, 900);
+    assert!(unordered < 1.0, "{unordered} s");
+    let lossy = Faults { loss: 10, ..jitter };
+    let lost = delivery(lossy, 200, 900);
+    assert!(lost < 1.5, "{lost} s");
+}

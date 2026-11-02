@@ -57,10 +57,19 @@ pub(crate) struct Ack {
     pub events: u32,
     /// The latest state applied (0: none yet).
     pub state: u32,
-    /// What arrived of the event being put back together.
+    /// Bit `n` says event `events + n` is here whole, waiting for its turn.
+    pub ahead: u64,
+    /// What arrived of the first event not whole.
     pub event_parts: Option<Parts>,
     /// What arrived of the state being put back together.
     pub state_parts: Option<Parts>,
+}
+
+impl Ack {
+    /// It says more than what is below its numbers.
+    fn says_more(&self) -> bool {
+        self.ahead != 0 || self.event_parts.is_some() || self.state_parts.is_some()
+    }
 }
 
 /// The fragments that arrived of one message not whole yet, so that a resend
@@ -73,6 +82,14 @@ pub(crate) struct Parts {
     pub first: u16,
     /// Bit `n` says fragment `first + 1 + n` arrived.
     pub more: u64,
+}
+
+impl Parts {
+    /// Fragments up to the last one that arrived.
+    pub fn span(self) -> usize {
+        let past = u64::BITS.saturating_sub(self.more.leading_zeros());
+        usize::from(self.first).saturating_add(usize::try_from(past).unwrap_or(0))
+    }
 }
 
 /// One fragment of one event. Events are numbered per device and per epoch
@@ -202,14 +219,11 @@ pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
         if packet.state.pop().is_none() && packet.events.pop().is_none() {
             // What arrived of a message saves bytes and nothing depends on
             // it: without it, the sender sends those fragments again.
-            let Some(ack) = packet
-                .ack
-                .as_mut()
-                .filter(|ack| ack.event_parts.is_some() || ack.state_parts.is_some())
-            else {
+            let Some(ack) = packet.ack.as_mut().filter(|ack| ack.says_more()) else {
                 // Headers alone do not fit: nothing sensible to send.
                 return None;
             };
+            ack.ahead = 0;
             ack.event_parts = None;
             ack.state_parts = None;
         }
@@ -267,6 +281,7 @@ mod framing_tests {
             ack: Some(Ack {
                 events: u32::MAX,
                 state: u32::MAX,
+                ahead: u64::MAX,
                 event_parts: Some(LARGEST_PARTS),
                 state_parts: Some(LARGEST_PARTS),
             }),

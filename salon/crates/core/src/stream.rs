@@ -2,8 +2,10 @@
 //! once for both sides.
 //!
 //! - **Events** are numbered and kept until acknowledged; every send carries
-//!   the due ones from the oldest, so they arrive in order with no receive
-//!   buffer (Quake 3's reliable commands, Fiedler's reliable messages). The
+//!   the due ones from the oldest (Quake 3's reliable commands, Fiedler's
+//!   reliable messages). What arrives past a hole waits for it, within
+//!   [`AHEAD`] numbers, and the ack says so: the sender fills the hole without
+//!   waiting for its timer, and sends nothing else again. The
 //!   numbers belong to the device, not to the link: what was in flight when
 //!   a link died goes again on the next one, and is not delivered twice.
 //!   The host owns them: each welcome says where they stand, so a side that
@@ -19,7 +21,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::types::Ms;
-use crate::wire::{EventPart, PACKET_OVERHEAD, PART_OVERHEAD, Parts, StatePart};
+use crate::wire::{Ack, EventPart, PACKET_OVERHEAD, PART_OVERHEAD, Parts, StatePart};
 
 /// One message being put back together. It costs what arrived, never what the
 /// sender announced: `count` stays a number until fragments fill it, and each
@@ -30,6 +32,8 @@ struct Assembly {
     size: usize,
     phase: u32,
     at: Option<u64>,
+    /// Bigger than allowed: dropped, and passed over when its turn comes.
+    refused: bool,
 }
 
 impl Assembly {
@@ -40,6 +44,7 @@ impl Assembly {
             size: 0,
             phase: 0,
             at: None,
+            refused: false,
         }
     }
 
@@ -54,7 +59,16 @@ impl Assembly {
     }
 
     fn is_complete(&self) -> bool {
-        self.parts.len() == usize::from(self.count)
+        self.refused || self.parts.len() == usize::from(self.count)
+    }
+
+    /// Lets go of all it holds. Says how many fragments that was.
+    fn refuse(&mut self) -> usize {
+        self.refused = true;
+        self.size = 0;
+        let held = self.parts.len();
+        self.parts.clear();
+        held
     }
 
     /// What arrived, for the sender of message `seq`.
@@ -88,6 +102,19 @@ impl Assembly {
 
 /// Most fragments one message may have; with the smallest packets, 64 KiB.
 const MAX_FRAGMENTS: u16 = 1024;
+/// Numbers a receiver keeps from the next one it expects: the bits of
+/// [`Ack::ahead`]. A sender does not go past them, so a whole queue of small
+/// events still fits: 64 of them in a burst, as many as
+/// [`Limits::events_burst`](crate::types::Limits::events_burst) lets in.
+const AHEAD: u32 = u64::BITS;
+/// Fragments kept past the next event. Without this, 64 messages announcing
+/// 1,024 empty fragments each would hold what a million cost: as much as one
+/// whole message of the largest count is plenty, the rest goes again.
+const HELD_PAST_NEXT: usize = MAX_FRAGMENTS as usize;
+/// Acknowledgements that pass over a fragment before it goes again without
+/// waiting for its timer: three, like SCTP and TCP. Fewer, and a packet that
+/// is merely late goes twice.
+const REPORTS: u8 = 3;
 
 /// Data bytes per fragment on a link with packets of `packet` bytes.
 pub(crate) fn fragment_size(packet: usize) -> usize {
@@ -135,8 +162,8 @@ impl Budget {
 enum Piece {
     /// It has to leave.
     Waiting,
-    /// It left then, and nobody said what became of it.
-    Sent(Ms),
+    /// It left then, and this many acknowledgements have passed over it.
+    Sent(Ms, u8),
     /// The other side said it has it. It says so of a fragment it keeps: what
     /// it drops, it drops with the link, and a new link starts [`Pieces`] over.
     Arrived,
@@ -169,7 +196,7 @@ impl Pieces {
         let rest = self.each.get(from..)?;
         let due = rest.iter().position(|piece| match piece {
             Piece::Waiting => true,
-            Piece::Sent(at) => now.since(*at) >= resend,
+            Piece::Sent(at, _) => now.since(*at) >= resend,
             Piece::Arrived => false,
         })?;
         Some(from.saturating_add(due))
@@ -177,7 +204,7 @@ impl Pieces {
 
     fn sent(&mut self, index: usize, now: Ms) {
         if let Some(piece) = self.each.get_mut(index) {
-            *piece = Piece::Sent(now);
+            *piece = Piece::Sent(now, 0);
         }
     }
 
@@ -190,10 +217,30 @@ impl Pieces {
             .iter()
             .filter_map(|piece| match piece {
                 Piece::Waiting => Some(Ms(0)),
-                Piece::Sent(at) => Some(at.plus(resend)),
+                Piece::Sent(at, _) => Some(at.plus(resend)),
                 Piece::Arrived => None,
             })
             .min()
+    }
+
+    fn all_arrived(&mut self) {
+        self.each.fill(Piece::Arrived);
+    }
+
+    /// An ack that was written after `heard` left says something past these
+    /// first `count` fragments arrived, and not them. What left after `heard`
+    /// is not passed over: the ack could not have known.
+    fn passed_over(&mut self, count: usize, heard: Ms) {
+        for piece in self.each.iter_mut().take(count) {
+            if let Piece::Sent(at, reports) = piece
+                && *at <= heard
+            {
+                *reports = reports.saturating_add(1);
+                if *reports >= REPORTS {
+                    *piece = Piece::Waiting;
+                }
+            }
+        }
     }
 
     fn arrived(&mut self, parts: Parts) {
@@ -260,16 +307,41 @@ impl OutEvents {
         Ok(seq)
     }
 
-    /// The other side has every event below `next`, and these `parts` of one
-    /// it is putting back together.
-    pub fn ack(&mut self, next: u32, parts: Option<Parts>) {
+    /// The other side has every event below `next`.
+    pub fn ack_below(&mut self, next: u32) {
         while self.queue.front().is_some_and(|event| event.seq < next) {
             self.queue.pop_front();
         }
-        if let Some(parts) = parts
-            && let Some(event) = self.queue.iter_mut().find(|event| event.seq == parts.seq)
-        {
-            event.pieces.arrived(parts);
+    }
+
+    /// What an ack says of events, written once `heard` reached the other side.
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) {
+        self.ack_below(ack.events);
+        let parts = ack.event_parts;
+        // The last number something arrived of: what lies before was passed
+        // over, and nothing is known of what lies after.
+        let whole = u64::BITS
+            .checked_sub(ack.ahead.leading_zeros())
+            .and_then(|top| top.checked_sub(1))
+            .map(|top| ack.events.saturating_add(top));
+        let last = whole.max(parts.map(|parts| parts.seq));
+        for event in &mut self.queue {
+            let bit = event.seq.saturating_sub(ack.events);
+            if ack.ahead.checked_shr(bit).is_some_and(|bits| bits & 1 == 1) {
+                event.pieces.all_arrived();
+                continue;
+            }
+            let later = last.is_some_and(|last| event.seq < last);
+            let mut holes = if later { usize::MAX } else { 0 };
+            if let Some(parts) = parts
+                && parts.seq == event.seq
+            {
+                event.pieces.arrived(parts);
+                holes = holes.max(parts.span());
+            }
+            if let Some(heard) = heard {
+                event.pieces.passed_over(holes, heard);
+            }
         }
     }
 
@@ -298,8 +370,10 @@ impl OutEvents {
 
     /// When something waiting goes again, if anything waits.
     pub fn due_at(&self, resend: u64) -> Option<Ms> {
+        let last = self.oldest().saturating_add(AHEAD);
         self.queue
             .iter()
+            .take_while(|event| event.seq < last)
             .filter_map(|event| event.pieces.due_at(resend))
             .min()
     }
@@ -314,7 +388,11 @@ impl OutEvents {
     ) -> Vec<EventPart> {
         let cut = fragment_size(packet);
         let mut parts = Vec::new();
+        let last = self.oldest().saturating_add(AHEAD);
         for event in &mut self.queue {
+            if event.seq >= last {
+                break;
+            }
             event.pieces.cut(event.data.len(), cut);
             let count = fragment_count(event.data.len(), cut);
             let mut from = 0;
@@ -351,7 +429,10 @@ pub(crate) struct Arrived {
 /// Events received, delivered once each and in order.
 pub(crate) struct InEvents {
     next: u32,
-    partial: Option<Assembly>,
+    /// What arrived from `next` on, up to [`AHEAD`] numbers.
+    held: BTreeMap<u32, Assembly>,
+    /// Fragments in `held`, for [`HELD_PAST_NEXT`].
+    fragments: usize,
 }
 
 /// What a batch of fragments gave.
@@ -367,7 +448,8 @@ impl InEvents {
     pub fn new(next: u32) -> Self {
         InEvents {
             next,
-            partial: None,
+            held: BTreeMap::new(),
+            fragments: 0,
         }
     }
 
@@ -375,34 +457,48 @@ impl InEvents {
         self.next
     }
 
-    /// What arrived of the event being put back together, if any.
-    pub fn parts(&self) -> Option<Parts> {
-        self.partial
-            .as_ref()
-            .map(|partial| partial.parts(self.next))
+    /// The numbers from [`InEvents::next`] on that are here whole, bit by bit.
+    pub fn ahead(&self) -> u64 {
+        self.held
+            .iter()
+            .filter(|(_, held)| held.is_complete())
+            .filter_map(|(seq, _)| seq.checked_sub(self.next))
+            .filter_map(|bit| 1_u64.checked_shl(bit))
+            .fold(0, |ahead, bit| ahead | bit)
     }
 
-    /// Another sender takes over the numbering: what it sends under the
-    /// number being put back together is not the rest of this message.
+    /// What arrived of the first event not whole, if any.
+    pub fn parts(&self) -> Option<Parts> {
+        let (seq, held) = self.held.iter().find(|(_, held)| !held.is_complete())?;
+        Some(held.parts(*seq))
+    }
+
+    fn forget(&mut self) {
+        self.held.clear();
+        self.fragments = 0;
+    }
+
+    /// Another sender takes over the numbering: what it sends under a number
+    /// being put back together is not the rest of that message.
     pub fn abandon(&mut self) {
-        self.partial = None;
+        self.forget();
     }
 
     /// The sender says it no longer has what is below `first`: skip ahead.
     pub fn skip_to(&mut self, first: u32) {
         if first > self.next {
             self.next = first;
-            self.partial = None;
+            self.forget();
         }
     }
 
     pub fn restart(&mut self, next: u32) {
         self.next = next;
-        self.partial = None;
+        self.forget();
     }
 
-    /// Takes the fragments in order. `allow` says how many more whole events
-    /// may be accepted now; past it, the rest waits for a resend.
+    /// Takes the fragments, in any order. `allow` says how many more whole
+    /// events may be accepted now; past it, they wait here.
     pub fn receive(
         &mut self,
         parts: Vec<EventPart>,
@@ -415,68 +511,74 @@ impl InEvents {
             progressed: false,
         };
         for part in parts {
-            if part.seq != self.next {
-                // Already delivered, or a gap: the sender resends in order.
+            let past = part.seq.checked_sub(self.next);
+            if past.is_none_or(|past| past >= AHEAD) {
+                // Already delivered, or too far: the sender goes in order.
                 continue;
             }
             if part.count == 0 || part.count > MAX_FRAGMENTS || part.index >= part.count {
                 received.garbage = received.garbage.saturating_add(1);
                 continue;
             }
-            let same = self.partial.as_ref().map(|partial| partial.count) == Some(part.count);
-            let partial = if same {
-                self.partial.as_mut()
-            } else {
-                Some(self.partial.insert(Assembly::new(part.count)))
+            let room = part.seq == self.next || self.fragments < HELD_PAST_NEXT;
+            let (seq, index, count) = (part.seq, part.index, part.count);
+            let held = match self.held.get_mut(&seq) {
+                Some(held) if held.count == count => held,
+                _ if !room => continue,
+                _ => {
+                    if let Some(gone) = self.held.insert(seq, Assembly::new(count)) {
+                        self.fragments = self.fragments.saturating_sub(gone.parts.len());
+                    }
+                    let Some(held) = self.held.get_mut(&seq) else {
+                        continue;
+                    };
+                    held
+                }
             };
-            let Some(partial) = partial else {
+            if held.refused {
                 continue;
-            };
-            (partial.phase, partial.at) = (part.phase, part.at);
-            if partial.put(part.index, part.data) {
+            }
+            (held.phase, held.at) = (part.phase, part.at);
+            if held.put(index, part.data) {
                 received.progressed = true;
+                self.fragments = self.fragments.saturating_add(1);
             }
-            if partial.size > max {
-                // Bigger than allowed: drop it whole, and move past it so the
-                // sender's queue empties instead of resending it forever.
+            if held.size > max {
+                // Bigger than allowed: drop it whole, and pass over it when
+                // its turn comes, so the sender's queue empties instead of
+                // resending it forever.
                 received.garbage = received.garbage.saturating_add(1);
-                self.partial = None;
-                self.next = self.next.saturating_add(1);
-                continue;
+                self.fragments = self.fragments.saturating_sub(held.refuse());
             }
-            if self.deliver(&mut received, &mut allow).is_err() {
-                return received;
-            }
+            self.deliver(&mut received, &mut allow);
         }
-        // What waited for the budget, which the sender no longer resends.
-        let _: Result<(), Full> = self.deliver(&mut received, &mut allow);
+        // What waited for the budget, or for a hole, which nothing resends.
+        self.deliver(&mut received, &mut allow);
         received
     }
 
-    /// Hands over the event being put back together, if it is whole. Over
-    /// budget it stays here and is not acknowledged: `Full`.
-    fn deliver(
-        &mut self,
-        received: &mut Received,
-        allow: &mut impl FnMut() -> bool,
-    ) -> Result<(), Full> {
-        if !self.partial.as_ref().is_some_and(Assembly::is_complete) {
-            return Ok(());
+    /// Hands over what is whole from the next number on. An event over budget
+    /// stays here and is not acknowledged.
+    fn deliver(&mut self, received: &mut Received, allow: &mut impl FnMut() -> bool) {
+        while let Some(held) = self.held.get(&self.next) {
+            if !held.is_complete() || (!held.refused && !allow()) {
+                return;
+            }
+            let Some(whole) = self.held.remove(&self.next) else {
+                return;
+            };
+            self.fragments = self.fragments.saturating_sub(whole.parts.len());
+            if !whole.refused {
+                let (phase, at) = (whole.phase, whole.at);
+                received.events.push(Arrived {
+                    data: whole.into_message(),
+                    phase,
+                    at,
+                });
+            }
+            self.next = self.next.saturating_add(1);
+            received.progressed = true;
         }
-        if !allow() {
-            return Err(Full);
-        }
-        if let Some(whole) = self.partial.take() {
-            let (phase, at) = (whole.phase, whole.at);
-            received.events.push(Arrived {
-                data: whole.into_message(),
-                phase,
-                at,
-            });
-        }
-        self.next = self.next.saturating_add(1);
-        received.progressed = true;
-        Ok(())
     }
 }
 
@@ -515,16 +617,19 @@ impl OutState {
         self.pieces.forget();
     }
 
-    /// The other side applied `seq`, and has these `parts` of one it is
-    /// putting back together.
-    pub fn ack(&mut self, seq: u32, parts: Option<Parts>) {
-        if seq >= self.seq {
+    /// What an ack says of the state, written once `heard` reached the other
+    /// side.
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) {
+        if ack.state >= self.seq {
             self.acked = true;
         }
-        if let Some(parts) = parts
+        if let Some(parts) = ack.state_parts
             && parts.seq == self.seq
         {
             self.pieces.arrived(parts);
+            if let Some(heard) = heard {
+                self.pieces.passed_over(parts.span(), heard);
+            }
         }
     }
 
