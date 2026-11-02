@@ -455,6 +455,13 @@ workflows qu'elle a utilisés sont sortis du dépôt, avec l'historique git pour
 les retrouver au commit `fff8061`. Les mesures restent dans
 `certification/ci-timers-2026-10-29/`. `host-deadlines.yml` lance désormais la
 sonde `steps_come_on_time`, qui imprime les retards sans seuil : elle n'est donc
-pas une régression de cadence. `NOTE_CRITICAL` n'a toujours pas de test : le
-retirer resterait vert. Les chemins cités plus haut désignent ces fichiers
-historiques.
+pas une régression de cadence. Les chemins cités plus haut désignent ces
+fichiers historiques.
+
+`NOTE_CRITICAL` a depuis son test : `the_rooms_deadline_is_a_critical_timer`
+compare l'événement entier remis au noyau, sans mesurer aucun délai, et échoue
+si le drapeau disparaît. `KEvent` se compare (`PartialEq`), alors que `fflags()`
+panique sur ce bit. Le noyau le confirme une fois à la main : pendant
+`steps_come_on_time`, `lskq -p <pid>` montre `TIMER` avec les drapeaux `n-c--`
+(nanosecondes, critique). Ce test ne dit rien de la cadence, qui reste mesurée
+par la sonde sans seuil.
