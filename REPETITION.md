@@ -35,12 +35,26 @@ Dans `games/punchline` : `SALON_LOG=1 cargo run --release -p punch-host -- --no-
 | ☐ | S3 | Même iPhone. | secondes |
 | ☐ | S4 | Joue une minute. | ressenti |
 | ☐ | S5 | TV et téléphones restent dans la même phase. | écart |
-| ☐ | S6 | Réglages iPhone > Confidentialité et sécurité > Réseau local > coupe Télécommande. Rouvre l'app, scanne, puis réactive. « Connexion au jeu… » sans fin est un échec (le code n'a pas de texte dédié). | texte, capture |
+| ☐ | S6 | Réglages iPhone > Confidentialité et sécurité > Réseau local > coupe Télécommande. Rouvre l'app, scanne, puis réactive. Une notice qui ne nomme pas Réglages, ou une attente sans fin, est un échec (T5 de `recherche/telecommande.toml`, jamais vu sur un iPhone : le simulateur n'applique pas ce refus). | texte, capture |
 | ☐ | S10 | Avec de vrais joueurs, jusqu'au bout. | rires, flottements, un mot de chacun |
 
 **T9, à trancher ici.** Sur l'iPhone Safari, bon Wi-Fi, en pleine manche : regarde une notification ou passe 3 s dans une autre app, puis reviens, trois fois. `wake` coupe alors un lien encore valide dès 1,5 s de silence. Rien n'est perdu, mais une reconnexion a lieu (`recherche/reconnexion.toml`, T9). Note si le joueur la voit, et si ça gêne.
 
 **Le transport sur ce Wi-Fi, à trancher ici.** Une fois, le Wi-Fi de la soirée sans internet (box débranchée de sa ligne, ou routeur dédié), l'iPhone Safari avec ses données cellulaires actives. Recharge sa page, chronomètre, et lis dans le terminal ce que dit `SALON_LOG=1`. Refais-le données cellulaires coupées. WebRTC d'un côté et WebSocket de l'autre veut dire que Safari ne part pas par le Wi-Fi quand le cellulaire est là : chaque iPhone paiera alors 3 s à chaque connexion (`recherche/transport-webrtc.toml`, T9, jamais mesuré sur un iPhone). Dans les deux cas, note aussi le temps d'ouverture : l'hôte annonce `127.0.0.1` à côté de son adresse, et un canal bien plus long que les 90 ms du 27/10 ferait soupçonner ce candidat.
+
+### L'app Télécommande, sur un vrai iPhone
+
+Son banc tourne sur simulateur, en boucle locale (`remote/bench`). Ces gestes disent ce qu'il ne peut pas dire ; les numéros sont ceux de `recherche/telecommande.toml`.
+
+| ☐ | Essai | Geste | On veut savoir | Noter |
+|---|---|---|---|---|
+| ☐ | Trait coupé (T1) | Dans une manche de dessin, dessine pendant le S3. | Le trait finit sur la TV. Une trame déjà partie quand le lien meurt reste perdue, sa fin comprise : c'est connu, regarde si ça se voit. | fini, oui ou non |
+| ☐ | Hôte muet (T2) | En pleine partie, débranche la borne. | L'app le voit en moins de 4 s. Puis, sur un Wi-Fi moyen, si un trou de plus de 2 s fait tomber un lien sain. | secondes, faux positifs |
+| ☐ | Retournement (T11) | Le volant en main, tourne le téléphone de 180°. | Le signe du volant suit. | bon sens, oui ou non |
+| ☐ | Micro et caméra (T14) | Scanne le QR d'une page en `https`. | WebKit pose sa question, et un refus laisse la page utilisable. | la question, capture |
+| ☐ | Rythme de l'écran (T7) | Sur un écran à 60 Hz, puis à 120 Hz. | Environ 60 états par seconde, jamais plus. | états par seconde |
+| ☐ | Page lourde (T4) | Fais tomber la page d'un jeu WASM par manque de mémoire : plusieurs apps lourdes en arrière-plan. | L'app recharge la page et dit ce qui se passe, sans écran vide. | ce qu'on voit |
+| ☐ | Wi-Fi qui s'endort (T17) | Une partie de plus de 30 min, app ouverte. | Si la latence monte par à-coups. Rien n'est déclaré pour le Wi-Fi : à mesurer avant de corriger. | moment, ressenti |
 
 ## Ensuite, Sidequest
 
@@ -64,7 +78,7 @@ Rien de ceci n'a été essayé sur un vrai iPhone : tout vient de la lecture du 
 | ☐ | Vibration | Marque un point sans regarder la TV. | Le point se sent, sur le pad seulement. | sentie, oui ou non |
 | ☐ | Pad en TCP contre page en WebRTC | Deux iPhones côte à côte, l'app au pad et Safari en WebRTC (le terminal le dit), sur un Wi-Fi qui perd : loin de la borne, ou Réglages > Développeur > Network Link Conditioner, profil *Very Bad Network*. Allez ensemble vers une zone, puis gardez le pouce immobile. | Si le stick natif tarde sur la page. Une perte de 200 ms peut lâcher le personnage un instant, pouce immobile : le code le laisse supposer, rien ne l'a mesuré. | écart, lâchers |
 | ☐ | Safari qui suspend | Dans S1, chronomètre de l'ouverture au retour à sa place. Puis verrouille pendant qu'un iPhone rejoint, juste après le scan, et rouvre. | Un retour près de 6 s veut dire que la page n'a pas vu le temps du sommeil (T5 de `recherche/reconnexion.toml`). Une tentative qui ne repart pas au réveil, c'est T4. | secondes, chaque fois |
-| ☐ | Appui très bref | Sur Safari, tape la croix le plus brièvement possible. | S'il peut disparaître, et si ça gêne : TR-03 reste `unreviewed` pour cette raison. | gêne, oui ou non |
+| ☐ | Appui très bref | Sur Safari, puis dans l'app, tape la croix le plus brièvement possible. | S'il peut disparaître, et si ça gêne : TR-03 reste `unreviewed` pour cette raison. | gêne, oui ou non |
 | ☐ | Du téléphone au pixel | Filme au ralenti le téléphone et la TV dans le même cadre. Compte aussi du scan du QR au premier mouvement. | Les deux mesures qui manquent à Sidequest. | millisecondes, secondes |
 
 ## Enfin, Tier list
