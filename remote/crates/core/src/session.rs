@@ -530,9 +530,14 @@ mod tests {
         ));
     }
 
-    /// `watch` at each refresh from `from` to `to`, answering pings if told
-    /// to: what it asked for, with when.
-    fn watched(session: &mut Session, from: f64, to: f64, answer: bool) -> Vec<(f64, Watch)> {
+    /// `watch` at each refresh from `from` to `to`, with what the game does
+    /// after each: what it asked for, with when.
+    fn watched(
+        session: &mut Session,
+        from: f64,
+        to: f64,
+        game: fn(&mut Session),
+    ) -> Vec<(f64, Watch)> {
         let mut asked = Vec::new();
         let mut now = from;
         while now < to {
@@ -540,9 +545,7 @@ mod tests {
             if watch != Watch::Quiet {
                 asked.push((now, watch));
             }
-            if answer {
-                session.pong();
-            }
+            game(session);
             now += 0.1;
         }
         asked
@@ -552,7 +555,7 @@ mod tests {
     fn a_game_that_answers_is_asked_every_2_seconds_and_kept() {
         let mut session = session();
         session.connected();
-        let asked = watched(&mut session, 0.0, 10.0, true);
+        let asked = watched(&mut session, 0.0, 10.0, Session::pong);
         assert_eq!(asked.len(), 4, "{asked:?}");
         assert!(asked.iter().all(|(_, watch)| *watch == Watch::Ping));
     }
@@ -561,8 +564,8 @@ mod tests {
     fn a_game_that_stops_answering_is_lost_within_4_seconds() {
         let mut session = session();
         session.connected();
-        watched(&mut session, 0.0, 2.05, true);
-        let asked = watched(&mut session, 2.1, 10.0, false);
+        watched(&mut session, 0.0, 2.05, Session::pong);
+        let asked = watched(&mut session, 2.1, 10.0, |_| ());
         let lost = asked.iter().find(|(_, watch)| *watch == Watch::Lost);
         assert!(lost.is_some_and(|(at, _)| *at < 2.1 + 4.0), "{asked:?}");
     }
@@ -600,16 +603,15 @@ mod tests {
             .and_then(|r| r.layout().sticks.first().map(|s| s.center))
             .unwrap_or_default();
         session.remote_mut().map(|r| r.touch_down(1, center, 0.0));
-        let (mut left, mut frame) = (Vec::new(), 0_u32);
-        loop {
-            frame += 1;
+        let mut left = Vec::new();
+        for frame in 1_u16.. {
             // The same irregular walk each time: tests run on fixed time.
             let shift = wobble * f64::from(frame % 7) / 3.0 - wobble;
             let now = f64::from(frame) * period + shift;
             if now > 1.0 {
-                return left;
+                break;
             }
-            let x = center.x + 3.0 * f64::from(frame % 8) as f32;
+            let x = center.x + 3.0 * f32::from(frame % 8);
             session
                 .remote_mut()
                 .map(|r| r.touch_move(1, Point::new(x, center.y), now));
@@ -618,6 +620,7 @@ mod tests {
                 left.push(now);
             }
         }
+        left
     }
 
     #[test]
