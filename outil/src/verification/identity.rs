@@ -142,6 +142,7 @@ pub fn capture(
     hash_configs(&mut hash, &dir, &environment)?;
     hash_environment(&mut hash, &dir, &environment)?;
     hash_tools(&mut hash, &dir, &environment)?;
+    hash_node(&mut hash, &dir, &environment, observer.is_some())?;
     Ok(Identity {
         value: hex(&hash.finalize()),
         source_roots: roots
@@ -586,19 +587,11 @@ fn hash_environment(hash: &mut Sha256, dir: &Path, environment: &Environment) ->
 }
 
 fn hash_tools(hash: &mut Sha256, dir: &Path, environment: &Environment) -> Result<()> {
-    for (program, args) in [
-        ("rustc", vec!["-Vv"]),
-        ("cargo", vec!["-V"]),
-        ("node", vec!["--version"]),
-    ] {
+    for (program, args) in [("rustc", "-Vv"), ("cargo", "-V")] {
         let resolved = hash_executable(hash, dir, program, OsStr::new(program), environment)?;
-        let output = util::run(dir, program, &args)?;
-        if !output.status.success() {
-            return Err(format!("identité de {program} inconnue"));
-        }
-        add(hash, program, &output.stdout);
+        hash_version(hash, dir, program, args)?;
         // rustup proxies share one executable; also identify the selected tool.
-        if resolved.file_stem().is_some_and(|name| name == "rustup") && program != "node" {
+        if resolved.file_stem().is_some_and(|name| name == "rustup") {
             let output = util::run(dir, path_text(&resolved)?, &["which", program])?;
             if !output.status.success() {
                 return Err(format!("binaire effectif de {program} inconnu"));
@@ -619,6 +612,34 @@ fn hash_tools(hash: &mut Sha256, dir: &Path, environment: &Environment) -> Resul
         }
     }
     Ok(())
+}
+
+fn hash_version(hash: &mut Sha256, dir: &Path, program: &str, flag: &str) -> Result<()> {
+    let output = util::run(dir, program, &[flag])?;
+    if !output.status.success() {
+        return Err(format!("identité de {program} inconnue"));
+    }
+    add(hash, program, &output.stdout);
+    Ok(())
+}
+
+/// The harness runs on Node, so an observed passage cannot go without it. A
+/// check hashes the Node it finds exactly as a harness does: what it can call
+/// stays an input. Its absence is an input too, as for a missing Cargo config:
+/// the identity of a passage without Node is not that of a passage with it,
+/// and Node leaving or arriving during a passage is a change of the inputs.
+fn hash_node(
+    hash: &mut Sha256,
+    dir: &Path,
+    environment: &Environment,
+    required: bool,
+) -> Result<()> {
+    if !required && find_on_path(dir, OsStr::new("node"), environment)?.is_none() {
+        add(hash, "node", b"absent");
+        return Ok(());
+    }
+    hash_executable(hash, dir, "node", OsStr::new("node"), environment)?;
+    hash_version(hash, dir, "node", "--version")
 }
 
 fn hash_executable(
@@ -647,6 +668,19 @@ fn executable_path(dir: &Path, program: &OsStr, environment: &Environment) -> Re
         }
         return std::fs::canonicalize(&path).map_err(|e| e.to_string());
     }
+    find_on_path(dir, program, environment)?.ok_or_else(|| {
+        format!(
+            "programme introuvable pour l’identité : {}",
+            program.to_string_lossy()
+        )
+    })
+}
+
+fn find_on_path(
+    dir: &Path,
+    program: &OsStr,
+    environment: &Environment,
+) -> Result<Option<PathBuf>> {
     let search = environment
         .get(OsStr::new("PATH"))
         .ok_or("PATH absent : exécutables non identifiés")?;
@@ -656,15 +690,14 @@ fn executable_path(dir: &Path, program: &OsStr, environment: &Environment) -> Re
         } else {
             dir.join(root)
         };
-        let candidate = root.join(path);
+        let candidate = root.join(program);
         if is_executable(&candidate)? {
-            return std::fs::canonicalize(candidate).map_err(|e| e.to_string());
+            return std::fs::canonicalize(candidate)
+                .map(Some)
+                .map_err(|e| e.to_string());
         }
     }
-    Err(format!(
-        "programme introuvable pour l’identité : {}",
-        program.to_string_lossy()
-    ))
+    Ok(None)
 }
 
 fn is_executable(path: &Path) -> Result<bool> {
@@ -954,6 +987,27 @@ mod tests {
             digests.push(hex(&hash.finalize()));
         }
         assert!(digests.windows(2).all(|pair| pair.first() != pair.get(1)));
+    }
+    #[test]
+    fn a_check_records_a_missing_node_and_a_harness_refuses_it() {
+        let fixture = Fixture::new();
+        std::fs::create_dir(fixture.0.join("empty")).unwrap();
+        let digest = |environment: &Environment, required: bool| {
+            let mut hash = Sha256::new();
+            hash_node(&mut hash, &fixture.0, environment, required).map(|()| hex(&hash.finalize()))
+        };
+        let without =
+            Environment::from([("PATH".into(), fixture.0.join("empty").into_os_string())]);
+        let absent = digest(&without, false).unwrap();
+        assert!(digest(&without, true).unwrap_err().contains("node"));
+        let with = Environment::from([("PATH".into(), std::env::var_os("PATH").unwrap())]);
+        let present = digest(&with, false).unwrap();
+        assert_ne!(absent, present, "a missing Node must show in the identity");
+        assert_eq!(
+            present,
+            digest(&with, true).unwrap(),
+            "a Node that is there is hashed the same with or without a harness"
+        );
     }
     #[test]
     fn ancestor_and_global_cargo_configs_are_inputs() {
