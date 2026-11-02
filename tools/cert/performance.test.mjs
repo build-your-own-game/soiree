@@ -182,7 +182,7 @@ test("RTC failures belong to C1 while fixture failures retain infrastructure sco
   assert.deepEqual([transportFailure, cleanupFailure].map(error => scenarioFailureItem("rtc", error)), ["C1", "H1"]);
   assert.equal(scenarioFailureItem("ui", new Error("éditeur remplacé")), "U1");
   assert.equal(scenarioFailureItem("hostile", new Error("message malformé non isolé")), "E1");
-  for (const [scenario, item] of [["capacity", "R3"], ["text", "T2"], ["layout", "T3"], ["performance", "P1"]]) {
+  for (const [scenario, item] of [["capacity", "R3"], ["text", "T2"], ["layout", "T3"], ["performance", "P1"], ["jitter", "R1"]]) {
     assert.equal(scenarioFailureItem(scenario, new Error("scénario interrompu avant son observation")), item);
   }
   for (const scenario of ["rtc", "ui", "hostile", "capacity", "text", "layout", "performance"]) assert.equal(scenarioFailureItem(scenario, cleanupFailure), "H1");

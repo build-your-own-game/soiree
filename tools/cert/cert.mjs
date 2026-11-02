@@ -38,7 +38,7 @@ import { recurringScenarios, serverEndurance } from "./endurance.mjs";
 import { freeHostPort } from "./ports.mjs";
 import { cleanupAll, runWithCleanup } from "./cleanup.mjs";
 import { browserResources, resourceFailures, resourceCycle } from "./resources.mjs";
-import { AdvanceCycle, advanceOnce } from "./progression.mjs";
+import { AdvanceCycle, advanceOnce, advanceUntil } from "./progression.mjs";
 import { refusalMessage, phoneFieldSizes, fieldSizeFailures, seatAfterReturn } from "./presentation.mjs";
 import { validateUi, runUiScenario, runUiCommand, assertObserves, commandNote } from "./ui.mjs";
 import { measureLoad, loadSummary, loadWarning } from "./load.mjs";
@@ -1779,7 +1779,14 @@ const scenarios = {
         if (!target) throw new Error("écran absent pour jitter.setup");
         await performAction(target.tab, setup.action ?? {});
       }
-      if (config.jitter?.ready) await tv.tab.waitFor(config.jitter.ready, 3000);
+      if (config.jitter?.ready) {
+        // The game has been running since `start`: its organizer takes it back.
+        await tv.tab.waitFor(config.jitter.ready, 3000);
+        const cycle = new AdvanceCycle();
+        const step = config.advance && (() => config.advance.progress ? advanceOnce(tv.tab, config.advance, cycle, press) : press(tv.tab, config.advance));
+        const steps = await advanceUntil(() => tv.tab.waitFor(config.jitter.ready, 200).then(waited => waited !== null), step, { maxSteps: 200 });
+        if (steps) log(`  jitter.ready atteint après ${steps} étape(s) de advance`);
+      }
       const probes = config.performance?.probes ?? [];
       if (!probes.some(probe => probe.screen !== "tv")) throw new Error("aucune action téléphone causale déclarée pour le réseau dégradé");
       const causal = [];

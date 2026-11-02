@@ -355,6 +355,7 @@ export function scenarioFailureItem(scenario, error) {
   if (scenario === "text") return "T2";
   if (scenario === "layout") return "T3";
   if (scenario === "performance") return "P1";
+  if (scenario === "jitter") return "R1";
   return scenario === "ui" ? "U1" : "E1";
 }
 

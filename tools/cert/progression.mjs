@@ -29,3 +29,15 @@ export async function advanceOnce(tab, definition, cycle, press) {
   try { return {direction,before:observed.before,after:await changed.jsonValue()}; }
   finally {await changed.dispose();}
 }
+
+/** Drives a running game to a declared screen, one organizer step at a time,
+ * looking before each step: the step after that screen would leave it. A
+ * screen it never reaches fails here, not as a measurement of another one. */
+export async function advanceUntil(reached, step, { maxSteps }) {
+  for (let steps = 0; ; steps++) {
+    if (await reached()) return steps;
+    if (!step) throw new Error("écran attendu absent, et aucun moyen d'avancer déclaré (`advance`)");
+    if (steps === maxSteps) throw new Error(`écran attendu absent après ${maxSteps} étapes`);
+    await step();
+  }
+}
