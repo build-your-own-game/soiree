@@ -70,7 +70,28 @@ fn joined(host: &FakeHost, path: &str) -> Shell {
         eventually(SOON, || shell.ask("content") != "waiting"),
         "the game's remote never came"
     );
+    settle(&mut shell);
     shell
+}
+
+/// What the screen shows has its final size: nothing lifts a finger now.
+fn settle(shell: &mut Shell) {
+    if shell.ask("content") != "pad" {
+        return;
+    }
+    // The safe area can follow the rotation: the same answer for a while.
+    let (mut last, mut same) = (String::new(), 0);
+    let settled = eventually(SOON, || {
+        let turned = shell.ask("turned");
+        same = if turned == last && turned != "no" {
+            same + 1
+        } else {
+            0
+        };
+        last = turned;
+        same >= 12
+    });
+    assert!(settled, "the pad never settled: {last}");
 }
 
 fn is_end(message: &PhoneMessage) -> bool {
@@ -118,6 +139,11 @@ fn a_stroke_cut_by_the_host_reaches_the_next_socket_behind_hello() {
     let link = host.messages(second);
     assert!(link.first().is_some_and(is_hello), "{link:?}");
     assert!(link.iter().any(is_end), "{link:?}");
+    assert!(
+        link.iter()
+            .any(|message| matches!(message, PhoneMessage::Draw(DrawEvent::Point { .. }))),
+        "the points drawn during the cut are gone: {link:?}"
+    );
 }
 
 #[test]
@@ -158,6 +184,7 @@ fn a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there() {
     let mut shell = Shell::launch();
     shell.ask(&format!("join {}", salon.page()));
     assert!(eventually(SOON, || shell.ask("content") == "pad"));
+    settle(&mut shell);
     let (x, y) = shell.point("canvas");
     shell.ask(&format!("down 1 {x} {y}"));
     assert!(eventually(SOON, || salon.heard("begin") == 1));
@@ -329,5 +356,29 @@ fn a_reconnection_keeps_the_drawing_on_the_phone() {
             PhoneMessage::Draw(DrawEvent::Begin { stroke: 1, .. })
         ))),
         "the next stroke took a number already used"
+    );
+}
+
+#[test]
+fn a_thumb_left_on_the_stick_still_steers_after_a_cut() {
+    let host = FakeHost::start(Some(Remote::Pad(presets::pad())));
+    let mut shell = joined(&host, "/play");
+    let (x, y) = shell.point("stick");
+    shell.ask(&format!("down 1 {x} {y}"));
+    shell.ask(&format!("move 1 {} {y}", x + 10.0));
+    assert!(host.wait(SOON, |state| state.heard.len() > 2));
+    host.with(|state| state.cut = true);
+    assert!(host.wait(BACK, |state| state.links == 2));
+    assert!(eventually(BACK, || shell.ask("status") == "connected"));
+    shell.ask(&format!("move 1 {} {y}", x + 40.0));
+    assert!(
+        host.wait(SOON, |state| state
+            .heard
+            .iter()
+            .any(|heard| heard.link == 2
+                && matches!(&heard.message, PhoneMessage::Input(input)
+                if input.sticks.iter().any(|stick| stick.x > 50)))),
+        "the thumb is dead: {:?}",
+        host.messages(1).last()
     );
 }

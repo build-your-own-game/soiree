@@ -615,7 +615,8 @@ citation = "The app lost its touches (app switcher, phone call): nothing may sta
 enonce = "release_all parle de touchers perdus ; une coupure réseau ne les perd pas, et le doigt reste posé."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_thumb_left_on_the_stick_still_steers_after_a_cut", "remote/bench/tests/shell.rs::a_thumb_left_on_the_stick_still_steers_after_a_cut"]
 trou = "T9"
 
 [[lecon]]
@@ -960,7 +961,7 @@ lieux = [
 cas = "lost appelle releaseAll, qui oublie les doigts ; un toucher inconnu ne se reprend pas au mouvement. Après une micro-coupure, le stick ne répond plus tant que le joueur n'a pas levé le pouce, sans que rien ne le dise."
 preuve = "sonde Rust H17 : stick à 101, après coupure et Show, 0 malgré le mouvement du doigt. Sans release_all et avec la garde de T10 : 114."
 verifie = "le cœur Rust"
-suppose = "L'hôte voit déjà Left ; garder le doigt demande que le premier état après Hello parte aussitôt. Non rejoué sur simulateur."
+suppose = "Le premier état part derrière le Show du jeu : un joueur au pouce immobile attend ce Show, soit un aller-retour de plus. Une coupure réelle sur un vrai iPhone."
 
 [[trou]]
 id = "T10"

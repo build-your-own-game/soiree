@@ -741,6 +741,34 @@ mod tests {
     }
 
     #[test]
+    fn a_thumb_left_on_the_stick_still_steers_after_a_cut() {
+        let mut session = session();
+        show(&mut session, presets::pad());
+        let center = session
+            .remote()
+            .and_then(|r| r.layout().sticks.first().map(|s| s.center))
+            .unwrap_or_default();
+        session.remote_mut().map(|r| r.touch_down(1, center, 0.0));
+        session
+            .remote_mut()
+            .map(|r| r.touch_move(1, Point::new(center.x + 20.0, center.y), 0.01));
+        session.disconnected();
+        session.connected();
+        show(&mut session, presets::pad());
+        session.drain();
+
+        session
+            .remote_mut()
+            .map(|r| r.touch_move(1, Point::new(center.x + 40.0, center.y), 0.5));
+        session.tick(0.6);
+        let moved = sent(&mut session).iter().any(|message| {
+            matches!(message, PhoneMessage::Input(state)
+                if state.sticks.iter().any(|stick| stick.x > 50))
+        });
+        assert!(moved, "the thumb is dead");
+    }
+
+    #[test]
     fn drawing_steps_all_go_in_order_before_the_state() {
         let mut session = session();
         show(&mut session, presets::draw());

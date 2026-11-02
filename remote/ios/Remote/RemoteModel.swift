@@ -70,8 +70,8 @@ final class RemoteModel {
         releaseAll()
     }
 
-    /// The app left the foreground or the connection dropped: nothing may
-    /// stay held.
+    /// The app left the foreground, and its touches with it: nothing may
+    /// stay held. A dropped connection is not that: the thumb is still there.
     func releaseAll() {
         session.releaseAll()
         update()

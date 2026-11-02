@@ -104,6 +104,14 @@ final class Bench {
             }
         case "page-failing":
             return String(connection?.pageFailing ?? false)
+        case "turned":
+            // The rotation to landscape has reached the pad's layout. Before
+            // that, a resize would lift the fingers a test just put down.
+            guard let area = connection?.pad?.layout?.area else { return "no" }
+            let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+            let landscape = scene?.effectiveGeometry.interfaceOrientation.isLandscape == true
+            guard landscape, area.right > area.bottom else { return "no" }
+            return "\(area.left) \(area.top) \(area.right) \(area.bottom)"
         case "control":
             let id = UInt8(numbers.first ?? 0)
             let found = connection?.pad?.layout?.controls.first { $0.id == id }

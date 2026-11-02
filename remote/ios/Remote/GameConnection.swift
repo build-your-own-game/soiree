@@ -162,8 +162,8 @@ final class GameConnection {
         opened = false
         // A silent socket does not know yet.
         socket.cancel(with: .goingAway, reason: nil)
+        // The fingers stay: a cut takes nothing from the hand on the phone.
         session.disconnected()
-        pad?.releaseAll()
         if status != .localNetworkDenied {
             status = .reconnecting
         }
