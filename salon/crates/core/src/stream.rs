@@ -171,16 +171,9 @@ impl Budget {
         }
     }
 
-    /// The last fragment that gets in may pass the window by its own size: it
-    /// is one fragment, and a window that refused it would wake the sender up
-    /// for nothing until the next ack.
+    /// Whether a fragment fits the packet, which it uses up if so. The window
+    /// has had its say ([`Pieces::due`]), and it only ever shrinks here.
     fn take(&mut self, data: usize) -> bool {
-        self.room > 0 && self.take_again(data)
-    }
-
-    /// A fragment known lost left what is on its way, and the window waits for
-    /// it: what follows cannot be delivered, so nothing else would open it.
-    fn take_again(&mut self, data: usize) -> bool {
         let Some(left) = data
             .checked_add(PART_OVERHEAD)
             .and_then(|cost| self.bytes.checked_sub(cost))
@@ -458,15 +451,6 @@ impl Pieces {
             .fold(0, usize::saturating_add)
     }
 
-    /// Whether this fragment leaves in `budget`, which it uses up if so.
-    fn fits(&self, index: usize, data: usize, budget: &mut Budget) -> bool {
-        if self.each.get(index) == Some(&Piece::Lost) {
-            budget.take_again(data)
-        } else {
-            budget.take(data)
-        }
-    }
-
     /// A new link: everything goes again, cut for it.
     fn forget(&mut self) {
         self.cut = 0;
@@ -489,8 +473,11 @@ impl Pieces {
         self.each.len() > 1 && self.each.iter().any(|piece| *piece != Piece::Waiting)
     }
 
-    /// The next fragment that can leave now, from `from` on: with no `room` in
-    /// the window, only one known lost.
+    /// The next fragment that can leave now, from `from` on. With no `room` in
+    /// the window, only one known lost: it left what is on its way, and the
+    /// window waits for it, since what follows cannot be delivered. The last
+    /// fragment let in may pass the window by its own size: one that it refused
+    /// would wake the sender up for nothing until the next ack.
     fn due(&self, from: usize, now: Ms, resend: u64, room: usize) -> Option<usize> {
         let rest = self.each.get(from..)?;
         let due = rest.iter().position(|piece| match piece {
@@ -800,7 +787,7 @@ impl OutEvents {
                 from = due.saturating_add(1);
                 let index = u16::try_from(due).unwrap_or(u16::MAX);
                 let data = fragment(&event.data, index, cut);
-                if !event.pieces.fits(due, data.len(), budget) {
+                if !budget.take(data.len()) {
                     return parts;
                 }
                 budget.expired |= event.pieces.sent(due, now);
@@ -1142,7 +1129,7 @@ impl OutState {
             from = due.saturating_add(1);
             let index = u16::try_from(due).unwrap_or(u16::MAX);
             let data = fragment(&self.data, index, cut);
-            if !self.pieces.fits(due, data.len(), budget) {
+            if !budget.take(data.len()) {
                 break;
             }
             budget.expired |= self.pieces.sent(due, now);
