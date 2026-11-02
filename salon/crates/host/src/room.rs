@@ -9,7 +9,7 @@
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -80,12 +80,19 @@ impl Outlet {
         };
     }
 
-    fn close(&self, link: LinkId) {
-        // Full: the transport closes anyway when the room forgets the link.
-        let _: bool = match self {
-            Outlet::Ws(outbox) => outbox.try_send(WsOut::Close).is_ok(),
-            Outlet::Rtc(outbox) => outbox.try_send(RtcOut::Close(link)).is_ok(),
-        };
+    /// Tells the transport the link is over. `false`: it is behind, and must
+    /// be told again. Nothing else ends a link that its peer keeps open: a
+    /// WebRTC outbox outlives its links, and an app's reader holds its own.
+    fn close(&self, link: LinkId) -> bool {
+        match self {
+            Outlet::Ws(outbox) => {
+                !matches!(outbox.try_send(WsOut::Close), Err(TrySendError::Full(_)))
+            }
+            Outlet::Rtc(outbox) => !matches!(
+                outbox.try_send(RtcOut::Close(link)),
+                Err(TrySendError::Full(_))
+            ),
+        }
     }
 }
 
@@ -146,6 +153,7 @@ pub fn run<G: Game>(
         driver = driver.with_app_page(page);
     }
     let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
+    let mut closing: Vec<(LinkId, Outlet)> = Vec::new();
     store.save_at_start();
     let mut next_save = clock.now().plus(SAVE_EVERY);
     let mut saved_identities = driver.host().identities();
@@ -189,11 +197,14 @@ pub fn run<G: Game>(
                         if logging() {
                             crate::say(format_args!("salon: link {} closed by host", link.0));
                         }
-                        outlet.close(link);
+                        if !outlet.close(link) {
+                            closing.push((link, outlet));
+                        }
                     }
                 }
             }
         }
+        closing.retain(|(link, outlet)| !outlet.close(*link));
         if now >= next_save {
             store.save(driver.host().known());
             next_save = now.plus(SAVE_EVERY);
@@ -308,24 +319,12 @@ mod tests {
     /// instant. Saved a second later, its number went to another device.
     #[test]
     fn an_identity_is_saved_before_its_welcome_leaves() {
-        use salon_core::{Client, ClientConfig, ClientOutput, Kind, Token};
+        use salon_core::ClientOutput;
 
         let dir = std::env::temp_dir().join(format!("salon-room-saved-{}", std::process::id()));
         let _: io::Result<()> = std::fs::remove_dir_all(&dir);
         let now = Ms(0);
-        let mut phone: Client<(), ()> = Client::new(
-            now,
-            ClientConfig {
-                game: 1,
-                kind: Kind::Phone,
-                token: Token([3; 16]),
-                name: None,
-                tv_key: None,
-                seed: 1,
-                timing: Timing::default(),
-                limits: Limits::default(),
-            },
-        );
+        let mut phone = phone(3);
         assert_eq!(phone.poll(now), Some(ClientOutput::Connect));
         phone.opened(now, Caps::STREAM);
         let Some(ClientOutput::Transmit(hello)) = phone.poll(now) else {
@@ -361,6 +360,102 @@ mod tests {
         room.join().unwrap();
         let _: io::Result<()> = std::fs::remove_dir_all(&dir);
         assert_eq!(known.len(), 1, "welcomed, and not on disk");
+    }
+
+    fn phone(token: u8) -> salon_core::Client<(), ()> {
+        salon_core::Client::new(
+            Ms(0),
+            salon_core::ClientConfig {
+                game: 1,
+                kind: salon_core::Kind::Phone,
+                token: salon_core::Token([token; 16]),
+                name: None,
+                tv_key: None,
+                seed: 1,
+                timing: Timing::default(),
+                limits: Limits::default(),
+            },
+        )
+    }
+
+    /// C7, the other side of the one above: a folder that cannot be written
+    /// does not keep a phone out. The number may go to another device after a
+    /// crash, and the log says so.
+    #[test]
+    fn a_welcome_leaves_even_if_its_identity_cannot_be_saved() {
+        use salon_core::ClientOutput;
+
+        let mut phone = phone(4);
+        assert_eq!(phone.poll(Ms(0)), Some(ClientOutput::Connect));
+        phone.opened(Ms(0), Caps::STREAM);
+        let Some(ClientOutput::Transmit(hello)) = phone.poll(Ms(0)) else {
+            panic!("a hello");
+        };
+        let clock = Clock::start();
+        let (net, inbox) = inbox::channel::<Net>(16).unwrap();
+        let unwritable = std::path::Path::new("/dev/null/salon");
+        let store = Store::open(Some(unwritable), [0; 16]).unwrap();
+        let game = Steps {
+            start: clock,
+            done: 0,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let room = thread::spawn(move || {
+            let tick = Duration::from_secs(1);
+            run(&inbox, game, config(), tick, store, clock, None)
+        });
+        let (outbox, packets) = std::sync::mpsc::sync_channel(16);
+        let link = LinkId(1);
+        net.send(Net::Opened {
+            link,
+            caps: Caps::STREAM,
+            outlet: Outlet::Ws(outbox),
+        })
+        .unwrap();
+        net.send(Net::Received { link, bytes: hello }).unwrap();
+        let welcome = packets.recv_timeout(Duration::from_secs(5)).unwrap();
+        drop(net);
+        room.join().unwrap();
+        assert!(matches!(welcome, WsOut::Packet(_)));
+    }
+
+    /// Nothing else ends a link whose peer keeps it open, so a transport that
+    /// is behind hears of the close when it catches up.
+    #[test]
+    fn a_close_that_finds_its_transport_behind_is_told_again() {
+        let clock = Clock::start();
+        let (net, inbox) = inbox::channel::<Net>(16).unwrap();
+        let store = Store::open(None, [0; 16]).unwrap();
+        let game = Steps {
+            start: clock,
+            done: 0,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let room = thread::spawn(move || {
+            let tick = Duration::from_secs(1);
+            run(&inbox, game, config(), tick, store, clock, None)
+        });
+        let (outbox, packets) = std::sync::mpsc::sync_channel(1);
+        outbox.try_send(WsOut::Packet(Vec::new())).unwrap();
+        let link = LinkId(1);
+        net.send(Net::Opened {
+            link,
+            caps: Caps::STREAM,
+            outlet: Outlet::Ws(outbox),
+        })
+        .unwrap();
+        // Over the limit: the room drops the link, and its outbox is full.
+        net.send(Net::Received {
+            link,
+            bytes: vec![0; 64 * 1024 + 1],
+        })
+        .unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert!(matches!(packets.try_recv(), Ok(WsOut::Packet(_))));
+        let close = packets.recv_timeout(Duration::from_secs(5));
+        drop(net);
+        room.join().unwrap();
+        assert!(matches!(close, Ok(WsOut::Close)));
     }
 
     /// The other half, the process that ends, is `tests/room_death.rs`.

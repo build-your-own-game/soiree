@@ -97,8 +97,9 @@
 //!   last eight tabs that sent something; a tab away for longer may repeat
 //!   what it had in flight, and loses nothing.
 //! - **Coming back.** After a cut, a reload or a locked phone, the device
-//!   reconnects on its own, from 250 ms to 2 s between attempts and without
-//!   end, and gets its identity, its latest state and every event it missed
+//!   reconnects on its own and without end, between 188 ms and 2.5 s apart
+//!   ([`Timing::retry_first`] doubled up to [`Timing::retry_max`], ±25 %), and
+//!   gets its identity, its latest state and every event it missed
 //!   (C2, C4). The game gets [`DeviceEvent::Back`]. The numbers of its events
 //!   and states are the host's to keep: each welcome says where they stand,
 //!   so a page that reloads, or panics (C10), and starts from nothing is
@@ -120,7 +121,10 @@
 //!   and wait for the new one. With [`Host::known`] saved and given back in
 //!   [`HostConfig::known`], devices come back as themselves; identities never
 //!   go back to an old number (C7), and `salon-host` saves a new one before
-//!   its welcome leaves. Since the game of the new run never heard
+//!   its welcome leaves. If that write fails, the log says so, the welcome
+//!   leaves all the same and the save is tried again every second: a crash
+//!   in between can give the number to another device. Since the game of the
+//!   new run never heard
 //!   of them, each one's first connection is a [`DeviceEvent::Arrived`],
 //!   under its old [`DeviceId`]. What a device sent and the old run did not
 //!   acknowledge goes to the new one, after that arrival and with the phase

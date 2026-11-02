@@ -88,7 +88,8 @@ impl Store {
         self.saved.clone()
     }
 
-    /// Saves `known` if it changed.
+    /// Saves `known` if it changed. What could not be written goes again at
+    /// the next call.
     pub fn save(&mut self, known: Vec<Known>) {
         if known != self.saved {
             self.write(known);
@@ -182,6 +183,28 @@ mod tests {
         let store = Store::open(Some(&dir), [4; 16]).unwrap();
         assert_eq!(store.tv_key(), [4; 16]);
         assert_eq!(store.known(), Vec::new());
+        let _: std::io::Result<()> = fs::remove_dir_all(&dir);
+    }
+
+    /// A write that fails is logged, and the next save tries again.
+    #[test]
+    fn what_could_not_be_written_goes_again() {
+        let dir = scratch("again");
+        fs::create_dir_all(&dir).unwrap();
+        let blocked = dir.join("not-a-folder");
+        fs::write(&blocked, b"").unwrap();
+        let mut store = Store::open(Some(&blocked), [1; 16]).unwrap();
+        let ada = Known {
+            device: DeviceId(3),
+            token: Token([5; 16]),
+            kind: Kind::Phone,
+            name: None,
+        };
+        store.save(vec![ada.clone()]);
+        assert_eq!(store.known(), Vec::new());
+        fs::remove_file(&blocked).unwrap();
+        store.save(vec![ada.clone()]);
+        assert_eq!(Store::open(Some(&blocked), [2; 16]).unwrap().known(), [ada]);
         let _: std::io::Result<()> = fs::remove_dir_all(&dir);
     }
 
