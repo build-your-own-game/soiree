@@ -1753,7 +1753,6 @@ fn through(narrow: Narrow, caps: Caps, events: u32, size: usize, ms: u64) -> Thr
 /// starts from the same fragment would carry the same ones for ever, and what
 /// follows in the queue would wait behind them.
 #[test]
-
 fn a_message_bigger_than_the_pipe_arrives() {
     for narrow in [
         Narrow::kilobits(1_000, 32 * 1024),

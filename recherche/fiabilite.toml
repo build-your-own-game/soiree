@@ -371,7 +371,8 @@ citation = "ordre garanti sans tampon de réception"
 enonce = "Salon crédite Quake 3 de son ordre sans tampon, mais Quake 3 remet tout le non-accusé dans chaque paquet : un paquet perdu ne crée pas de trou. Salon ne renvoie qu'à la minuterie, et jette tout ce qui suit le trou."
 categorie = "heritage"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_hole_in_the_queue_does_not_cost_what_follows"]
 trou = "T2"
 
 [[lecon]]
@@ -382,7 +383,8 @@ citation = "A WebSocket: nothing is lost, packets can be larger."
 enonce = "Le type dit qu'un WebSocket ne perd rien, et le flux y renvoie quand même à la minuterie : des copies s'empilent devant ce qui est frais."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_lossless_link_carries_no_copies", "salon/crates/core/tests/salon.rs::a_stream_that_drops_a_packet_recovers_it"]
 trou = "T4"
 
 [[lecon]]
@@ -393,7 +395,8 @@ citation = "stamps every action with the number its sender"
 enonce = "Un jeu refuse une action dont la phase est périmée (E5) : la phase que porte un événement doit être la plus récente vue, jamais une plus ancienne."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/client_edges.rs::a_late_packet_does_not_take_the_phase_back"]
 trou = "T6"
 
 [[lecon]]
@@ -404,7 +407,8 @@ citation = "self.show_tvs(now, host);"
 enonce = "Un jeu réel envoie un état à chaque pas de sa boucle : l'état plus fréquent que le renvoi est un usage, pas un cas d'école. Ici la TV est locale, en WebSocket, sans perte."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_big_state_refreshed_often_still_arrives"]
 trou = "T5"
 
 [[lecon]]
@@ -415,7 +419,8 @@ citation = "discard out of order or duplicated packets"
 enonce = "Un paquet plus vieux que le dernier lu ne doit changer aucun état courant."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/client_edges.rs::a_late_packet_does_not_take_the_phase_back"]
 trou = "T6"
 note = "Salon a raison de lire les fragments et les accusés d'un vieux paquet : ils sont sûrs. Seuls les champs qui écrasent une valeur courante, comme la phase, ne le sont pas."
 
@@ -427,7 +432,8 @@ citation = "write any unacknowledged serverCommands"
 enonce = "Tout le non-accusé repart dans chaque paquet : une perte se répare au paquet suivant, sans minuterie, parce que la file est courte (64 commandes)."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_hole_in_the_queue_does_not_cost_what_follows"]
 trou = "T2"
 
 [[lecon]]
@@ -471,7 +477,8 @@ citation = "let backoff = 2u32.pow(self.pto_count.min(MAX_BACKOFF_EXPONENT));"
 enonce = "Chaque minuterie expirée sans réponse double l'attente suivante."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::each_timer_that_runs_out_doubles_the_next_wait", "salon/crates/core/tests/salon.rs::a_silent_link_is_not_hammered"]
 trou = "T3"
 
 [[lecon]]
@@ -482,7 +489,8 @@ citation = "The goal is to emit a burst (of size `capacity`) in timer intervals"
 enonce = "Les paquets partent par petites rafales espacées, jamais la file entière d'un coup."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_big_message_leaves_by_the_window", "salon/crates/core/tests/salon.rs::a_full_queue_costs_less_than_twice_its_size"]
 trou = "T3"
 
 [[lecon]]
@@ -493,7 +501,8 @@ citation = "we might attempt to transmit a smaller flow control credit"
 enonce = "Sous réordonnancement, une valeur tardive redescend sous une valeur déjà annoncée : ce qui est monotone se compare avant d'écrire."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/client_edges.rs::a_late_packet_does_not_take_the_phase_back"]
 trou = "T6"
 
 [[lecon]]
@@ -504,9 +513,10 @@ citation = "This was the last per-poll scan of the sent-packet window"
 enonce = "Le calcul de la prochaine échéance ne parcourt pas toute la fenêtre à chaque tour."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_cost.rs::the_next_deadline_allocates_nothing"]
 trou = "T13"
-
+note = "Le test tient l'allocation : zéro octet. Le parcours reste : next_deadline et flying regardent les fragments des 64 premiers numéros, à chaque tour. Il est borné par 1 Mio d'attente (T11), pas supprimé."
 [[lecon]]
 id = "fiabilite-14"
 source = "renet"
@@ -515,7 +525,8 @@ citation = "let start_index = *next_slice_to_send;"
 enonce = "Un message découpé s'accuse morceau par morceau, et chaque passe reprend où la précédente s'est arrêtée : un budget d'envoi ne recoupe jamais toujours les mêmes morceaux."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_message_bigger_than_the_pipe_arrives", "salon/crates/core/tests/stream_edges.rs::a_resend_carries_only_the_fragments_that_did_not_arrive"]
 trou = "T1"
 
 [[lecon]]
@@ -537,7 +548,8 @@ citation = "on creation instead of when the first fragmentation happened."
 enonce = "Une configuration que la fragmentation ne peut pas porter se refuse à la création, pas au premier gros message."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_limit_past_what_fragments_carry_is_cut_down"]
 trou = "T8"
 
 [[lecon]]
@@ -548,7 +560,8 @@ citation = "client never receives any message if you constantly sending it"
 enonce = "Un gros message remplacé sans cesse n'arrive plus jamais : chaque remplacement perd ce qui était déjà arrivé."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_big_state_refreshed_often_still_arrives"]
 trou = "T5"
 
 [[lecon]]
@@ -559,7 +572,8 @@ citation = "Large unreliable message are susceptible to packet loss."
 enonce = "Un message découpé sans renvoi de ses morceaux meurt d'un seul morceau perdu : renet avertit au-delà de 20 fragments. Un état de salon vit ainsi dès qu'il est remplacé avant son renvoi."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_big_state_refreshed_often_still_arrives"]
 trou = "T5"
 
 [[lecon]]
@@ -570,7 +584,8 @@ citation = "Maximum number of bytes that the channel may hold without acknowledg
 enonce = "Ce qui attend un accusé se borne en octets, pas en nombre de messages."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::what_waits_for_a_device_is_bounded_in_bytes"]
 trou = "T11"
 
 [[lecon]]
@@ -580,10 +595,9 @@ lien = "https://github.com/lucaspoffo/renet/commit/3ff7dd0b7ed4cf30e2ee36a849986
 citation = "were being kept in the received_messages Set indefinitely."
 enonce = "Un ensemble de messages reçus hors d'ordre grossissait sans fin."
 categorie = "accident"
-decision = "jeter"
-etat = "non-applicable"
-raison = "Salon ne garde rien de hors d'ordre aujourd'hui. À reprendre si T2 ajoute un tampon : il devra être borné et vidé à chaque changement de session."
-
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_new_page_inherits_nothing_of_what_waited_past_a_hole", "salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments"]
 [[lecon]]
 id = "fiabilite-21"
 source = "renet"
@@ -603,7 +617,8 @@ citation = "so it also caps data channel throughput at about that many"
 enonce = "Le tampon SCTP compte ce qui n'est pas encore accusé : tout ce qui dépasse 128 Kio par aller-retour est refusé, ce qui en fait un tuyau qui jette la fin d'une rafale."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_message_bigger_than_the_pipe_arrives"]
 trou = "T1"
 
 [[lecon]]
@@ -614,9 +629,10 @@ citation = "If it's not available, don't accept."
 enonce = "Écrire dans le canal dit si c'est accepté : ce retour renseigne l'expéditeur. Salon l'ignore, et le fragment compte comme parti."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_message_bigger_than_the_pipe_arrives", "salon/crates/core/tests/salon.rs::a_full_queue_costs_less_than_twice_its_size"]
 trou = "T3"
-
+note = "Le retour de write n'est toujours pas lu, et rtc.rs n'a pas changé : un refus se voit comme une perte, dans les accusés. Ce qui suppose que str0m refuse comme le tuyau simulé jette."
 [[lecon]]
 id = "fiabilite-24"
 source = "postcard"
@@ -637,7 +653,8 @@ citation = "delay handling of DISCONNECT_LATER until in-flight unreliable packet
 enonce = "Un départ passe après ce qui a été envoyé avant lui."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::an_event_sent_just_before_quitting_arrives"]
 trou = "T10"
 
 [[lecon]]
@@ -648,7 +665,8 @@ citation = "outgoingCommand -> roundTripTimeout *= 2;"
 enonce = "Chaque renvoi double l'attente du suivant, pour chaque commande."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::each_timer_that_runs_out_doubles_the_next_wait"]
 trou = "T3"
 
 [[lecon]]
@@ -693,7 +711,8 @@ citation = "resent = (kcp->fastresend > 0)? (IUINT32)kcp->fastresend : 0xfffffff
 enonce = "Un segment dépassé plusieurs fois par les accusés repart sans attendre sa minuterie."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_fragment_passed_over_three_times_goes_without_its_timer"]
 trou = "T2"
 
 [[lecon]]
@@ -717,7 +736,7 @@ categorie = "accident"
 decision = "garder"
 etat = "couvert"
 garantie = ["salon/crates/core/tests/stream_edges.rs::an_acknowledgement_covers_what_it_names_and_nothing_more", "salon/crates/core/tests/salon.rs::a_flooding_phone_does_not_slow_down_the_others"]
-note = "Une exception à regarder : un événement trop gros est sauté et accusé, voir T9."
+note = "Une exception : un événement trop gros est sauté et accusé. Depuis T9, le Welcome dit les limites, et cela ne touche plus qu'un appareil qui les ignore."
 
 [[lecon]]
 id = "fiabilite-33"
@@ -738,7 +757,8 @@ citation = "Discard reliable data past the end of the stream, if it would cause"
 enonce = "Garder ce qui arrive après un trou demande une borne : au-delà, on jette et on compte sur le renvoi."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments", "salon/crates/core/tests/stream_edges.rs::nothing_is_kept_past_the_last_number_an_acknowledgement_can_say"]
 trou = "T2"
 
 [[lecon]]
@@ -749,7 +769,8 @@ citation = "Adding config vars to simulate bandwidth limit"
 enonce = "Un banc de réseau simule aussi un débit et une rafale bornés, pas seulement la perte et le désordre."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_message_bigger_than_the_pipe_arrives", "salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place_through_a_narrow_pipe"]
 trou = "T7"
 
 [[lecon]]
@@ -760,7 +781,8 @@ citation = "Config now refuses a product that does not fit"
 enonce = "La configuration se vérifie quand on la donne, pas quand elle casse."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_timing_the_wrong_way_round_does_not_stop_the_room"]
 trou = "T12"
 
 [[lecon]]
@@ -771,7 +793,8 @@ citation = "response to the highest-numbered non-probing packet."
 enonce = "Un changement d'état ne vient que du paquet le plus récent : c'est écrit pour que des paquets réordonnés ne ramènent pas en arrière."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/client_edges.rs::a_late_packet_does_not_take_the_phase_back"]
 trou = "T6"
 
 [[lecon]]
@@ -782,7 +805,8 @@ citation = "Senders MUST either use pacing or limit such bursts."
 enonce = "Une rafale se limite ou s'étale : envoyer sans délai crée la perte qu'on cherche à réparer."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_big_message_leaves_by_the_window", "salon/crates/core/tests/salon.rs::a_full_queue_costs_less_than_twice_its_size"]
 trou = "T3"
 
 [[lecon]]
@@ -804,9 +828,10 @@ citation = "application SHOULD perform congestion control over all UDP traffic i
 enonce = "Le contrôle de congestion n'est pas optionnel, et se compte sur tout le trafic vers un destinataire."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_full_queue_costs_less_than_twice_its_size", "salon/crates/core/tests/stream_edges.rs::a_big_message_leaves_by_the_window"]
 trou = "T3"
-
+note = "Une seule fenêtre par appareil et par sens, événements et états ensemble. Un état d'un seul paquet passe au-dessus d'elle, pour ne pas attendre derrière une file. Le contrôle est celui de la perte : aucun retard de file n'est mesuré."
 [[lecon]]
 id = "fiabilite-41"
 source = "rfc8831"
@@ -827,7 +852,8 @@ citation = "(via subsequent SACK chunks for a total of three missing reports) on
 enonce = "L'accusé dit aussi ce qui est arrivé après le trou, et trois signalements déclenchent le renvoi : la perte se répare sans attendre la minuterie."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_fragment_passed_over_three_times_goes_without_its_timer", "salon/crates/core/tests/stream_edges.rs::an_acknowledgement_says_what_waits_past_a_hole"]
 trou = "T2"
 
 [[lecon]]
@@ -839,7 +865,7 @@ enonce = "Un gros message bloque à l'envoi ceux qui le suivent."
 categorie = "physique"
 decision = "jeter"
 etat = "non-applicable"
-raison = "Pour les événements, attendre le précédent est la promesse d'ordre elle-même. L'état a sa propre file et part dans la même rafale. Le seul blocage durable connu est celui de T1, qui a sa cause propre."
+raison = "Pour les événements, attendre le précédent est la promesse d'ordre elle-même. L'état a sa propre file et part dans la même rafale. Le seul blocage durable connu était celui de T1, qui avait sa cause propre."
 
 [[lecon]]
 id = "fiabilite-44"
@@ -849,7 +875,8 @@ citation = "than the max_datagram_frame_size value it has received from its peer
 enonce = "La taille maximale qu'un côté accepte s'annonce à l'autre : l'envoi la connaît avant d'envoyer."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_device_takes_the_limits_of_its_host"]
 trou = "T9"
 
 [[lecon]]
@@ -871,7 +898,8 @@ citation = "- udp_capacity: 64"
 enonce = "Un banc borne ses files : au-delà, le simulé perd, comme le vrai."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place_through_a_narrow_pipe", "salon/crates/core/tests/salon.rs::a_message_bigger_than_the_pipe_arrives"]
 trou = "T7"
 
 [[lecon]]
@@ -904,7 +932,8 @@ citation = "a bitfield indicating which slices have been received so far."
 enonce = "Pour un gros bloc, l'accusé dit quels morceaux sont arrivés : on ne renvoie que les autres."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::an_acknowledgement_names_the_fragments_that_arrived", "salon/crates/core/tests/stream_edges.rs::a_resend_carries_only_the_fragments_that_did_not_arrive"]
 trou = "T1"
 
 [[lecon]]
@@ -915,7 +944,8 @@ citation = "Your soak test passes when it runs overnight and doesn’t hang or a
 enonce = "L'endurance avec de gros paquets est ce qui trouve les bugs de fragmentation : le critère est de ne jamais rester bloqué."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place_through_a_narrow_pipe"]
 trou = "T7"
 
 [[lecon]]
@@ -925,10 +955,9 @@ lien = "https://gafferongames.com/post/reliable_ordered_messages/"
 citation = "you must never send a message id equal to or more recent than"
 enonce = "L'expéditeur reste dans la fenêtre que le récepteur peut tenir, sinon un message s'accuse sans avoir été gardé."
 categorie = "physique"
-decision = "jeter"
-etat = "non-applicable"
-raison = "Le récepteur de salon n'a pas de fenêtre : il n'accuse que ce qu'il a livré, et un accusé est cumulatif. La règle reviendrait avec le tampon de T2."
-
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_sender_stays_within_what_its_receiver_keeps"]
 [[lecon]]
 id = "fiabilite-52"
 source = "ioq3-client"
@@ -938,7 +967,7 @@ enonce = "Côté client aussi, un numéro déjà vu ne repasse pas."
 categorie = "usage-reel"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/core/tests/stream_edges.rs::a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage", "salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event"]
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_gap_waits_for_its_turn_and_a_repeat_delivers_nothing", "salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event"]
 
 [[trou]]
 id = "T1"
@@ -951,9 +980,9 @@ lieux = [
   "salon/crates/host/src/rtc.rs:177",
 ]
 cas = "Chaque renvoi repart du fragment 0 et l'accusé ne dit rien d'un message incomplet. Un tuyau qui garde le début d'une rafale et jette la fin transporte donc toujours les mêmes fragments. Sur un tuyau simulé à tampon de 32 Kio, 60 000 octets : 0 message sur 1 en 120 s, à 1, 5 et 20 Mb/s, avec 325 à 1 230 fois sa taille offerte. Avec le tampon de 128 Kio de str0m : 5 messages de 60 000 octets à 300 kb/s, 2 sur 5 en 120 s ; 5 de 32 000 à 200 kb/s, 4 sur 5. Comme la file est ordonnée, tous les événements suivants restent derrière. send rend Ok, le lien reste vivant, rien ne remonte au jeu. L'état a le même chemin."
-preuve = "Sondes s6_a_message_bigger_than_the_pipe_still_arrives, s6c et s6d : échec sur les sources intactes. La seule rotation du fragment de départ à chaque passe (copie isolée) donne 1 sur 1 en moins d'une seconde aux trois débits, 5 sur 5 en 19,5 s à 300 kb/s, 5 sur 5 en 12,3 s pour 5 x 32 000 à 200 kb/s, et 500 cas verts de chaos à rafale bornée ; les suites de salon-core restent vertes. La rotation ne suffit pas à tout : à 100 kb/s, 5 x 60 000 reste à 4 sur 5 en 120 s."
-verifie = "salon-core sur un tuyau simulé avec débit et tampon qui jette l'excédent, à message de 60 000 octets ; lu dans le code : 128 Kio par association dans str0m 0.24.1, write qui rend false, résultat ignoré par rtc.rs."
-suppose = "Que la pile SCTP réelle se comporte comme ce tuyau : pas rejoué avec str0m ni sur Wi-Fi. Aux limites par défaut, il faut environ 300 kb/s par téléphone et des messages de 32 Ko et plus ; je n'ai vu aucun jeu en envoyer sur DataChannel, sans mesurer leurs tailles. Un max_down au-dessus de 128 Kio rendrait le blocage permanent à tout débit, par déduction de la lecture de str0m."
+preuve = "Sondes s6_a_message_bigger_than_the_pipe_still_arrives, s6c et s6d : échec sur les sources intactes. La seule rotation du fragment de départ à chaque passe (copie isolée) donne 1 sur 1 en moins d'une seconde aux trois débits, 5 sur 5 en 19,5 s à 300 kb/s, 5 sur 5 en 12,3 s pour 5 x 32 000 à 200 kb/s, et 500 cas verts de chaos à rafale bornée ; les suites de salon-core restent vertes. La rotation ne suffit pas à tout : à 100 kb/s, 5 x 60 000 reste à 4 sur 5 en 120 s. Fermé. Accusés par fragment, avec le découpage qu'ils nomment : à 1 Mb/s et 32 Kio, 60 000 octets passent de 0 message en 120 s à 941 kb/s utiles ; 5 x 60 000 à 300 kb/s et 128 Kio, de 2 sur 5 à 5 sur 5 en 8,6 s, 280 kb/s. Il a fallu la fenêtre de T3 pour 100 kb/s : 5 sur 5 en 32,3 s, 74 kb/s. Les renvois se mettaient sinon en file derrière leurs originaux. Le chaos a trouvé un bug du premier correctif : un accusé de l'ancien découpage arrêtait les fragments du nouveau."
+verifie = "salon-core sur un tuyau simulé avec débit et tampon qui jette l'excédent, à message de 60 000 octets ; lu dans le code : 128 Kio par association dans str0m 0.24.1, write qui rend false, résultat ignoré par rtc.rs. Sur le tuyau simulé de Net, aux débits et tampons du test, et dans 5 000 cas de chaos à tuyau étroit."
+suppose = "Que la pile SCTP réelle se comporte comme ce tuyau, qui garde le début d'une rafale et jette la fin : pas rejoué avec str0m, ni sur Wi-Fi. Que le Wi-Fi perde sans réordonner beaucoup : trois signalements suffisent sur le banc, jamais mesurés en vrai. Le retour de write de str0m reste ignoré. Le banc ne simule pas le contrôle de congestion de SCTP lui-même."
 
 [[trou]]
 id = "T2"
@@ -964,9 +993,9 @@ lieux = [
   "salon/crates/core/src/stream.rs:1",
 ]
 cas = "InEvents ne lit que le numéro attendu, et l'expéditeur n'apprend le trou qu'à sa minuterie. Sur un tuyau de 2 Mb/s à 5 % de perte, 100 événements de 2 000 octets prennent 12,6 s au lieu de 0,8, pour 12 fois leur taille. Sur le banc, 200 événements de 900 octets prennent 10,3 s sans aucune perte, à cause d'une gigue de 5 ms."
-preuve = "Sondes s7 et s6_table. Un tampon de 64 numéros au récepteur (copie isolée) donne 0,27 s sans perte, 0,57 s à 10 % de perte au lieu de 11,9, et 2,3 s au lieu de 12,6 sur le tuyau. La suite reste verte sauf a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage, qui écrit le comportement actuel : ce test changerait avec le correctif."
-verifie = "salon-core sur le banc et sur le tuyau simulé, moyenne de 5 graines pour s7."
-suppose = "L'effet sur un vrai jeu : de petits événements tiennent à vingt par paquet, donc un seul paquet perdu en emporte peu. La gigue uniforme du banc sur une rafale est plus dure qu'un vrai Wi-Fi."
+preuve = "Sondes s7 et s6_table. Un tampon de 64 numéros au récepteur (copie isolée) donne 0,27 s sans perte, 0,57 s à 10 % de perte au lieu de 11,9, et 2,3 s au lieu de 12,6 sur le tuyau. La suite reste verte sauf a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage, qui écrit le comportement actuel : ce test changerait avec le correctif. Fermé. 64 numéros gardés au récepteur, 1 024 fragments au plus, et un renvoi après trois accusés : 200 événements de 900 octets passent de 10,33 s à 0,05 s sans perte, de 11,91 s à 0,35 s à 10 % de perte. Le test a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage écrivait l'ancien comportement : il devient a_gap_waits_for_its_turn_and_a_repeat_delivers_nothing."
+verifie = "salon-core sur le banc et sur le tuyau simulé, moyenne de 5 graines pour s7. Moyenne de 5 graines sur le banc."
+suppose = "L'effet sur un vrai jeu : de petits événements tiennent à vingt par paquet, donc un seul paquet perdu en emporte peu. La gigue uniforme du banc sur une rafale est plus dure qu'un vrai Wi-Fi. Le seuil de trois signalements vient de SCTP et de TCP : à 2 ou 5, le banc donne le même débit à quelques pour cent près, il ne le départage pas."
 
 [[trou]]
 id = "T3"
@@ -979,9 +1008,9 @@ lieux = [
   "salon/crates/core/src/client.rs:490",
 ]
 cas = "BURST ne borne rien : poll relance flush dès que l'outbox est vide, donc toute la file part au même instant. Le renvoi ne recule pas. Sur 5,9 s de silence avant Timing::absent, un état de 60 000 octets à 10 ms d'aller-retour coûte 3 599 paquets, 3,6 Mo, 60 fois sa taille. 20 événements de 8 000 octets à 1 Mb/s coûtent 2,3 fois leur taille, dont 48 % jetés. Le refus de str0m ne remonte pas."
-preuve = "Sondes s6b et s6_a_full_queue. Allonger l'attente du silence en cours, plafonnée à resend_max, dans host.rs seul : de 60 à 6,1 fois la taille, suites vertes. Une fenêtre fixe de 64 Kio en vol : de 2,3 à 1,4 fois, 0 % jeté à 1 Mb/s, suites vertes, mais à 300 kb/s 20 x 8 000 tombe de 20 sur 20 à 12 sur 20 en 120 s : une fenêtre doit suivre les accusés."
-verifie = "Les octets offerts par salon-core sur tuyau simulé et sur coupure."
-suppose = "Ce que cela coûte sur un Wi-Fi partagé par quinze téléphones : pas mesuré. Le réglage d'une fenêtre qui suit les accusés reste à concevoir."
+preuve = "Sondes s6b et s6_a_full_queue. Allonger l'attente du silence en cours, plafonnée à resend_max, dans host.rs seul : de 60 à 6,1 fois la taille, suites vertes. Une fenêtre fixe de 64 Kio en vol : de 2,3 à 1,4 fois, 0 % jeté à 1 Mb/s, suites vertes, mais à 300 kb/s 20 x 8 000 tombe de 20 sur 20 à 12 sur 20 en 120 s : une fenêtre doit suivre les accusés. Fermé. Fenêtre de dix paquets qui suit les accusés, moitié à chaque perte, plancher de deux paquets, plafond de 96 Kio, et attente doublée à chaque minuterie expirée : sur 5,9 s de silence, 60 000 octets passent de 60,3 à 0,8 fois leur taille ; 20 x 8 000 à 1 Mb/s, de 2,3 à 1,03 fois, 0 % jeté. Le prix sur un lien rapide : 1 x 60 000 passe de 10 à 30 ms sur le banc, 5 x 60 000 de 10 à 60 ms."
+verifie = "Les octets offerts par salon-core sur tuyau simulé et sur coupure. Les octets offerts sur tuyau simulé et sur coupure, avant et après."
+suppose = "Ce que cela coûte sur un Wi-Fi partagé par quinze téléphones : pas mesuré. Le plafond de 96 Kio vient de la lecture de str0m, 128 Kio moins les en-têtes : sur le banc, 64 ou 256 Kio donnent les mêmes chiffres, il n'y est jamais atteint. Dix paquets au départ viennent de la RFC 9002 : 4 fait aussi bien sur le banc, 30 fait pire à 100 kb/s. À 50 kb/s, une minuterie plafonnée à resend_max renvoie encore à tort : 2,2 fois la taille."
 
 [[trou]]
 id = "T4"
@@ -993,9 +1022,9 @@ lieux = [
   "salon/crates/host/src/room.rs:79",
 ]
 cas = "Un WebSocket ne perd rien, mais le renvoi à la minuterie y tourne quand même. Sur un lien sans perte de 300 kb/s, un état de 60 000 octets toutes les 2 s fait monter la file à 1 805 Kio, soit 49 s de retard : 15 états vus sur 30."
-preuve = "Sonde s8 : même lien, sans renvoi à la minuterie sur un lien en flux (copie isolée) : 1,0 fois la taille, 1,6 s de file, 30 états sur 30, suites vertes."
-verifie = "salon-core sur un tuyau sans perte, à file de 256 paquets de 16 Kio comme OUTBOX."
-suppose = "Le comportement d'un vrai TCP lent. Le correctif éprouvé est trop simple : quand OUTBOX est pleine, un paquet est bien perdu, et il faudra le renvoyer."
+preuve = "Sonde s8 : même lien, sans renvoi à la minuterie sur un lien en flux (copie isolée) : 1,0 fois la taille, 1,6 s de file, 30 états sur 30, suites vertes. Fermé. Pas de minuterie sur un lien en flux : ce que l'hôte jette avant le socket est prouvé perdu par un écho de ce qui est parti après. À 300 kb/s, 60 000 octets toutes les 2 s : de 2,37 à 1,00 fois la taille, de 1 862 à 58 Kio de file, de 16 à 30 états vus sur 30."
+verifie = "salon-core sur un tuyau sans perte, à file de 256 paquets de 16 Kio comme OUTBOX. Le flux simulé garde l'ordre ; 20 % de paquets y sont jetés dans le test de reprise."
+suppose = "Le comportement d'un vrai TCP lent. Qu'une page ou un jeu ne déclare un paquet de plus de 1 100 octets que sur un flux : Caps n'a pas de champ pour le dire, et salon le déduit de la taille, ce qui n'a pas changé l'API. Une perte en fin de flux attend le prochain écho, soit jusqu'à deux battements."
 
 [[trou]]
 id = "T5"
@@ -1006,9 +1035,9 @@ lieux = [
   "salon/crates/core/src/stream.rs:527",
 ]
 cas = "set efface ce qui a été envoyé, et le récepteur jette l'assemblage du numéro précédent. Tout fragment perdu tue l'état s'il est remplacé avant son renvoi. Pour un état montré toutes les 100 ms pendant 30 s : 30 000 octets à 10 % de perte, 10 sur 300 ; 60 000 octets, 0 sur 300. La documentation promet qu'il est renvoyé jusqu'à son arrivée."
-preuve = "Sondes s3 et s3_a_big_state_refreshed_often_still_arrives. Laisser finir un état de plusieurs fragments déjà en vol et garder le plus récent en attente (copie isolée) : 193 sur 300 et 165 sur 300, suites vertes."
-verifie = "salon-core sur faux réseau."
-suppose = "Aucun jeu lu n'envoie de gros état fréquent sur DataChannel : Sidequest envoie à chaque pas vers une TV locale, en WebSocket, et les téléphones ne reçoivent qu'un changement. Le seuil suit l'aller-retour : il descend quand le renvoi s'allonge."
+preuve = "Sondes s3 et s3_a_big_state_refreshed_often_still_arrives. Laisser finir un état de plusieurs fragments déjà en vol et garder le plus récent en attente (copie isolée) : 193 sur 300 et 165 sur 300, suites vertes. Fermé. Un état de plusieurs fragments déjà parti finit, et le dernier montré le remplace : 129 sur 300 à 30 000 octets, 111 sur 300 à 60 000, à 10 % de perte."
+verifie = "salon-core sur faux réseau. Faux réseau, une graine."
+suppose = "Aucun jeu lu n'envoie de gros état fréquent sur DataChannel : Sidequest envoie à chaque pas vers une TV locale, en WebSocket, et les téléphones ne reçoivent qu'un changement. Le comportement vu d'un jeu change : une page peut afficher un état de plus avant le dernier, ce que dit CHANGELOG.md."
 
 [[trou]]
 id = "T6"
@@ -1018,8 +1047,8 @@ lieux = [
   "salon/crates/core/src/client.rs:367",
 ]
 cas = "Client::received écrit la phase de tout paquet lu, même plus vieux que le dernier. Une réponse donnée après la vue de la phase n part avec la phase n-1, et le jeu la refuse (E5), jusqu'au paquet suivant, 250 ms au plus. Sur 1 000 réponses : 0 avec 2 % de doublons et 30 ms de gigue ; de 4 à 32 avec 5 à 20 % de perte, 10 % de doublons et 40 à 100 ms de gigue."
-preuve = "Sondes s1 et s1b. Comparer packet.sent au plus récent déjà lu avant d'écrire la phase (copie isolée) : 0 sur 1 000 dans tous les cas, suites vertes."
-verifie = "salon-core avec paquets forgés et sur faux réseau, de bout en bout jusqu'à la phase reçue par l'hôte."
+preuve = "Sondes s1 et s1b. Comparer packet.sent au plus récent déjà lu avant d'écrire la phase (copie isolée) : 0 sur 1 000 dans tous les cas, suites vertes. Fermé. Seul le paquet le plus récent d'une exécution de l'hôte écrit la phase ; deux paquets de la même milliseconde gardent l'ordre de lecture. L'hôte n'a pas changé : E5 reste à son jugement."
+verifie = "salon-core avec paquets forgés et sur faux réseau, de bout en bout jusqu'à la phase reçue par l'hôte. Paquets forgés, y compris à travers un redémarrage de l'hôte."
 suppose = "La fréquence réelle du réordonnancement sur Wi-Fi. Un joueur qui répond en moins de 250 ms après un changement de phase est surtout le cas d'un buzzer."
 
 [[trou]]
@@ -1031,9 +1060,9 @@ lieux = [
   "salon/crates/core/tests/properties.rs:200",
 ]
 cas = "Faults connaît la perte, le doublon et la gigue. Le chaos de properties.rs reste sur Caps::DATAGRAM, à 3 000 octets au plus. Il est vert alors que T1 bloque un message pour toujours."
-preuve = "Chaos élargi : messages de 60 Ko, alternance WebSocket et WebRTC, 40 % de doublons, 200 ms de gigue, 3 000 cas verts : il ne voit rien non plus. La seule limite de 32 000 octets par pas dans Net::schedule le fait échouer au premier cas, réduit à un seul événement de 31 260 octets. Avec la rotation de T1, 500 cas verts."
-verifie = "Le banc sur une copie, avec et sans cette limite ; PROPTEST_CASES=3000 sur les deux chaos existants, verts."
-suppose = "Quelle rafale et quel débit valent un vrai Wi-Fi : la limite de 32 000 octets est choisie pour la démonstration."
+preuve = "Chaos élargi : messages de 60 Ko, alternance WebSocket et WebRTC, 40 % de doublons, 200 ms de gigue, 3 000 cas verts : il ne voit rien non plus. La seule limite de 32 000 octets par pas dans Net::schedule le fait échouer au premier cas, réduit à un seul événement de 31 260 octets. Avec la rotation de T1, 500 cas verts. Fermé. Net a Narrow, un débit et un tampon par sens et par lien, un flux garde son ordre, et le chaos envoie 60 000 octets en événement et en état. Avant les correctifs, T1, T3 et T4 y étaient rouges."
+verifie = "Le banc sur une copie, avec et sans cette limite ; PROPTEST_CASES=3000 sur les deux chaos existants, verts. 5 000 cas du chaos à tuyau étroit, verts après les correctifs."
+suppose = "Quels débit et tampon valent un vrai Wi-Fi : les quatre tuyaux du chaos sont choisis sous 60 000 octets par seconde, avec le tampon de str0m ou plus petit. Le banc n'a ni pertes en rafale, ni partage entre téléphones."
 
 [[trou]]
 id = "T8"
@@ -1045,9 +1074,9 @@ lieux = [
   "salon/crates/core/src/host.rs:795",
 ]
 cas = "Rien à l'envoi ne compare la taille à MAX_FRAGMENTS. Avec max_down à 2 Mio, send de 1,1 Mo rend Ok ; chaque fragment devient garbage sans faire avancer le numéro. L'événement suivant n'arrive jamais, sans erreur : 0 reçu en 5 s."
-preuve = "Sonde s4. Refuser TooBig au-delà de 1 024 fragments de datagramme (copie isolée) : le suivant arrive, suites vertes."
-verifie = "salon-core sur faux réseau, avec des limites relevées."
-suppose = "Aucun jeu ne relève max_down aujourd'hui. Aux limites par défaut, le message le plus gros tient en 432 fragments, sur le plus petit paquet."
+preuve = "Sonde s4. Refuser TooBig au-delà de 1 024 fragments de datagramme (copie isolée) : le suivant arrive, suites vertes. Fermé. max_up et max_down sont ramenés à 962 560 octets quand salon les reçoit, 1 024 fragments de Caps::DATAGRAM : send rend TooBig."
+verifie = "salon-core sur faux réseau, avec des limites relevées. Test à limites relevées, des deux côtés."
+suppose = "Aucun jeu ne relève max_down aujourd'hui. Un lien à paquets plus petits que Caps::DATAGRAM garderait le blocage : aucune coquille n'en ouvre."
 
 [[trou]]
 id = "T9"
@@ -1059,9 +1088,9 @@ lieux = [
   "salon/crates/web/src/lib.rs:364",
 ]
 cas = "salon-web fixe Limits::default, alors que Options::limits est public côté hôte. Avec max_down à 256 Kio, un événement de 100 000 octets rend Ok, puis la page le saute et l'accuse : perdu en silence, contre la promesse des files. Un état de même taille repart sans fin : 3 030 paquets et 3 Mo en 3 s, 0 état affiché."
-preuve = "Sondes s5 et s5b. Mêmes limites des deux côtés, sans rien changer d'autre : l'événement arrive, et l'état passe en 112 paquets."
-verifie = "salon-core avec deux configurations ; le code de salon-web lu."
-suppose = "Aucun jeu ne relève ces limites aujourd'hui. Reste à trancher : annoncer les limites dans Welcome, ou ne pas les rendre réglables d'un seul côté."
+preuve = "Sondes s5 et s5b. Mêmes limites des deux côtés, sans rien changer d'autre : l'événement arrive, et l'état passe en 112 paquets. Fermé. Le Welcome porte max_up et max_down, et un état trop gros est sauté comme un événement."
+verifie = "salon-core avec deux configurations ; le code de salon-web lu. Test à limites différentes, sans rien changer au ClientConfig de la page."
+suppose = "Avant son premier Welcome, une page applique encore ses propres limites : un événement accepté alors par une page plus large que l'hôte serait compté garbage et sauté. Aucun jeu ne baisse ces limites."
 
 [[trou]]
 id = "T10"
@@ -1072,9 +1101,9 @@ lieux = [
   "salon/crates/core/src/client.rs:517",
 ]
 cas = "Les premiers Bye portent les fragments en attente, et l'hôte ferme le lien sans lire le reste du paquet. send rend Ok, quit suit, et l'événement n'arrive pas."
-preuve = "Sonde s2. Lire le paquet avant de fermer, une ligne dans Host::received (copie isolée) : l'événement arrive, suites vertes."
-verifie = "salon-core sur faux réseau sans faute."
-suppose = "Aucune page de jeu lue n'appelle quit : seuls les robots de Sidequest et ses tests. Ce qui est en vol et perdu au moment de quit reste perdu, même corrigé."
+preuve = "Sonde s2. Lire le paquet avant de fermer, une ligne dans Host::received (copie isolée) : l'événement arrive, suites vertes. Fermé. Le paquet est lu avant de fermer."
+verifie = "salon-core sur faux réseau sans faute. Faux réseau sans faute."
+suppose = "Aucune page de jeu lue n'appelle quit : seuls les robots de Sidequest et ses tests. Ce qui est en vol et perdu au moment de quit reste perdu, et ce qui ne tient pas dans les premiers Bye aussi."
 
 [[trou]]
 id = "T11"
@@ -1084,9 +1113,9 @@ lieux = [
   "salon/crates/core/src/stream.rs:143",
 ]
 cas = "max_pending vaut 256 messages. Vers un seul appareil muet, 256 événements de 60 000 octets sont acceptés : 16 Mio retenus, 384 Mio pour 24 appareils."
-preuve = "Sonde s10. Plafonner à 1 Mio en plus du nombre (copie isolée) : Full arrive, suites vertes."
-verifie = "La mémoire retenue, comptée par l'allocateur."
-suppose = "Aucun jeu n'envoie de tels événements. Le bon plafond reste à choisir."
+preuve = "Sonde s10. Plafonner à 1 Mio en plus du nombre (copie isolée) : Full arrive, suites vertes. Fermé. Full au-delà de 1 Mio, soit max_pending par défaut fois max_up par défaut : 17 messages de 60 000 octets ; un message seul passe toujours."
+verifie = "La mémoire retenue, comptée par l'allocateur. Compté par le test, en messages acceptés."
+suppose = "Aucun jeu n'envoie de tels événements. Le plafond tient une constante, pas un champ de Limits : l'ajouter aurait cassé qui construit Limits sans ..Default."
 
 [[trou]]
 id = "T12"
@@ -1096,9 +1125,9 @@ lieux = [
   "salon/crates/core/src/stream.rs:631",
 ]
 cas = "Timing est public et non validé. Avec resend_min au-dessus de resend_max, clamp panique à la première mesure d'aller-retour, sur le fil de la salle."
-preuve = "Sonde s12. Remplacer clamp par max puis min (copie isolée) : plus de panique, suites vertes."
-verifie = "La panique à stream.rs:631, sur faux réseau."
-suppose = "Une erreur de configuration d'un jeu, qu'un test verrait aussitôt. Valider Timing et Limits à la création servirait aussi T8."
+preuve = "Sonde s12. Remplacer clamp par max puis min (copie isolée) : plus de panique, suites vertes. Fermé. resend_max est relevé à resend_min quand salon reçoit Timing, des deux côtés."
+verifie = "La panique à stream.rs:631, sur faux réseau. La panique disparaît, sur faux réseau."
+suppose = "Une erreur de configuration d'un jeu, qu'un test verrait aussitôt."
 
 [[trou]]
 id = "T13"
@@ -1108,9 +1137,9 @@ lieux = [
   "salon/crates/core/src/stream.rs:191",
 ]
 cas = "due_at construit un Vec par événement : 256 allocations et 6 144 octets à chaque appel avec une file pleine, par appareil et par tour de boucle."
-preuve = "Sonde s14. Le minimum de chaque événement, sans Vec (copie isolée) : le seuil de la sonde passe, suites vertes."
-verifie = "Les allocations, comptées par l'allocateur ; 50 µs par appel en debug."
-suppose = "Le coût sur la salle réelle : borné à 256 par appareil, jamais observé."
+preuve = "Sonde s14. Le minimum de chaque événement, sans Vec (copie isolée) : le seuil de la sonde passe, suites vertes. Fermé pour l'allocation : 0 octet par appel, 2 048 sur le code d'avant pour 256 événements de 4 000 octets, 6 144 pour des événements de plusieurs fragments. Le parcours reste, borné par 1 Mio d'attente."
+verifie = "Les allocations, comptées par l'allocateur ; 50 µs par appel en debug. Compté par l'allocateur."
+suppose = "Le coût sur la salle réelle : borné à 64 numéros par appareil, jamais observé."
 
 [saturation]
 sources = ["yojimbo", "neqo", "geckos"]

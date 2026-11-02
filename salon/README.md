@@ -93,7 +93,8 @@ Une panique ne se rattrape pas ici : un état à moitié modifié ne vaut pas un
 
 ### Les limites
 
-- **Ce qui attend :** chaque file a sa borne (`Limits`), et l'atteindre rend une erreur à l'appelant (`SendError::Full`).
+- **Ce qui attend :** chaque file a sa borne (`Limits`), et l'atteindre rend une erreur à l'appelant (`SendError::Full`). Les événements d'un appareil tiennent aussi dans 1 Mio, sauf s'il n'y en a qu'un.
+- **Un message :** au plus 962 560 octets, soit 1 024 fragments d'un lien `Caps::DATAGRAM`. Au-delà, `Limits::max_up` et `max_down` sont ramenés à cette valeur quand salon les reçoit, et `send` rend `TooBig`. Ces deux limites sont celles de l'hôte : le `Welcome` les donne à la page, quelles que soient celles de son `ClientConfig`.
 - **Les connexions :** au plus `max(2 × max_devices + 64, 128)`, soit 128 par défaut, dont 32 gardées pour cet ordinateur. Chacune prend un descripteur de fichier, et un WebSocket deux fils. La suivante est fermée sans réponse. Ces 128 tiennent dans les 256 descripteurs qu'un terminal de macOS donne par défaut.
 - **Les identités : aucun plafond.** `Limits::max_devices` borne les appareils connectés à la fois, pas ceux dont salon se souvient : chaque jeton neuf accepté ajoute une identité, gardée jusqu'à `host.forget` et d'une soirée à l'autre dans `salon.json`. Une page qui se connecte, se ferme et recommence avec un autre jeton la fait grandir au rythme de ses connexions. Une identité prend environ 90 octets dans `salon.json`, réécrit en entier sur le fil de la salle à chaque identité neuve : mesuré à 1,2 ms pour 10 000 identités et 12 ms pour 100 000, sur un Mac avec SSD. Refuser au-delà d'un débit laisserait une rafale de jetons fermer la salle aux vrais joueurs (`ghosts_do_not_fill_the_room`, E3).
 

@@ -142,6 +142,13 @@
 //!   takes room for the fragments that came, and a packet with more parts
 //!   than a sender can fit is garbage. Without the token, nobody takes
 //!   another's place; without the key, nobody becomes the TV (E4).
+//! - **A narrow link is only slow.** A message bigger than what a link passes
+//!   between two resends arrives like any other, and nothing behind it waits
+//!   for ever: an acknowledgement names the fragments that came and what
+//!   waits past a hole, and a resend carries the rest. What leaves follows
+//!   what comes back, and a link that stops answering is asked less and less
+//!   often. These hold on the simulated pipes of the tests: no constant here
+//!   has been tried on a real Wi-Fi, or against a real SCTP stack.
 //! - **Every queue has a limit** ([`Limits`]), and reaching it is an error
 //!   returned to the caller ([`SendError::Full`]), never a silent drop. What
 //!   has no limit is the number of identities remembered: each new token adds
@@ -162,7 +169,12 @@
 //! measure the round trip ([`DeviceInfo::rtt`], [`Client::host_time`]).
 //! Events are numbered per device and resent from the oldest unacknowledged
 //! until acknowledged, like Quake 3's reliable commands; messages bigger
-//! than a packet are cut to fit the link ([`Caps`]).
+//! than a packet are cut to fit the link ([`Caps`]). A receiver keeps what
+//! arrives past a hole, within 64 numbers, and an acknowledgement says what it
+//! has: three that pass over a fragment send it again without its timer. A
+//! WebSocket has no timer at all: it keeps its order, so an echo of something
+//! that left later proves a packet was dropped before it. The limits of the
+//! room are the host's: each welcome says them.
 //!
 //! The transports, in the shells:
 //!
