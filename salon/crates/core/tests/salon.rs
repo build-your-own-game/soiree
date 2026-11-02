@@ -1992,3 +1992,20 @@ fn a_device_takes_the_limits_of_its_host() {
         Err(ClientSendError::TooBig)
     );
 }
+
+/// T10. A goodbye may carry the last event of the page: it is read before the
+/// link closes.
+#[test]
+fn an_event_sent_just_before_quitting_arrives() {
+    let mut net = Net::new(1, Faults::default());
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.phones[phone].client.send(&Up::Answer(7)).unwrap();
+    net.phones[phone].client.quit();
+    net.run(2_000);
+    assert_eq!(net.events_from(device), vec![Up::Answer(7)]);
+    assert_eq!(
+        net.count(|event| matches!(event, DeviceEvent::Left { why: Why::Quit, .. })),
+        1
+    );
+}

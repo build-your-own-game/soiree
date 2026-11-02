@@ -379,6 +379,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         match packet.control.clone() {
             Some(Control::Hello(hello)) => self.hello(now, link, &hello),
             Some(Control::Bye) => {
+                // What it carries was sent before it.
+                self.data(now, link, packet);
                 self.drop_link(link, Why::Quit);
                 return;
             }
