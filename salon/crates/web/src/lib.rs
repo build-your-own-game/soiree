@@ -28,6 +28,7 @@ pub mod journal;
 mod recovery;
 mod rtc_memory;
 pub mod ui;
+mod wake;
 pub use recovery::{install_panic_hook, install_tv_diagnostics};
 
 use std::cell::{Cell, RefCell};
@@ -390,37 +391,24 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         let Some(window) = web_sys::window() else {
             return;
         };
+        let document = window.document();
         // Without these, the tick still wakes the client, only later.
-        let weak = Rc::downgrade(&self.shared);
-        let _: Result<(), JsValue> =
-            self.shared
-                .wake
-                .listen::<web_sys::Event>(&window, "online", move |_| {
+        for signal in wake::SIGNALS {
+            let weak = Rc::downgrade(&self.shared);
+            let handler = move |_: web_sys::Event| {
+                if signal.news == wake::News::NetworkBack {
                     // First: the connection made at once may try WebRTC.
                     forget_rtc_failures(&weak);
-                    wake(&weak, Client::network_back);
-                });
-        let weak = Rc::downgrade(&self.shared);
-        let _: Result<(), JsValue> =
-            self.shared
-                .wake
-                .listen::<web_sys::Event>(&window, "pageshow", move |_| wake(&weak, Client::wake));
-        if let Some(document) = window.document() {
-            let weak = Rc::downgrade(&self.shared);
-            let _: Result<(), JsValue> = self.shared.wake.listen::<web_sys::Event>(
-                &document,
-                "visibilitychange",
-                move |_| wake(&weak, Client::wake),
-            );
-            // A page that thaws: `visibilitychange` no longer always follows
-            // (Phoenix, Chrome 149).
-            let weak = Rc::downgrade(&self.shared);
-            let _: Result<(), JsValue> =
-                self.shared
-                    .wake
-                    .listen::<web_sys::Event>(&document, "resume", move |_| {
-                        wake(&weak, Client::wake);
-                    });
+                }
+                wake(&weak, signal.news.check());
+            };
+            let target: Option<&web_sys::EventTarget> = match signal.target {
+                wake::Target::Window => Some(&window),
+                wake::Target::Document => document.as_ref().map(AsRef::as_ref),
+            };
+            if let Some(target) = target {
+                let _: Result<(), JsValue> = self.shared.wake.listen(target, signal.event, handler);
+            }
         }
     }
 

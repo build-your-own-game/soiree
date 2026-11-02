@@ -51,7 +51,7 @@ try {
         const add = EventTarget.prototype.addEventListener;
         const remove = EventTarget.prototype.removeEventListener;
         const names = new Set(["soiree-ui:probe", "compositionstart", "compositionend"]);
-        const connectionNames = new Set(["pageshow", "online", "visibilitychange"]);
+        const connectionNames = new Set(["pageshow", "online", "visibilitychange", "resume"]);
         EventTarget.prototype.addEventListener = function (name, ...args) {
           if (names.has(name)) window.uiRegistrations++;
           if (connectionNames.has(name)) window.connectionRegistrations++;
@@ -84,7 +84,31 @@ try {
         const notClosed = closes() - before;
         ui.drop_connection_clone();
         return { opened, keptByClone, notClosed, after: connectionRegistrations - baseline, closed: closes() - before };
-      }), { opened: 3, keptByClone: 3, notClosed: 0, after: 0, closed: 1 });
+      }), { opened: 4, keptByClone: 4, notClosed: 0, after: 0, closed: 1 });
+      // reconnexion-23: a page that thaws may only get `resume`, on `document`.
+      // Dispatched, not a real thaw: `Page.setWebLifecycleState` does nothing
+      // here. This server has no socket, so failures space the retries: past
+      // the fifth, the next one is over a second away, and only a signal
+      // explains a socket opened now.
+      const untilRetriesAreSpaced = () => tab.page.evaluate(async () => {
+        const events = (kind) => __certSocketTrace.events.filter((event) => event.kind === kind).length;
+        const before = events("close-event");
+        ui.connect();
+        while (events("close-event") < before + 5) await new Promise((done) => setTimeout(done, 5));
+      });
+      // In one evaluate: the signal must not wait for a count to finish.
+      const socketsAfter = (signals) => tab.page.evaluate(async (signals) => {
+        const opened = () => __certSocketTrace.events.filter((event) => event.kind === "construct").length;
+        const before = opened();
+        for (const [target, name] of signals) globalThis[target].dispatchEvent(new Event(name));
+        await new Promise((done) => setTimeout(done, 150));
+        return opened() - before;
+      }, signals);
+      const stopConnecting = () => tab.page.evaluate(() => { ui.drop_connection(); ui.drop_connection_clone(); });
+      await untilRetriesAreSpaced();
+      assert.equal(await socketsAfter([["window", "resume"], ["document", "freeze"]]), 0, `${engine}: only \`resume\` on \`document\` wakes salon`);
+      assert.equal(await socketsAfter([["document", "resume"]]), 1, `${engine}: \`resume\` must wake salon at once`);
+      await stopConnecting();
       assert.deepEqual(await tab.page.evaluate(() => {
         for (let i = 0; i < 100; i++) { ui.mount(); ui.unmount(); }
         ui.dispatch(0);
@@ -132,7 +156,7 @@ try {
       await tab.page.waitForTimeout(100);
       assert.equal(await tab.page.evaluate(() => ui.frames()), framesStopped + 1, "owner dropped during frame rescheduled itself");
       assert.deepEqual(tab.errors, []);
-      console.log(`${engine}: reentrant listeners, 100 scopes cleaned, no late timer/frame callback, composition guards passed`);
+      console.log(`${engine}: reentrant listeners, 100 scopes cleaned, no late timer/frame callback, composition guards, resume passed`);
     } finally {
       await tab.context.close();
     }
