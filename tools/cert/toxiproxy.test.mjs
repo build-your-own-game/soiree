@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once, EventEmitter } from "node:events";
 import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
+import { join } from "node:path";
 import { Toxiproxy } from "./toxiproxy.mjs";
 import { FixtureFailure } from "./performance.mjs";
 
@@ -322,4 +324,37 @@ test("a child exit during an HTTP response cannot be a successful controller ope
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test("toxiproxy-server is looked for without a POSIX which", async () => {
+  const folder = mkdtempSync(join(os.tmpdir(), "toxiproxy-path-"));
+  const path = process.env.PATH;
+  try {
+    process.env.PATH = folder;
+    await assert.rejects(Toxiproxy.start(), /toxiproxy-server introuvable/);
+    const fake = join(folder, "toxiproxy-server");
+    writeFileSync(fake, "#!/bin/sh\nexit 0\n");
+    chmodSync(fake, 0o755);
+    await assert.rejects(Toxiproxy.start(), error => {
+      assert.ok(error instanceof FixtureFailure);
+      assert.doesNotMatch(error.message, /introuvable/);
+      return true;
+    });
+  } finally {
+    process.env.PATH = path;
+    rmSync(folder, { recursive: true });
+  }
+});
+
+test("on Windows the harness stops at its first import and says why", () => {
+  const module = new URL("./toxiproxy.mjs", import.meta.url).href;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    Object.defineProperty(process, "platform", { value: "win32" });
+    await import(${JSON.stringify(module)});
+    console.log("imported");
+  `], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^soiree certify n'est pas encore disponible sous Windows/);
+  assert.doesNotMatch(result.stderr, /\n\s+at /, "a reason, not a stack");
+  assert.doesNotMatch(result.stdout, /imported/);
 });

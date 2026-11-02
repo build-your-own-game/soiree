@@ -483,7 +483,8 @@ fn hash_configs(hash: &mut Sha256, dir: &Path, environment: &Environment) -> Res
         .map(PathBuf::from)
         .or_else(|| {
             environment
-                .get(OsStr::new("HOME"))
+                .get(OsStr::new("USERPROFILE"))
+                .or_else(|| environment.get(OsStr::new("HOME")))
                 .map(|home| Path::new(home).join(".cargo"))
         })
         .ok_or("CARGO_HOME et HOME absents : configuration Cargo globale inconnue")?;
@@ -518,19 +519,39 @@ fn hash_configs(hash: &mut Sha256, dir: &Path, environment: &Environment) -> Res
 }
 
 fn environment() -> Environment {
-    std::env::vars_os()
+    kept_variables(std::env::vars_os(), cfg!(windows))
+}
+
+/// Windows spells `Path` as it likes and has `USERPROFILE` for a home: its
+/// variable names are folded here, so that the rest reads one spelling.
+fn kept_variables(
+    variables: impl Iterator<Item = (OsString, OsString)>,
+    windows: bool,
+) -> Environment {
+    variables
+        .map(|(key, value)| {
+            (
+                if windows {
+                    key.to_ascii_uppercase()
+                } else {
+                    key
+                },
+                value,
+            )
+        })
         .filter(|(key, _)| {
             key.to_str().is_some_and(|key| {
-                [
-                    "CARGO_",
-                    "RUSTC_",
-                    "RUSTDOC_",
-                    "RUSTUP_",
-                    "SOIREE_",
-                    "PROPTEST_",
-                ]
-                .iter()
-                .any(|prefix| key.starts_with(prefix))
+                (windows && key == "USERPROFILE")
+                    || [
+                        "CARGO_",
+                        "RUSTC_",
+                        "RUSTDOC_",
+                        "RUSTUP_",
+                        "SOIREE_",
+                        "PROPTEST_",
+                    ]
+                    .iter()
+                    .any(|prefix| key.starts_with(prefix))
                     || [
                         "HOME",
                         "PATH",
@@ -634,7 +655,7 @@ fn hash_node(
     environment: &Environment,
     required: bool,
 ) -> Result<()> {
-    if !required && find_on_path(dir, OsStr::new("node"), environment)?.is_none() {
+    if !required && find_on_path(dir, OsStr::new("node"), environment, cfg!(windows))?.is_none() {
         add(hash, "node", b"absent");
         return Ok(());
     }
@@ -668,7 +689,7 @@ fn executable_path(dir: &Path, program: &OsStr, environment: &Environment) -> Re
         }
         return std::fs::canonicalize(&path).map_err(|e| e.to_string());
     }
-    find_on_path(dir, program, environment)?.ok_or_else(|| {
+    find_on_path(dir, program, environment, cfg!(windows))?.ok_or_else(|| {
         format!(
             "programme introuvable pour l’identité : {}",
             program.to_string_lossy()
@@ -676,21 +697,28 @@ fn executable_path(dir: &Path, program: &OsStr, environment: &Environment) -> Re
     })
 }
 
+/// What `Command` would start for a bare `program`. On Windows it completes
+/// the name with `.exe`, and with no other extension.
 fn find_on_path(
     dir: &Path,
     program: &OsStr,
     environment: &Environment,
+    windows: bool,
 ) -> Result<Option<PathBuf>> {
     let search = environment
         .get(OsStr::new("PATH"))
         .ok_or("PATH absent : exécutables non identifiés")?;
+    let mut name = program.to_owned();
+    if windows && Path::new(program).extension().is_none() {
+        name.push(".exe");
+    }
     for root in std::env::split_paths(search) {
         let root = if root.is_absolute() {
             root
         } else {
             dir.join(root)
         };
-        let candidate = root.join(program);
+        let candidate = root.join(&name);
         if is_executable(&candidate)? {
             return std::fs::canonicalize(candidate)
                 .map(Some)
@@ -1008,6 +1036,58 @@ mod tests {
             digest(&with, true).unwrap(),
             "a Node that is there is hashed the same with or without a harness"
         );
+    }
+    #[test]
+    fn windows_finds_a_program_by_its_exe() {
+        let fixture = Fixture::new();
+        fixture.write("bin/node.exe", "");
+        fixture.write("bin/cargo", "");
+        #[cfg(unix)]
+        for name in ["bin/node.exe", "bin/cargo"] {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::Permissions::from_mode(0o755);
+            std::fs::set_permissions(fixture.0.join(name), mode).unwrap();
+        }
+        let environment =
+            Environment::from([("PATH".into(), fixture.0.join("bin").into_os_string())]);
+        let find = |program: &str, windows: bool| {
+            find_on_path(&fixture.0, OsStr::new(program), &environment, windows).unwrap()
+        };
+        assert_eq!(find("node", true), Some(fixture.0.join("bin/node.exe")));
+        assert_eq!(find("node.exe", true), Some(fixture.0.join("bin/node.exe")));
+        assert_eq!(find("node", false), None);
+        assert_eq!(find("cargo", false), Some(fixture.0.join("bin/cargo")));
+        assert_eq!(find("cargo", true), None, "Command would not start it");
+    }
+    #[test]
+    fn windows_variable_names_are_folded_and_its_home_is_kept() {
+        let variables = || {
+            [("Path", "bin"), ("UserProfile", "profile"), ("Other", "x")]
+                .into_iter()
+                .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+        };
+        let windows = kept_variables(variables(), true);
+        assert_eq!(windows.get(OsStr::new("PATH")), Some(&"bin".into()));
+        assert_eq!(
+            windows.get(OsStr::new("USERPROFILE")),
+            Some(&"profile".into())
+        );
+        assert_eq!(windows.len(), 2);
+        assert!(kept_variables(variables(), false).is_empty());
+    }
+    #[test]
+    fn the_windows_home_holds_the_global_cargo_config() {
+        let fixture = Fixture::new();
+        let environment =
+            Environment::from([("USERPROFILE".into(), fixture.0.clone().into_os_string())]);
+        let digest = || {
+            let mut hash = Sha256::new();
+            hash_configs(&mut hash, &fixture.0, &environment).unwrap();
+            hex(&hash.finalize())
+        };
+        let before = digest();
+        fixture.write(".cargo/config.toml", "[net]\noffline=true\n");
+        assert_ne!(before, digest());
     }
     #[test]
     fn ancestor_and_global_cargo_configs_are_inputs() {

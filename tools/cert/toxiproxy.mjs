@@ -21,9 +21,17 @@
 // The harness starts its own toxiproxy-server on a free port and stops it at
 // the end; install it with `brew install toxiproxy`.
 
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import { FixtureFailure } from "./performance.mjs";
+
+// The harness is POSIX: lsof in cert.mjs, ps and process groups in processes.mjs.
+// cert.mjs imports this file, and `soiree certify` shows what its preparation
+// prints: the reason reaches a Windows user before anything else fails.
+if (process.platform === "win32") {
+  console.error("soiree certify n'est pas encore disponible sous Windows : le harnais dépend de lsof, de ps et des groupes de processus POSIX.");
+  process.exit(1);
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -110,9 +118,7 @@ async function freePort() {
 
 export class Toxiproxy {
   static async start() {
-    try {
-      execFileSync("which", ["toxiproxy-server"]);
-    } catch {
+    if (spawnSync("toxiproxy-server", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") {
       throw new FixtureFailure("toxiproxy-server introuvable : brew install toxiproxy");
     }
     let toxiproxy;
