@@ -59,6 +59,10 @@ pub struct Phone {
     /// Packets to and from this phone vanish, and closes are not seen: a
     /// locked iPhone, or Wi-Fi that died without a word.
     pub frozen: bool,
+    /// The page runs nothing at all, like a tab the browser froze: no timer,
+    /// no call. What reaches it stays in its socket until it thaws, closes
+    /// included.
+    pub asleep: bool,
     pub events: Vec<Down>,
     pub states: Vec<Down>,
     pub statuses: Vec<Status>,
@@ -68,6 +72,17 @@ pub struct Phone {
     /// what follows it on that link waits behind it, as in a TCP stream.
     pub held: u64,
     stuck: Option<(LinkId, Ms)>,
+    /// Something reached it since its last poll.
+    stirred: bool,
+}
+
+/// What can happen to the host's process, past its own code.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Process {
+    /// It stands still: what reaches it waits in its sockets.
+    pub asleep: bool,
+    /// There is none: a new transport is refused at once.
+    pub gone: bool,
 }
 
 pub struct Net {
@@ -76,6 +91,12 @@ pub struct Net {
     pub phones: Vec<Phone>,
     pub happened: Vec<(Ms, DeviceEvent<Up>)>,
     pub faults: Faults,
+    /// Polls only on news and at `next_deadline`, as the shells do, instead
+    /// of at every step: a deadline that comes too late then shows.
+    pub lazy: bool,
+    /// Something reached the host since its last poll.
+    stirred: bool,
+    pub process: Process,
     to_host: Vec<(Ms, LinkId, Vec<u8>)>,
     to_phone: Vec<(Ms, LinkId, Vec<u8>)>,
     closed_links: BTreeSet<LinkId>,
@@ -135,6 +156,9 @@ impl Net {
             phones: Vec::new(),
             happened: Vec::new(),
             faults,
+            lazy: false,
+            stirred: true,
+            process: Process::default(),
             to_host: Vec::new(),
             to_phone: Vec::new(),
             closed_links: BTreeSet::new(),
@@ -171,6 +195,7 @@ impl Net {
             link: None,
             caps,
             frozen: false,
+            asleep: false,
             events: Vec::new(),
             states: Vec::new(),
             statuses: Vec::new(),
@@ -178,6 +203,7 @@ impl Net {
             connects: 0,
             held: 0,
             stuck: None,
+            stirred: true,
         });
         self.phones.len() - 1
     }
@@ -230,6 +256,19 @@ impl Net {
             .position(|phone| phone.link == Some(link))
     }
 
+    /// A caller reached into the host or a client: everybody that runs looks
+    /// at once, as a shell pumps within each call.
+    pub fn stir(&mut self) {
+        for index in 0..self.phones.len() {
+            if !self.phones[index].asleep {
+                self.pump_phone(index);
+            }
+        }
+        if !self.process.asleep {
+            self.pump_host();
+        }
+    }
+
     /// Advances `ms` milliseconds, 5 ms at a time.
     pub fn run(&mut self, ms: u64) {
         let end = self.now.plus(ms);
@@ -256,45 +295,69 @@ impl Net {
         let now = self.now;
         // Deliver what is due, in arrival order.
         self.to_host.sort_by_key(|(at, _, _)| *at);
-        let due = self
-            .to_host
-            .iter()
-            .take_while(|(at, _, _)| *at <= now)
-            .count();
+        let due = if self.process.asleep {
+            0
+        } else {
+            self.to_host
+                .iter()
+                .take_while(|(at, _, _)| *at <= now)
+                .count()
+        };
         for (_, link, bytes) in self.to_host.drain(..due).collect::<Vec<_>>() {
             if !self.closed_links.contains(&link) {
                 self.host.received(now, link, &bytes);
+                self.stirred = true;
             }
         }
         self.to_phone.sort_by_key(|(at, _, _)| *at);
-        let due = self
-            .to_phone
-            .iter()
-            .take_while(|(at, _, _)| *at <= now)
-            .count();
-        for (_, link, bytes) in self.to_phone.drain(..due).collect::<Vec<_>>() {
-            if let Some(index) = self.phone_of(link)
+        for (at, link, bytes) in std::mem::take(&mut self.to_phone) {
+            let phone = self.phone_of(link);
+            if at > now || phone.is_some_and(|index| self.phones[index].asleep) {
+                self.to_phone.push((at, link, bytes));
+            } else if let Some(index) = phone
                 && !self.phones[index].frozen
             {
                 self.phones[index].client.received(now, &bytes);
+                self.phones[index].stirred = true;
             }
         }
-        for (_, link) in due_closes(&mut self.closes_to_host, now, &self.to_host) {
-            self.host.closed(now, link);
+        if !self.process.asleep {
+            for (_, link) in due_closes(&mut self.closes_to_host, now, &self.to_host) {
+                self.host.closed(now, link);
+                self.stirred = true;
+            }
         }
-        for (_, link) in due_closes(&mut self.closes_to_phone, now, &self.to_phone) {
+        for (at, link) in due_closes(&mut self.closes_to_phone, now, &self.to_phone) {
             if let Some(index) = self.phone_of(link) {
+                if self.phones[index].asleep {
+                    self.closes_to_phone.push((at, link));
+                    continue;
+                }
                 self.phones[index].link = None;
                 if !self.phones[index].frozen {
                     self.phones[index].client.closed(now);
+                    self.phones[index].stirred = true;
                 }
             }
         }
-        self.pump_host();
+        self.pump_host_if_due();
         for index in 0..self.phones.len() {
-            self.pump_phone(index);
+            let phone = &self.phones[index];
+            let due = phone.client.next_deadline().is_some_and(|at| at <= now);
+            if !phone.asleep && (!self.lazy || phone.stirred || due) {
+                self.phones[index].stirred = false;
+                self.pump_phone(index);
+            }
         }
-        self.pump_host();
+        self.pump_host_if_due();
+    }
+
+    fn pump_host_if_due(&mut self) {
+        let due = self.host.next_deadline().is_some_and(|at| at <= self.now);
+        if !self.process.asleep && (!self.lazy || self.stirred || due) {
+            self.stirred = false;
+            self.pump_host();
+        }
     }
 
     fn behind_data(&self) -> Ms {
@@ -331,6 +394,10 @@ impl Net {
                     self.next_link += 1;
                     let phone = &mut self.phones[index];
                     phone.connects += 1;
+                    if self.process.gone && !phone.frozen {
+                        phone.client.closed(now);
+                        continue;
+                    }
                     if phone.frozen {
                         // No network: the attempt fails after a while.
                         phone.link = Some(link);
@@ -340,6 +407,7 @@ impl Net {
                     let caps = phone.caps;
                     phone.client.opened(now, caps);
                     self.host.opened(now, link, caps);
+                    self.stirred = true;
                 }
                 ClientOutput::Transmit(bytes) => {
                     if let Some(link) = self.phones[index].link
@@ -371,6 +439,8 @@ impl Net {
             self.closed_links.insert(link);
             self.host.closed(self.now, link);
             self.phones[index].client.closed(self.now);
+            self.stirred = true;
+            self.phones[index].stirred = true;
         }
     }
 
@@ -390,6 +460,7 @@ impl Net {
     /// without a word, and the new host knows `known`.
     pub fn restart_host(&mut self, epoch: u32, known: Vec<Known>) {
         self.host = Host::new(self.now, host_config(epoch, known));
+        self.stirred = true;
         self.to_host.clear();
         for phone in &mut self.phones {
             if let Some(link) = phone.link {

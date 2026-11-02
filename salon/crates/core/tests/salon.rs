@@ -699,6 +699,25 @@ fn a_page_that_wakes_up_reconnects_at_once() {
     assert_eq!(device_of(&net, phone), device);
 }
 
+/// A page frozen for less than the host's patience, and told nothing: nothing
+/// of it ran, what came waited in its socket, and the link never died.
+#[test]
+fn a_page_that_thaws_in_silence_keeps_its_link() {
+    let mut net = Net::new(30, Faults::default());
+    let phone = net.add_phone(phone_config(30, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.phones[phone].asleep = true;
+    net.host.send(device, &Down::Note(1)).unwrap();
+    net.run(3_000);
+    assert_eq!(net.phones[phone].events, vec![]);
+    net.phones[phone].asleep = false;
+    net.stir();
+    net.run(1_000);
+    assert_eq!(net.phones[phone].events, vec![Down::Note(1)]);
+    assert_eq!(net.phones[phone].connects, 1);
+    assert_eq!(net.phones[phone].client.status(), Status::Connected);
+}
+
 /// With no host to answer, attempts space out up to 2 s and never stop.
 #[test]
 fn a_phone_without_host_keeps_trying_ever_more_calmly() {

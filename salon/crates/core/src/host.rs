@@ -859,7 +859,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
     /// that shows it again is a stranger, and arrives as a new device, unless
     /// the room is closed ([`Host::close`]). Its number is not given again in
     /// this run; after a restart it can be, since [`Host::known`] no longer
-    /// has it.
+    /// has it. What the phone had not seen acknowledged goes again under its
+    /// new number, so an event can reach the game once under each.
     pub fn forget(&mut self, device: DeviceId) {
         let Some(gone) = self.devices.remove(&device) else {
             return;
