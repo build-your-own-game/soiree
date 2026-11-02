@@ -84,11 +84,13 @@
 //!   refused as well ([`Refusal::Version`]), even if its hello no longer
 //!   reads.
 //! - **One connection per device.** When a second tab or a reconnecting
-//!   phone shows the same token, the newest wins; the old one is told it was
-//!   replaced and does not reconnect on its own, so two tabs never evict each
-//!   other in a loop (C5). A late close of the old connection, or a late
-//!   copy of its hello, does not touch the new one. The game hears nothing:
-//!   the device never left. Tabs of one device do not share their numbers:
+//!   phone shows the same token, the newest link wins, in the order the links
+//!   opened on the host: the other one is told it was replaced and does not
+//!   reconnect on its own, so two tabs never evict each other in a loop (C5).
+//!   A late close of an older link, or a late hello on it, does not touch the
+//!   new one: a phone is never replaced by an attempt it gave up on, or by the
+//!   page it reloaded. The game hears nothing: the device never left. Tabs of
+//!   one device do not share their numbers:
 //!   the host tells them apart, so the tab that plays again ([`Client::resume`])
 //!   is heard, what waited in it goes once, after what the other one sent, and
 //!   what had arrived does not go twice. The host remembers that for the

@@ -803,6 +803,81 @@ fn a_late_hello_on_a_replaced_link_changes_nothing() {
     );
 }
 
+/// C5: a phone tries a link, its hello stays stuck in the socket, the network
+/// comes back and the phone tries another. TCP then hands over the old hello,
+/// before the old close. A device is not replaced by its own abandoned try: no
+/// tab would be left to play.
+#[test]
+fn a_hello_stuck_on_an_abandoned_attempt_does_not_replace_the_link_after_it() {
+    let mut net = Net::new(61, Faults::default());
+    let phone = net.add_phone(phone_config(61, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.cut(phone);
+    net.phones[phone].held = 3_000;
+    assert!(net.run_until(600, |net| net.phones[phone].link.is_some()));
+    net.run(1_600);
+    let now = net.now;
+    net.phones[phone].client.network_back(now);
+    assert!(net.run_until(500, |net| net.phones[phone].client.status()
+        == Status::Connected));
+    assert_eq!(
+        net.phones[phone].connects, 3,
+        "the join, the stuck try, this one"
+    );
+    net.run(30_000);
+    assert_eq!(net.phones[phone].client.status(), Status::Connected);
+    assert_eq!(net.phones[phone].connects, 3);
+    assert!(
+        net.host
+            .device(device)
+            .is_some_and(|info| info.presence == Presence::Present)
+    );
+}
+
+/// The same when the page reloads: the hello of the page that left comes
+/// behind the one of the page that took its place.
+#[test]
+fn a_hello_of_the_page_before_a_reload_does_not_replace_the_new_page() {
+    let mut net = Net::new(62, Faults::default());
+    let old = net.add_phone(phone_config(62, Kind::Phone), Caps::DATAGRAM);
+    net.phones[old].held = 500;
+    net.run(100);
+    assert!(net.phones[old].link.is_some(), "its hello is on its way");
+    net.leave(old);
+    let new = net.add_phone(phone_config(62, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, new);
+    net.run(30_000);
+    assert_eq!(net.phones[new].client.status(), Status::Connected);
+    assert_eq!(net.phones[new].connects, 1);
+}
+
+/// C5: the newest link wins, whichever hello comes first. The tab that loses
+/// is told at once, and offers to play here.
+#[test]
+fn of_two_tabs_the_newest_link_wins_even_when_its_hello_comes_first() {
+    let mut net = Net::new(63, Faults::default());
+    let first = net.add_phone(phone_config(63, Kind::Phone), Caps::DATAGRAM);
+    net.phones[first].held = 300;
+    net.run(100);
+    assert!(net.phones[first].link.is_some(), "its hello is on its way");
+    let second = net.add_phone(phone_config(63, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, second);
+    net.run(1_000);
+    assert_eq!(net.phones[first].client.status(), Status::Replaced);
+    assert_eq!(net.phones[second].client.status(), Status::Connected);
+    assert_eq!(
+        net.count(|event| matches!(event, DeviceEvent::Left { .. })),
+        0
+    );
+    // It can still take the device back, on a link newer than the other's.
+    net.phones[first].client.resume();
+    assert!(net.run_until(2_000, |net| net.phones[first].client.status()
+        == Status::Connected));
+    assert_eq!(device_of(&net, first), device);
+    net.run(1_000);
+    assert_eq!(net.phones[second].client.status(), Status::Replaced);
+}
+
 /// C5, found by chance: two tabs at once on a bad network, with their hellos
 /// repeated and delayed. One of them plays, whatever the order of arrival;
 /// they used to evict each other for good in 7 % of the runs.

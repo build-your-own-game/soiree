@@ -225,6 +225,8 @@ struct Link {
     caps: Caps,
     device: Option<DeviceId>,
     opened: Ms,
+    /// Rank among the links, by opening: two can open at the same `Ms`.
+    rank: u64,
     last_sent: Option<Ms>,
     packets: Bucket,
     garbage: u32,
@@ -242,6 +244,7 @@ pub struct Host<Up, Down> {
     devices: BTreeMap<DeviceId, Device>,
     tokens: BTreeMap<Token, DeviceId>,
     links: BTreeMap<LinkId, Link>,
+    next_rank: u64,
     next_device: u32,
     phase: u32,
     open: bool,
@@ -278,6 +281,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             devices,
             tokens,
             links: BTreeMap::new(),
+            next_rank: 0,
             next_device,
             phase: 0,
             open: true,
@@ -297,10 +301,13 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
     pub fn opened(&mut self, now: Ms, link: LinkId, caps: Caps) {
         let now = self.advance(now);
         let limits = self.config.limits;
+        let rank = self.next_rank;
+        self.next_rank = rank.saturating_add(1);
         self.links.entry(link).or_insert(Link {
             caps,
             device: None,
             opened: now,
+            rank,
             last_sent: None,
             packets: Bucket::new(now, limits.packets_per_s, limits.packets_burst),
             garbage: 0,
@@ -505,6 +512,14 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         if let Some(old) = device.link
             && old != link
         {
+            // The newest link wins, not the hello that came last. One from an
+            // older link may be the device's own: a try it gave up on, or the
+            // page before a reload, handed over late by TCP. Whatever still
+            // listens there is the tab that lost.
+            if self.rank(link) < self.rank(old) {
+                self.replace(link);
+                return;
+            }
             self.replace(old);
         }
         let Some(device) = self.devices.get_mut(&id) else {
@@ -579,6 +594,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
 
     fn refuse(&mut self, link: LinkId, refusal: Refusal) {
         self.final_message(link, &Control::Refused(refusal));
+    }
+
+    fn rank(&self, link: LinkId) -> Option<u64> {
+        self.links.get(&link).map(|link| link.rank)
     }
 
     /// Another link took this device: the old one is told, then closed. The

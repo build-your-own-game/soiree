@@ -64,6 +64,10 @@ pub struct Phone {
     pub statuses: Vec<Status>,
     pub resets: usize,
     pub connects: usize,
+    /// The next packet of this phone that survives comes this much later, and
+    /// what follows it on that link waits behind it, as in a TCP stream.
+    pub held: u64,
+    stuck: Option<(LinkId, Ms)>,
 }
 
 pub struct Net {
@@ -106,6 +110,21 @@ pub fn phone_config(token: u8, kind: Kind) -> ClientConfig {
         timing: Timing::default(),
         limits: Limits::default(),
     }
+}
+
+/// The closes that are due, and leave the list. A close never passes the data
+/// sent on its link before it: TCP hands over what it holds, then the FIN.
+fn due_closes(
+    closes: &mut Vec<(Ms, LinkId)>,
+    now: Ms,
+    in_flight: &[(Ms, LinkId, Vec<u8>)],
+) -> Vec<(Ms, LinkId)> {
+    let blocked = |link: &LinkId| in_flight.iter().any(|(_, sent_on, _)| sent_on == link);
+    let (due, later) = std::mem::take(closes)
+        .into_iter()
+        .partition(|(at, link)| *at <= now && !blocked(link));
+    *closes = later;
+    due
 }
 
 impl Net {
@@ -157,6 +176,8 @@ impl Net {
             statuses: Vec::new(),
             resets: 0,
             connects: 0,
+            held: 0,
+            stuck: None,
         });
         self.phones.len() - 1
     }
@@ -174,13 +195,28 @@ impl Net {
             1
         };
         let held = std::mem::take(&mut self.held);
+        let mut stuck = Ms(0);
+        if toward == Toward::Host
+            && let Some(index) = self.phone_of(link)
+        {
+            let phone = &mut self.phones[index];
+            let held = std::mem::take(&mut phone.held);
+            if held > 0 {
+                phone.stuck = Some((link, self.now.plus(held)));
+            }
+            if let Some((on, until)) = phone.stuck
+                && on == link
+            {
+                stuck = until;
+            }
+        }
         for _ in 0..copies {
             let delay = 1 + if self.faults.jitter > 0 {
                 self.random() % self.faults.jitter
             } else {
                 0
             };
-            let at = self.now.plus(delay + held);
+            let at = self.now.plus(delay + held).max(stuck);
             match toward {
                 Toward::Host => self.to_host.push((at, link, bytes.to_vec())),
                 Toward::Phone => self.to_phone.push((at, link, bytes.to_vec())),
@@ -243,24 +279,10 @@ impl Net {
                 self.phones[index].client.received(now, &bytes);
             }
         }
-        let due: Vec<(Ms, LinkId)> = self
-            .closes_to_host
-            .iter()
-            .filter(|(at, _)| *at <= now)
-            .copied()
-            .collect();
-        self.closes_to_host.retain(|(at, _)| *at > now);
-        for (_, link) in due {
+        for (_, link) in due_closes(&mut self.closes_to_host, now, &self.to_host) {
             self.host.closed(now, link);
         }
-        let due: Vec<(Ms, LinkId)> = self
-            .closes_to_phone
-            .iter()
-            .filter(|(at, _)| *at <= now)
-            .copied()
-            .collect();
-        self.closes_to_phone.retain(|(at, _)| *at > now);
-        for (_, link) in due {
+        for (_, link) in due_closes(&mut self.closes_to_phone, now, &self.to_phone) {
             if let Some(index) = self.phone_of(link) {
                 self.phones[index].link = None;
                 if !self.phones[index].frozen {
@@ -342,13 +364,26 @@ impl Net {
         }
     }
 
-    /// Cuts a phone's transport cleanly: both sides see it close.
+    /// Cuts a phone's transport cleanly: both sides see it close, and what it
+    /// was carrying is lost.
     pub fn cut(&mut self, index: usize) {
         if let Some(link) = self.phones[index].link.take() {
             self.closed_links.insert(link);
             self.host.closed(self.now, link);
             self.phones[index].client.closed(self.now);
         }
+    }
+
+    /// The page goes away and its browser closes the transport: like a
+    /// WebSocket's, the close comes behind what the page already sent, however
+    /// late that is. The host hears of it then.
+    pub fn leave(&mut self, index: usize) {
+        if let Some(link) = self.phones[index].link.take() {
+            let at = self.behind_data();
+            self.closes_to_host.push((at, link));
+            self.phones[index].client.closed(self.now);
+        }
+        self.phones[index].client.quit();
     }
 
     /// Replaces the host by a new run, as after a crash: links are gone
