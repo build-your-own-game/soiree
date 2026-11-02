@@ -13,12 +13,13 @@ use crate::verification::resolve;
 
 /// What an agent reads. `CHANGELOG.md`, `LEARNINGS.md` and archives are
 /// memory: they may name what no longer exists.
-const DOCS: [&str; 18] = [
+const DOCS: [&str; 19] = [
     "AGENTS.md",
     "CERTIFICATION.md",
     "MANIFESTE.md",
     "README.md",
     "REJOINDRE.md",
+    "REPETITION.md",
     "VERIFICATION.md",
     "catalogue.toml",
     "certifications/README.md",

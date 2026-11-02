@@ -77,6 +77,7 @@ Une phrase fausse produit du mauvais code chez tous les agents. Chaque fait a un
 | `CERTIFICATION.md` | les exigences, et le format de `cert.json` |
 | `VERIFICATION.md` | le mécanisme et la portée d'un résultat |
 | `CHANGELOG.md` | ce qui a changé, et comment s'adapter |
+| `REPETITION.md` | la fiche de l'hôte pour la répétition sur vrais appareils : matériel, ordre, ce qu'on note et ce qu'il reste à essayer ; les gestes S1 à S10 restent dans `CERTIFICATION.md` |
 | `README.md`, `REJOINDRE.md` | par où commencer |
 | `AGENTS.md` | comment travailler ici |
 | `LEARNINGS.md` | ce qu'on a appris et d'où ça vient, jamais une consigne |
