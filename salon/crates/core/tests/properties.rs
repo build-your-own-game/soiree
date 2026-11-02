@@ -180,13 +180,18 @@ proptest! {
     }
 }
 
-/// A message that says its number, in one packet or across several: all of
-/// a big one says the same, so that pieces of two messages show.
-fn message(id: u32, big: bool) -> Up {
-    if big {
-        Up::Blob(id.to_le_bytes().repeat(600))
-    } else {
-        Up::Answer(id)
+#[derive(Clone, Copy, Debug)]
+enum Size {
+    OnePacket,
+    SeveralPackets,
+}
+
+/// A message that says its number. All of a big one says the same, so that
+/// pieces of two messages show.
+fn message(id: u32, size: Size) -> Up {
+    match size {
+        Size::OnePacket => Up::Answer(id),
+        Size::SeveralPackets => Up::Blob(id.to_le_bytes().repeat(600)),
     }
 }
 
@@ -233,8 +238,8 @@ impl Seat {
 #[derive(Clone, Debug)]
 enum Trouble {
     /// An event, or a state, that may need several packets.
-    Send(usize, usize, bool),
-    SetState(usize, usize, bool),
+    Send(usize, usize, Size),
+    SetState(usize, usize, Size),
     Notify(usize),
     Show(usize),
     Cut(usize, usize),
@@ -259,9 +264,10 @@ enum Trouble {
 fn trouble() -> impl Strategy<Value = Trouble> {
     let seat = || 0..3usize;
     let page = || 0..4usize;
+    let size = || prop_oneof![Just(Size::OnePacket), Just(Size::SeveralPackets)];
     prop_oneof![
-        5 => (seat(), page(), any::<bool>()).prop_map(|(s, p, big)| Trouble::Send(s, p, big)),
-        3 => (seat(), page(), any::<bool>()).prop_map(|(s, p, big)| Trouble::SetState(s, p, big)),
+        5 => (seat(), page(), size()).prop_map(|(s, p, k)| Trouble::Send(s, p, k)),
+        3 => (seat(), page(), size()).prop_map(|(s, p, k)| Trouble::SetState(s, p, k)),
         2 => seat().prop_map(Trouble::Notify),
         1 => seat().prop_map(Trouble::Show),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Cut(s, p)),
@@ -334,26 +340,26 @@ impl Room {
 
     fn apply(&mut self, trouble: Trouble) {
         match trouble {
-            Trouble::Send(seat, which, big) => {
+            Trouble::Send(seat, which, size) => {
                 let id = self.fresh_id();
                 let page = self.seats[seat].page(which);
                 let phone = page.phone;
                 if self.net.phones[phone]
                     .client
-                    .send(&message(id, big))
+                    .send(&message(id, size))
                     .is_ok()
                 {
                     self.seats[seat].page(which).sent.push(id);
                 }
             }
-            Trouble::SetState(seat, which, big) => {
+            Trouble::SetState(seat, which, size) => {
                 let id = self.fresh_id();
                 let page = self.seats[seat].page(which);
                 page.state = Some(id);
                 let phone = page.phone;
                 self.net.phones[phone]
                     .client
-                    .set_state(&message(id, big))
+                    .set_state(&message(id, size))
                     .unwrap();
             }
             Trouble::Notify(seat) => {
