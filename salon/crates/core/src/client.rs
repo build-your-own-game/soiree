@@ -608,9 +608,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     return Some(self.now);
                 }
                 let resend = self.peer.resend(timing.resend_min, timing.resend_max);
-                let mut next = open
-                    .last_sent
-                    .map_or(self.now, |at| at.plus(timing.heartbeat));
+                let every = if open.welcomed {
+                    timing.heartbeat
+                } else {
+                    resend
+                };
+                let mut next = open.last_sent.map_or(self.now, |at| at.plus(every));
                 if open.welcomed {
                     next = next.min(open.last_heard.plus(timing.absent));
                     let wait = Order::of(open.caps).wait(&self.peer, &self.window, &timing);
@@ -625,7 +628,6 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                         next = next.min(due.max(self.now));
                     }
                 } else {
-                    next = next.min(open.last_sent.map_or(self.now, |at| at.plus(resend)));
                     next = next.min(open.opened.plus(timing.handshake));
                 }
                 Some(next)

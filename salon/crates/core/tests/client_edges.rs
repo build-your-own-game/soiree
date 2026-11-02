@@ -843,3 +843,30 @@ fn a_new_run_of_the_host_sets_the_phase_whatever_its_clock() {
     let phase = stamped.iter().flat_map(|packet| &packet.events).next();
     assert_eq!(phase.map(|part| part.phase), Some(1));
 }
+
+/// A hello waits for its resend, which follows the round trip of the last link,
+/// not for a heartbeat: it does not leave then, and a page would turn on the
+/// spot until it does.
+#[test]
+fn a_hello_is_no_reason_to_wake_up_before_it_goes_again() {
+    let mut phone = joined(Ms(0), Timing::default());
+    let echoed = encode(&Packet {
+        echo: Some(wire::Echo { sent: 0, held: 0 }),
+        ..from_host(1, 300)
+    });
+    phone.received(Ms(300), &echoed);
+    assert_eq!(phone.rtt(), Some(300), "so a resend waits 600 ms");
+    phone.closed(Ms(300));
+    let now = next_attempt(&mut phone, Ms(300)).expect("a planned attempt");
+    drain(&mut phone, now);
+    phone.opened(now, Caps::DATAGRAM);
+    assert_eq!(sent(&drain(&mut phone, now)).len(), 1);
+    let later = now.plus(Timing::default().heartbeat);
+    assert_eq!(sent(&drain(&mut phone, later)).len(), 0);
+    assert!(
+        phone.next_deadline() > Some(later),
+        "{:?}",
+        phone.next_deadline()
+    );
+    assert_eq!(phone.next_deadline(), Some(now.plus(600)));
+}

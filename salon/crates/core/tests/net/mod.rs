@@ -488,6 +488,11 @@ impl Net {
                 Output::Device(event) => self.happened.push((now, event)),
             }
         }
+        // A shell sleeps until the deadline: one that has come when nothing is
+        // left to do turns on the spot, on the room's only thread.
+        if let Some(at) = self.host.next_deadline() {
+            assert!(at > now, "the host would spin: {at:?} at {now:?}");
+        }
     }
 
     fn pump_phone(&mut self, index: usize) {
@@ -535,6 +540,9 @@ impl Net {
                 ClientOutput::Event(event) => self.phones[index].events.push(event),
                 ClientOutput::State(state) => self.phones[index].states.push(state),
             }
+        }
+        if let Some(at) = self.phones[index].client.next_deadline() {
+            assert!(at > now, "a page would spin: {at:?} at {now:?}");
         }
     }
 
