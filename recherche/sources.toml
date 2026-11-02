@@ -62,21 +62,21 @@ etat = "consultee"
 
 [[source]]
 sous_systeme = "transport-webrtc"
-ids = ["algesten/str0m", "geckosio/geckos.io", "livekit/client-sdk-js"]
+ids = ["algesten/str0m", "algesten/dimpl", "webrtc-rs/sctp-proto", "geckosio/geckos.io", "livekit/client-sdk-js", "pion/ice", "pion/webrtc", "paullouisageneau/libdatachannel", "paullouisageneau/node-datachannel", "WebKit/WebKit", "peers/peerjs", "webrtcHacks/adapter"]
 marche = "reel"
-etat = "candidate"
+etat = "consultee"
 
 [[source]]
 sous_systeme = "transport-webrtc"
-ids = ["w3c/webrtc-pc", "https://www.rfc-editor.org/rfc/rfc8445.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt"]
+ids = ["w3c/webrtc-pc", "https://www.rfc-editor.org/rfc/rfc8445.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt", "https://www.rfc-editor.org/rfc/rfc8832.txt", "https://www.rfc-editor.org/rfc/rfc8838.txt", "https://www.rfc-editor.org/rfc/rfc8305.txt", "https://www.rfc-editor.org/rfc/rfc8828.txt"]
 marche = "normes"
-etat = "candidate"
+etat = "consultee"
 
 [[source]]
 sous_systeme = "transport-webrtc"
-ids = ["web-platform-tests/wpt"]
+ids = ["web-platform-tests/wpt", "algesten/str0m", "algesten/dimpl"]
 marche = "bancs"
-etat = "candidate"
+etat = "consultee"
 
 [[source]]
 sous_systeme = "transport-websocket"

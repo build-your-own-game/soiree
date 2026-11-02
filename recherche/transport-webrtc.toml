@@ -1,0 +1,963 @@
+# Fiche de recherche. Processus et format : recherche/README.md.
+
+sous_systeme = "transport-webrtc"
+niveau = 3
+question = "La négociation, le DTLS, ICE, SCTP/DataChannel et le repli sur WebSocket de salon tiennent-ils sur Safari iOS et Chromium réels, sur un Wi-Fi hostile (isolation client, réseaux multiples, IPv6, mDNS, pare-feu, pertes, pair malveillant), sans qu'un joueur reste bloqué plus longtemps que les contrats C1, C2 et E1 à E3 ne l'autorisent, et que savent str0m, dimpl, sctp-proto, geckos.io, livekit, pion, libdatachannel, WebKit, webrtc-pc et les RFC 8445 et 8831 que salon ignore ? Une panique, un repli plus lent que C2 ou une perte évitable la réfutent."
+compare_a = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+
+[[reference]]
+id = "salon"
+ordre = 1
+sorte = "chez-nous"
+depot = "build-your-own-game/soiree"
+commit = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+consulte = [
+  "salon/crates/host/src/rtc.rs, salon/crates/web/src/rtc_memory.rs et salon/crates/crypto/** lus en entier, tests compris",
+  "salon/crates/web/src/lib.rs (connexion, rtc, fall_back, negotiate), salon/crates/host/src/{http,address,admission,room}.rs",
+  "salon/LEARNINGS.md (vivacité, fiabilité, navigateur, négociation RTC)",
+  "CERTIFICATION.md (C1 à C10, E1 à E5), REPETITION.md, tools/cert/{udp,rtc-negotiation}.mjs",
+  "hypothèses écrites avant toute lecture extérieure, 20 sur une copie hors dépôt",
+  "34 sondes sur une copie de salon : hôte réel, pair Rust, relais UDP, Chromium 151 et WebKit 27.2",
+]
+
+[[reference]]
+id = "str0m"
+ordre = 2
+sorte = "reel"
+depot = "algesten/str0m"
+commit = "f7bc4a6029f5219b4c6ec50c56519bb6619bf942"
+vu_le = "2026-11-02"
+nature = "code-serveur"
+consulte = [
+  "CHANGELOG.md de 0.22 à Unreleased ; git log 8c4c528..HEAD (46 commits, 15 titres retenus)",
+  "commits 5a08323 et dc31717 lus en entier, 3c1ef35 en message et fichiers, 72772e9, 18ffec8 et 1183e27 en titre",
+  "extraits à 0.24.1 : src/lib.rs (accepts), src/sctp/{mod,dcep}.rs, src/config.rs, src/dtls.rs",
+  "extraits de is 0.11.1 du registre : src/stun.rs (parsage et verify), src/agent.rs, src/pair.rs",
+]
+
+[[reference]]
+id = "dimpl"
+ordre = 3
+sorte = "reel"
+depot = "algesten/dimpl"
+commit = "c17b3b8b971b6eb2ecf7284f5dc0ecb86680ac4d"
+vu_le = "2026-11-02"
+nature = "code-serveur"
+consulte = [
+  "CHANGELOG.md de 0.6.2 à 0.9.0 ; git log (40 titres)",
+  "messages des commits 71010a7, 05108ea, abef83a, 4859e8c, a9eb7c1, 867218d, 38a3740, d82cb81",
+  "issue 189 lue, issues 191 à 197 en titre",
+  "src/dtls12/engine.rs à 0.7.6 (registre), autour de l'assertion",
+]
+
+[[reference]]
+id = "sctp-proto"
+ordre = 4
+sorte = "reel"
+depot = "webrtc-rs/sctp-proto"
+commit = "da1ac299d949c17680bc8070f334010ab91d5b1c"
+nature = "code-serveur"
+consulte = [
+  "git log (30 titres), message du commit 5314934",
+  "extraits à 0.10.7 : src/association/{mod,stream}.rs, src/queue/ (traitement de DCEP)",
+]
+
+[[reference]]
+id = "geckos"
+ordre = 5
+sorte = "reel"
+depot = "geckosio/geckos.io"
+commit = "d069b53049782bcf75dcc10e6f0891fb2a907db9"
+nature = "code-serveur"
+consulte = [
+  "git log --grep safari|ios|timeout|disconnect|port (30 titres), commit 49f893e",
+  "packages/server/src/wrtc/{connectionsManager,webrtcConnection}.ts",
+  "packages/client/src/wrtc/connectionsManager.ts",
+]
+
+[[reference]]
+id = "livekit"
+ordre = 6
+sorte = "reel"
+depot = "livekit/client-sdk-js"
+commit = "0d7acbd038a06cac0c09cd277dfdb572ad9dff42"
+nature = "code-client"
+consulte = [
+  "git log --grep safari|fallback|datachannel|timeout (70 titres), commits 7e16383, f35f5a0, f50f2e7",
+  "extraits de src/room/RTCEngine.ts et src/room/defaults.ts, diff de 7e16383",
+]
+
+[[reference]]
+id = "pion-ice"
+ordre = 7
+sorte = "reel"
+depot = "pion/ice"
+commit = "2981def637a57266ed577c842ed7368815ce30af"
+nature = "code-serveur"
+consulte = [
+  "git log --grep mux|lite|interface|mdns (25 titres)",
+  "udp_mux.go (création), udp_mux_multi.go (début)",
+]
+
+[[reference]]
+id = "libdatachannel"
+ordre = 8
+sorte = "reel"
+depot = "paullouisageneau/libdatachannel"
+commit = "bdc5ff28e9d3b863144c94a677ecf5bf043aaf15"
+nature = "code-serveur"
+consulte = [
+  "git log --grep safari|mdns|mtu|retransmit|ipv6|bind (40 titres)",
+  "commits b8adccc, ec5157a, ea12530",
+]
+
+[[reference]]
+id = "webkit"
+ordre = 9
+sorte = "reel"
+depot = "WebKit/WebKit"
+commit = "56453fdfe0b0ca6258c23e6453b34f70b885d13f"
+nature = "code-client"
+consulte = [
+  "gh search commits RTCDataChannel, NetworkRTCUDPSocketCocoa, mDNS ICE candidate (65 titres)",
+  "commits 00bcc58, 0ae4710, e83716d, 550f98d, bbd60b4, 8897fde",
+  "extraits de Source/WebCore/Modules/mediastream/{RTCDataChannel,RTCPeerConnection,PeerConnectionBackend}.cpp",
+  "Source/WebKit/NetworkProcess/webrtc/NetworkRTCUDPSocketCocoa.mm (création et paramètres des sockets)",
+]
+
+[[reference]]
+id = "peerjs"
+ordre = 10
+sorte = "reel"
+depot = "peers/peerjs"
+commit = "125f450c547887982ddecc86a6719f22e0f8f952"
+nature = "code-client"
+consulte = [
+  "git log --grep safari|ios|disconnect|buffer (30 titres), diff de 9415f90",
+  "lib/negotiator.ts",
+]
+
+[[reference]]
+id = "rfc8445"
+ordre = 11
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8445.txt"
+empreinte = "sha256:60bb913e8c8b2007f284105eef2faa2ea7e359dd4b73d7992557b3b11180065e"
+vu_le = "2026-11-02"
+consulte = [
+  "section 5.1.1.1 (exclusions), section 17.3, annexe A entière, recherche de lite et de loopback",
+]
+
+[[reference]]
+id = "rfc8831"
+ordre = 12
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8831.txt"
+empreinte = "sha256:86bec13ce9ebb28dfea37ad2ea2ccd771ab7adb9a95668ed8736eee2b028ea5c"
+vu_le = "2026-11-02"
+consulte = [
+  "section 6.1 ; recherche de fragmentation, de PR-SCTP et de la taille maximale",
+]
+
+[[reference]]
+id = "rfc8832"
+ordre = 13
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8832.txt"
+empreinte = "sha256:64f9addf6ff135f37c5ff8ec5b9b905ad882d6288400af144425cac3df507df5"
+vu_le = "2026-11-02"
+consulte = [
+  "section 6, procédures DCEP ; tableau des types de canal",
+]
+
+[[reference]]
+id = "rfc8838"
+ordre = 14
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8838.txt"
+empreinte = "sha256:3e6a19ddb1108f1e0de66c969c1ae1cb4d428f42cdddf0050d45062289ba683d"
+vu_le = "2026-11-02"
+consulte = [
+  "annexe B, interaction avec ICE-lite",
+]
+
+[[reference]]
+id = "rfc8305"
+ordre = 15
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8305.txt"
+empreinte = "sha256:9bb65e288b32acae072d1bf403c609f71c32ea7a5087d0056ee9af3cedca47e1"
+vu_le = "2026-11-02"
+consulte = [
+  "section 5, Connection Attempt Delay",
+]
+
+[[reference]]
+id = "rfc8828"
+ordre = 16
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8828.txt"
+empreinte = "sha256:5467ddc37e9cfb71382abe9f7cd4f095b242f26504ca6763d1075451abbbcf01"
+vu_le = "2026-11-02"
+consulte = [
+  "sections 5 et 6.2, modes 1 à 4",
+]
+
+[[reference]]
+id = "webrtc-pc"
+ordre = 17
+sorte = "normes"
+depot = "w3c/webrtc-pc"
+commit = "bf62a51b8df85f1e66e88379c0fdb57f1b4a6a47"
+consulte = [
+  "webrtc.html, RTCIceTransportState (ligne 13133 et son entourage)",
+]
+
+[[reference]]
+id = "wpt"
+ordre = 18
+sorte = "bancs"
+depot = "web-platform-tests/wpt"
+commit = "5602b0f210e3278b5f0030ae980b68da4ef35032"
+consulte = [
+  "webrtc/protocol/{dtls-close,handover-datachannel,sctp-format}.html",
+  "webrtc/RTCPeerConnection-iceConnectionState-disconnected.https.html",
+]
+
+[[reference]]
+id = "str0m-netem"
+ordre = 19
+sorte = "bancs"
+depot = "algesten/str0m"
+commit = "f7bc4a6029f5219b4c6ec50c56519bb6619bf942"
+consulte = [
+  "crates/netem/README.md ; liste de crates/ et de tests/",
+]
+
+[[reference]]
+id = "dimpl-tests"
+ordre = 20
+sorte = "bancs"
+depot = "algesten/dimpl"
+commit = "c17b3b8b971b6eb2ecf7284f5dc0ecb86680ac4d"
+consulte = [
+  "début de tests/premature_records.rs ; tests décrits par les messages de 71010a7 et 05108ea",
+]
+
+[[reference]]
+id = "pion-webrtc"
+ordre = 21
+sorte = "reel"
+depot = "pion/webrtc"
+commit = "b2da5bc8c6c9f3559e7c747fbd2ffd604a21acbc"
+nature = "code-serveur"
+consulte = [
+  "git log --grep safari|mdns|lite|NAT1To1|interface|ipv6|mux (50 titres)",
+  "settingengine.go (SetLite, SetNAT1To1IPs, SetICETimeouts, SetInterfaceFilter), icegatherer.go",
+]
+
+[[reference]]
+id = "node-datachannel"
+ordre = 22
+sorte = "reel"
+depot = "paullouisageneau/node-datachannel"
+commit = "2c5101cbc2e62844b0a210b0e7b43bec6514c1ef"
+nature = "code-serveur"
+consulte = [
+  "git log --grep safari|mdns|mtu|bind|disconnect|maxMessage (8 titres)",
+  "titres des commits d570d88 (bindAddress), 44915ed (mtu), 2d9dcd4 (maxMessageSize)",
+]
+
+[[reference]]
+id = "adapter"
+ordre = 23
+sorte = "reel"
+depot = "webrtcHacks/adapter"
+commit = "63788eba34ac88612b10d730004fd983ec8c5590"
+nature = "code-client"
+consulte = [
+  "git log --grep safari (20 titres)",
+  "src/js/common_shim.js (shimMaxMessageSize, shimSendThrowTypeError)",
+]
+
+[[lecon]]
+id = "transport-webrtc-01"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/LEARNINGS.md#L97"
+citation = "n'éprouve pas ce que l'autre côté exige"
+enonce = "Deux exemplaires de str0m qui se parlent ne disent rien de ce qu'un navigateur envoie ou refuse : T1 traverse tous les tests du dépôt."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "transport-webrtc-02"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/core/src/types.rs#L206"
+citation = "(Quake 3 `FRAGMENT_SIZE`, str0m MTU 1150)."
+enonce = "Caps::DATAGRAM promet de tenir sous une trame réseau, parce que perdre un fragment perd le message. La promesse est fausse au-dessus de 1 062 octets."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "transport-webrtc-03"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/REPETITION.md#L18"
+citation = "n'a rien renvoyé sur l'adresse réseau du Mac, alors que `localhost` répondait."
+enonce = "Le pare-feu de macOS coupe aussi TCP : sans autorisation, le téléphone ne charge même pas la page et il n'y a rien à replier."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["REPETITION.md"]
+note = "Revu pendant les sondes : sur ce Mac, l'adresse réseau ne répond pas, 127.0.0.1 si. Les sondes passent donc par la boucle locale, avec un relais UDP pour jouer le réseau. L'isolation client est de la même classe : la page ne charge pas, et WebRTC n'a pas son mot à dire."
+
+[[lecon]]
+id = "transport-webrtc-04"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/host/src/address.rs#L128"
+citation = "assert_eq!(base(\"http://[fe80::1]:8090\"), Some(\"http://[fe80::1]:8090\"));"
+enonce = "Un test fixe qu'une URL publique en IPv6 est valable, alors que l'hôte n'écoute qu'en IPv4."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "transport-webrtc-05"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/web/src/rtc_memory.rs#L38"
+citation = "An offer that stayed without an answer says nothing of WebRTC"
+enonce = "La mémoire de repli ne doit retenir que ce qui accuse WebRTC ; une réponse HTTP d'échec est une offre sans réponse."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "transport-webrtc-06"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/CERTIFICATION.md#L288"
+citation = "inonde l'hôte (des milliers de messages par seconde) ne ralentit pas les autres."
+enonce = "E3 ne regarde que les messages d'un lien ouvert. Une offre coûte plus qu'un message, et elle n'en est pas un."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "transport-webrtc-07"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/commit/5a083231e7c182406bcfa0b30900b1b70433bb85"
+citation = "Return false when verification input is incomplete instead of panicking."
+enonce = "Une panique de vérification STUN a existé dans is 0.11.1 : MESSAGE-INTEGRITY en premier attribut laisse `integrity` vide, et `verify` indexe la tranche."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "En ICE-lite, une réponse Binding n'atteint verify que si son identifiant de transaction est connu, et un agent lite n'envoie aucun contrôle. Une requête Binding sans intégrité est refusée au parsage. Lu dans is 0.11.1 ; le fuzz de 15 208 essais ne l'a pas atteinte."
+
+[[lecon]]
+id = "transport-webrtc-08"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/commit/dc317173b16fc6ed86633e6b08b229c9195deb87"
+citation = "before codec negotiation can panic"
+enonce = "Une offre SDP peut faire paniquer str0m 0.24.1 : deux `apt` pour un même type RTX."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/host/src/http.rs#L162"]
+note = "Sonde tsdp : POST /salon/offer panique le fil salon-http de cette requête (payload_params.rs:41) ; l'hôte reste vivant. Un fil par connexion contient la panique, ce que le fil WebRTC ne fait pas (T1). La garantie est structurelle, sans test."
+
+[[lecon]]
+id = "transport-webrtc-09"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/blob/8c4c5284cb11b1e3c82962639cda5b3e95af73e8/src/sctp/mod.rs#L269"
+citation = "SCTP framing per outgoing datagram: 12-byte common header"
+enonce = "str0m retire 48 + 40 octets du MTU de 1 150 : la charge SCTP vaut 1 062 octets, pas 1 100."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "transport-webrtc-10"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/blob/8c4c5284cb11b1e3c82962639cda5b3e95af73e8/src/config.rs#L696"
+citation = "a higher limit only adds queueing delay"
+enonce = "Le tampon SCTP de 128 Kio compte tout ce qui n'est pas accusé, même sur un canal non fiable : au-delà de ce que le chemin tient, ce n'est que du retard."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "transport-webrtc-11"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/blob/f7bc4a6029f5219b4c6ec50c56519bb6619bf942/CHANGELOG.md#L64"
+citation = "recognize validated remote addresses in ICE-lite mode before nomination"
+enonce = "Plusieurs Rtc sur un socket : accepts doit reconnaître une adresse validée dès avant la nomination, sinon DTLS arrive avant le lien."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["C1"]
+note = "Dans 0.24.0, donc dans le 0.24.1 de salon. rtc.rs:245 s'y appuie."
+
+[[lecon]]
+id = "transport-webrtc-12"
+source = "dimpl"
+lien = "https://github.com/algesten/dimpl/issues/189"
+citation = "about 4 times a day across a ~150-node WebRTC SFU fleet."
+enonce = "dimpl 0.7.x panique sur un doublon d'époque 1 arrivé avant le CCS. Ce n'est pas théorique : une flotte de production le voit chaque jour derrière str0m 0.24."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "transport-webrtc-13"
+source = "dimpl"
+lien = "https://github.com/algesten/dimpl/commit/05108ea5001a9881605457c012bb1f637ede877a"
+citation = "relying on retransmission instead of retaining reordered ciphertext"
+enonce = "Un chiffré arrivé avant ses clés se jette et on compte sur le renvoi ; le garder en file a produit #189, #192, #194, #195 et #197."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "transport-webrtc-14"
+source = "dimpl"
+lien = "https://github.com/algesten/dimpl/commit/4859e8c6650b077c4c6192753c195979cab5dece"
+citation = "prevents unauthenticated buffered payloads from being delivered as application data"
+enonce = "dimpl 0.7.6 peut livrer en données applicatives un enregistrement non authentifié mis en file avant le chiffrement (#191)."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+note = "Non éprouvé dans salon : la fenêtre est celle de la poignée de main et exige d'usurper la source. Sur un Wi-Fi où la page est en http, un attaquant actif a plus simple."
+
+[[lecon]]
+id = "transport-webrtc-15"
+source = "dimpl"
+lien = "https://github.com/algesten/dimpl/commit/38a374027a22eeaf982da8894428e63b61b530a1"
+citation = "suppress further duplicate responses during exponential backoff"
+enonce = "Répondre à chaque doublon de vol amplifie la tempête : le premier renvoi est immédiat, les suivants attendent."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["C1"]
+note = "Dans 0.7.5. WebKit 27.2 a envoyé deux fois son ClientHello dans nos traces et l'hôte a répondu deux fois, sans dommage."
+
+[[lecon]]
+id = "transport-webrtc-16"
+source = "dimpl"
+lien = "https://github.com/algesten/dimpl/blob/c17b3b8b971b6eb2ecf7284f5dc0ecb86680ac4d/CHANGELOG.md#L21"
+citation = "All errors are fatal."
+enonce = "Toute erreur rendue par la couche DTLS est terminale : le code appelant ne doit pas continuer sur cette instance."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs#L252"]
+note = "Sonde tjunk : alerte en clair, ClientHello rejoué, MAC faux, octets au hasard et enregistrement tronqué, depuis la source du pair, ne ferment pas un lien vivant."
+
+[[lecon]]
+id = "transport-webrtc-17"
+source = "sctp-proto"
+lien = "https://github.com/webrtc-rs/sctp-proto/commit/5314934eeb7c7645c8ba568c75c9556e1b897a99"
+citation = "Correct PR-SCTP retry budgets and whole-message abandonment"
+enonce = "Sur un canal maxRetransmits:0, un fragment perdu abandonne tout le message."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "transport-webrtc-18"
+source = "sctp-proto"
+lien = "https://github.com/webrtc-rs/sctp-proto/blob/a23184979e36f1deb2f96f60162f757924540c7b/src/association/stream.rs#L666"
+citation = "All Data Channel Establishment Protocol messages MUST be sent using"
+enonce = "sctp-proto force DCEP en ordonné et fiable même sur un canal non fiable : perdre l'ACK ne bloque pas onopen."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+note = "Éprouvé : chaque datagramme perdu un par un, l'ACK compris, ouvre le canal en 1,3 s au pire, sur Chromium et WebKit. Rien dans le dépôt ne le rejoue."
+
+[[lecon]]
+id = "transport-webrtc-19"
+source = "sctp-proto"
+lien = "https://github.com/webrtc-rs/sctp-proto/commit/3b56caa4ca4e1bf7ecd9fb64d9a173fa7bb2c2fb"
+citation = "Wait for stream data acknowledgements before sending resets"
+enonce = "Réutiliser un canal fermé exige d'attendre les accusés avant le reset de flux."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Salon ouvre un seul canal par lien et ne le réutilise jamais : un lien neuf est une PeerConnection neuve."
+
+[[lecon]]
+id = "transport-webrtc-20"
+source = "geckos"
+lien = "https://github.com/geckosio/geckos.io/blob/d069b53049782bcf75dcc10e6f0891fb2a907db9/packages/server/src/wrtc/connectionsManager.ts#L64"
+citation = "maxRetransmits = 0,"
+enonce = "Un seul canal non ordonné sans retransmission est le bon défaut d'un jeu, et la fiabilité se fait au-dessus."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake.rs::a_page_and_the_host_talk_over_dtls_with_salons_certificates"]
+
+[[lecon]]
+id = "transport-webrtc-21"
+source = "geckos"
+lien = "https://github.com/geckosio/geckos.io/commit/49f893e79dad82574d4a981c42352d3acee4bf93"
+citation = "Add bindAddress server config option"
+enonce = "Sur une machine à plusieurs interfaces, le choix de l'adresse ne peut pas être laissé à la route par défaut."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "transport-webrtc-22"
+source = "geckos"
+lien = "https://github.com/geckosio/geckos.io/blob/d069b53049782bcf75dcc10e6f0891fb2a907db9/packages/server/src/wrtc/webrtcConnection.ts#L9"
+citation = "strangely something it takes a long time"
+enonce = "geckos attend ses candidats jusqu'à 10 s : un serveur full ICE paie la collecte."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "En ICE-lite l'hôte n'a rien à collecter : la réponse part sans attendre."
+
+[[lecon]]
+id = "transport-webrtc-23"
+source = "geckos"
+lien = "https://github.com/geckosio/geckos.io/blob/d069b53049782bcf75dcc10e6f0891fb2a907db9/packages/client/src/wrtc/connectionsManager.ts#L194"
+citation = "if (!this.dataChannel) await waitForDataChannel()"
+enonce = "Le client geckos attend le canal sans borne : une négociation bloquée bloque le joueur."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["tools/cert/rtc-negotiation.mjs", "C1"]
+note = "Salon a une borne absolue partagée ; T2 dit qu'elle est trop longue une fois la réponse arrivée."
+
+[[lecon]]
+id = "transport-webrtc-24"
+source = "livekit"
+lien = "https://github.com/livekit/client-sdk-js/commit/7e1638384f88466ae838981a8c09880bbfbc736e"
+citation = "control buffered latency to ~100ms"
+enonce = "Sur un canal avec pertes, on jette en amont plutôt que de laisser le tampon vieillir : LiveKit vise 100 ms de file, pas une taille fixe."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "transport-webrtc-25"
+source = "livekit"
+lien = "https://github.com/livekit/client-sdk-js/blob/0d7acbd038a06cac0c09cd277dfdb572ad9dff42/src/room/RTCEngine.ts#L1657"
+citation = "(for safari https://bugs.webkit.org/show_bug.cgi?id=184688)"
+enonce = "Safari a laissé RTCDataChannel.id nul sur un canal ouvert."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Salon ne lit jamais channel.id : un seul canal, créé par la page."
+
+[[lecon]]
+id = "transport-webrtc-26"
+source = "livekit"
+lien = "https://github.com/livekit/client-sdk-js/blob/0d7acbd038a06cac0c09cd277dfdb572ad9dff42/src/room/defaults.ts#L39"
+citation = "peerConnectionTimeout: 15_000,"
+enonce = "15 s est un délai de service internet, avec STUN, TURN et un opérateur devant. Sur un réseau local, une réponse STUN revient en millisecondes."
+categorie = "heritage"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "transport-webrtc-27"
+source = "livekit"
+lien = "https://github.com/livekit/client-sdk-js/commit/f35f5a0e65acb952bb018fe387f4b1688bf74979"
+citation = "apply peerConnectionTimeout to the negotiation deadline"
+enonce = "Toute la négociation doit tenir dans une échéance unique."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["tools/cert/rtc-negotiation.mjs", "C1"]
+
+[[lecon]]
+id = "transport-webrtc-28"
+source = "pion-ice"
+lien = "https://github.com/pion/ice/blob/2981def637a57266ed577c842ed7368815ce30af/udp_mux.go#L116"
+citation = "UDPMuxDefault should not listening on unspecified address"
+enonce = "Un socket unique sur 0.0.0.0 ne sait pas par quelle adresse un paquet est arrivé : pion exige un multiplexeur par interface."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "transport-webrtc-29"
+source = "libdatachannel"
+lien = "https://github.com/paullouisageneau/libdatachannel/commit/b8adccc0ec838c4cb72043f2a4f1c3d32bf48bfe"
+citation = "Harmonized MTU with fragment size and set default MTU to 1280"
+enonce = "La taille de fragment applicative et le MTU se règlent ensemble, en un seul endroit."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "transport-webrtc-30"
+source = "libdatachannel"
+lien = "https://github.com/paullouisageneau/libdatachannel/commit/ec5157ad04449c0f60273cb59fc16f235cf2e5ac"
+citation = "Fixed DTLS header size in SCTP MTU computation"
+enonce = "L'en-tête DTLS réel compte dans le MTU SCTP : 37 octets étaient faux, 48 sont vrais."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "transport-webrtc-31"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/commit/00bcc58294aba38532feab503c829a3ac3e4c873"
+citation = "obfuscate any gathered host candidate"
+enonce = "Safari cache ses adresses locales derrière mDNS tant que la page n'a pas la caméra : l'hôte ne doit rien attendre des candidats de la page."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["C1"]
+note = "L'offre de salon part sans candidat et l'hôte apprend la page par son premier paquet : vu sur Chromium 151 et WebKit 27.2, mesuré sur iPhone le 27/10/2026 (LEARNINGS)."
+
+[[lecon]]
+id = "transport-webrtc-32"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/commit/e83716d173835cbf698bf91763d63a630776fa4e"
+citation = "RTCDataChannel close event does not fire if RTCPeerConnection closes"
+enonce = "Safari n'a pas toujours émis close sur le canal quand sa PeerConnection se fermait."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Transport::close détache les écouteurs avant de fermer, et le chien de garde de salon voit le silence : aucun chemin n'attend cet événement."
+
+[[lecon]]
+id = "transport-webrtc-33"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/commit/0ae47105d8750308a75b7a4ca05276cc4dae3e04"
+citation = "We align with chromium's approach and check synchronously the buffered amount"
+enonce = "Jusqu'en 2026, bufferedAmount de Safari était à jour de façon asynchrone."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "La garde RTC_BACKLOG de Transport::send est souple : un retard de lecture fait passer ou sauter un paquet de plus, que salon renvoie. Sa valeur est traitée par T5."
+
+[[lecon]]
+id = "transport-webrtc-34"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebKit/NetworkProcess/webrtc/NetworkRTCUDPSocketCocoa.mm#L238"
+citation = "auto parameters = adoptNS(nw_parameters_create_secure_udp(NW_PARAMETERS_DISABLE_PROTOCOL, NW_PARAMETERS_DEFAULT_CONFIGURATION));"
+enonce = "Sur Cocoa, les sockets UDP de WebRTC passent par Network.framework, dont le choix d'interface et de route n'est pas celui d'un socket BSD."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+
+[[lecon]]
+id = "transport-webrtc-35"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebCore/Modules/mediastream/RTCPeerConnection.cpp#L815"
+citation = "if (reason != ReasonForSuspension::BackForwardCache)"
+enonce = "Safari suspend une PeerConnection ouverte pour le bfcache au lieu de la fermer : la page revient avec un lien qui croit vivre."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["C3"]
+
+[[lecon]]
+id = "transport-webrtc-36"
+source = "peerjs"
+lien = "https://github.com/peers/peerjs/commit/9415f90c591cc182fd482ef89f496457447a133f"
+citation = "disconnected may be a transient state"
+enonce = "Fermer sur `disconnected` tue des liens qui seraient revenus."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/web/src/lib.rs#L875"]
+note = "La page n'écoute que Failed. Sonde tcoupe : 3 et 5 s de silence sur un lien ouvert, le canal revient sans renégociation sur Chromium et WebKit."
+
+[[lecon]]
+id = "transport-webrtc-37"
+source = "rfc8445"
+lien = "https://www.rfc-editor.org/rfc/rfc8445.txt#L1045"
+citation = "Addresses from a loopback interface MUST NOT be included in the"
+enonce = "ICE interdit d'annoncer une adresse de bouclage, et salon en annonce une, exprès, pour les pages de l'ordinateur même."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+note = "Chromium 151 et WebKit 27.2 l'acceptent. Sur iPhone, rien ne dit si ce candidat ne coûte vraiment rien : c'est pourquoi la leçon reste ouverte. Le reste de l'annexe A est sans objet ici : pas de NAT entre le téléphone et l'hôte."
+
+[[lecon]]
+id = "transport-webrtc-38"
+source = "rfc8831"
+lien = "https://www.rfc-editor.org/rfc/rfc8831.txt#L389"
+citation = "Limiting the number of retransmissions to zero, combined with unordered delivery"
+enonce = "Zéro retransmission et non ordonné donnent un service UDP : la norme prévoit l'usage de salon."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake.rs::a_page_and_the_host_talk_over_dtls_with_salons_certificates"]
+
+[[lecon]]
+id = "transport-webrtc-39"
+source = "rfc8832"
+lien = "https://www.rfc-editor.org/rfc/rfc8832.txt#L312"
+citation = "All DCEP messages MUST be sent using ordered delivery and reliable"
+enonce = "L'ouverture du canal ne doit pas hériter de sa non-fiabilité."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "transport-webrtc-40"
+source = "rfc8838"
+lien = "https://www.rfc-editor.org/rfc/rfc8838.txt#L1115"
+citation = "ICE-lite implementation, the initiator can choose to not trickle any"
+enonce = "Face à un agent lite, l'initiateur n'a pas à envoyer de candidats : les contrôles suffisent, et l'hôte apprend la page en peer-reflexive."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["tools/cert/rtc-negotiation.mjs", "C1"]
+
+[[lecon]]
+id = "transport-webrtc-41"
+source = "rfc8305"
+lien = "https://www.rfc-editor.org/rfc/rfc8305.txt#L364"
+citation = "to as the \"Connection Attempt Delay\".  One recommended value for a"
+enonce = "Quand un transport peut rester muet, on ne l'attend pas : on démarre l'autre après un court délai, de l'ordre de 250 ms."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "transport-webrtc-42"
+source = "rfc8828"
+lien = "https://www.rfc-editor.org/rfc/rfc8828.txt#L272"
+citation = "In cases where user consent has not been obtained, Mode 2 SHOULD be"
+enonce = "Sans permission de capture, un navigateur peut ne partir que par la route par défaut : sur un Wi-Fi sans internet, ce n'est peut-être pas l'interface de l'hôte."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+
+[[lecon]]
+id = "transport-webrtc-43"
+source = "webrtc-pc"
+lien = "https://github.com/w3c/webrtc-pc/blob/bf62a51b8df85f1e66e88379c0fdb57f1b4a6a47/webrtc.html#L13133"
+citation = "transient state that may trigger intermittently (and"
+enonce = "`disconnected` est passager par définition."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["C2"]
+note = "Côté hôte, rtc.rs:297 ferme sur Disconnected, mais str0m n'y passe en ICE-lite qu'après 15 s sans requête Binding (RECENT_BINDING_REQUEST, is 0.11.1), au-delà des 6 s du battement."
+
+[[lecon]]
+id = "transport-webrtc-44"
+source = "wpt"
+lien = "https://github.com/web-platform-tests/wpt/blob/5602b0f210e3278b5f0030ae980b68da4ef35032/webrtc/protocol/dtls-close.html#L47"
+citation = "This causes a DTLS close alert to be sent to pc2."
+enonce = "Un pair qui ferme prévient l'autre par une alerte DTLS."
+categorie = "physique"
+decision = "jeter"
+etat = "non-applicable"
+raison = "RtcOut::Close appelle disconnect sans drive, donc sans alerte. Les fins définitives de salon sont des messages typés (Replaced, refus), jamais un code de fermeture ; le reste passe par le battement."
+
+[[lecon]]
+id = "transport-webrtc-45"
+source = "wpt"
+lien = "https://github.com/web-platform-tests/wpt/blob/5602b0f210e3278b5f0030ae980b68da4ef35032/webrtc/RTCPeerConnection-iceConnectionState-disconnected.https.html#L28"
+citation = "somewhat long (15-30s) so is not testable."
+enonce = "Le navigateur met 15 à 30 s à dire `failed` : cet état ne peut pas borner un repli de quelques secondes."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "transport-webrtc-46"
+source = "str0m-netem"
+lien = "https://github.com/algesten/str0m/blob/f7bc4a6029f5219b4c6ec50c56519bb6619bf942/crates/netem/README.md#L4"
+citation = "Used for testing str0m under simulated network conditions"
+enonce = "str0m teste ses vrais états sous pertes, gigue et débit borné, sans entrées-sorties : salon peut faire de même sans navigateur."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "transport-webrtc-47"
+source = "dimpl-tests"
+lien = "https://github.com/algesten/dimpl/blob/c17b3b8b971b6eb2ecf7284f5dc0ecb86680ac4d/tests/premature_records.rs#L9"
+citation = "const UNAUTHENTICATED_INPUT: &[u8] = b\"unauthenticated input\";"
+enonce = "dimpl éprouve sa pile avec des enregistrements forgés, pas seulement perdus : les pannes qui comptent ne sont pas aléatoires."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[trou]]
+id = "T1"
+titre = "Une seule page peut tuer WebRTC pour toute la soirée"
+gravite = "haute"
+lieux = [
+  "salon/crates/crypto/Cargo.toml:23",
+  "salon/crates/host/src/http.rs:104",
+  "salon/crates/host/src/rtc.rs:252",
+]
+cas = "dimpl 0.7.6 fait `assert_eq!(seq_current.epoch, 0)` sur un doublon d'époque 1 reçu avant le CCS (engine.rs:381). Le fil qui sert toutes les pages est lancé par `thread::spawn`, sans surveillance : la panique le tue. N'importe quel appareil du Wi-Fi peut le faire, sans jeton : une offre, ICE, puis deux fois le même enregistrement d'époque 1. Tous les téléphones perdent leur canal d'un coup, se taisent environ 6 s, puis passent en WebSocket jusqu'au redémarrage de l'hôte. Chaque offre suivante reçoit 503. E1 promet que l'hôte et les autres joueurs continuent."
+preuve = "Sonde t1 : hôte réel, deux téléphones Chromium 151 ou WebKit 27.2 ouverts, pair attaquant en Rust. `panicked at dimpl-0.7.6/src/dtls12/engine.rs:381`, offre suivante HTTP 503, canaux fermés, WebSocket à 6,4 s, nouveau téléphone en WebSocket. En retirant cette seule assertion (correctif amont 71010a7), l'attaque ne fait plus rien : canaux ouverts, offre 200, nouveau téléphone en WebRTC. Fuzz en mémoire : 88 paniques en 15 208 essais, toutes à cette ligne ; 0 en 10 292 essais une fois l'assertion retirée. Variante `catch_unwind` autour de handle_input et drive : l'assertion panique, seul le lien fautif tombe."
+verifie = "La panique, sa ligne, l'arrêt du fil, l'effet sur Chromium et WebKit, le 503 qui suit, et les deux correctifs, sur une copie de salon par la boucle locale."
+suppose = "Qu'elle arrive sans malveillance chez nous : Chromium 151 et WebKit 27.2 mettent Certificate, CKE, CCS et Finished dans le même datagramme, donc une perte naturelle n'isole pas le Finished, et les 98 pannes unitaires n'ont rien déclenché. La flotte de l'issue 189 la voit par réseau. Les autres défauts de dimpl 0.7.6 (#191, #192, #194 à #197) ne sont pas éprouvés ici."
+
+[[trou]]
+id = "T2"
+titre = "Là où l'UDP n'arrive pas, chaque coupure coûte 15 s et C2 n'est pas tenu"
+gravite = "haute"
+lieux = [
+  "salon/crates/web/src/lib.rs:886",
+  "salon/crates/web/src/lib.rs:687",
+  "salon/crates/web/src/rtc_memory.rs:109",
+  "salon/crates/web/src/lib.rs:400",
+]
+cas = "UDP perdu, TCP sain : un téléphone neuf attend 15,1 s avant WebSocket, et chaque téléphone paie, parce que la mémoire est par onglet. Ensuite, sur un lien WebSocket sain qui se coupe, la reprise repasse par WebRTC : 15,3 s à la première coupure, parce qu'un seul échec ne suffit pas dans la page, 15,6 s après un événement `online`, 16,1 s une fois la mémoire vieille de 10 min. C2 donne 10 s. Pendant ce temps, le joueur ne joue pas. La réponse SDP est pourtant arrivée aussitôt : seul ICE reste sans réponse, et le navigateur met 15 à 30 s à dire `failed`."
+preuve = "Sonde tudp : relais UDP muet, vrai hôte, Chromium 151 et WebKit 27.2, deux téléphones : 15,1 et 15,2 s à rejoindre ; coupures à 15,3, 15,6 et 16,1 s. Sur la copie, une seule échéance ajoutée (3 s après la réponse appliquée, ICE encore `new` ou `checking`, repli) donne 3,3 s à rejoindre et 3,3 à 4,1 s aux trois coupures sur Chromium, 3,2 s et 3,3 à 3,9 s sur WebKit. Une réponse SDP retardée de 4 s reste en WebRTC (4,2 s), et les pertes de 10, 25 et 40 % ne déclenchent pas plus de replis : 12/12, 12/12 et 9/12 en WebRTC, contre 12/12, 10/12 et 5/12 sans la variante."
+verifie = "Les durées de bout en bout sur Chromium et WebKit, l'échec de C2 pour une coupure de lien, et l'effet de la seule échéance sur les deux moteurs."
+suppose = "Combien de réseaux réels passent TCP et perdent UDP : le pare-feu de macOS coupe les deux (REPETITION.md). T3 et T9 sont d'autres façons d'y arriver. Le seuil de 3 s n'est mesuré que sur 36 essais avec pertes. Correctif plus ambitieux à trancher : lancer WebSocket en parallèle et monter en WebRTC ensuite (RFC 8305)."
+
+[[trou]]
+id = "T3"
+titre = "L'adresse annoncée est figée au lancement, quelle que soit celle que le téléphone a vraiment jointe"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/host/src/http.rs:76",
+  "salon/crates/host/src/rtc.rs:63",
+  "salon/crates/host/src/rtc.rs:237",
+]
+cas = "`rtc_address` est calculée une fois, depuis la route par défaut ou SALON_PUBLIC_URL si son hôte est une adresse IP. Un Mac à deux interfaces, un DHCP qui change l'adresse en cours de soirée, ou une URL publique par nom : le téléphone charge la page par une adresse et reçoit un candidat par lequel il ne passe pas. Il paie alors T2 à chaque connexion. Le socket TCP de l'offre connaît pourtant la bonne adresse."
+preuve = "Sonde taddr, sur une copie sans candidat de bouclage pour jouer un téléphone, candidat annoncé 192.0.2.77 : repli à 15,1 s sur Chromium, 15,3 s sur WebKit. En prenant le candidat de `stream.local_addr()` de la connexion de l'offre, seul changement : WebRTC en 276 ms et 413 ms."
+verifie = "La cause et le correctif, par la boucle locale, sur Chromium et WebKit."
+suppose = "Fréquence réelle : aucun Mac à deux interfaces n'a été essayé. Un vrai réseau à deux adresses exige aussi une destination par lien dans `receive`, qui force aujourd'hui `rtcs.address` : la variante ne l'a pas éprouvée, le pare-feu de ce Mac coupant l'adresse réseau."
+
+[[trou]]
+id = "T4"
+titre = "Un paquet de plus de 1 062 octets part en deux fragments, et la perte double"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/types.rs:208",
+  "salon/crates/host/src/rtc.rs:57",
+]
+cas = "Caps::DATAGRAM vaut 1 100 octets pour rester sous une trame, mais str0m retire 48 + 40 octets de son MTU de 1 150 : la charge SCTP est de 1 062. Tout paquet de l'hôte entre 1 063 et 1 100 octets part en deux datagrammes, sur un canal où un fragment perdu abandonne le message. Un état ou un lot d'événements plein est justement ce cas."
+preuve = "Sonde mtu, deux str0m en temps virtuel : 1 062 octets donnent 1 datagramme, 1 063 en donnent 2 ([1129, 69]), 1 100 en donnent 2 ([1129, 105]). Sous 10 % de pertes, 61,9 % de paquets de 1 100 octets livrés contre 81,7 % avec `set_mtu(1188..)`, seul changement, qui donne 1 datagramme de 1 165 octets. À 5 % : 86,6 contre 94,5. À 20 % : 20,5 contre 32,4."
+verifie = "Le comptage des datagrammes et la livraison sous perte sur les vraies piles str0m et sctp-proto. Chromium 151 et WebKit 27.2 envoient eux-mêmes 1 100 octets en un datagramme de 1 165 : la voie montante n'a pas le défaut."
+suppose = "La part de paquets au-dessus de 1 062 octets dans un vrai jeu : non mesurée. Que 1 165 octets passent partout : l'iPhone en partage de connexion et une borne réelle n'ont pas été mesurés."
+
+[[trou]]
+id = "T5"
+titre = "Le canal sans retransmission accumule des secondes de retard derrière lui"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/host/src/rtc.rs:177",
+  "salon/crates/web/src/lib.rs:62",
+]
+cas = "L'hôte écrit dans le canal sans regarder `buffered_amount` ; str0m garde 128 Kio. Quand un téléphone reçoit moins vite que le jeu n'envoie, les états frais attendent derrière les états périmés. Le canal est non fiable, mais son tampon ne l'est pas : la perte qu'on voulait n'arrive qu'une fois la file pleine. La page a une garde, mais à 64 Kio."
+preuve = "Sonde mtu, lien borné à file finie, 60 Hz : 30 Ko/s et 1 000 octets donnent 6,7 s de retard maximal sans garde, 160 ms en sautant l'écriture au-delà de 4 Kio bufferisés, seul changement. 30 Ko/s et 500 octets : 2,5 s contre 154 ms. 60 Ko/s et 1 000 octets : 1,7 s contre 71 ms."
+verifie = "Le retard sur les vraies piles str0m et sctp-proto, avec un modèle de lien dans la sonde."
+suppose = "Qu'un téléphone tombe à ces débits en soirée, et l'effet côté page, où les messages sont petits. La valeur de la garde : 4 Kio est un choix de sonde ; LiveKit règle la sienne sur 100 ms du débit observé."
+
+[[trou]]
+id = "T6"
+titre = "Un 503 sur l'offre est compté comme un échec de WebRTC"
+gravite = "faible"
+lieux = [
+  "salon/crates/web/src/lib.rs:939",
+  "salon/crates/web/src/rtc_memory.rs:43",
+]
+cas = "`negotiate` passe à Offer::Answered sur n'importe quelle réponse HTTP. Un 503 (file de signaux pleine) ou un 400 donne Negotiation::Failed et Blame::WebRtc, et la page rechargée reste en WebSocket dix minutes alors que WebRTC marche. rtc_memory écrit pourtant qu'une offre sans réponse ne dit rien de WebRTC."
+preuve = "Sonde t503, Chromium : un seul 503, mémoire `failures:1`, rechargement sans aucune PeerConnection créée alors que l'offre répond de nouveau. Avec `if !response.ok() return Negotiation::NoHost`, seul changement : mémoire vide, WebRTC au rechargement en 127 ms."
+verifie = "Le comportement dans Chromium, et le correctif."
+suppose = "Un 503 reste rare : file de 64 signaux, ou fil WebRTC mort (T1), où le repli est le bon choix."
+
+[[trou]]
+id = "T7"
+titre = "Rien ne borne les offres en cours, et elles ralentissent les liens vivants"
+gravite = "faible"
+lieux = [
+  "salon/crates/host/src/rtc.rs:153",
+  "salon/crates/host/src/http.rs:445",
+]
+cas = "Chaque POST /salon/offer crée un Rtc gardé 15 s. Aucun quota : une boucle sur cet ordinateur en fait accepter 1 400 par seconde. Le fil unique parcourt toutes les entrées pour chaque datagramme et à chaque tour. E3 promet qu'un téléphone qui inonde ne ralentit pas les autres."
+preuve = "Sonde tflood, téléphone Chromium ouvert : aller-retour de 0 ms avant, 75 ms de médiane et 85 ms au pire après 12 s de flot, 17 048 offres acceptées, 190 Mo de mémoire pour 10 174 offres. Avec au plus 64 négociations, la plus ancienne évincée, seul changement : 6 ms de médiane, 8 ms au pire."
+verifie = "La dégradation et le correctif, par la boucle locale."
+suppose = "L'effet à 15 téléphones et 60 Hz, non mesuré. Il faut un appareil hostile : aucun chemin normal n'accumule des offres."
+
+[[trou]]
+id = "T8"
+titre = "SALON_PUBLIC_URL accepte IPv6, mais rien n'écoute en IPv6"
+gravite = "faible"
+lieux = [
+  "salon/crates/host/src/http.rs:72",
+  "salon/crates/host/src/http.rs:74",
+  "salon/crates/host/src/address.rs:104",
+]
+cas = "`http://[fe80::1]:8090` passe le test `a_base_keeps_what_phones_need`, et l'hôte annonce un candidat IPv6, mais TCP et UDP sont liés à 0.0.0.0 : le QR mène nulle part, sans message. Un réseau IPv6 seul n'a aucun chemin vers l'hôte."
+preuve = "Sonde taddr avec `SALON_PUBLIC_URL=http://[::1]:port` : candidats [::1] et 127.0.0.1, `curl http://[::1]:port/` refusé, 127.0.0.1 répond 200. Avec le seul écouteur TCP lié à `::`, `[::1]` répond 200 et la page ouvre WebRTC par la boucle en 353 ms."
+verifie = "Le refus et le correctif TCP, sur ce Mac."
+suppose = "Qu'un hôte réel soit en IPv6 seul. L'UDP lié à `::` n'est pas éprouvé : il ferait voir des sources mappées à rtc.rs:231 et exigerait de convertir les destinations."
+
+[[trou]]
+id = "T9"
+titre = "Safari iOS sur un vrai Wi-Fi de soirée n'a jamais été mesuré"
+gravite = "moyenne"
+lieux = [
+  "salon/LEARNINGS.md:90",
+  "salon/crates/host/src/rtc.rs:63",
+  "REPETITION.md:30",
+]
+cas = "La seule mesure sur iPhone date du 27/10/2026, Mac en partage de connexion. Trois choses n'ont jamais été vues sur l'appareil : un Wi-Fi sans internet avec le cellulaire actif, où Safari peut ne pas partir par l'interface de l'hôte (RFC 8828, mode 2, et Network.framework) alors que LEARNINGS conseille justement un routeur dédié ; le candidat 127.0.0.1 ; la perte et la gigue d'une vraie borne. Le premier cas mènerait à T2 pour chaque iPhone."
+preuve = "Aucune sonde : il faut un vrai iPhone. WebKit 27.2 de Playwright sur macOS ouvre le canal et passe les 98 pannes unitaires, mais ce n'est pas Safari iOS."
+verifie = "Le texte de la RFC 8828, le chemin Network.framework de WebKit au commit figé, et l'absence de ces cas dans REPETITION.md."
+suppose = "Tout le comportement réel : ce trou reste supposé. À mesurer pendant la répétition : iPhone sur un Wi-Fi sans internet, données cellulaires actives, relever le transport dit par SALON_LOG=1."
+
+[[trou]]
+id = "T10"
+titre = "Aucun test ne joue une panne pendant la poignée de main, ni un pair qui forge"
+gravite = "faible"
+lieux = [
+  "salon/crates/crypto/tests/handshake.rs:1",
+  "tools/cert/rtc-negotiation.mjs:10",
+  "salon/fuzz/fuzz_targets/session.rs:1",
+]
+cas = "handshake.rs fait parler deux str0m sur un réseau parfait. Le harnais rtc retarde la réponse, ment sur le SDP et coupe tout, mais ne perd jamais un seul datagramme de la poignée de main, et le fuzz de salon ne touche ni l'offre ni UDP. Le bon comportement constaté aujourd'hui ne tient qu'aux versions figées, et une montée de str0m ou de dimpl ne serait pas éprouvée. Chromium 151 envoie un ClientHello fragmenté sur deux datagrammes, que rien ne fixe."
+preuve = "Sonde panne : 98 pannes unitaires, chaque datagramme de la poignée de main perdu puis doublé, dans chaque sens, sur Chromium 151 et WebKit 27.2 : canal ouvert à chaque fois, 1,3 s au pire, ni repli ni panique. `cargo test -p salon-crypto` reste vert avec T1 ouvert, et le pair de la sonde rougit à la première attaque : retirer l'assertion le fait passer."
+verifie = "Le contenu des suites et le résultat des 98 pannes à ces versions."
+suppose = "Firefox n'a pas été éprouvé : la version de Playwright installée n'a pas ouvert de canal par le relais, sans que la cause soit établie."
+
+[saturation]
+sources = ["pion-webrtc", "node-datachannel", "adapter"]
+derniere_lecon = "dimpl-tests"
+note = "Quota atteint avant la fin de la lecture du code client. Les trois dernières lectures couvrent un serveur full ICE, une liaison Node et le code client qui contourne les navigateurs : aucune ne nomme un défaut que salon n'aurait pas déjà dans une leçon ou un trou."
+
+[saturation.recoupe]
+pion-webrtc = "SetNAT1To1IPs et SetInterfaceFilter redisent T3 ; SetICETimeouts redit que `disconnected` précède `failed` ; SetLite n'ajoute rien à la RFC 8445. Son mDNS concerne un serveur qui publie ses candidats, pas salon."
+node-datachannel = "bindAddress et l'option mtu redisent T3 et T4 au-dessus de libdatachannel ; maxMessageSize redit geckos."
+adapter = "Ses cales Safari et Chrome portent sur maxMessageSize, createOffer et extmap : 1 100 octets sont sous la limite de 262 144 mesurée sur les deux moteurs, et salon ne passe pas par ces chemins."
+
+[cout]
+minutes = 55
+references = 23
+sondes_executees = 34
+note = "Temps réel d'une session d'agent, lecture, sondes et rédaction. Les 98 pannes unitaires et les scénarios UDP muet tournent en temps réel, 15 s par cas. Le pare-feu de ce Mac coupe l'adresse réseau : tout passe par la boucle locale et un relais UDP."
