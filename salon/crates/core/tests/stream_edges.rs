@@ -1143,3 +1143,15 @@ fn packets_fill_the_link_up_to_their_limit() {
     });
     assert!((60_000..=64 * 1024).contains(&unbounded), "{unbounded}");
 }
+
+/// A state of one packet passes the window, and opens it for nothing else: what
+/// follows it in the burst still waits for the acks.
+#[test]
+fn a_state_of_one_packet_opens_the_window_for_nothing_else() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    room.show(device, &vec![2]).unwrap();
+    let (events, states) = sent(&drain(&mut room, Ms(0)).1);
+    assert_eq!(events.len(), 12);
+    assert_eq!(states, vec![(1, 0)]);
+}

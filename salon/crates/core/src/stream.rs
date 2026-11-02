@@ -1015,9 +1015,11 @@ impl OutState {
         let count = fragment_count(self.data.len(), cut);
         self.pieces.cut(self.data.len(), cut);
         // What one packet says goes whatever the window: the latest stick of
-        // a pad does not wait behind a queue of events.
+        // a pad does not wait behind a queue of events. The window stays as it
+        // was for what comes next in the burst.
+        let room = budget.room;
         if count == 1 {
-            budget.room = budget.room.max(1);
+            budget.room = room.max(1);
         }
         let mut from = 0;
         while let Some(due) = self.pieces.due(from, now, resend) {
@@ -1035,6 +1037,7 @@ impl OutState {
                 data,
             });
         }
+        budget.room = budget.room.min(room);
         parts
     }
 }
