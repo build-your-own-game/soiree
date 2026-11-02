@@ -651,7 +651,8 @@ citation = "[SameObject, SecureContext] readonly attribute MediaDevices mediaDev
 enonce = "La norme réserve mediaDevices aux contextes sécurisés : une page en http sur une IP du réseau local n'y a pas droit."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_on_a_local_network_address_has_no_microphone_api"]
 trou = "T12"
 
 [[lecon]]
@@ -662,7 +663,8 @@ citation = "[SameObject, SecureContext, ContextAllowsMediaDevices] readonly attr
 enonce = "WebKit applique la règle dans WKWebView comme dans Safari."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_on_a_local_network_address_has_no_microphone_api"]
 trou = "T12"
 
 [[lecon]]
@@ -1003,7 +1005,7 @@ lieux = [
 cas = "CONTRAT.md offre micro et caméra par les API web habituelles, mais les jeux sont servis en http sur une IP du réseau local, qui n'est pas un contexte sécurisé. navigator.mediaDevices y vaut undefined : le bouton Micro de la page du faux jeu lève une exception, et le code de permission de l'app n'est jamais appelé."
 preuve = "sonde H10 : http://172.20.10.4 donne secure false et mediaDevices undefined ; la même page sur http://127.0.0.1 donne secure true et getUserMedia function. Seule l'origine change."
 verifie = "le contexte et l'API dans WKWebView sur simulateur"
-suppose = "Rien d'autre à vérifier sur iPhone pour l'API. Correctif à trancher : le retirer du contrat, servir en https, ou passer par le pont natif. Aucun jeu du dossier n'appelle getUserMedia aujourd'hui."
+suppose = "Rien d'autre à vérifier sur iPhone pour l'API. Le contrat dit maintenant la vérité, et la page du faux jeu désactive ses boutons ; la capacité elle-même reste absente d'une soirée en http : pour l'offrir, il faudrait servir en https ou passer par le pont natif, à décider le jour où un jeu le demande. Aucun jeu du dossier n'appelle getUserMedia aujourd'hui. Le banc joue l'adresse locale par `localhost.`, le pare-feu du Mac bloquant son faux hôte sur l'IP du réseau."
 
 [[trou]]
 id = "T13"

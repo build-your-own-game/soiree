@@ -384,6 +384,8 @@ let moving = false;
 addEventListener("telecommande:motion", (e) => show("m", ["gravity", "rotation", "acceleration", "attitude"].map((k) => k + " " + e.detail[k].map((v) => v.toFixed(2)).join(" ")).join("\n")));
 $("motion").onclick = () => { moving = !moving; $("motion").textContent = moving ? "arrêter" : "démarrer"; post({ motion: moving }); };
 for (const b of document.querySelectorAll("[data-o]")) b.onclick = () => post({ orientation: b.dataset.o });
+// Secure contexts only: an http page on a local address has neither.
+if (!navigator.mediaDevices) for (const id of ["mic", "cam"]) { $(id).disabled = true; $(id).textContent = "https seulement"; }
 $("mic").onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const audio = new AudioContext(), analyser = audio.createAnalyser(), data = new Uint8Array(256);

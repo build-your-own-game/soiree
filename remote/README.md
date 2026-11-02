@@ -47,7 +47,7 @@ Le terminal affiche tout ce que le téléphone envoie.
 - **Les liens :** `telecommande://join?url=…` ouvre l'app sur un jeu.
 - **Sept presets,** toutes en paysage : deux pouces, croix rétro, volant, pointeur, buzzer, dessin, Nintendo 64.
 - **Les compositions :** n'importe quels boutons, sticks, croix et outils de dessin, placés par le jeu.
-- **La page libre** du jeu, en plein écran, avec tout ce qu'un navigateur ne donne pas : vibrations sur mesure, capteurs, orientation, identité du joueur, UDP, micro et caméra.
+- **La page libre** du jeu, en plein écran, avec tout ce qu'un navigateur ne donne pas : vibrations sur mesure, capteurs, orientation, identité du joueur, UDP, et micro et caméra sur une page en `https`.
 - **La croix en haut à gauche** quitte la partie, après confirmation.
 
 En bas d'une télécommande, les octets que le jeu reçoit.

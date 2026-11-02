@@ -112,6 +112,8 @@ final class Bench {
             let landscape = scene?.effectiveGeometry.interfaceOrientation.isLandscape == true
             guard landscape, area.right > area.bottom else { return "no" }
             return "\(area.left) \(area.top) \(area.right) \(area.bottom)"
+        case "idle":
+            return String(UIApplication.shared.isIdleTimerDisabled)
         case "orientation":
             return "\(Orientation.current)"
         case "landscape-left":

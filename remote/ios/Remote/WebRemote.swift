@@ -8,8 +8,8 @@ import WebKit
 /// game however it likes. For what a browser cannot do, it posts messages to
 /// the app's handler, `webkit.messageHandlers.telecommande`, and the app
 /// answers with `telecommande:…` events on `window`. The shapes are in
-/// `CONTRAT.md`; the `remote-web` crate wraps them in Rust. The page also gets
-/// the microphone and camera through the usual web APIs.
+/// `CONTRAT.md`; the `remote-web` crate wraps them in Rust. A page in a secure
+/// context also gets the microphone and camera, through the usual web APIs.
 struct WebRemote: UIViewRepresentable {
     let url: URL
     /// The player's identity and first name, for the page.

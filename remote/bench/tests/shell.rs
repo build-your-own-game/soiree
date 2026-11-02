@@ -521,3 +521,38 @@ fn a_page_gets_the_microphone_only_by_asking_the_player() {
         "WebKit's question should be up, unanswered"
     );
 }
+
+/// A game of the night is served in `http` on a local address. Not a defect
+/// of the app: the standard keeps these APIs to secure contexts, and
+/// `CONTRAT.md` must not promise them there. `localhost.` stands for that
+/// address: same lack of secure context, and no firewall on the way.
+#[test]
+fn a_page_on_a_local_network_address_has_no_microphone_api() {
+    let host = page_game(PAGE);
+    let elsewhere = format!("http://localhost.:{}/play", host.port);
+    host.with(|state| {
+        state.show = Some(Remote::Web { url: elsewhere });
+    });
+    let mut shell = joined(&host, "/play");
+    assert!(
+        eventually(LOADED, || shell.ask("eval document.title") == "page"),
+        "{} {} {} {:?}",
+        shell.ask("status"),
+        shell.ask("content"),
+        shell.ask("notice"),
+        host.with(|state| state.requests.clone())
+    );
+    assert_eq!(shell.ask("eval String(window.isSecureContext)"), "false");
+    assert_eq!(shell.ask("eval typeof navigator.mediaDevices"), "undefined");
+    drop(shell);
+
+    host.with(|state| {
+        state.show = Some(Remote::Web {
+            url: "/play".to_owned(),
+        });
+    });
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+    assert_eq!(shell.ask("eval String(window.isSecureContext)"), "true");
+    assert_eq!(shell.ask("eval typeof navigator.mediaDevices"), "object");
+}
