@@ -32,6 +32,8 @@ const OUTAGE_CODE: u8 = 2;
 
 const COMMENTS_PER_PAGE: u32 = 100;
 
+const GITHUB_API: &str = "https://api.github.com/";
+
 /// What an address answered.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fetched {
@@ -138,6 +140,8 @@ fn curl_answer(url: &str, output: &[u8]) -> Result<Fetched, Outage> {
     let status = String::from_utf8_lossy(status);
     match status.trim() {
         "404" | "410" => Ok(Fetched::Missing),
+        // The API's answer to a commit it does not know, as `gh_failure` reads it.
+        "422" if url.starts_with(GITHUB_API) => Ok(Fetched::Missing),
         code if code.starts_with('2') => Ok(Fetched::Body(body.to_vec())),
         code => Err(Outage::Refused(format!("{url} : HTTP {code}"))),
     }
@@ -148,7 +152,7 @@ impl Net for Tools<'_> {
         if self.gh {
             Self::gh(&["api", path])
         } else {
-            Self::curl(&format!("https://api.github.com/{path}"))
+            Self::curl(&format!("{GITHUB_API}{path}"))
         }
     }
 
@@ -256,6 +260,9 @@ impl Tally<'_> {
 
 pub fn run(dir: &Path) -> util::Result<ExitCode> {
     let dir = util::absolute(dir);
+    if !dir.is_dir() {
+        return Err(format!("{} : dossier absent", dir.display()));
+    }
     let folder = Folder::load(&dir)?;
     let mut report = Report::new();
     report.section(&format!("recherche verifie : {}", dir.display()));
@@ -276,9 +283,16 @@ fn upstream(dir: &Path) -> Option<Depot> {
     Depot::try_from(path.trim_end_matches(".git").to_owned()).ok()
 }
 
-/// 0 when everything held, 1 when a sheet is wrong, 2 when the tool could not
-/// tell. A wrong sheet is reported even when the network failed afterwards.
+/// 0 when everything held, 1 when a sheet is wrong or there is none, 2 when the
+/// tool could not tell. A wrong sheet is reported even when the network failed
+/// afterwards. Nothing checked is not a pass.
 fn verify_folder(folder: &Folder, local: Option<&Depot>, net: &dyn Net, report: &mut Report) -> u8 {
+    if folder.sheets.is_empty() {
+        report.error(
+            "aucune fiche à vérifier : attendu au moins une fiche recherche/<sous_systeme>.toml",
+        );
+        return 1;
+    }
     let cached = Cached {
         net,
         seen: RefCell::new(BTreeMap::new()),
@@ -342,12 +356,23 @@ fn verify_sheet(
 
 fn commit_exists(depot: &Depot, sha: &Commit, net: &Cached<'_>) -> Result<Verdict, Outage> {
     Ok(match net.api(&format!("repos/{depot}/commits/{sha}"))? {
-        Fetched::Body(_) => Verdict::Held,
+        Fetched::Body(body) if names_commit(&body, sha) => Verdict::Held,
+        // A captive portal also answers 2xx: this says nothing of the commit.
+        Fetched::Body(_) => {
+            return Err(Outage::Refused(format!(
+                "la réponse pour le commit {sha} n'est pas ce commit"
+            )));
+        }
         Fetched::Missing if net.here(sha) => Verdict::Broken(format!(
             "le commit {sha} n'existe pas chez {depot} ; il est dans ce clone : publie-le, ou cite un commit publié"
         )),
         Fetched::Missing => Verdict::Broken(format!("le commit {sha} n'existe pas chez {depot}")),
     })
+}
+
+fn names_commit(body: &[u8], sha: &Commit) -> bool {
+    serde_json::from_slice::<Json>(body)
+        .is_ok_and(|commit| field(&commit, "/sha") == sha.to_string())
 }
 
 fn reference_holds(reference: &Reference, net: &Cached<'_>) -> Result<Verdict, Outage> {
@@ -648,10 +673,14 @@ mod tests {
 
     const REPOSITORY: &str = "[[reference]]\nid = \"a\"\nordre = 1\nsorte = \"reel\"\nconsulte = [\"x\"]\ndepot = \"o/r\"\ncommit = \"6770a99f27ad6f15763b85094ea8145786dd8da5\"\n";
 
+    fn commit(sha: &str) -> String {
+        serde_json::json!({ "sha": sha }).to_string()
+    }
+
     fn base() -> Fake {
         Fake::default()
-            .with(&format!("repos/o/soiree/commits/{SHA}"), "{}")
-            .with(&format!("repos/o/r/commits/{SHA_B}"), "{}")
+            .with(&format!("repos/o/soiree/commits/{SHA}"), &commit(SHA))
+            .with(&format!("repos/o/r/commits/{SHA_B}"), &commit(SHA_B))
     }
 
     fn outcome(folder: &Folder, net: &Fake) -> (u8, Vec<String>) {
@@ -702,13 +731,13 @@ mod tests {
         assert_eq!(code, 1);
         assert!(lines[0].contains("n'existe pas en amont"), "{lines:?}");
 
-        let net = Fake::default().with(&format!("repos/o/soiree/commits/{SHA}"), "{}");
+        let net = Fake::default().with(&format!("repos/o/soiree/commits/{SHA}"), &commit(SHA));
         let (code, lines) = outcome(&sheet(REPOSITORY, ""), &net);
         assert_eq!(code, 1);
         assert!(lines[0].contains("référence a"), "{lines:?}");
         assert!(lines[0].contains("n'existe pas chez o/r"), "{lines:?}");
 
-        let net = Fake::default().with(&format!("repos/o/r/commits/{SHA_B}"), "{}");
+        let net = Fake::default().with(&format!("repos/o/r/commits/{SHA_B}"), &commit(SHA_B));
         let (code, lines) = outcome(&sheet(REPOSITORY, ""), &net);
         assert_eq!(code, 1);
         assert!(lines[0].contains("compare_a"), "{lines:?}");
@@ -720,7 +749,7 @@ mod tests {
             local: Some(SHA.to_owned()),
             ..Fake::default()
         }
-        .with(&format!("repos/o/r/commits/{SHA_B}"), "{}");
+        .with(&format!("repos/o/r/commits/{SHA_B}"), &commit(SHA_B));
         let (code, lines) = outcome(&sheet(REPOSITORY, ""), &net);
         assert_eq!(code, 1);
         assert!(lines[0].contains("il est dans ce clone"), "{lines:?}");
@@ -740,6 +769,7 @@ mod tests {
     #[test]
     fn a_commit_citation_is_read_in_its_message_and_its_patch() {
         let json = serde_json::json!({
+            "sha": SHA_B,
             "commit": {"message": "fix: a\n\nthe long\nsentence"},
             "files": [{"patch": "@@ -1 +1 @@\n-old line\n+new line"}]
         })
@@ -839,6 +869,27 @@ mod tests {
     }
 
     #[test]
+    fn a_2xx_that_is_not_the_commit_concludes_nothing() {
+        for body in ["<html>Connectez-vous</html>", "{}", &commit(SHA_B)] {
+            let net = base().with(&format!("repos/o/soiree/commits/{SHA}"), body);
+            let (code, lines) = outcome(&sheet(REPOSITORY, ""), &net);
+            assert_eq!(code, OUTAGE_CODE, "{body} : {lines:?}");
+            assert!(lines[0].contains("panne, non conclu"), "{lines:?}");
+        }
+    }
+
+    #[test]
+    fn no_sheet_fails_without_asking_anything() {
+        let mut folder = sheet(REPOSITORY, "");
+        folder.sheets.clear();
+        let net = base();
+        let (code, lines) = outcome(&folder, &net);
+        assert_eq!(code, 1);
+        assert!(lines[0].contains("aucune fiche"), "{lines:?}");
+        assert_eq!(*net.calls.borrow(), 0);
+    }
+
+    #[test]
     fn an_unknown_upstream_cannot_conclude_on_compare_a() {
         let folder = sheet(REPOSITORY, "");
         let mut report = Report::quiet();
@@ -854,7 +905,7 @@ mod tests {
         );
         let net = base().with(
             &format!("repos/o/r/commits/{SHA_B}"),
-            "{\"commit\":{\"message\":\"x\"}}",
+            &format!("{{\"sha\":\"{SHA_B}\",\"commit\":{{\"message\":\"x\"}}}}"),
         );
         assert_eq!(outcome(&folder, &net).0, 0);
         assert_eq!(*net.calls.borrow(), 2);
@@ -883,6 +934,14 @@ mod tests {
             Ok(Fetched::Body(b"corps\nsuite".to_vec()))
         );
         assert_eq!(curl_answer("u", b"perdu\n404"), Ok(Fetched::Missing));
+        assert_eq!(
+            curl_answer("https://api.github.com/repos/o/r/commits/a", b"{}\n422"),
+            Ok(Fetched::Missing)
+        );
+        assert!(matches!(
+            curl_answer("https://x.org/d", b"{}\n422"),
+            Err(Outage::Refused(_))
+        ));
         assert!(matches!(
             curl_answer("u", b"\n503"),
             Err(Outage::Refused(_))

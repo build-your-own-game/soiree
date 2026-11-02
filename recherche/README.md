@@ -30,7 +30,7 @@ La dette de recherche ne bloque qu'à l'étiquette du commun : un jeu n'attend j
 |---|---|---|
 | `soiree recherche plan` | non | lit le diff depuis la dernière étiquette, ou un autre avec `--depuis REF` ou `--git-diff`, et dit ce qui est nouveau, le sous-système, le niveau, la fiche, ce qui manque, puis ces étapes ; c'est une aide, elle n'empêche rien |
 | `soiree check .` | non | à la racine du commun : format et règles de chaque fiche, quotas, saturation, marches, et existence des tests et items cités en `garantie`. Avec `--fast`, ou dans un jeu : une ligne de dette au plus, et rien qui bloque |
-| `soiree recherche verifie` | oui | chaque commit existe en amont, chaque citation est à l'endroit indiqué, chaque `empreinte` tient. Sort à 1 si une fiche est fausse, à 2 sur une panne, qui ne conclut rien |
+| `soiree recherche verifie` | oui | chaque commit existe en amont, chaque citation est à l'endroit indiqué, chaque `empreinte` tient. Sort à 1 si une fiche est fausse, ou s'il n'y a aucune fiche : rien vérifié n'est pas une réussite. Sort à 2 sur une panne, qui ne conclut rien, et une réponse qui n'est pas le commit demandé, comme un portail Wi-Fi, en est une |
 | `soiree recherche dette` | non | les sous-systèmes de niveau 3 sans fiche, puis les trous ouverts par gravité ; `AGENTS.md`, « Avant d'étiqueter », dit le seul endroit où elle bloque |
 
 `soiree check .` lit le texte : il dit qu'un test existe, pas qu'il tourne ni qu'il passe.

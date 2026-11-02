@@ -336,6 +336,82 @@ mod commands {
         assert!(shown.contains("n'existe pas chez"), "{shown}");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn verifie_without_gh_reads_a_commit_github_does_not_know() {
+        let dir = tagged();
+        git(
+            &dir,
+            &["remote", "add", "origin", "https://github.com/o/soiree.git"],
+        );
+        // GitHub's real answer to an unknown commit, through `curl -w`.
+        let path = stub_network(
+            &dir,
+            "exit 1",
+            "printf '{\"message\":\"No commit found for SHA\"}\\n422'",
+        );
+        let output = soiree(&dir)
+            .env("PATH", &path)
+            .args(["recherche", "verifie"])
+            .output()
+            .unwrap();
+        let shown = text(&output);
+        assert_eq!(output.status.code(), Some(1), "{shown}");
+        assert!(shown.contains("n'existe pas chez o/soiree"), "{shown}");
+        assert!(!shown.contains("panne"), "{shown}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verifie_never_takes_a_captive_portal_for_a_commit() {
+        let dir = tagged();
+        git(
+            &dir,
+            &["remote", "add", "origin", "https://github.com/o/soiree.git"],
+        );
+        let path = stub_network(
+            &dir,
+            "exit 1",
+            "printf '<html>Connectez-vous au Wi-Fi</html>\\n200'",
+        );
+        let output = soiree(&dir)
+            .env("PATH", &path)
+            .args(["recherche", "verifie"])
+            .output()
+            .unwrap();
+        let shown = text(&output);
+        assert_eq!(output.status.code(), Some(2), "{shown}");
+        assert!(shown.contains("panne"), "{shown}");
+        assert!(shown.contains("0 échec(s)"), "{shown}");
+    }
+
+    #[test]
+    fn verifie_with_nothing_to_verify_never_succeeds() {
+        let empty = fresh();
+        let with_registry = fresh();
+        std::fs::create_dir(with_registry.join("recherche")).unwrap();
+        std::fs::copy(
+            repository().join("recherche/sous-systemes.toml"),
+            with_registry.join("recherche/sous-systemes.toml"),
+        )
+        .unwrap();
+        for dir in [empty.as_path(), with_registry.as_path()] {
+            let output = soiree(dir).args(["recherche", "verifie"]).output().unwrap();
+            let shown = text(&output);
+            assert_eq!(output.status.code(), Some(1), "{shown}");
+            assert!(shown.contains("aucune fiche"), "{shown}");
+            assert!(!shown.contains("0 contrôle"), "{shown}");
+        }
+        let output = soiree(&empty)
+            .args(["recherche", "verifie", "/nulle/part"])
+            .output()
+            .unwrap();
+        let shown = text(&output);
+        assert!(!output.status.success(), "{shown}");
+        assert!(shown.contains("/nulle/part"), "{shown}");
+        assert!(!shown.contains("0 contrôle"), "{shown}");
+    }
+
     /// A game whose `cargo` answers only what `soiree check --fast` asks.
     #[cfg(unix)]
     fn game() -> (PathBuf, std::ffi::OsString) {
