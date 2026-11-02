@@ -1269,3 +1269,45 @@ fn a_stream_halves_its_window_at_each_loss() {
     room.received(Ms(3_000), LinkId(2), &hole_at(14, 2, 3_000, 2_500));
     assert_eq!(leaving(&mut room, Ms(3_000)), 3, "the floor of two packets");
 }
+
+/// Fragments the timer has given up on and the window still holds back are no
+/// reason to wake up: nothing leaves until a timer frees the window, and the
+/// room's only thread would turn on the spot for as long as that takes. A loss
+/// just halved the window, so this timer does not double the next wait.
+#[test]
+fn a_shut_window_is_no_reason_to_wake_up() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    let fragment_one_arrived = |sent: u64| {
+        encode(&Packet {
+            epoch: EPOCH,
+            sent,
+            // A round trip of 125 ms keeps the timers at 250.
+            echo: Some(Echo {
+                sent: 0,
+                held: u32::try_from(sent - 125).expect("a small number"),
+            }),
+            ack: Some(Ack {
+                event_parts: Some(Parts {
+                    seq: 0,
+                    count: 64,
+                    first: 0,
+                    more: 1,
+                }),
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        })
+    };
+    for now in [240, 241, 242] {
+        room.received(Ms(now), LINK, &fragment_one_arrived(now));
+    }
+    assert_eq!(sent(&drain(&mut room, Ms(242)).1).0, vec![(0, 0)]);
+    assert_eq!(leaving(&mut room, Ms(250)), 6);
+    assert!(
+        room.next_deadline() > Some(Ms(250)),
+        "{:?}",
+        room.next_deadline()
+    );
+}

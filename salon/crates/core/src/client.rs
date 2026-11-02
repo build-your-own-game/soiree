@@ -616,8 +616,8 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     let wait = Order::of(open.caps).wait(&self.peer, &self.window, &timing);
                     let room = self.room(self.now, wait, open.caps.packet());
                     for due in [
-                        self.up.due_at(wait, room),
-                        self.out_state.due_at(wait, room),
+                        self.up.due_at(self.now, wait, room),
+                        self.out_state.due_at(self.now, wait, room),
                     ]
                     .into_iter()
                     .flatten()

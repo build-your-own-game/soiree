@@ -429,12 +429,14 @@ impl Pieces {
         self.each.len() > 1 && self.each.iter().any(|piece| *piece != Piece::Waiting)
     }
 
-    /// The next fragment due now, from `from` on.
-    fn due(&self, from: usize, now: Ms, resend: u64) -> Option<usize> {
+    /// The next fragment that can leave now, from `from` on: with no `room` in
+    /// the window, only one known lost.
+    fn due(&self, from: usize, now: Ms, resend: u64, room: usize) -> Option<usize> {
         let rest = self.each.get(from..)?;
         let due = rest.iter().position(|piece| match piece {
-            Piece::Waiting | Piece::Lost => true,
-            Piece::Sent(at, _) => now.since(*at) >= resend,
+            Piece::Lost => true,
+            Piece::Waiting => room > 0,
+            Piece::Sent(at, _) => room > 0 && now.since(*at) >= resend,
             Piece::Arrived => false,
         })?;
         Some(from.saturating_add(due))
@@ -450,9 +452,10 @@ impl Pieces {
         expired
     }
 
-    /// When something of it goes next, if anything does: the timers only,
-    /// without `room` in the window. Not cut yet: at once.
-    fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
+    /// When something of it goes next, if anything does. With no `room`, what
+    /// a timer gave up on stays until another timer frees the window: saying
+    /// "now" would wake the caller for nothing until then. Not cut yet: at once.
+    fn due_at(&self, now: Ms, resend: u64, room: usize) -> Option<Ms> {
         if self.each.is_empty() {
             return (room > 0).then_some(Ms(0));
         }
@@ -461,10 +464,18 @@ impl Pieces {
             .filter_map(|piece| match piece {
                 Piece::Waiting => (room > 0).then_some(Ms(0)),
                 Piece::Lost => Some(Ms(0)),
-                Piece::Sent(at, _) => Some(at.plus(resend)),
+                Piece::Sent(at, _) => {
+                    let due = at.plus(resend);
+                    (room > 0 || due > now).then_some(due)
+                }
                 Piece::Arrived => None,
             })
             .min()
+    }
+
+    /// One packet says it all: it goes whatever the window.
+    fn alone(&self) -> bool {
+        self.each.len() == 1
     }
 
     /// Bytes on their way, as far as the timers can tell.
@@ -672,9 +683,9 @@ impl OutEvents {
     }
 
     /// When something waiting goes again, if anything waits.
-    pub fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
+    pub fn due_at(&self, now: Ms, resend: u64, room: usize) -> Option<Ms> {
         self.sendable()
-            .filter_map(|event| event.pieces.due_at(resend, room))
+            .filter_map(|event| event.pieces.due_at(now, resend, room))
             .min()
     }
 
@@ -709,7 +720,7 @@ impl OutEvents {
             event.pieces.cut(event.data.len(), cut);
             let count = fragment_count(event.data.len(), cut);
             let mut from = 0;
-            while let Some(due) = event.pieces.due(from, now, resend) {
+            while let Some(due) = event.pieces.due(from, now, resend, budget.room) {
                 from = due.saturating_add(1);
                 let index = u16::try_from(due).unwrap_or(u16::MAX);
                 let data = fragment(&event.data, index, cut);
@@ -994,11 +1005,16 @@ impl OutState {
         self.unsend();
     }
 
-    pub fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
+    pub fn due_at(&self, now: Ms, resend: u64, room: usize) -> Option<Ms> {
         if self.acked {
             return None;
         }
-        self.pieces.due_at(resend, room)
+        let room = if self.pieces.alone() {
+            room.max(1)
+        } else {
+            room
+        };
+        self.pieces.due_at(now, resend, room)
     }
 
     /// Data bytes on their way, as far as the timers can tell.
@@ -1027,11 +1043,11 @@ impl OutState {
         // a pad does not wait behind a queue of events. The window stays as it
         // was for what comes next in the burst.
         let room = budget.room;
-        if count == 1 {
+        if self.pieces.alone() {
             budget.room = room.max(1);
         }
         let mut from = 0;
-        while let Some(due) = self.pieces.due(from, now, resend) {
+        while let Some(due) = self.pieces.due(from, now, resend, budget.room) {
             from = due.saturating_add(1);
             let index = u16::try_from(due).unwrap_or(u16::MAX);
             let data = fragment(&self.data, index, cut);

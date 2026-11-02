@@ -820,10 +820,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                     consider(device.last_heard.plus(quiet));
                     let wait = device.wait(Order::of(link.caps), &timing);
                     let room = device.room(self.now, wait, link.caps.packet());
-                    if let Some(at) = device.down.due_at(wait, room) {
+                    if let Some(at) = device.down.due_at(self.now, wait, room) {
                         consider(at.max(self.now));
                     }
-                    if let Some(at) = device.out_state.due_at(wait, room) {
+                    if let Some(at) = device.out_state.due_at(self.now, wait, room) {
                         consider(at.max(self.now));
                     }
                 }
