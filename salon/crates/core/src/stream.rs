@@ -93,7 +93,12 @@ impl Assembly {
                 u64::from(bit).lt(&u64::from(u64::BITS)).then_some(bit)
             })
             .fold(0_u64, |more, bit| more | 1_u64 << bit);
-        Parts { seq, first, more }
+        Parts {
+            seq,
+            count: self.count,
+            first,
+            more,
+        }
     }
 
     fn into_message(self) -> Vec<u8> {
@@ -455,7 +460,20 @@ impl Pieces {
         Heard { bytes: 0, lost }
     }
 
+    /// How many first fragments `parts` tells about, if it speaks of this cut.
+    fn holes(&self, parts: Parts, order: Order) -> usize {
+        if usize::from(parts.count) == self.each.len() {
+            parts.span(order)
+        } else {
+            0
+        }
+    }
+
+    /// The fragments `parts` names, if it speaks of this cut.
     fn arrived(&mut self, parts: Parts) -> Heard {
+        if usize::from(parts.count) != self.each.len() {
+            return Heard::default();
+        }
         let first = usize::from(parts.first);
         let mut bytes = 0_usize;
         for (index, piece) in self.each.iter_mut().enumerate() {
@@ -565,7 +583,7 @@ impl OutEvents {
                 && parts.seq == event.seq
             {
                 learned = learned.with(event.pieces.arrived(parts));
-                holes = holes.max(parts.span(order));
+                holes = holes.max(event.pieces.holes(parts, order));
             } else if order == Order::Kept && parts.is_none() {
                 // No event is half here: this one has nothing here at all.
                 holes = usize::MAX;
@@ -895,7 +913,7 @@ impl OutState {
         match ack.state_parts {
             Some(parts) if parts.seq == self.seq => {
                 learned = self.pieces.arrived(parts);
-                holes = parts.span(order);
+                holes = self.pieces.holes(parts, order);
             }
             None if order == Order::Kept => holes = usize::MAX,
             Some(_) | None => {}

@@ -201,8 +201,8 @@ fn a_packet_costs_what_it_carries_not_what_it_announces() {
 /// it, whatever they carry.
 #[test]
 fn a_packet_with_more_parts_than_a_sender_can_fit_is_garbage() {
-    /// `Budget`: 112 bytes for the packet, then 40 for each part.
-    const MOST: usize = (MAX_PACKET - 112) / 40;
+    /// `Budget`: 120 bytes for the packet, then 40 for each part.
+    const MOST: usize = (MAX_PACKET - 120) / 40;
     let single = |parts: usize| Packet {
         epoch: EPOCH,
         events: (0..parts)

@@ -267,6 +267,7 @@ fn an_acknowledgement_says_what_waits_past_a_hole() {
     assert_eq!((ack.events, ack.ahead), (0, 1 << 1 | 1 << 63));
     let parts = Parts {
         seq: 3,
+        count: 2,
         first: 0,
         more: 1,
     };
@@ -500,6 +501,7 @@ fn an_acknowledgement_names_the_fragments_that_arrived() {
     let ack = answer(&mut room, Ms(1), pieces.to_vec(), Vec::new());
     let parts = Parts {
         seq: 0,
+        count: 100,
         first: 2,
         more: 1 | 1 << 63,
     };
@@ -510,6 +512,7 @@ fn an_acknowledgement_names_the_fragments_that_arrived() {
     let ack = answer(&mut room, Ms(1), Vec::new(), pieces.to_vec());
     let parts = Parts {
         seq: 4,
+        count: 3,
         first: 1,
         more: 1,
     };
@@ -545,11 +548,13 @@ fn a_resend_carries_only_the_fragments_that_did_not_arrive() {
         ack: Some(Ack {
             event_parts: Some(Parts {
                 seq: 0,
+                count: 3,
                 first: 1,
                 more: 1,
             }),
             state_parts: Some(Parts {
                 seq: 1,
+                count: 3,
                 first: 2,
                 more: 0,
             }),
@@ -578,6 +583,7 @@ fn an_acknowledgement_of_other_fragments_changes_nothing() {
         ack: Some(Ack {
             state_parts: Some(Parts {
                 seq: 1,
+                count: 3,
                 first: u16::MAX,
                 more: u64::MAX,
             }),
@@ -694,13 +700,14 @@ fn leaving(room: &mut Room, now: Ms) -> usize {
 }
 
 /// What says every fragment below `first` of message 0 arrived.
-fn fragments_below(first: u16, now: u64) -> Vec<u8> {
+fn fragments_below(first: u16, count: u16, now: u64) -> Vec<u8> {
     encode(&Packet {
         epoch: EPOCH,
         sent: now,
         ack: Some(Ack {
             event_parts: Some(Parts {
                 seq: 0,
+                count,
                 first,
                 more: 0,
             }),
@@ -719,9 +726,9 @@ fn a_big_message_leaves_by_the_window() {
     assert_eq!(leaving(&mut room, Ms(0)), 12);
     assert_eq!(leaving(&mut room, Ms(1)), 0);
     assert!(room.next_deadline() > Some(Ms(1)), "nothing to wake up for");
-    room.received(Ms(2), LINK, &fragments_below(12, 2));
+    room.received(Ms(2), LINK, &fragments_below(12, 64, 2));
     assert_eq!(leaving(&mut room, Ms(2)), 24);
-    room.received(Ms(3), LINK, &fragments_below(36, 3));
+    room.received(Ms(3), LINK, &fragments_below(36, 64, 3));
     assert_eq!(leaving(&mut room, Ms(3)), 28);
 }
 
@@ -736,7 +743,7 @@ fn each_timer_that_runs_out_doubles_the_next_wait() {
         assert_eq!(leaving(&mut room, Ms(before)), 0, "{before}");
         assert!(leaving(&mut room, Ms(at)) > 0, "{at}");
     }
-    room.received(Ms(2_751), LINK, &fragments_below(1, 2_751));
+    room.received(Ms(2_751), LINK, &fragments_below(1, 3, 2_751));
     assert_eq!(leaving(&mut room, Ms(2_999)), 0);
     assert!(leaving(&mut room, Ms(3_000)) > 0, "back to 250 ms");
 }
@@ -819,6 +826,41 @@ fn a_state_too_big_is_passed_over() {
         states_part(&mut room, Ms(2), vec![state_part(2, 0, 1, &message(&[2]))]),
         vec![vec![2]]
     );
+}
+
+/// What arrived under the cut of another link names other fragments, and the
+/// ack that says so can leave before the first fragment of the new cut lands.
+/// Read as this cut's, it would stop the fragments that are still missing.
+#[test]
+fn an_ack_of_another_cut_says_nothing() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1; 40_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 3);
+    let of_the_old_cut = encode(&Packet {
+        epoch: EPOCH,
+        sent: 20,
+        echo: Some(Echo { sent: 5, held: 0 }),
+        ack: Some(Ack {
+            event_parts: Some(Parts {
+                seq: 0,
+                count: 43,
+                first: 30,
+                more: 0,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    });
+    room.received(Ms(20), LinkId(2), &of_the_old_cut);
+    let proof = encode(&Packet {
+        epoch: EPOCH,
+        sent: 21,
+        echo: Some(Echo { sent: 11, held: 0 }),
+        ack: Some(Ack::default()),
+        ..Packet::default()
+    });
+    room.received(Ms(21), LinkId(2), &proof);
+    assert_eq!(leaving(&mut room, Ms(21)), 3, "they are still owed");
 }
 
 /// The states that left, by number.

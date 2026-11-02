@@ -303,7 +303,7 @@ impl Default for Timing {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     /// Largest encoded message (event or state) a device may send. Past
-    /// 970,752 bytes, 1,024 fragments of [`Caps::DATAGRAM`], it is cut down to
+    /// 962,560 bytes, 1,024 fragments of [`Caps::DATAGRAM`], it is cut down to
     /// that when salon is given it: no receiver would take more.
     pub max_up: usize,
     /// Largest encoded message the host may send to one device, cut down in

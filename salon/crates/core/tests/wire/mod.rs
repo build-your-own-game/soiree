@@ -41,6 +41,7 @@ pub struct Ack {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Parts {
     pub seq: u32,
+    pub count: u16,
     pub first: u16,
     pub more: u64,
 }

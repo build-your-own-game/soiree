@@ -17,7 +17,7 @@ pub const PROTOCOL: u16 = 2;
 
 /// Bytes a packet spends outside its fragments (generous: fields are
 /// varints), and bytes each fragment spends besides its data.
-pub(crate) const PACKET_OVERHEAD: usize = 112;
+pub(crate) const PACKET_OVERHEAD: usize = 120;
 pub(crate) const PART_OVERHEAD: usize = 40;
 
 /// Largest packet on any link. A bigger one closes its link.
@@ -79,6 +79,10 @@ impl Ack {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Parts {
     pub seq: u32,
+    /// How many fragments the message has: its cut. What arrived under the cut
+    /// of another link says nothing of this one, and a receiver keeps it until
+    /// the first fragment of the new cut lands.
+    pub count: u16,
     /// Every fragment below this one arrived, and this one did not.
     pub first: u16,
     /// Bit `n` says fragment `first + 1 + n` arrived.
@@ -258,6 +262,7 @@ mod framing_tests {
 
     const LARGEST_PARTS: Parts = Parts {
         seq: u32::MAX,
+        count: u16::MAX,
         first: u16::MAX,
         more: u64::MAX,
     };
@@ -268,6 +273,7 @@ mod framing_tests {
     fn an_ack_tells_of_the_fragments_it_has_a_bit_for_and_no_more() {
         let parts = Parts {
             seq: 0,
+            count: 100,
             first: 3,
             more: 0b100,
         };
