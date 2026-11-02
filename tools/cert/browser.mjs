@@ -260,12 +260,17 @@ export class Tab {
 
   async goto(url, { timeoutMs = 15_000 } = {}) {
     let servedFailure = null;
+    // A navigation abandoned at its deadline keeps running: its late response
+    // says nothing of this one, which only owns the requests it saw leave.
+    const own = new Set();
+    const requestSeen = (request) => own.add(request);
     const responseSeen = (response) => {
-      if (response.status() >= 400 && response.request().isNavigationRequest()
+      if (response.status() >= 400 && own.has(response.request()) && response.request().isNavigationRequest()
           && response.frame() === this.page.mainFrame()) {
         servedFailure = new NavigationFailure({ kind: "product", phase: "initial-navigation", url: response.url(), status: response.status(), timeoutMs });
       }
     };
+    this.page.on("request", requestSeen);
     this.page.on("response", responseSeen);
     try {
       return await this.input("navigation.goto", async () => {
@@ -278,7 +283,10 @@ export class Tab {
       const failure = error instanceof NavigationFailure ? error : servedFailure ?? new NavigationFailure({ kind: "infrastructure", phase: "initial-navigation", url, timeoutMs, reason: error.message, cause: error });
       this.lastNavigationFailure = failure.toJSON();
       throw failure;
-    } finally { this.page.off("response", responseSeen); }
+    } finally {
+      this.page.off("request", requestSeen);
+      this.page.off("response", responseSeen);
+    }
   }
 
   async reload() {

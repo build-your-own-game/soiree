@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import http from "node:http";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { launchBrowser, NavigationFailure, phoneTransport, preflightPhoneUpstream } from "./browser.mjs";
+import { launchBrowser, NavigationFailure, phoneTransport, preflightPhoneUpstream, Tab } from "./browser.mjs";
 import { FixtureFailure } from "./performance.mjs";
 
 const execute = promisify(execFile);
@@ -61,11 +62,26 @@ test("HTTP preflight distinguishes a served product error from a missing respons
   });
 });
 
-test("initial navigation waits for load and reports HTTP or resource timeouts on both engines", { timeout: 30000 }, async () => {
+/** A short deadline proves a cause only if that cause came before it expired,
+ * and a slow machine can spend 250 ms before the browser reaches it. Such a try
+ * concludes nothing: the next one doubles the deadline, and each has its own
+ * tab, so that a navigation left running cannot land inside the following one. */
+const DEADLINES = [250, 500, 1000, 2000, 4000];
+
+async function firstConclusive(what, attempt) {
+  for (const timeoutMs of DEADLINES) if (await attempt(timeoutMs)) return timeoutMs;
+  assert.fail(`${what}: never observed within ${DEADLINES.at(-1)} ms`);
+}
+
+test("initial navigation waits for load and reports HTTP or resource timeouts on both engines", { timeout: 120000 }, async () => {
   const browser = await launchBrowser();
   let heldRequests = 0;
   try {
     await serverFixture((request, response) => {
+      const page = (css) => {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(`<link rel="stylesheet" href="${css}"><p id="ready">fixture</p>`);
+      };
       if (request.url === "/error") { response.writeHead(500); response.end("served failure"); }
       else if (request.url === "/slow-error") {
         response.writeHead(500, { "content-type": "text/html" });
@@ -77,10 +93,14 @@ test("initial navigation waits for load and reports HTTP or resource timeouts on
       else if (request.url === "/delayed.css") {
         const timer = setTimeout(() => { response.writeHead(200, { "content-type": "text/css" }); response.end("body{color:green}"); }, 100);
         response.on("close", () => clearTimeout(timer));
-      } else {
-        response.writeHead(200, { "content-type": "text/html" });
-        response.end(`<link rel="stylesheet" href="${request.url === "/slow" ? "/held.css" : "/delayed.css"}"><p id="ready">fixture</p>`);
       }
+      else if (request.url === "/slow") page("/held.css");
+      else if (request.url === "/slow-document") {
+        // What a slow runner does to the fixture above, on any machine.
+        const timer = setTimeout(() => page("/held.css"), 300);
+        response.on("close", () => clearTimeout(timer));
+      }
+      else page("/delayed.css");
     }, async (base) => {
       for (const engine of ["webkit", "chromium"]) {
         const tab = await browser.open(null, { engine });
@@ -96,30 +116,73 @@ test("initial navigation waits for load and reports HTTP or resource timeouts on
             assert.equal(error.phase, "initial-navigation");
             return true;
           });
-          await assert.rejects(tab.goto(base + "/slow-error", { timeoutMs: 250 }), (error) => {
-            assert.equal(error.kind, "product", "a served HTTP 500 is not hidden by a later load timeout");
-            assert.equal(error.status, 500);
-            return true;
-          });
-          let loaded = false;
-          tab.page.once("load", () => { loaded = true; });
-          const requestedBefore = heldRequests;
-          await assert.rejects(tab.goto(base + "/slow", { timeoutMs: 250 }), (error) => {
-            assert.ok(error instanceof NavigationFailure);
-            assert.equal(error.kind, "infrastructure");
-            assert.equal(error.timeoutMs, 250);
-            return true;
-          });
-          // A navigation timeout may close its resource socket before it
-          // rejects. Request history, not remaining sockets, proves setup.
-          assert.ok(heldRequests > requestedBefore, `${engine}: the browser really requested the blocked resource`);
-          assert.equal(loaded, false, "a timed out document must not be treated as loaded");
-          assert.equal(tab.pendingInput, null);
-          assert.equal(tab.lastNavigationFailure.kind, "infrastructure");
         } finally { await tab.context.close(); }
+        await firstConclusive(`${engine}: the served HTTP 500`, async (timeoutMs) => {
+          const tab = await browser.open(null, { engine });
+          try {
+            let served = false;
+            await assert.rejects(tab.goto(base + "/slow-error", { timeoutMs }), (error) => {
+              assert.ok(error instanceof NavigationFailure);
+              served = error.kind === "product";
+              if (served) assert.equal(error.status, 500, "a served HTTP 500 is not hidden by a later load timeout");
+              else assert.equal(error.status, null, "no status was seen before this deadline");
+              return true;
+            });
+            return served;
+          } finally { await tab.context.close(); }
+        });
+        const blockedByItsResource = async (path, timeoutMs) => {
+          const tab = await browser.open(null, { engine });
+          try {
+            let loaded = false;
+            tab.page.once("load", () => { loaded = true; });
+            const requestedBefore = heldRequests;
+            let requested = false;
+            await assert.rejects(tab.goto(base + path, { timeoutMs }), (error) => {
+              // Read at the rejection: a browser which keeps navigating past
+              // this deadline asks for the resource later, too late to be why.
+              requested = heldRequests > requestedBefore;
+              assert.ok(error instanceof NavigationFailure);
+              assert.equal(error.kind, "infrastructure");
+              assert.equal(error.timeoutMs, timeoutMs);
+              return true;
+            });
+            assert.equal(loaded, false, "a timed out document must not be treated as loaded");
+            assert.equal(tab.pendingInput, null);
+            assert.equal(tab.lastNavigationFailure.kind, "infrastructure");
+            return requested;
+          } finally { await tab.context.close(); }
+        };
+        await firstConclusive(`${engine}: the browser really requested the blocked resource`, (timeoutMs) => blockedByItsResource("/slow", timeoutMs));
+        const late = await firstConclusive(`${engine}: the resource of a late document`, (timeoutMs) => blockedByItsResource("/slow-document", timeoutMs));
+        assert.ok(late > 250, "a deadline which expired before the document says nothing of its resource");
       }
     });
   } finally { await browser.close(); }
+});
+
+test("a navigation left running cannot pass its late response to the next one", async () => {
+  const frame = {};
+  const response = (request, status) => ({ status: () => status, request: () => request, frame: () => frame, url: () => "http://fixture.test/late" });
+  const navigation = () => ({ isNavigationRequest: () => true });
+  for (const [own, kind, status] of [[false, "infrastructure", null], [true, "product", 500]]) {
+    const page = new EventEmitter();
+    page.mainFrame = () => frame;
+    page.url = () => "about:blank";
+    page.goto = async () => {
+      const request = navigation();
+      if (own) page.emit("request", request);
+      page.emit("response", response(request, 500));
+      throw new Error("navigation interrupted");
+    };
+    const tab = new Tab({}, page, false);
+    await assert.rejects(tab.goto("http://fixture.test/next"), (error) => {
+      assert.ok(error instanceof NavigationFailure);
+      assert.equal(error.kind, kind);
+      assert.equal(error.status, status);
+      return true;
+    });
+  }
 });
 
 test("unavailable LAN and served HTTP errors stop before UI or panic scenarios", { timeout: 20000 }, async () => {

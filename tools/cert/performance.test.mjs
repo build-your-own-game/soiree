@@ -188,7 +188,7 @@ test("RTC failures belong to C1 while fixture failures retain infrastructure sco
   for (const scenario of ["rtc", "ui", "hostile", "capacity", "text", "layout", "performance"]) assert.equal(scenarioFailureItem(scenario, cleanupFailure), "H1");
 });
 
-test("a delayed Node controller recovers only its already completed browser sample", { timeout: 10000 }, async () => {
+test("a delayed Node controller recovers only its already completed browser sample", { timeout: 30000 }, async () => {
   const browser = await launchBrowser({ webkitPhones: false });
   try {
     const tab = await browser.open("data:text/html,<p>independent renderer</p>");
@@ -196,13 +196,21 @@ test("a delayed Node controller recovers only its already completed browser samp
     await tab.page.waitForFunction(() => Boolean(window.__certFrameSample?.active));
     // This sleeps Node without consuming renderer CPU. The old watchdog
     // rejected a healthy 250 ms browser sample when Node resumed after 4 s.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4000);
+    const nodeDelayMs = 4000;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, nodeDelayMs);
     const sample = await measurement;
     assert.equal(sample.recovered_controller_delay, true);
     assert.ok(sample.browser_elapsed_ms < 3250);
-    assert.ok(sample.controller_elapsed_ms >= 4000);
-    assert.ok(sample.frames > 2);
-    assert.ok(sample.max_ms < 100, "Node delay became a fictitious rendering stall");
+    assert.ok(sample.controller_elapsed_ms >= nodeDelayMs);
+    assert.ok(sample.duration_ms >= 250, "the renderer ran its whole sample while Node slept");
+    // How fast this machine renders is not the question: a runner can take
+    // 200 ms between frames with Node awake. Every interval must be the
+    // browser's own, closed before Node woke, so none of them can hold its 4 s.
+    const receipt = await tab.page.evaluate(() => window.__certFrameSample.completed);
+    assert.equal(sample.frames, receipt.frames);
+    const browserIntervals = [...receipt.intervals, receipt.leading_gap_ms].filter((interval) => interval > 0);
+    assert.equal(sample.max_ms, Math.max(...browserIntervals), "the worst interval comes from the browser's receipt");
+    assert.ok(sample.max_ms <= sample.browser_elapsed_ms, `Node delay became a fictitious rendering stall: ${sample.max_ms} ms in a sample of ${sample.browser_elapsed_ms} ms`);
     await tab.close();
   } finally { await browser.close(); }
 });
