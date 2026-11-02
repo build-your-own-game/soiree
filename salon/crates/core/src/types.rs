@@ -103,8 +103,7 @@ impl fmt::Display for DeviceId {
 }
 
 /// A device's secret: 128 random bits the phone draws once (from
-/// `crypto.getRandomValues`, or the app's `SecRandom`), keeps, and sends on
-/// every connection. Whoever holds it is that device; it is never sent to
+/// `crypto.getRandomValues`), keeps, and sends on every connection. Whoever holds it is that device; it is never sent to
 /// another device.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Token(pub [u8; 16]);
@@ -145,7 +144,8 @@ pub enum Kind {
     Tv,
     /// A phone in a browser: touch, text, no motion sensors on `http://`.
     Phone,
-    /// A phone in the remote app: sensors, haptics, UDP.
+    /// A phone in a native shell of its own. None exists: the page in the app
+    /// is a `Phone`, and a native remote is no device.
     App,
     /// A gamepad plugged into the host, read by the host itself.
     Gamepad,

@@ -15,8 +15,8 @@
 //!
 //! ## Four ideas
 //!
-//! - **A device** ([`DeviceId`]) is one phone, one app, the TV, one gamepad,
-//!   the keyboard. It keeps its identity while its connections come and go.
+//! - **A device** ([`DeviceId`]) is one phone, the TV, one gamepad, the
+//!   keyboard. It keeps its identity while its connections come and go.
 //!   Salon does not know players: the game decides that a device is a
 //!   player, a team's buzzer, the second gamepad, or nothing.
 //! - **An event** is something that happened and must count once: an
@@ -55,8 +55,9 @@
 //!
 //! ## A device
 //!
-//! The phone page, the app and the TV run a [`Client`] the same way: the
-//! shell opens a transport on [`ClientOutput::Connect`], reports
+//! The phone page and the TV run a [`Client`] the same way, and so does the
+//! page opened in the app; a native remote is no device here and follows
+//! `remote/CONTRAT.md`. The shell opens a transport on [`ClientOutput::Connect`], reports
 //! [`Client::opened`], [`Client::received`] and [`Client::closed`], calls
 //! [`Client::wake`] when the page comes back to the foreground,
 //! [`Client::network_back`] when the network does, and carries out
@@ -64,8 +65,7 @@
 //! [`ClientOutput::Event`], and tells the player about [`Status`].
 //!
 //! The device draws its own [`Token`] once, from the OS's secure random
-//! generator, and keeps it (`localStorage`, the app's keychain). If storage
-//! is broken, it draws a new one: it simply arrives as a new device. The TV
+//! generator, and keeps it (`localStorage`). If storage is broken, it draws a new one: it simply arrives as a new device. The TV
 //! also sends the [`TvKey`] the host put in the TV page it served to its own
 //! computer, and only a link from that computer ([`Caps::local`]) may be the
 //! TV: a key replayed from the network is refused.
@@ -136,7 +136,8 @@
 //!   acknowledge goes to the new one, after that arrival and with the phase
 //!   it was sent in: a game judges it like any late event. An event in flight
 //!   when the host died can so reach both runs, once each.
-//!   [`Host::shutdown`] tells every device first.
+//!   A shell that stops cleanly can tell every device first, with
+//!   [`Host::shutdown`].
 //! - **Hostile or broken input** never reaches the game: unreadable bytes,
 //!   cut packets, nonsense fragments, wrong types are counted
 //!   ([`DeviceInfo::garbage`]) and ignored (E1). A packet over 64 KiB closes
@@ -191,7 +192,8 @@
 //!   percentile (`salon/LEARNINGS.md`).
 //! - **WebSocket**, when WebRTC fails, and always for the TV, which is on the
 //!   host's computer ([`Caps::STREAM`]).
-//! - **WebSocket and UDP** for the remote app.
+//!
+//! The remote app has its own route, `remote/CONTRAT.md`.
 //!
 //! The defaults of [`Timing`] and [`Limits`], and where each comes from, are
 //! in `salon/LEARNINGS.md`.
