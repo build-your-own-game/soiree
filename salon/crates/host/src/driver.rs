@@ -455,6 +455,46 @@ mod tests {
         ));
     }
 
+    /// A second connection of a player takes her place in silence: the game
+    /// hears nothing, the first one closes, and the numbers start again.
+    #[test]
+    fn a_second_connection_takes_the_place_without_a_word() {
+        let state = |seq| InputState {
+            seq,
+            ..InputState::default()
+        };
+        let frame = |link: u64, seq| Input::AppInput {
+            link: LinkId(link),
+            state: state(seq),
+        };
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let _: Vec<Effect> = driver.step(Ms(2), [frame(1, 9)]);
+        let effects = driver.step(Ms(3), [hello(2, ADA)]);
+        assert!(closes(&effects, 1));
+        assert!(!closes(&effects, 2));
+        assert_eq!(
+            told(&effects, 2),
+            [GameMessage::Show(Remote::Pad(presets::pad()))]
+        );
+        assert_eq!(driver.game().heard.len(), 2, "an arrival and an input");
+        // The old connection is not heard any more, not even as a goodbye.
+        let _: Vec<Effect> = driver.step(Ms(4), [frame(1, 10)]);
+        assert_eq!(driver.game().heard.len(), 2);
+        let _: Vec<Effect> = driver.step(Ms(5), [Input::Closed { link: LinkId(1) }]);
+        assert_eq!(driver.game().heard.len(), 2);
+        let _: Vec<Effect> = driver.step(Ms(6), [frame(2, 1)]);
+        assert_eq!(
+            driver.game().heard.last(),
+            Some(&AppEvent::Input {
+                player: ADA,
+                state: state(1)
+            })
+        );
+        // Saying hello again on the same connection closes nothing.
+        assert!(!closes(&driver.step(Ms(7), [hello(2, ADA)]), 2));
+    }
+
     #[test]
     fn a_frame_from_an_unknown_link_is_nobodys() {
         let mut driver = on_a_pad();
