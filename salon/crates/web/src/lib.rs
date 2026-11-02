@@ -13,8 +13,9 @@
 //!   a reload does not wait again: for ten minutes, or until the browser says
 //!   it is `online` again, or until a WebRTC link opens;
 //! - **the clock** (`performance.now()`) and the timers salon asks for;
-//! - **waking up**: `visibilitychange`, `pageshow` and `online` tell salon
-//!   to check the link at once, since iOS freezes pages in the background;
+//! - **waking up**: `visibilitychange` and `pageshow` tell salon to check the
+//!   link at once, since iOS freezes pages in the background, and `online`
+//!   also drops an attempt started while there was no network;
 //! - **the TV key**, fetched from `/salon/tv`, which only this computer gets.
 //!
 //! The page receives [`Happening`]s, in order, and never sees a socket.
@@ -375,26 +376,27 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
         let Some(window) = web_sys::window() else {
             return;
         };
-        // Before the wake below: a connection made there may try WebRTC.
+        // Without these, the tick still wakes the client, only later.
         let weak = Rc::downgrade(&self.shared);
         let _: Result<(), JsValue> =
             self.shared
                 .wake
-                .listen::<web_sys::Event>(&window, "online", move |_| forget_rtc_failures(&weak));
-        // Without these, the tick still wakes the client, only later.
-        for name in ["pageshow", "online"] {
-            let weak = Rc::downgrade(&self.shared);
-            let _: Result<(), JsValue> =
-                self.shared
-                    .wake
-                    .listen::<web_sys::Event>(&window, name, move |_| wake(&weak));
-        }
+                .listen::<web_sys::Event>(&window, "online", move |_| {
+                    // First: the connection made at once may try WebRTC.
+                    forget_rtc_failures(&weak);
+                    wake(&weak, Client::network_back);
+                });
+        let weak = Rc::downgrade(&self.shared);
+        let _: Result<(), JsValue> =
+            self.shared
+                .wake
+                .listen::<web_sys::Event>(&window, "pageshow", move |_| wake(&weak, Client::wake));
         if let Some(document) = window.document() {
             let weak = Rc::downgrade(&self.shared);
             let _: Result<(), JsValue> = self.shared.wake.listen::<web_sys::Event>(
                 &document,
                 "visibilitychange",
-                move |_| wake(&weak),
+                move |_| wake(&weak, Client::wake),
             );
         }
     }
@@ -475,7 +477,10 @@ fn forget_rtc_failures<Up, Down>(weak: &Weak<Shared<Up, Down>>) {
     }
 }
 
-fn wake<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(weak: &Weak<Shared<Up, Down>>) {
+fn wake<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
+    weak: &Weak<Shared<Up, Down>>,
+    check: fn(&mut Client<Up, Down>, Ms),
+) {
     let visible = web_sys::window()
         .and_then(|window| window.document())
         .is_none_or(|document| !document.hidden());
@@ -483,7 +488,7 @@ fn wake<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(weak: &Weak<S
         if let Ok(mut inner) = shared.inner.try_borrow_mut()
             && let Some(client) = inner.client.as_mut()
         {
-            client.wake(now());
+            check(client, now());
         }
         pump(&shared);
     }

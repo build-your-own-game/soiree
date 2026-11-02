@@ -277,24 +277,40 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         }
     }
 
-    /// The page became visible again, or the network came back
-    /// (`visibilitychange`, `pageshow`, `online`): check now instead of
-    /// waiting for the watchdog. iOS freezes pages in the background.
+    /// The page became visible again (`visibilitychange`, `pageshow`,
+    /// `resume`): check now instead of waiting for the watchdog. iOS freezes
+    /// pages in the background, and an attempt that was running then may
+    /// never end.
     pub fn wake(&mut self, now: Ms) {
         let now = self.advance(now);
-        let silent = self.config.timing.silent;
-        match &self.link {
-            Link::Open(open) if now.since(open.last_heard) >= silent => {
-                self.attempts = 0;
-                self.retry(now, Retry::Now);
-            }
+        self.check(now, self.config.timing.silent);
+    }
+
+    /// The network came back (`online`): like [`Client::wake`], and an attempt
+    /// started before now was started on no network, however young.
+    pub fn network_back(&mut self, now: Ms) {
+        let now = self.advance(now);
+        self.check(now, 0);
+    }
+
+    /// Gives up what looks dead, and brings forward what was planned. An
+    /// attempt younger than `patience` is left alone.
+    fn check(&mut self, now: Ms, patience: u64) {
+        let dead = match &self.link {
+            Link::Open(open) => now.since(open.last_heard) >= self.config.timing.silent,
+            Link::Connecting { since, .. } => now.since(*since) >= patience,
             Link::Idle { retry_at: Some(_) } => {
                 self.attempts = 0;
                 self.link = Link::Idle {
                     retry_at: Some(now),
                 };
+                false
             }
-            Link::Open(_) | Link::Idle { retry_at: None } | Link::Connecting { .. } => {}
+            Link::Idle { retry_at: None } => false,
+        };
+        if dead {
+            self.attempts = 0;
+            self.retry(now, Retry::Now);
         }
     }
 

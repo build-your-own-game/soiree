@@ -57,8 +57,9 @@
 //! The phone page, the app and the TV run a [`Client`] the same way: the
 //! shell opens a transport on [`ClientOutput::Connect`], reports
 //! [`Client::opened`], [`Client::received`] and [`Client::closed`], calls
-//! [`Client::wake`] when the page comes back to the foreground, and carries
-//! out [`Client::poll`]. The page shows [`ClientOutput::State`], reacts to
+//! [`Client::wake`] when the page comes back to the foreground,
+//! [`Client::network_back`] when the network does, and carries out
+//! [`Client::poll`]. The page shows [`ClientOutput::State`], reacts to
 //! [`ClientOutput::Event`], and tells the player about [`Status`].
 //!
 //! The device draws its own [`Token`] once, from the OS's secure random
@@ -103,6 +104,8 @@
 //!   A shell can declare an absolute connection-phase budget with
 //!   [`Client::connecting_for`]. It does not change the next attempt's default
 //!   budget and cannot postpone the handshake of an already open link (C1).
+//!   Waking up gives up an attempt older than [`Timing::silent`], which may
+//!   never end, and tries again at once, whatever its budget (C3).
 //! - **Silence is detected on both sides**: each side sends at least every
 //!   [`Timing::heartbeat`]. After [`Timing::absent`] without a packet, the
 //!   host sees [`DeviceEvent::Left`] with [`Why::Silent`], and the page drops

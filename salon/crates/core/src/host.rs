@@ -445,56 +445,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         }
         let name = hello.name.as_deref().and_then(Name::new);
         if let Some(&id) = self.tokens.get(&hello.token) {
-            let Some(device) = self.devices.get(&id) else {
-                return;
-            };
-            if device.kind != hello.kind && (device.kind == Kind::Tv || hello.kind == Kind::Tv) {
-                self.refuse(link, Refusal::NotAllowed);
-                return;
-            }
-            if let Some(old) = device.link
-                && old != link
-            {
-                self.replace(old);
-            }
-            let Some(device) = self.devices.get_mut(&id) else {
-                return;
-            };
-            let back = device.presence == Presence::Absent;
-            let first = !device.announced;
-            device.announced = true;
-            device.kind = hello.kind;
-            device.link = Some(link);
-            device.presence = Presence::Present;
-            device.last_heard = now;
-            device.peer.reset();
-            device.down.unsend();
-            device.out_state.unsend();
-            let session = Resume {
-                epoch: self.config.epoch.0,
-                device: id,
-                session: device.session,
-            };
-            if hello.resume != Some(session) {
-                device.new_session();
-            }
-            if name.is_some() {
-                device.name = name;
-            }
-            if let Some(current) = self.links.get_mut(&link) {
-                current.device = Some(id);
-            }
-            if first {
-                let (kind, name) = (device.kind, device.name.clone());
-                self.happened.push_back(DeviceEvent::Arrived {
-                    device: id,
-                    kind,
-                    name,
-                });
-            } else if back {
-                self.happened.push_back(DeviceEvent::Back { device: id });
-            }
-            self.welcome(link, id, hello.resume);
+            self.back(now, link, id, hello, name);
             return;
         }
         if !self.open {
@@ -532,6 +483,60 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             name,
         });
         self.welcome(link, id, None);
+    }
+
+    /// A device the room knows shows its token on `link`.
+    fn back(&mut self, now: Ms, link: LinkId, id: DeviceId, hello: &Hello, name: Option<Name>) {
+        let Some(device) = self.devices.get(&id) else {
+            return;
+        };
+        if device.kind != hello.kind && (device.kind == Kind::Tv || hello.kind == Kind::Tv) {
+            self.refuse(link, Refusal::NotAllowed);
+            return;
+        }
+        if let Some(old) = device.link
+            && old != link
+        {
+            self.replace(old);
+        }
+        let Some(device) = self.devices.get_mut(&id) else {
+            return;
+        };
+        let back = device.presence == Presence::Absent;
+        let first = !device.announced;
+        device.announced = true;
+        device.kind = hello.kind;
+        device.link = Some(link);
+        device.presence = Presence::Present;
+        device.last_heard = now;
+        device.peer.reset();
+        device.down.unsend();
+        device.out_state.unsend();
+        let session = Resume {
+            epoch: self.config.epoch.0,
+            device: id,
+            session: device.session,
+        };
+        if hello.resume != Some(session) {
+            device.new_session();
+        }
+        if name.is_some() {
+            device.name = name;
+        }
+        if let Some(current) = self.links.get_mut(&link) {
+            current.device = Some(id);
+        }
+        if first {
+            let (kind, name) = (device.kind, device.name.clone());
+            self.happened.push_back(DeviceEvent::Arrived {
+                device: id,
+                kind,
+                name,
+            });
+        } else if back {
+            self.happened.push_back(DeviceEvent::Back { device: id });
+        }
+        self.welcome(link, id, hello.resume);
     }
 
     fn welcome(&mut self, link: LinkId, id: DeviceId, resume: Option<Resume>) {

@@ -11,7 +11,7 @@ mod framing;
 mod net;
 
 use net::{Down, Faults, Net, Up, phone_config};
-use salon_core::{Caps, DeviceEvent, DeviceId, Kind, Ms, Presence, Refusal, Status, Why};
+use salon_core::{Caps, DeviceEvent, DeviceId, Kind, Ms, Presence, Refusal, Status, Timing, Why};
 
 fn device_of(net: &Net, phone: usize) -> DeviceId {
     net.phones[phone].client.device().expect("welcomed")
@@ -881,7 +881,10 @@ fn states_from(net: &Net, device: DeviceId) -> Vec<Up> {
     net.happened
         .iter()
         .filter_map(|(_, event)| match event {
-            DeviceEvent::State { device: from, state } if *from == device => Some(state.clone()),
+            DeviceEvent::State {
+                device: from,
+                state,
+            } if *from == device => Some(state.clone()),
             _ => None,
         })
         .collect()
@@ -1284,10 +1287,7 @@ fn what_waits_goes_to_the_host_that_restarted() {
     // The numbers restarted with the host, and go on from there.
     net.phones[phone].client.send(&Up::Answer(8)).unwrap();
     net.run(500);
-    assert_eq!(
-        net.events_from(device),
-        vec![Up::Answer(7), Up::Answer(8)]
-    );
+    assert_eq!(net.events_from(device), vec![Up::Answer(7), Up::Answer(8)]);
 }
 
 /// The same when the host remembers nothing: a new device, for the game to
@@ -1331,4 +1331,78 @@ fn an_event_in_flight_when_the_host_dies_reaches_each_run_once() {
         vec![Up::Answer(1), Up::Answer(1)],
         "once per run"
     );
+}
+
+/// A client with its attempt started at 0, in the budget of WebRTC then
+/// WebSocket.
+fn attempting() -> salon_core::Client<Up, Down> {
+    use salon_core::{Client, ClientOutput};
+    let mut client: Client<Up, Down> = Client::new(Ms(0), phone_config(49, Kind::Phone));
+    assert_eq!(client.poll(Ms(0)), Some(ClientOutput::Connect));
+    client.connecting_for(Ms(0), 20_000);
+    client
+}
+
+/// C3: the page froze during an attempt, which may never end (Phoenix
+/// 2575a6b). Waking up abandons it instead of waiting for its 20 s.
+#[test]
+fn waking_up_abandons_an_attempt_from_before_the_sleep() {
+    use salon_core::ClientOutput;
+    let mut client = attempting();
+    let woke = Ms(8_000);
+    client.wake(woke);
+    assert_eq!(client.poll(woke), Some(ClientOutput::Disconnect));
+    assert_eq!(client.next_deadline(), Some(woke));
+    assert_eq!(client.poll(woke), Some(ClientOutput::Connect));
+}
+
+/// A page comes back to the foreground just as it opens: an attempt this
+/// young is not stuck, and `pageshow` comes with every load.
+#[test]
+fn waking_up_leaves_a_young_attempt_alone() {
+    let mut client = attempting();
+    let woke = Ms(Timing::default().silent - 1);
+    client.wake(woke);
+    assert_eq!(client.poll(woke), None);
+    assert_eq!(client.next_deadline(), Some(Ms(20_000)));
+}
+
+/// An attempt opened offline may never end on mobile Safari (centrifuge-js):
+/// the network coming back abandons it, however young.
+#[test]
+fn the_network_coming_back_abandons_any_attempt() {
+    use salon_core::ClientOutput;
+    let mut client = attempting();
+    let back = Ms(1);
+    client.network_back(back);
+    assert_eq!(client.poll(back), Some(ClientOutput::Disconnect));
+    assert_eq!(client.poll(back), Some(ClientOutput::Connect));
+}
+
+/// The network coming back says nothing of a link that is alive.
+#[test]
+fn the_network_coming_back_leaves_a_live_link_alone() {
+    let mut net = Net::new(43, Faults::default());
+    let phone = net.add_phone(phone_config(50, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, phone);
+    net.run(1_000);
+    net.phones[phone].client.network_back(net.now);
+    net.run(1_000);
+    assert_eq!(net.phones[phone].connects, 1);
+    assert_eq!(net.phones[phone].client.status(), Status::Connected);
+}
+
+/// A dead link is dropped as by a wake, and a planned attempt is brought
+/// forward.
+#[test]
+fn the_network_coming_back_retries_at_once() {
+    let mut net = Net::new(44, Faults::default());
+    let phone = net.add_phone(phone_config(51, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, phone);
+    net.phones[phone].frozen = true;
+    net.run(3_000);
+    net.phones[phone].frozen = false;
+    net.phones[phone].client.network_back(net.now);
+    assert!(net.run_until(500, |net| net.phones[phone].connects == 2
+        && net.phones[phone].client.status() == Status::Connected));
 }

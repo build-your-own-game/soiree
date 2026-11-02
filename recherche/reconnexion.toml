@@ -573,7 +573,8 @@ citation = "seems a bit random, but I've seen 10+ seconds."
 enonce = "Une tentative lancée pendant le sommeil reste bloquée au réveil : il faut l'abandonner et en ouvrir une neuve."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::waking_up_abandons_an_attempt_from_before_the_sleep", "C3"]
 trou = "T4"
 
 [[lecon]]
@@ -841,7 +842,8 @@ citation = "Mobile Safari may never issue the close callback for it,"
 enonce = "Une tentative ouverte hors ligne peut ne jamais se terminer sur Safari mobile : le retour du réseau doit l'abandonner."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::the_network_coming_back_abandons_any_attempt"]
 trou = "T4"
 
 [[lecon]]
