@@ -850,7 +850,8 @@ citation = "numbers belong to the device, not to the link"
 enonce = "Notre propre promesse : si la numérotation appartient à l'appareil, deux instances d'un même appareil ne peuvent pas garder chacune son compteur."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::play_here_keeps_counting_after_the_other_tab_sent_events", "salon/crates/core/tests/salon.rs::what_waits_in_a_tab_survives_the_other_one_sending_less", "salon/crates/core/tests/salon.rs::an_event_that_arrived_is_not_repeated_by_the_tab_that_takes_back", "salon/crates/core/tests/salon.rs::play_here_is_heard_and_says_what_this_tab_holds", "C5"]
 trou = "T2"
 note = "Trou trouvé en lisant salon, avant toute référence."
 

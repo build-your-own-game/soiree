@@ -1131,3 +1131,131 @@ fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
     }
     assert_eq!(page.status(), Status::Refused(Refusal::Version));
 }
+
+/// Two tabs of one player, joined, the second one in the first one's place.
+fn twins(net: &mut Net, token: u8) -> (usize, usize, DeviceId) {
+    let first = net.add_phone(phone_config(token, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(net, first);
+    let second = net.add_phone(phone_config(token, Kind::Phone), Caps::DATAGRAM);
+    assert_eq!(joined(net, second), device);
+    net.run(100);
+    (first, second, device)
+}
+
+/// C5: "play here" after the other tab sent events. Both tabs count for the
+/// same device, so the numbers of one are worth nothing to the other: they
+/// were ignored and acknowledged, and `send` had returned `Ok`.
+#[test]
+fn play_here_keeps_counting_after_the_other_tab_sent_events() {
+    let mut net = Net::new(35, Faults::default());
+    let (first, second, device) = twins(&mut net, 41);
+    for n in 0..3 {
+        net.phones[second].client.send(&Up::Answer(n)).unwrap();
+    }
+    net.run(1_500);
+    net.phones[first].client.send(&Up::Answer(3)).unwrap();
+    net.phones[first].client.resume();
+    assert!(net.run_until(3_000, |net| {
+        net.phones[first].client.status() == Status::Connected
+    }));
+    net.phones[first].client.send(&Up::Answer(4)).unwrap();
+    net.run(1_000);
+    let want: Vec<Up> = (0..5).map(Up::Answer).collect();
+    assert_eq!(net.events_from(device), want);
+    assert_eq!(net.phones[second].client.status(), Status::Replaced);
+}
+
+/// The counters alone cannot tell: the other tab sent fewer events than this
+/// one has waiting, so the host's number is not above this tab's, and what
+/// waits was dropped as acknowledged.
+#[test]
+fn what_waits_in_a_tab_survives_the_other_one_sending_less() {
+    let mut net = Net::new(36, Faults::default());
+    let first = net.add_phone(phone_config(42, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, first);
+    net.phones[first].frozen = true;
+    for n in 0..3 {
+        net.phones[first].client.send(&Up::Answer(n)).unwrap();
+    }
+    let second = net.add_phone(phone_config(42, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, second);
+    net.phones[second].client.send(&Up::Answer(10)).unwrap();
+    net.phones[second].client.send(&Up::Answer(11)).unwrap();
+    net.run(1_500);
+    // The first tab comes back from the background, knowing nothing of it.
+    net.phones[first].frozen = false;
+    assert!(net.run_until(10_000, |net| {
+        net.phones[first].connects == 2 && net.phones[first].client.status() == Status::Connected
+    }));
+    net.run(1_000);
+    let want: Vec<Up> = [10, 11, 0, 1, 2].map(Up::Answer).to_vec();
+    assert_eq!(net.events_from(device), want);
+}
+
+/// The other way: an event that arrived but whose acknowledgement was lost
+/// when the tab was replaced is not sent again by the tab that takes back.
+#[test]
+fn an_event_that_arrived_is_not_repeated_by_the_tab_that_takes_back() {
+    let mut net = Net::new(37, Faults::default());
+    let first = net.add_phone(phone_config(43, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, first);
+    net.run(300);
+    net.phones[first].client.send(&Up::Answer(1)).unwrap();
+    assert!(net.run_until(100, |net| net.events_from(device).len() == 1));
+    net.phones[first].frozen = true;
+    let second = net.add_phone(phone_config(43, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, second);
+    net.phones[second].client.send(&Up::Answer(2)).unwrap();
+    net.run(1_500);
+    net.phones[first].frozen = false;
+    assert!(net.run_until(10_000, |net| {
+        net.phones[first].connects == 2 && net.phones[first].client.status() == Status::Connected
+    }));
+    net.phones[first].client.send(&Up::Answer(3)).unwrap();
+    net.run(1_000);
+    assert_eq!(
+        net.events_from(device),
+        vec![Up::Answer(1), Up::Answer(2), Up::Answer(3)]
+    );
+}
+
+/// A tab that plays again is heard like a new one, and what it held is
+/// what the game holds now.
+#[test]
+fn play_here_is_heard_and_says_what_this_tab_holds() {
+    let mut net = Net::new(38, Faults::default());
+    let (first, second, device) = twins(&mut net, 44);
+    for n in 0..5 {
+        net.phones[second].client.set_state(&Up::Pad(n, 0)).unwrap();
+        net.run(100);
+    }
+    net.phones[first].client.set_state(&Up::Pad(7, 7)).unwrap();
+    net.phones[first].client.resume();
+    assert!(net.run_until(3_000, |net| {
+        net.phones[first].client.status() == Status::Connected
+    }));
+    net.run(500);
+    assert_eq!(states_from(&net, device).last(), Some(&Up::Pad(7, 7)));
+    net.phones[first].client.set_state(&Up::Pad(8, 8)).unwrap();
+    net.run(500);
+    assert_eq!(states_from(&net, device).last(), Some(&Up::Pad(8, 8)));
+}
+
+/// A tab away for more takeovers than the host remembers cannot be told what
+/// arrived: it may repeat what was in flight, but it loses nothing.
+#[test]
+fn a_tab_away_for_many_takeovers_loses_nothing() {
+    let mut net = Net::new(39, Faults::default());
+    let (first, _, device) = twins(&mut net, 45);
+    net.phones[first].client.send(&Up::Answer(100)).unwrap();
+    for n in 0..8 {
+        let other = net.add_phone(phone_config(45, Kind::Phone), Caps::DATAGRAM);
+        joined(&mut net, other);
+        net.phones[other].client.send(&Up::Answer(n)).unwrap();
+        net.run(100);
+    }
+    net.phones[first].client.resume();
+    net.run(2_000);
+    let want: Vec<Up> = (0..8).chain([100]).map(Up::Answer).collect();
+    assert_eq!(net.events_from(device), want);
+}

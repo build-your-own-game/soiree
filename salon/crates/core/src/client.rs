@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 
 use crate::stream::{Budget, InEvents, InState, OutEvents, OutState, Peer};
 use crate::types::{Caps, DeviceId, Kind, Limits, Ms, Refusal, Timing, Token, TvKey};
-use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Welcome};
+use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
 
 /// Packets one flush may send, to drain a large message.
 const BURST: usize = 32;
@@ -119,8 +119,8 @@ pub struct Client<Up, Down> {
     now: Ms,
     link: Link,
     status: Status,
-    /// The host's epoch and this device's identity, once welcomed.
-    known: Option<(u32, DeviceId)>,
+    /// Where this client stands, once welcomed.
+    known: Option<Resume>,
     phase: u32,
     up: OutEvents,
     down: InEvents,
@@ -326,10 +326,10 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         let Link::Open(open) = &mut self.link else {
             return;
         };
-        let Some((epoch, _)) = self.known else {
+        let Some(known) = self.known else {
             return;
         };
-        if !open.welcomed || packet.epoch != epoch {
+        if !open.welcomed || packet.epoch != known.epoch {
             return;
         }
         open.last_heard = now;
@@ -369,12 +369,24 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         }
         open.welcomed = true;
         open.last_heard = now;
-        let identity = (welcome.epoch, welcome.device);
+        let now_known = Resume {
+            epoch: welcome.epoch,
+            device: welcome.device,
+            session: welcome.session,
+        };
         match self.known {
-            Some(known) if known == identity => {
-                // Same host run, same device: keep the numbering; what the
+            Some(known) if known == now_known => {
+                // Same host run, same client: keep the numbering; what the
                 // host already has is acknowledged, the rest goes again.
                 self.up.ack(welcome.up_next);
+                self.down.skip_to(welcome.down_first);
+            }
+            Some(known) if (known.epoch, known.device) == (welcome.epoch, welcome.device) => {
+                // Another tab held the device meanwhile: its numbers came
+                // after ours. What arrived is done, the rest moves above it.
+                self.up.ack(welcome.up_seen);
+                self.up.renumber(welcome.up_next);
+                self.out_state.rebase(welcome.state);
                 self.down.skip_to(welcome.down_first);
             }
             Some(_) => {
@@ -394,7 +406,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 self.down.restart(welcome.down_first);
             }
         }
-        self.known = Some(identity);
+        self.known = Some(now_known);
         self.up.unsend();
         self.out_state.unsend();
         self.peer.reset();
@@ -446,7 +458,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             return;
         };
         let packet_size = open.caps.packet();
-        let epoch = self.known.map_or(0, |(epoch, _)| epoch);
+        let epoch = self.known.map_or(0, |known| known.epoch);
         let resend = self.peer.resend(timing.resend_min, timing.resend_max);
         let mut closing = false;
         for _ in 0..BURST {
@@ -580,7 +592,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
     }
 
     /// Connects again after [`Status::Replaced`], [`Status::Refused`] or
-    /// [`Status::Quit`] ("play here").
+    /// [`Status::Quit`] ("play here"). What waits still goes, once.
     pub fn resume(&mut self) {
         if matches!(self.link, Link::Idle { retry_at: None }) {
             self.attempts = 0;
@@ -607,7 +619,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
 
     /// This device's identity in the room, once welcomed.
     pub fn device(&self) -> Option<DeviceId> {
-        self.known.map(|(_, device)| device)
+        self.known.map(|known| known.device)
     }
 
     /// Smoothed round trip to the host, in milliseconds.

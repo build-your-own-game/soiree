@@ -84,8 +84,14 @@
 //! - **One connection per device.** When a second tab or a reconnecting
 //!   phone shows the same token, the newest wins; the old one is told it was
 //!   replaced and does not reconnect on its own, so two tabs never evict each
-//!   other in a loop (C5). A late close of the old connection does not touch
-//!   the new one. The game hears nothing: the device never left.
+//!   other in a loop (C5). A late close of the old connection, or a late
+//!   copy of its hello, does not touch the new one. The game hears nothing:
+//!   the device never left. Tabs of one device do not share their numbers:
+//!   the host tells them apart, so the tab that plays again ([`Client::resume`])
+//!   is heard, what waited in it goes once, after what the other one sent, and
+//!   what had arrived does not go twice. The host remembers that for the last
+//!   four takeovers of a device; a tab away for longer may repeat what it had
+//!   in flight, and loses nothing.
 //! - **Coming back.** After a cut, a reload or a locked phone, the device
 //!   reconnects on its own, from 250 ms to 2 s between attempts and without
 //!   end, and gets its identity, its latest state and every event it missed

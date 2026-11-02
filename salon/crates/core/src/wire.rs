@@ -103,17 +103,34 @@ pub(crate) struct Hello {
     pub token: Token,
     pub name: Option<String>,
     pub key: Option<TvKey>,
-    /// The epoch and device this client last knew, if any: with them, the
-    /// host and the client keep their numbering and nothing is lost.
-    pub resume: Option<(u32, DeviceId)>,
+    /// Where this client last was, if anywhere: when it is where the device
+    /// still is, the host and the client keep their numbering.
+    pub resume: Option<Resume>,
+}
+
+/// Where a client stands: which run of the host, as which device, and which
+/// of the clients that held this device. Two tabs, or a page and its reload,
+/// show one token: only the host can tell them apart, and the numbers of one
+/// mean nothing to the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Resume {
+    pub epoch: u32,
+    pub device: DeviceId,
+    pub session: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Welcome {
     pub device: DeviceId,
     pub epoch: u32,
+    /// Changes when another client takes the device over: a client with
+    /// another number renumbers what waits from `up_next`.
+    pub session: u32,
     /// The next event number the host expects from this device.
     pub up_next: u32,
+    /// What arrived of the session the hello named: its events below this
+    /// number. 0 when the host cannot tell: they go again.
+    pub up_seen: u32,
     /// The latest state number the host took from this device: a device that
     /// starts over numbers above it.
     pub state: u32,

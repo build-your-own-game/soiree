@@ -12,7 +12,7 @@ use crate::types::{
     Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Refusal, Timing, Token, TvKey,
     Why,
 };
-use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Welcome};
+use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
 
 /// Largest packet read from any link; a bigger one closes that link (and
 /// only that one).
@@ -27,6 +27,10 @@ const GARBAGE_BEFORE_HELLO: u32 = 3;
 /// After a final message, the link stays open this long so the copies can
 /// arrive before it closes (Quake 3 keeps such a "zombie" 2 s).
 const FINAL_GRACE: u64 = 1_000;
+/// Sessions a device remembers the end of, so that a tab that comes back
+/// after being replaced is told what arrived. Past that it may repeat what
+/// it had in flight, never lose it.
+const PAST_SESSIONS: usize = 4;
 
 pub struct HostConfig {
     /// The game's version: a phone with another one is refused.
@@ -145,6 +149,10 @@ struct Device {
     /// The game has heard of it in this run. Devices remembered from a
     /// previous run are not: their first connection is an arrival.
     announced: bool,
+    /// Which client holds the numbering (see [`Resume`]).
+    session: u32,
+    /// Past sessions, with the number the events stood at when each ended.
+    past: VecDeque<(u32, u32)>,
 }
 
 impl Device {
@@ -165,7 +173,32 @@ impl Device {
             held_at: None,
             garbage: 0,
             announced: true,
+            session: 0,
+            past: VecDeque::new(),
         }
+    }
+
+    /// Another client took over: what it sends is not the rest of a message
+    /// the last one left half sent.
+    fn new_session(&mut self) {
+        if self.past.len() >= PAST_SESSIONS {
+            self.past.pop_front();
+        }
+        self.past.push_back((self.session, self.up.next()));
+        self.session = self.session.wrapping_add(1);
+        self.up.abandon();
+        self.in_state.abandon();
+    }
+
+    /// Below this number, the events of `session` arrived; 0 if unknown.
+    fn seen(&self, session: u32) -> u32 {
+        if session == self.session {
+            return self.up.next();
+        }
+        self.past
+            .iter()
+            .find(|(past, _)| *past == session)
+            .map_or(0, |(_, end)| *end)
     }
 
     fn info(&self) -> DeviceInfo {
@@ -396,7 +429,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         if let Some(id) = current.device {
             // Already welcomed here: the welcome was lost, say it again.
             if self.devices.get(&id).and_then(|device| device.token) == Some(hello.token) {
-                self.welcome(link, id);
+                self.welcome(link, id, hello.resume);
             }
             return;
         }
@@ -437,11 +470,13 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             device.peer.reset();
             device.down.unsend();
             device.out_state.unsend();
-            if hello.resume != Some((self.config.epoch.0, id)) {
-                // A client with no memory of this: it numbers from what the
-                // welcome says, and a message half sent stays unfinished.
-                device.up.abandon();
-                device.in_state.abandon();
+            let session = Resume {
+                epoch: self.config.epoch.0,
+                device: id,
+                session: device.session,
+            };
+            if hello.resume != Some(session) {
+                device.new_session();
             }
             if name.is_some() {
                 device.name = name;
@@ -459,7 +494,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             } else if back {
                 self.happened.push_back(DeviceEvent::Back { device: id });
             }
-            self.welcome(link, id);
+            self.welcome(link, id, hello.resume);
             return;
         }
         if !self.open {
@@ -496,17 +531,22 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             kind: hello.kind,
             name,
         });
-        self.welcome(link, id);
+        self.welcome(link, id, None);
     }
 
-    fn welcome(&mut self, link: LinkId, id: DeviceId) {
+    fn welcome(&mut self, link: LinkId, id: DeviceId, resume: Option<Resume>) {
         let Some(device) = self.devices.get(&id) else {
             return;
         };
+        let epoch = self.config.epoch.0;
         let welcome = Welcome {
             device: id,
-            epoch: self.config.epoch.0,
+            epoch,
+            session: device.session,
             up_next: device.up.next(),
+            up_seen: resume
+                .filter(|resume| resume.epoch == epoch && resume.device == id)
+                .map_or(0, |resume| device.seen(resume.session)),
             state: device.in_state.applied(),
             down_first: device.down.oldest(),
         };
