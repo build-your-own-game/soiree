@@ -863,6 +863,106 @@ fn an_ack_of_another_cut_says_nothing() {
     assert_eq!(leaving(&mut room, Ms(21)), 3, "they are still owed");
 }
 
+/// A stream has no timer, so what an ack cannot name must still go again: an
+/// old cut, or an older state, is all the receiver holds, and it would say so
+/// for ever while what replaced it never lands.
+#[test]
+fn a_stream_does_not_wait_behind_what_the_other_side_kept_of_the_past() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1; 40_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 3);
+    let old_cut = encode(&Packet {
+        epoch: EPOCH,
+        sent: 20,
+        echo: Some(Echo { sent: 11, held: 0 }),
+        ack: Some(Ack {
+            event_parts: Some(Parts {
+                seq: 0,
+                count: 43,
+                first: 30,
+                more: 0,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    });
+    room.received(Ms(20), LinkId(2), &old_cut);
+    assert_eq!(leaving(&mut room, Ms(20)), 3);
+
+    let (mut room, device) = on_a_stream();
+    room.show(device, &vec![1; 40_000]).unwrap();
+    room.show(device, &vec![2]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(10)), vec![2]);
+    let older = encode(&Packet {
+        epoch: EPOCH,
+        sent: 20,
+        echo: Some(Echo { sent: 11, held: 0 }),
+        ack: Some(Ack {
+            state_parts: Some(Parts {
+                seq: 1,
+                count: 3,
+                first: 1,
+                more: 0,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    });
+    room.received(Ms(20), LinkId(2), &older);
+    assert_eq!(states_leaving(&mut room, Ms(20)), vec![2]);
+}
+
+/// The window counts what a fragment weighs, not the size of the cut: small
+/// events on a stream weigh a few bytes each, not 16 KiB.
+#[test]
+fn small_fragments_weigh_what_they_carry() {
+    let (mut room, device) = on_a_stream();
+    for _ in 0..10 {
+        room.send(device, &vec![1]).unwrap();
+    }
+    assert_eq!(leaving(&mut room, Ms(10)), 10);
+    for _ in 0..10 {
+        room.send(device, &vec![2]).unwrap();
+    }
+    assert_eq!(leaving(&mut room, Ms(11)), 10);
+}
+
+/// A fragment known lost has left what is on its way, and nothing else may
+/// free the window: on a stream, what follows it waits for it to arrive, and
+/// no timer would ever open it.
+#[test]
+fn a_fragment_known_lost_goes_whatever_the_window() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    let ack = |sent: u64, echoed: u64| {
+        encode(&Packet {
+            epoch: EPOCH,
+            sent,
+            echo: Some(Echo {
+                sent: echoed,
+                held: 0,
+            }),
+            ack: Some(Ack {
+                event_parts: Some(Parts {
+                    seq: 0,
+                    count: 64,
+                    first: 5,
+                    more: 0b11_1111,
+                }),
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        })
+    };
+    room.received(Ms(2), LINK, &ack(2, 1));
+    assert!(leaving(&mut room, Ms(2)) > 0, "what the ack made room for");
+    room.received(Ms(3), LINK, &ack(3, 1));
+    assert_eq!(leaving(&mut room, Ms(3)), 0, "the window is full");
+    room.received(Ms(4), LINK, &ack(4, 1));
+    assert_eq!(sent(&drain(&mut room, Ms(4)).1).0, vec![(0, 5)]);
+}
+
 /// The states that left, by number.
 fn states_leaving(room: &mut Room, now: Ms) -> Vec<u32> {
     let mut numbers: Vec<u32> = sent(&drain(room, now).1)

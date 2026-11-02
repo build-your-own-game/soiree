@@ -175,9 +175,12 @@ impl Budget {
     /// is one fragment, and a window that refused it would wake the sender up
     /// for nothing until the next ack.
     fn take(&mut self, data: usize) -> bool {
-        if self.room == 0 {
-            return false;
-        }
+        self.room > 0 && self.take_again(data)
+    }
+
+    /// A fragment known lost left what is on its way, and the window waits for
+    /// it: what follows cannot be delivered, so nothing else would open it.
+    fn take_again(&mut self, data: usize) -> bool {
         let Some(left) = data
             .checked_add(PART_OVERHEAD)
             .and_then(|cost| self.bytes.checked_sub(cost))
@@ -208,6 +211,17 @@ impl Order {
             Order::Kept
         } else {
             Order::Any
+        }
+    }
+
+    /// How many first fragments count as passed over when an ack says nothing
+    /// of a message is there: on a datagram link, none, since nothing tells
+    /// them from those still on their way. No timer would save a stream that
+    /// took this for no news.
+    fn nothing_there(self) -> usize {
+        match self {
+            Order::Any => 0,
+            Order::Kept => usize::MAX,
         }
     }
 
@@ -343,6 +357,8 @@ enum Piece {
     Waiting,
     /// It left then, and this many acknowledgements have passed over it.
     Sent(Ms, u8),
+    /// It left, and did not arrive: it goes again, whatever the window.
+    Lost,
     /// The other side said it has it. It says so of a fragment it keeps: what
     /// it drops, it drops with the link, and a new link starts [`Pieces`] over.
     Arrived,
@@ -351,6 +367,8 @@ enum Piece {
 /// One message on its way, in fragments of `cut` bytes.
 #[derive(Default)]
 struct Pieces {
+    /// Bytes of the message.
+    len: usize,
     cut: usize,
     each: Vec<Piece>,
 }
@@ -359,8 +377,35 @@ impl Pieces {
     /// Starts over, unless the message is already cut this way.
     fn cut(&mut self, len: usize, cut: usize) {
         if self.cut != cut {
+            self.len = len;
             self.cut = cut;
             self.each = vec![Piece::Waiting; usize::from(fragment_count(len, cut))];
+        }
+    }
+
+    /// Bytes of a fragment: the last one may be short, and a small event is.
+    fn size(&self, index: usize) -> usize {
+        self.len
+            .saturating_sub(index.saturating_mul(self.cut))
+            .min(self.cut)
+    }
+
+    /// What is `Sent`, in bytes, among those `keep` says.
+    fn weigh(&self, keep: impl Fn(Ms) -> bool) -> usize {
+        self.each
+            .iter()
+            .enumerate()
+            .filter(|(_, piece)| matches!(piece, Piece::Sent(at, _) if keep(*at)))
+            .map(|(index, _)| self.size(index))
+            .fold(0, usize::saturating_add)
+    }
+
+    /// Whether this fragment leaves in `budget`, which it uses up if so.
+    fn fits(&self, index: usize, data: usize, budget: &mut Budget) -> bool {
+        if self.each.get(index) == Some(&Piece::Lost) {
+            budget.take_again(data)
+        } else {
+            budget.take(data)
         }
     }
 
@@ -379,7 +424,7 @@ impl Pieces {
     fn due(&self, from: usize, now: Ms, resend: u64) -> Option<usize> {
         let rest = self.each.get(from..)?;
         let due = rest.iter().position(|piece| match piece {
-            Piece::Waiting => true,
+            Piece::Waiting | Piece::Lost => true,
             Piece::Sent(at, _) => now.since(*at) >= resend,
             Piece::Arrived => false,
         })?;
@@ -406,6 +451,7 @@ impl Pieces {
             .iter()
             .filter_map(|piece| match piece {
                 Piece::Waiting => (room > 0).then_some(Ms(0)),
+                Piece::Lost => Some(Ms(0)),
                 Piece::Sent(at, _) => Some(at.plus(resend)),
                 Piece::Arrived => None,
             })
@@ -414,17 +460,12 @@ impl Pieces {
 
     /// Bytes on their way, as far as the timers can tell.
     fn flying(&self, now: Ms, resend: u64) -> usize {
-        let on_time =
-            |piece: &&Piece| matches!(piece, Piece::Sent(at, _) if now.since(*at) < resend);
-        let fragments = self.each.iter().filter(on_time).count();
-        fragments.saturating_mul(self.cut)
+        self.weigh(|at| now.since(at) < resend)
     }
 
     /// What arrived and was on its way, in bytes.
     fn gone(&self) -> usize {
-        let on_its_way = |piece: &&Piece| matches!(piece, Piece::Sent(..));
-        let fragments = self.each.iter().filter(on_its_way).count();
-        fragments.saturating_mul(self.cut)
+        self.weigh(|_| true)
     }
 
     fn all_arrived(&mut self) -> Heard {
@@ -452,19 +493,21 @@ impl Pieces {
                 Order::Any => false,
             };
             if gone {
-                *piece = Piece::Waiting;
+                *piece = Piece::Lost;
                 lost = true;
             }
         }
         Heard { bytes: 0, lost }
     }
 
-    /// How many first fragments `parts` tells about, if it speaks of this cut.
+    /// How many first fragments `parts` tells about. Of another cut, it says
+    /// none of this one is there yet: only a stream can act on that, since on a
+    /// datagram link they may still be on their way.
     fn holes(&self, parts: Parts, order: Order) -> usize {
         if usize::from(parts.count) == self.each.len() {
             parts.span(order)
         } else {
-            0
+            order.nothing_there()
         }
     }
 
@@ -474,6 +517,7 @@ impl Pieces {
             return Heard::default();
         }
         let first = usize::from(parts.first);
+        let (len, cut) = (self.len, self.cut);
         let mut bytes = 0_usize;
         for (index, piece) in self.each.iter_mut().enumerate() {
             let past = index.checked_sub(first.saturating_add(1));
@@ -484,7 +528,8 @@ impl Pieces {
                     .is_some_and(|more| more & 1 == 1)
             });
             if (index < first || said) && matches!(piece, Piece::Sent(..)) {
-                bytes = bytes.saturating_add(self.cut);
+                let size = len.saturating_sub(index.saturating_mul(cut)).min(cut);
+                bytes = bytes.saturating_add(size);
             }
             if index < first || said {
                 *piece = Piece::Arrived;
@@ -583,9 +628,9 @@ impl OutEvents {
             {
                 learned = learned.with(event.pieces.arrived(parts));
                 holes = holes.max(event.pieces.holes(parts, order));
-            } else if order == Order::Kept && parts.is_none() {
+            } else if parts.is_none() {
                 // No event is half here: this one has nothing here at all.
-                holes = usize::MAX;
+                holes = holes.max(order.nothing_there());
             }
             if let Some(heard) = heard {
                 learned = learned.with(event.pieces.passed_over(holes, heard, order));
@@ -659,7 +704,7 @@ impl OutEvents {
                 from = due.saturating_add(1);
                 let index = u16::try_from(due).unwrap_or(u16::MAX);
                 let data = fragment(&event.data, index, cut);
-                if !budget.take(data.len()) {
+                if !event.pieces.fits(due, data.len(), budget) {
                     return parts;
                 }
                 budget.expired |= event.pieces.sent(due, now);
@@ -908,15 +953,14 @@ impl OutState {
             return learned;
         }
         let mut learned = Heard::default();
-        let mut holes = 0;
-        match ack.state_parts {
+        let holes = match ack.state_parts {
             Some(parts) if parts.seq == self.seq => {
                 learned = self.pieces.arrived(parts);
-                holes = self.pieces.holes(parts, order);
+                self.pieces.holes(parts, order)
             }
-            None if order == Order::Kept => holes = usize::MAX,
-            Some(_) | None => {}
-        }
+            // Nothing of it, or only of a state before it, is there.
+            Some(_) | None => order.nothing_there(),
+        };
         if let Some(heard) = heard {
             learned = learned.with(self.pieces.passed_over(holes, heard, order));
         }
@@ -979,7 +1023,7 @@ impl OutState {
             from = due.saturating_add(1);
             let index = u16::try_from(due).unwrap_or(u16::MAX);
             let data = fragment(&self.data, index, cut);
-            if !budget.take(data.len()) {
+            if !self.pieces.fits(due, data.len(), budget) {
                 break;
             }
             budget.expired |= self.pieces.sent(due, now);
