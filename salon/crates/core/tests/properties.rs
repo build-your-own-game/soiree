@@ -708,8 +708,12 @@ fn heal(room: &mut Room) -> Result<(), TestCaseError> {
         }
     }
     room.net.stir();
-    // Long enough for a page that thinks it plays to find out.
-    room.net.run(8_000);
+    // Long enough for a page that thinks it plays to find out: past what
+    // still reaches it from a host that died, its silence only then starts.
+    let queued = room.net.narrow.map_or(0, |narrow| {
+        u64::try_from(narrow.buffer).unwrap() * 1_000 / narrow.rate
+    });
+    room.net.run(8_000 + queued);
     // A player who left stays gone, and the room said why it turned one away:
     // these two come back when someone asks.
     for seat in 0..3 {

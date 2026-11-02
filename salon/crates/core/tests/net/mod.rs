@@ -261,6 +261,12 @@ impl Net {
         let Some(narrow) = self.narrow else {
             return Some(self.now);
         };
+        // In front of a stream stands the file of the host, whatever the link.
+        let buffer = if self.stream(link) {
+            Narrow::OUTBOX
+        } else {
+            narrow.buffer
+        };
         let now = self.now.0 * 1_000;
         let busy = self
             .busy
@@ -271,7 +277,7 @@ impl Net {
             usize::try_from((start - now) * narrow.rate / 1_000_000).unwrap_or(usize::MAX);
         // A buffer takes a packet whatever its size once it is empty: a packet
         // bigger than the buffer is not a packet that can never pass.
-        if waiting > 0 && waiting + len > narrow.buffer {
+        if waiting > 0 && waiting + len > buffer {
             if toward == Toward::Phone {
                 self.dropped += len as u64;
             }
@@ -284,12 +290,14 @@ impl Net {
         Some(Ms(*busy / 1_000))
     }
 
+    fn stream(&self, link: LinkId) -> bool {
+        self.phone_of(link)
+            .is_some_and(|index| self.phones[index].on.max_packet > Caps::DATAGRAM.max_packet)
+    }
+
     /// A stream hands packets over in order, however late one of them is.
     fn in_order(&mut self, toward: Toward, link: LinkId, at: Ms) -> Ms {
-        let stream = self
-            .phone_of(link)
-            .is_some_and(|index| self.phones[index].on.max_packet > Caps::DATAGRAM.max_packet);
-        if !stream {
+        if !self.stream(link) {
             return at;
         }
         let latest = self
