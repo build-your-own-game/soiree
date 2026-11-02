@@ -177,7 +177,7 @@ impl<G: Game> Driver<G> {
 mod tests {
     use super::*;
     use crate::AppEvent;
-    use remote_protocol::{Feedback, GameMessage, Haptic, Remote, decode, presets};
+    use remote_protocol::{Feedback, GameMessage, Haptic, Remote, StickValue, decode, presets};
     use salon_core::{DeviceEvent, Epoch, Limits, Timing, TvKey};
 
     fn config() -> HostConfig {
@@ -382,8 +382,8 @@ mod tests {
     fn a_flood_of_frames_is_dropped_unread() {
         let burst = usize::try_from(Limits::default().packets_burst).unwrap();
         let mut driver = on_a_pad();
-        let flood = std::iter::once(hello(1, ADA)).chain(std::iter::repeat_n(input(1), burst * 2));
-        let _: Vec<Effect> = driver.step(Ms(1), flood);
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let _: Vec<Effect> = driver.step(Ms(1), std::iter::repeat_n(input(1), burst * 2));
         let heard = &driver.game().heard;
         // The hello is the first frame of the burst.
         assert_eq!(heard.len(), burst);
@@ -493,6 +493,56 @@ mod tests {
         );
         // Saying hello again on the same connection closes nothing.
         assert!(!closes(&driver.step(Ms(7), [hello(2, ADA)]), 2));
+    }
+
+    /// `Game::on_app` says only a `Remote::Pad` sends these. An app on the
+    /// phone page has no control: what it claims is not the game's to read.
+    #[test]
+    fn nothing_but_a_pad_sends_an_input_or_a_stroke() {
+        let stroke = |link: u64| Input::AppDraw {
+            link: LinkId(link),
+            event: DrawEvent::Clear,
+        };
+        let mut driver = on_the_page();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let _: Vec<Effect> = driver.step(Ms(2), [input(1), stroke(1)]);
+        assert_eq!(driver.game().heard.len(), 1, "only the arrival");
+        driver.game_mut().pad = true;
+        let _: Vec<Effect> = driver.step(Ms(3), []);
+        let _: Vec<Effect> = driver.step(Ms(4), [input(1), stroke(1)]);
+        assert_eq!(driver.game().heard.len(), 3);
+        driver.game_mut().pad = false;
+        let _: Vec<Effect> = driver.step(Ms(5), []);
+        let _: Vec<Effect> = driver.step(Ms(6), [input(1), stroke(1)]);
+        assert_eq!(driver.game().heard.len(), 3);
+    }
+
+    /// -127 to 127, says the contract: -128 fits the byte and would read as
+    /// -1.008, past what `tilt()` and `stick()` promise a game.
+    #[test]
+    fn an_input_reaches_the_game_within_its_range() {
+        let wild = InputState {
+            seq: 1,
+            sticks: vec![StickValue {
+                id: 1,
+                x: i8::MIN,
+                y: i8::MIN,
+            }],
+            tilt: i8::MIN,
+            ..InputState::default()
+        };
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let frame = Input::AppInput {
+            link: LinkId(1),
+            state: wild,
+        };
+        let _: Vec<Effect> = driver.step(Ms(2), [frame]);
+        let Some(AppEvent::Input { state, .. }) = driver.game().heard.last() else {
+            panic!("an input");
+        };
+        assert!(state.tilt() >= -1.0, "{}", state.tilt());
+        assert_eq!(state.stick(1), (-1.0, -1.0));
     }
 
     #[test]

@@ -112,8 +112,9 @@ pub trait Game: Send + 'static {
     }
 
     /// An iPhone app arrived, left, came back, or sent its state or a drawing
-    /// step: only a [`Remote::Pad`] sends those. No socket here, and no `seq`
-    /// to compare.
+    /// step: salon lets those through only while the app shows a
+    /// [`Remote::Pad`], and frames on their way when the remote changes are
+    /// dropped. No socket here, and no `seq` to compare.
     fn on_app(&mut self, now: Ms, event: AppEvent, host: &mut Host<Self::Up, Self::Down>) {
         let _: (Ms, AppEvent, &mut Host<Self::Up, Self::Down>) = (now, event, host);
     }

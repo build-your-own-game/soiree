@@ -28,7 +28,7 @@ pub enum AppEvent {
     /// It came back: salon has already put its remote back up.
     Back { player: PlayerId },
     /// The whole state of its controls, for a [`Remote::Pad`]. The latest one
-    /// wins, and an older one never gets here.
+    /// wins, an older one never gets here, and values stay in their range.
     Input { player: PlayerId, state: InputState },
     /// One step of a drawing: all of them, in order.
     Draw { player: PlayerId, event: DrawEvent },
@@ -42,7 +42,23 @@ enum Shown {
     Chosen(Remote),
 }
 
+/// A state within the contract's ranges, whatever the frame said: -128 fits a
+/// byte and is no position.
+fn in_range(mut state: InputState) -> InputState {
+    const LOWEST: i8 = -127;
+    state.tilt = state.tilt.max(LOWEST);
+    for stick in &mut state.sticks {
+        stick.x = stick.x.max(LOWEST);
+        stick.y = stick.y.max(LOWEST);
+    }
+    state
+}
+
 impl Shown {
+    fn is_pad(&self) -> bool {
+        matches!(self, Shown::Chosen(Remote::Pad(_)))
+    }
+
     fn is(&self, wanted: Option<&Remote>) -> bool {
         match (self, wanted) {
             (Shown::Page, None) => true,
@@ -185,8 +201,9 @@ impl Apps {
         }
     }
 
-    /// The app on `link`, if the frame fits its budget. Above, frames are
-    /// dropped unread, as those of a device.
+    /// The app on `link`, if the frame fits its budget and it shows a pad.
+    /// Above, frames are dropped unread, as those of a device. Without a pad,
+    /// it has no control to speak of.
     fn on_link(&mut self, now: Ms, link: LinkId) -> Option<(PlayerId, &mut App)> {
         let door = self.doors.get_mut(&link)?;
         let player = door.player;
@@ -195,7 +212,7 @@ impl Apps {
             return None;
         }
         app.heard = now;
-        door.frames.allow(now).then_some((player, app))
+        (door.frames.allow(now) && app.shown.is_pad()).then_some((player, app))
     }
 
     pub(crate) fn input(
@@ -210,6 +227,7 @@ impl Apps {
         };
         if app.seq.is_none_or(|latest| state.seq >= latest) {
             app.seq = Some(state.seq);
+            let state = in_range(state);
             events.push(AppEvent::Input { player, state });
         }
     }
@@ -249,7 +267,7 @@ impl Apps {
     ) {
         for (player, app) in &mut self.players {
             if let Some(link) = app.link
-                && matches!(app.shown, Shown::Chosen(Remote::Pad(_)))
+                && app.shown.is_pad()
                 && now.since(app.heard) >= self.timing.absent
             {
                 app.link = None;
