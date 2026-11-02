@@ -70,6 +70,7 @@ Ne réutilise jamais un ancien rapport comme résultat courant, et ne déduis pa
 - **Il ne code peut-être pas.** Demande-le-lui au début s'il ne l'a pas dit. S'il ne code pas, c'est toi le développeur : parle-lui du jeu (règles, sensation, ce qui fait rire), pas de Rust. Montre-lui le jeu qui tourne plutôt que du code.
 - **Le jeu reste jouable à tout moment.** Avance par petites couches qui marchent.
 - **Committe et pousse souvent,** avec des messages qui disent ce qui change pour le joueur. Ce dépôt est sur GitHub : c'est sa sauvegarde et c'est là que l'hôte le récupère.
+- **La CI ne part pas à chaque push :** elle coûte des minutes macOS que les dépôts privés partagent. Lance-la à la main, `gh workflow run soiree.yml`, quand `soiree check` et `soiree certify` passent chez toi et qu'une version compte : à la fin d'une étape que l'auteur veut garder, après `soiree upgrade`, avant de proposer le jeu à la soirée. Une pull request la lance aussi. Lis son résultat avec `gh run list --workflow soiree.yml`.
 - **Pour que le jeu soit proposé à la soirée,** il doit être dans `catalogue.toml` du dépôt commun : ouvre une pull request qui y ajoute une ligne, une seule fois.
 
 ## Ce jeu
