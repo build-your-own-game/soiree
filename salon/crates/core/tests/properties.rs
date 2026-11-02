@@ -252,6 +252,11 @@ enum Trouble {
     Thaw(usize, usize),
     /// The page comes back to the foreground.
     Wake(usize, usize),
+    /// The browser says the network is back.
+    NetworkBack(usize, usize),
+    /// The transport dies, and the hello of the next attempt stays in its
+    /// socket for this long, while the page gives up and tries again.
+    Stall(usize, usize, u64),
     /// The page reloads: gone with what it had not sent.
     Reload(usize, usize),
     /// The page dies without a word, and another one starts.
@@ -279,6 +284,8 @@ fn trouble() -> impl Strategy<Value = Trouble> {
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Freeze(s, p)),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Thaw(s, p)),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Wake(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::NetworkBack(s, p)),
+        2 => (seat(), page(), 2_500..5_000u64).prop_map(|(s, p, ms)| Trouble::Stall(s, p, ms)),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Reload(s, p)),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Crash(s, p)),
         2 => seat().prop_map(Trouble::Twin),
@@ -404,11 +411,23 @@ impl Room {
                 let now = self.net.now;
                 self.net.phones[phone].client.wake(now);
             }
+            Trouble::NetworkBack(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                let now = self.net.now;
+                self.net.phones[phone].client.network_back(now);
+            }
+            Trouble::Stall(seat, which, ms) => {
+                let phone = self.seats[seat].page(which).phone;
+                self.net.cut(phone);
+                self.net.phones[phone].held = ms;
+                self.net.run(ms - 400);
+                let now = self.net.now;
+                self.net.phones[phone].client.network_back(now);
+            }
             Trouble::Reload(seat, which) => {
                 let index = which % self.seats[seat].pages.len();
                 let phone = self.seats[seat].pages.remove(index).phone;
-                self.net.cut(phone);
-                self.net.phones[phone].client.quit();
+                self.net.leave(phone);
                 self.open_page(seat);
             }
             Trouble::Crash(seat, which) => {
@@ -452,6 +471,8 @@ impl Room {
 }
 
 /// The network heals, and each page plays in turn: what waits in it must go.
+/// Asking is what a player does on a page told it was replaced, so it comes
+/// after [`settled`], which holds no page there without a reason.
 fn heal(room: &mut Room) -> Result<(), TestCaseError> {
     // The network heals, and nobody is frozen any more.
     room.net.faults = Faults::default();
@@ -646,7 +667,8 @@ fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(),
 }
 
 /// Exactly one page of a seat plays, and the others wait to be asked. With a
-/// dead page in the way, none may play until someone asks.
+/// dead page in the way, none may play until someone asks. A page alone is
+/// never replaced: nothing but its own past shows its token.
 fn settled(seats: &[Seat; 3], net: &Net) -> bool {
     seats.iter().all(|seat| {
         let statuses = seat
@@ -659,7 +681,8 @@ fn settled(seats: &[Seat; 3], net: &Net) -> bool {
         let playing = statuses
             .filter(|status| *status == Status::Connected)
             .count();
-        waiting && (playing == 1 || (playing == 0 && seat.crashed))
+        let alone = seat.pages.len() == 1;
+        waiting && (playing == 1 || (playing == 0 && seat.crashed && !alone))
     })
 }
 
