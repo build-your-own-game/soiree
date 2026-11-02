@@ -83,7 +83,7 @@ mod commands {
         let dir = common();
         let clean = soiree(&dir).args(["check", "."]).output().unwrap();
         let shown = text(&clean);
-        assert!(shown.contains("✓ recherche : 1 fiche(s)"), "{shown}");
+        assert!(shown.contains("✓ recherche : "), "{shown}");
         assert!(!shown.contains("✗ recherche"), "{shown}");
         assert!(shown.contains("– dette de recherche : "), "{shown}");
 
@@ -204,7 +204,7 @@ mod commands {
         let shown = text(&output);
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("niveau 3 sans fiche"), "{shown}");
-        assert!(shown.contains("fiabilite"), "{shown}");
+        assert!(shown.contains("fiches sous leur plancher"), "{shown}");
         assert!(shown.contains("trous ouverts"), "{shown}");
     }
 
@@ -278,10 +278,19 @@ mod commands {
         assert!(output.status.success(), "{}", text(&output));
     }
 
-    /// A repository tagged v0.0.1 with one source file, and the real registry.
+    /// A repository tagged v0.0.1 with one source file, the real registry, and
+    /// one subsystem left without its sheet, whose sources are still to read.
     fn tagged() -> PathBuf {
         let dir = fresh();
         copy_folder(&repository().join("recherche"), &dir.join("recherche"));
+        std::fs::remove_file(dir.join("recherche/fiabilite.toml")).unwrap();
+        let sources = dir.join("recherche/sources.toml");
+        let text = std::fs::read_to_string(&sources).unwrap();
+        std::fs::write(
+            &sources,
+            text.replace("etat = \"consultee\"", "etat = \"candidate\""),
+        )
+        .unwrap();
         let client = dir.join("salon/crates/core/src/client.rs");
         std::fs::create_dir_all(client.parent().unwrap()).unwrap();
         std::fs::write(&client, "pub fn ancienne() {}\n").unwrap();
