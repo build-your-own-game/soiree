@@ -171,9 +171,9 @@ Le modèle fournit aussi une CI liée à la version du commun. `soiree check`
 refuse une CI absente ou périmée et exige que `cert.json` exerce les propriétés
 d’interface applicables, ou explique leur non-applicabilité. Les primitives
 communes sont testées dans le commun ; leur intégration est exercée dans les
-jeux par `soiree certify`. Le mode CI `soiree check --locked --published`
-refuse un salon local ou une autre étiquette : ce qui marche chez l’hôte doit
-également se construire depuis les dépendances publiées. La mise à niveau
+jeux par `soiree certify`. Ce qui marche chez l’hôte doit également se
+construire depuis les dépendances publiées : [`VERIFICATION.md`](VERIFICATION.md)
+dit comment, dans « Provenance et hypothèses ». La mise à niveau
 se fait avec l’outil de la version cible, puis `soiree upgrade` ; le code
 signalé par les nouveaux contrôles reste à adapter.
 

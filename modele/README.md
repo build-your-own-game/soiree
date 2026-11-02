@@ -37,8 +37,9 @@ commun. Elle vérifie les dépendances publiées avec
 `soiree check --locked --published`, puis exerce `ui` et la récupération
 après panique. Elle ne part pas à chaque commit : une pull request la lance, et
 tu la lances à la main quand une version compte (`gh workflow run soiree.yml`,
-ou l'onglet Actions de GitHub, « Run workflow »). Un dépôt privé partage environ
-190 minutes macOS par mois, et un passage en prend 6 à 13.
+ou l'onglet Actions de GitHub, « Run workflow »). Elle coûte des minutes macOS
+que les dépôts privés partagent : `.soiree/CHANGELOG.md` donne les chiffres, à
+« Un jeu n'a plus de CI à chaque commit ».
 `soiree upgrade --dry-run` montre le passage à la version de
 l’outil installé ; `soiree upgrade` l’applique après vérification de son
 étiquette publiée. Adapter ensuite le code signalé par les contrôles.
