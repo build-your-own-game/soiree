@@ -54,7 +54,7 @@ Sous Windows, ce parcours n'a pas encore été essayé, et `soiree certify` n'y 
    Le jeu est prêt à `Game ready`. Ouvre l'adresse de la ligne `TV (this computer)`, puis la même suivie de `/play?seat=1` : `Tap` fait monter le compteur de la TV. Si macOS demande d'accepter les connexions entrantes, autorise-les, sinon les téléphones n'atteindront pas le jeu. Ctrl+C arrête le jeu.
 7. **Lire `AGENTS.md`**, à la racine du jeu. Si tu travailles avec un agent de code, demande-lui de le lire et de le suivre : c'est lui qui décrit la suite.
 
-C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème trouvé` dans le dossier du jeu, que le dépôt est poussé et que le jeu de départ répond dans le navigateur.
+C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème trouvé` dans le dossier du jeu, que le dépôt est poussé et que le jeu de départ répond dans le navigateur. Un résumé `✓ Aucun échec, N point(s) à juger` n'est pas encore cela : lis chaque point sous « À juger par un humain », et corrige ce qui est un défaut.
 
 ## Les commandes
 
@@ -80,9 +80,11 @@ C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème
 `soiree help` les rappelle.
 
 `soiree check` et `soiree certify` finissent par le même résumé : **aucun problème
-trouvé**, **à corriger** ou **le passage n’a pas abouti**. Ce qu’un humain doit
-juger reste listé sans faire échouer la commande ; ce qui n’a pas pu être
-vérifié la fait échouer. Le code de sortie porte sur le périmètre demandé. Un passage rapide ou
+trouvé**, **aucun échec, N point(s) à juger**, **à corriger** ou **le passage n’a
+pas abouti**. Ce qu’un humain doit juger reste listé sans faire échouer la
+commande, et change le titre : ces points ne sont pas attestés, l’agent les
+montre à l’auteur avant de dire que c’est fini. Ce qui n’a pas pu être vérifié
+fait échouer la commande. Le code de sortie porte sur le périmètre demandé. Un passage rapide ou
 un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
 méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
 un test passé. Les durées et les gains dans la boucle d’itération restent à

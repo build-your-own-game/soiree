@@ -177,7 +177,12 @@ pub fn summary(report: &VerificationReport) -> String {
     if to_fix.is_empty() {
         to_fix.extend(health);
     }
-    let mut text = if evaluation.selected_scope_satisfied {
+    let mut text = if evaluation.selected_scope_satisfied && !judged.is_empty() {
+        format!(
+            "✓ Aucun échec, {} point(s) à juger : {verified} vérifiées, {not_applicable} non applicables.",
+            judged.len()
+        )
+    } else if evaluation.selected_scope_satisfied {
         format!(
             "✓ Aucun problème trouvé dans ce passage : {verified} vérifiées, {not_applicable} non applicables."
         )
@@ -204,6 +209,9 @@ pub fn summary(report: &VerificationReport) -> String {
         if !lines.is_empty() {
             let _: std::fmt::Result = write!(text, "\n\n{title} :\n- {}", lines.join("\n- "));
         }
+    }
+    if !judged.is_empty() {
+        text.push_str("\n\nCe passage réussit, mais rien n'atteste ces points : montre chaque point à l'auteur et corrige ce qui est un défaut avant de dire que c'est fini.");
     }
     if at_the_table
         .saturating_add(unbound)
@@ -404,14 +412,33 @@ mod tests {
             &[
                 ("A", Assessment::Satisfied, automatic()),
                 ("C8", Assessment::ReviewRequired, automatic()),
+                ("C9", Assessment::ReviewRequired, automatic()),
                 ("S1", Assessment::Pending, ExecutionSpec::Manual),
             ],
             "le message est-il clair ?",
         ));
-        assert!(text.starts_with("✓ Aucun problème trouvé"), "{text}");
+        assert!(
+            text.starts_with("✓ Aucun échec, 2 point(s) à juger"),
+            "{text}"
+        );
+        assert!(!text.contains("Aucun problème"), "{text}");
         assert!(text.contains("À juger par un humain"), "{text}");
         assert!(text.contains("C8 : le message est-il clair ?"), "{text}");
+        assert!(text.contains("montre chaque point"), "{text}");
         assert!(text.contains("1 à vérifier au salon"), "{text}");
+    }
+
+    #[test]
+    fn nothing_to_judge_keeps_the_plain_title() {
+        let text = summary(&report(
+            &[
+                ("A", Assessment::Satisfied, automatic()),
+                ("S1", Assessment::Pending, ExecutionSpec::Manual),
+            ],
+            "",
+        ));
+        assert!(text.starts_with("✓ Aucun problème trouvé"), "{text}");
+        assert!(!text.contains("à juger"), "{text}");
     }
 
     #[test]

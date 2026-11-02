@@ -59,7 +59,7 @@ Reste disponible : si l'agent bloque, elle peut te coller son message d'erreur. 
 ## C'est fini quand
 
 - son jeu a un dépôt dans `https://github.com/build-your-own-game` ;
-- le résumé de `soiree check` commence par `✓ Aucun problème trouvé` dans ce dépôt ;
+- le résumé de `soiree check` commence par `✓ Aucun problème trouvé` dans ce dépôt ; s'il dit `✓ Aucun échec, N point(s) à juger`, l'agent de code lui a montré chacun de ces points et a corrigé ce qui était un défaut ;
 - l'agent de code lui a montré le jeu de départ qui tourne dans son navigateur.
 
 Dis-lui alors de décrire à son agent le jeu qu'elle veut faire.

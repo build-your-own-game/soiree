@@ -170,6 +170,13 @@ des délais : 15 minutes pour une compilation et une cible, 30 secondes pour
 l’inventaire et la découverte ; dépasser le délai donne une erreur
 d’infrastructure, aucune réussite implicite.
 
+Le contrôle `cargo:suite` juge ce qui a tourné dans tout le workspace. Si rien
+n’a tourné, ou si une crate a des tests et n’en a exécuté aucun, il reste
+`not-run` et le passage échoue : tout marquer `#[ignore]` ne fait pas taire un
+test rouge. Un test ignoré parmi d’autres est compté, nommé avec sa raison et
+laissé à un humain (`review-required`), sans faire échouer le passage. Une crate
+sans aucun test, à côté de crates qui en exécutent, ne compte pas comme un trou.
+
 ## Choisir le passage sans perdre le périmètre
 
 | Passage | Contrôles demandés | Lecture correcte du succès |
@@ -185,6 +192,10 @@ partiel ou dépourvu d’observation attendue ne réussit pas simplement parce q
 Node est sorti avec le code zéro. Les contrôles non sélectionnés restent
 visibles. Le code de sortie porte sur le périmètre demandé : un jugement humain
 reste listé sans faire échouer, un contrôle qui n’a pas pu finir fait échouer.
+Quand il reste un jugement, le résumé commence par `✓ Aucun échec, N point(s) à
+juger` : le code de sortie vaut 0, mais ces points ne sont pas attestés. L’agent
+lit chacun, corrige ce qui est un défaut et montre le reste à l’auteur avant de
+dire que c’est fini.
 
 Les rapports structurés sont `certification/check-fast.json`,
 `certification/check.json` et `certification/verification.json`, avec une vue
