@@ -181,6 +181,10 @@ pub(crate) struct Welcome {
     pub state: u32,
     /// The oldest event the host still has for this device.
     pub down_first: u32,
+    /// The largest message the host takes, and sends: its limits are the room's,
+    /// and a page does not choose them.
+    pub max_up: u32,
+    pub max_down: u32,
 }
 
 /// What every protocol's hello starts with, whatever comes after: up to the
@@ -353,6 +357,8 @@ mod framing_tests {
                 up_seen: u32::MAX,
                 state: u32::MAX,
                 down_first: u32::MAX,
+                max_up: u32::MAX,
+                max_down: u32::MAX,
             }),
             Control::Refused(Refusal::Removed),
             Control::Replaced,

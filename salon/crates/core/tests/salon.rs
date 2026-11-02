@@ -1965,3 +1965,30 @@ fn a_limit_past_what_fragments_carry_is_cut_down() {
     net.run(1_000);
     assert_eq!(net.phones[phone].events, vec![Down::Note(2)]);
 }
+
+/// T9. `salon-web` keeps the default limits, and a host may have others: the
+/// welcome says them. A page that took the default for the truth skipped what
+/// it thought too big, or sent back what the host had to refuse.
+#[test]
+fn a_device_takes_the_limits_of_its_host() {
+    let host = Limits {
+        max_down: 256 * 1024,
+        max_up: 1_000,
+        ..Limits::default()
+    };
+    let (mut net, phone, device) = limited(host, Limits::default());
+    net.host
+        .send(device, &Down::View(1, vec![0; 100_000]))
+        .unwrap();
+    net.host
+        .show(device, &Down::View(2, vec![0; 100_000]))
+        .unwrap();
+    net.host.send(device, &Down::Note(3)).unwrap();
+    net.run(3_000);
+    assert_eq!(net.phones[phone].events.len(), 2);
+    assert_eq!(net.phones[phone].states.len(), 1);
+    assert_eq!(
+        net.phones[phone].client.send(&Up::Blob(vec![0; 2_000])),
+        Err(ClientSendError::TooBig)
+    );
+}

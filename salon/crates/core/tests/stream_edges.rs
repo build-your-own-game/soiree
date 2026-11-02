@@ -803,6 +803,24 @@ fn a_stream_sends_again_what_an_echo_proves_lost_and_nothing_else() {
     assert_eq!(sent(&drain(&mut room, Ms(5_002)).1).0, vec![(0, 0)]);
 }
 
+/// A state too big for the room is dropped, and passed over like an event:
+/// its sender stops sending it, and what follows is heard.
+#[test]
+fn a_state_too_big_is_passed_over() {
+    let limits = Limits {
+        max_up: 8,
+        ..Limits::default()
+    };
+    let (mut room, _) = joined(limits);
+    let long = vec![state_part(1, 0, 1, &message(&[1; 8]))];
+    let ack = answer(&mut room, Ms(1), Vec::new(), long);
+    assert_eq!(ack.state, 1);
+    assert_eq!(
+        states_part(&mut room, Ms(2), vec![state_part(2, 0, 1, &message(&[2]))]),
+        vec![vec![2]]
+    );
+}
+
 /// The states that left, by number.
 fn states_leaving(room: &mut Room, now: Ms) -> Vec<u32> {
     let mut numbers: Vec<u32> = sent(&drain(room, now).1)

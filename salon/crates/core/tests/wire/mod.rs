@@ -100,6 +100,8 @@ pub struct Welcome {
     pub up_seen: u32,
     pub state: u32,
     pub down_first: u32,
+    pub max_up: u32,
+    pub max_down: u32,
 }
 
 pub fn encode(packet: &Packet) -> Vec<u8> {
@@ -129,6 +131,8 @@ pub fn welcome(device: u32, epoch: u32, up_next: u32, down_first: u32) -> Vec<u8
             up_seen: 0,
             state: 0,
             down_first,
+            max_up: 4 * 1024,
+            max_down: 64 * 1024,
         })),
         ..from_host(epoch, 0)
     })

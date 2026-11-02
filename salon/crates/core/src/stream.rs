@@ -1032,8 +1032,11 @@ impl InState {
             let seq = *seq;
             partial.put(part.index, part.data);
             if partial.size > max {
+                // Passed over, like an event: nothing would ever end its
+                // resends, and nothing newer would follow it.
                 garbage = garbage.saturating_add(1);
                 self.building = None;
+                self.applied = seq;
                 continue;
             }
             if partial.is_complete()

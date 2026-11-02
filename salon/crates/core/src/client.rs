@@ -32,6 +32,8 @@ pub struct ClientConfig {
     /// Any number that differs between devices: it spreads reconnections.
     pub seed: u64,
     pub timing: Timing,
+    /// Until the first welcome. Then the host's `max_up` and `max_down` take
+    /// over: they are the room's, and a page does not choose them.
     pub limits: Limits,
 }
 
@@ -411,6 +413,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         }
         open.welcomed = true;
         open.last_heard = now;
+        let limits = Limits {
+            max_up: usize::try_from(welcome.max_up).unwrap_or(usize::MAX),
+            max_down: usize::try_from(welcome.max_down).unwrap_or(usize::MAX),
+            ..self.config.limits
+        };
+        self.config.limits = limits.bounded();
         let now_known = Resume {
             epoch: welcome.epoch,
             device: welcome.device,

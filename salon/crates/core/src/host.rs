@@ -599,6 +599,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                 .map_or(0, |resume| device.seen(resume.session)),
             state: device.in_state.applied(),
             down_first: device.down.oldest(),
+            max_up: u32::try_from(self.config.limits.max_up).unwrap_or(u32::MAX),
+            max_down: u32::try_from(self.config.limits.max_down).unwrap_or(u32::MAX),
         };
         if let Some(current) = self.links.get_mut(&link) {
             current.controls.push_back(Control::Welcome(welcome));
