@@ -128,8 +128,10 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
    `cargo clippy --all-targets -- -D warnings`, `cargo test --locked`.
    Exécuter aussi les tests du noyau puis `tools/verify-policy.sh --mutations`
    avec la version de Verus figée dans son README.
-3. `soiree check` puis `soiree certify` sur `modele/`.
-4. Les mêmes sur chaque jeu du dossier de l'hôte (`games/*`). Le `[patch]` de son `.cargo/config.toml` les fait compiler contre ce salon-ci, avant toute étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
+3. Le modèle : `modele/` brut ne se compile pas (`{{version}}`). `RUNNER_TEMP="$(mktemp -d)" SOIREE_HARNESS="$PWD/tools/cert" python3 .github/scripts/model-ci.py`, après `npm ci` dans `tools/cert`, en fait un jeu par `soiree new`, le relie à ce salon-ci et lui fait passer `soiree check`, le refus de `--published` et `soiree certify -- --only ui,panic`.
+4. Chaque jeu du dossier de l'hôte (`games/*`), en deux temps. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
+   - `soiree certify` dans le jeu, avec ce binaire : le `[patch]` de `.cargo/config.toml` le fait compiler contre ce salon-ci, avant toute étiquette. `soiree check` y refuse la version de `soiree.toml` tant que le jeu n'est pas passé à l'étiquette.
+   - Puis, une fois committé, `python3 tools/rehearse-upgrade.py` : sur un clone de chaque jeu, hors du dossier et donc sans `[patch]`, contre un faux amont temporaire qui porte l'étiquette au commit courant, il lance `soiree upgrade --dry-run`, `soiree upgrade` et `soiree check --locked --published`, puis dit PASS ou FAIL. Il s'arrête au premier échec ; `--keep-going` donne tous les verdicts. Il ne prouve rien du `Cargo.lock` que le jeu aura écrit sous le `[patch]`.
 5. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
 6. La version de `outil/Cargo.toml` est celle de l'étiquette.
 7. `soiree recherche dette` : la dette de niveau 3 est soldée, c'est-à-dire aucun sous-système de niveau 3 sans fiche et aucun trou ouvert dans une fiche de niveau 3, ou chaque ligne restante a sa raison écrite dans la section de cette version de `CHANGELOG.md`. C'est le seul endroit où la dette de recherche bloque.
@@ -139,4 +141,4 @@ Puis : commit, étiquette annotée (`git tag -a vX.Y.Z -m …`), `git push --fol
 
 ## Le modèle
 
-`modele/` est ce que reçoit un ami qui commence. Il passe `soiree check` et `soiree certify` à chaque version. Son `AGENTS.md` est écrit pour un agent qui n'a jamais vu ce dépôt, et pour un auteur qui ne code peut-être pas. `{{nom}}` et `nom-du-jeu` y sont remplacés par le nom du jeu, `{{crate}}` par sa forme Rust, `{{org}}` par l'organisation, `{{version}}` par la version.
+`modele/` est ce que reçoit un ami qui commence. À chaque version, `.github/scripts/model-ci.py` en fait un jeu par `soiree new` et lui fait passer `soiree check` et `soiree certify -- --only ui,panic`. Son `AGENTS.md` est écrit pour un agent qui n'a jamais vu ce dépôt, et pour un auteur qui ne code peut-être pas. `{{nom}}` et `nom-du-jeu` y sont remplacés par le nom du jeu, `{{crate}}` par sa forme Rust, `{{org}}` par l'organisation, `{{version}}` par la version.

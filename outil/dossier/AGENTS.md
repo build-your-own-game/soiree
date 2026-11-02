@@ -50,7 +50,7 @@ Pour voir le jeu comme le voient les amis, sans le `[patch]` : clone-le hors de 
 C'est le cas courant : un jeu a besoin de quelque chose que salon n'a pas encore. Dans l'ordre :
 
 1. **Développe ensemble.** Modifie `soiree/salon` et le jeu en même temps. Le `[patch]` fait le lien. Le `Cargo.toml` du jeu garde l'ancienne étiquette.
-2. **Vérifie le commun.** Suis `soiree/AGENTS.md` : `soiree check` et `soiree certify` sur le modèle et sur les trois jeux, `CHANGELOG.md` à jour.
+2. **Vérifie le commun.** Suis `soiree/AGENTS.md`, « Avant d'étiqueter » : le modèle par `soiree new` et `.github/scripts/model-ci.py`, `soiree certify` sur les trois jeux avec le binaire suivant, puis `tools/rehearse-upgrade.py`, `CHANGELOG.md` à jour.
 3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version (`git tag -a vX.Y.Z -m …`), pousse le commit **et** l'étiquette (`git push --follow-tags`, qui ne pousse que les étiquettes annotées).
 4. **Passe le jeu à l'étiquette.** Dans le jeu : `soiree upgrade`, jamais à la main : il réécrit aussi les étiquettes des crates du jeu. Puis `soiree check`.
 5. **Pousse le jeu.** Seulement maintenant.
