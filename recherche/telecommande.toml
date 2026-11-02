@@ -531,7 +531,8 @@ citation = "Back-off as Sidequest's phones do: 0.5 s, doubling up to 5 s."
 enonce = "Le plafond de 5 s ne vaut qu'entre deux essais : un essai sans échéance propre dure bien plus."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_mute_address_costs_a_try_seconds_and_not_a_minute"]
 trou = "T6"
 
 [[lecon]]
@@ -542,7 +543,8 @@ citation = "how long (in seconds) a task should wait for additional data"
 enonce = "URLSession.shared attend 60 s par défaut : mesuré 60,6 s sur une adresse muette."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_mute_address_costs_a_try_seconds_and_not_a_minute"]
 trou = "T6"
 
 [[lecon]]

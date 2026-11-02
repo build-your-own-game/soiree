@@ -65,7 +65,11 @@ final class GameConnection {
         let delegate = SocketDelegate { [weak self] socket in
             Task { @MainActor in self?.didOpen(socket) }
         }
-        sockets = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        // The back-off's ceiling means nothing if one try lasts a minute. An
+        // open socket hears a pong within this, so only tries are cut short.
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 5
+        sockets = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         ticker = Ticker { [weak self] in self?.tick() }
         connect()
     }

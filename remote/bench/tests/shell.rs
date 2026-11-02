@@ -279,3 +279,16 @@ fn a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free() {
         "the dead page's eight sockets are still taken: {got:?}"
     );
 }
+
+#[test]
+fn a_mute_address_costs_a_try_seconds_and_not_a_minute() {
+    let host = FakeHost::start(None);
+    host.with(|state| state.silent = true);
+    let mut shell = Shell::launch();
+    shell.ask(&format!("join {}", host.page("/play")));
+    assert!(host.wait(SOON, |state| state.accepted == 1));
+    assert!(
+        host.wait(Duration::from_secs(8), |state| state.accepted == 2),
+        "the first try is still waiting"
+    );
+}
