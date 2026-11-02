@@ -28,6 +28,7 @@ if (mode === 'touch-noise') {
   writeFileSync(join(game, 'data', 'journal.jsonl'), '{}');
 }
 if (mode === 'touch-source') writeFileSync(join(game, 'src', 'lib.rs'), 'pub const VALUE: u8 = 2;\n');
+if (mode.startsWith('touch-file:')) writeFileSync(join(game, mode.slice('touch-file:'.length)), 'changed');
 if (mode === 'stdout-only') {
   console.log('ALL CHECKS PASSED: this green text is not structured evidence');
   process.exit(0);
@@ -518,6 +519,27 @@ process.exit(mode === 'abort' ? 2 : 0);
         assert_ne!(report["identity_before"], report["identity_after"]);
         let errors = report["identity_errors"].to_string();
         assert!(errors.contains("src/lib.rs"), "{errors}");
+    }
+
+    #[test]
+    fn a_followed_noise_or_a_near_note_changed_during_a_run_fails_it_by_name() {
+        for (name, follow) in [("._x", true), ("x~", true), ("footnotes.txt", false)] {
+            let fixture = Fixture::new(&format!("touch-file:{name}"));
+            fixture.track();
+            if follow {
+                std::fs::write(fixture.game.join(name), "before").unwrap();
+                let added = Command::new("git")
+                    .current_dir(&fixture.game)
+                    .args(["add", "-f", name])
+                    .output()
+                    .unwrap();
+                assert_success(&added);
+            }
+            let output = fixture.run();
+            assert!(!output.status.success(), "{name}");
+            let errors = fixture.report()["identity_errors"].to_string();
+            assert!(errors.contains(name), "{name} : {errors}");
+        }
     }
 
     #[test]

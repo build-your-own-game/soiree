@@ -328,15 +328,13 @@ fn source_files(root: &Path) -> Result<Sources> {
     walk(root, root, tracked.as_ref(), &mut found)?;
     // A tracked file missing from the working tree is never silently omitted.
     for relative in tracked.iter().flatten() {
-        if machine_noise(relative)
-            || relative.parent().is_some_and(|parent| {
-                parent.components().any(|part| {
-                    ARTIFACT_DIRECTORIES
-                        .iter()
-                        .any(|skip| part.as_os_str() == *skip)
-                })
+        if relative.parent().is_some_and(|parent| {
+            parent.components().any(|part| {
+                ARTIFACT_DIRECTORIES
+                    .iter()
+                    .any(|skip| part.as_os_str() == *skip)
             })
-        {
+        }) {
             continue;
         }
         let path = root.join(relative);
@@ -416,9 +414,12 @@ fn personal_note(relative: &Path) -> bool {
     let in_notes = relative
         .parent()
         .is_some_and(|parent| parent.components().any(|part| part.as_os_str() == "notes"));
+    let named_note = stem
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "note" | "notes"));
     document
         && (in_notes
-            || stem.contains("note")
+            || named_note
             || ["todo", "scratch", "brouillon"]
                 .iter()
                 .any(|name| stem.starts_with(name)))
@@ -458,7 +459,8 @@ fn walk(
         if kind.is_dir() && ARTIFACT_DIRECTORIES.iter().any(|skip| name == *skip) {
             continue;
         }
-        if !kind.is_dir() && machine_noise(relative) {
+        let followed = tracked.is_some_and(|tracked| tracked.contains(relative));
+        if !kind.is_dir() && !followed && machine_noise(relative) {
             found.excluded.push(path_text(relative)?.to_owned());
             continue;
         }
@@ -473,8 +475,7 @@ fn walk(
                 walk(root, &path, tracked, found)?;
             }
         } else if kind.is_file() {
-            if tracked.is_some_and(|tracked| !tracked.contains(relative)) && personal_note(relative)
-            {
+            if tracked.is_some() && !followed && personal_note(relative) {
                 found.excluded.push(path_text(relative)?.to_owned());
             } else {
                 found.files.push(path);
@@ -883,6 +884,8 @@ mod tests {
             "notes.md",
             "NOTES.txt",
             "mes-notes.md",
+            "note.md",
+            "notes_2026.txt",
             "TODO.md",
             "scratch.txt",
             "notes/2026-10-31.md",
@@ -905,6 +908,41 @@ mod tests {
         for name in ["src/new.rs", "README.md", "ideas.md", "notes.rs"] {
             let before = fixture.digest();
             fixture.write(name, "new");
+            assert_ne!(before, fixture.digest(), "{name} was omitted");
+        }
+    }
+    #[test]
+    fn a_followed_file_stays_an_input_whatever_its_name() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        for name in ["._x", "x~", ".DS_Store", "src/.lib.rs.swp"] {
+            fixture.write(name, "suivi");
+            fixture.git(&["add", "-f", name]);
+            let before = fixture.digest();
+            fixture.write(name, "changed");
+            assert_ne!(before, fixture.digest(), "{name} was omitted");
+        }
+        std::fs::remove_file(fixture.0.join("x~")).unwrap();
+        assert!(
+            source_files(&fixture.0).is_err(),
+            "a followed file gone from the tree is never omitted"
+        );
+    }
+    #[test]
+    fn a_document_only_shaped_like_a_note_stays_an_input() {
+        let fixture = Fixture::new();
+        fixture.git(&["init", "-q"]);
+        fixture.write("src/lib.rs", "pub fn source() {}");
+        for name in [
+            "footnotes.txt",
+            "keynote.md",
+            "denote.md",
+            "notebook.md",
+            "src/annotations.txt",
+        ] {
+            let before = fixture.digest();
+            fixture.write(name, "ce soir");
             assert_ne!(before, fixture.digest(), "{name} was omitted");
         }
     }
