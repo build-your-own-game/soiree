@@ -30,6 +30,7 @@ pub mod rules {
 /// What `soiree recherche` needs in a game, which has no `recherche/`.
 pub mod recherche {
     pub const SOUS_SYSTEMES: &str = include_str!("../../recherche/sous-systemes.toml");
+    pub const PROCESSUS: &str = include_str!("../../recherche/README.md");
 }
 
 /// The documents written to a game's `.soiree/`, at their path there.

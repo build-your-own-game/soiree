@@ -438,6 +438,7 @@ mod tests {
             include_str!("main.rs"),
             include_str!("dom.rs"),
             include_str!("mutants.rs"),
+            include_str!("recherche/plan.rs"),
             include_str!("upgrade.rs"),
         ];
         for source in sources {

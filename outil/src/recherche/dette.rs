@@ -142,11 +142,6 @@ pub fn run(dir: &Path) -> Result<ExitCode, String> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::arithmetic_side_effects,
-        reason = "des décomptes de test, petits"
-    )]
-
     use super::super::Sheet;
     use super::super::fiche::{self, Fiche, Registre};
     use super::*;

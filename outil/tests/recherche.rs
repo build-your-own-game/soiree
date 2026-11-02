@@ -152,6 +152,100 @@ mod commands {
         assert_eq!(output.status.code(), Some(2), "{}", text(&output));
     }
 
+    fn git(dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.org"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", text(&output));
+    }
+
+    /// A repository tagged v0.0.1 with one source file, and the real registry.
+    fn tagged() -> PathBuf {
+        let dir = fresh();
+        copy_folder(&repository().join("recherche"), &dir.join("recherche"));
+        let client = dir.join("salon/crates/core/src/client.rs");
+        std::fs::create_dir_all(client.parent().unwrap()).unwrap();
+        std::fs::write(&client, "pub fn ancienne() {}\n").unwrap();
+        git(&dir, &["init", "-q"]);
+        git(&dir, &["add", "-A"]);
+        git(&dir, &["commit", "-q", "-m", "départ"]);
+        git(&dir, &["tag", "v0.0.1"]);
+        dir
+    }
+
+    #[test]
+    fn the_plan_reads_the_diff_since_the_last_tag() {
+        let dir = tagged();
+        let quiet = soiree(&dir).args(["recherche", "plan"]).output().unwrap();
+        let shown = text(&quiet);
+        assert!(quiet.status.success(), "{shown}");
+        assert!(shown.contains("v0.0.1"), "{shown}");
+        assert!(shown.contains("pas de recherche à faire"), "{shown}");
+
+        let client = dir.join("salon/crates/core/src/client.rs");
+        std::fs::write(&client, "pub fn ancienne() {}\npub fn nouvelle() {}\n").unwrap();
+        std::fs::write(dir.join("salon/crates/core/src/stream.rs"), "// nouveau\n").unwrap();
+        git(&dir, &["add", "salon/crates/core/src/client.rs"]);
+        git(&dir, &["commit", "-q", "-m", "ajout"]);
+        let plan = soiree(&dir).args(["recherche", "plan"]).output().unwrap();
+        let shown = text(&plan);
+        assert!(plan.status.success(), "{shown}");
+        assert!(shown.contains("reconnexion : niveau 3"), "{shown}");
+        assert!(
+            shown.contains("nouveau : api-publique fn nouvelle"),
+            "{shown}"
+        );
+        assert!(shown.contains("fiabilite : niveau 3"), "{shown}");
+        assert!(
+            shown.contains("nouveau : fichier salon/crates/core/src/stream.rs"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("fiche : recherche/reconnexion.toml, niveau 3"),
+            "{shown}"
+        );
+        assert!(shown.contains("fiche : aucune"), "{shown}");
+        assert!(
+            shown.contains("sources candidates : reel : ioquake/ioq3"),
+            "{shown}"
+        );
+        assert!(shown.contains("1. **Déclencheur.**"), "{shown}");
+    }
+
+    #[test]
+    fn the_plan_can_read_the_working_tree_or_another_base() {
+        let dir = tagged();
+        git(&dir, &["tag", "v0.0.2"]);
+        let client = dir.join("salon/crates/core/src/client.rs");
+        std::fs::write(&client, "pub fn ancienne() {}\npub fn nouvelle() {}\n").unwrap();
+        for args in [vec!["--git-diff"], vec!["--depuis", "v0.0.1"]] {
+            let plan = soiree(&dir)
+                .args(["recherche", "plan"])
+                .args(&args)
+                .output()
+                .unwrap();
+            let shown = text(&plan);
+            assert!(shown.contains("fn nouvelle"), "{args:?} : {shown}");
+        }
+        let both = soiree(&dir)
+            .args(["recherche", "plan", "--git-diff", "--depuis", "v0.0.1"])
+            .output()
+            .unwrap();
+        assert_eq!(both.status.code(), Some(2));
+    }
+
+    #[test]
+    fn the_plan_without_a_tag_says_what_to_give_it() {
+        let dir = fresh();
+        git(&dir, &["init", "-q"]);
+        let plan = soiree(&dir).args(["recherche", "plan"]).output().unwrap();
+        assert_eq!(plan.status.code(), Some(2));
+        assert!(text(&plan).contains("--git-diff"), "{}", text(&plan));
+    }
+
     /// A game whose `cargo` answers only what `soiree check --fast` asks.
     #[cfg(unix)]
     fn game() -> (PathBuf, std::ffi::OsString) {
