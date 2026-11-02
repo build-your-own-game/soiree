@@ -52,8 +52,8 @@ C'est le cas courant : un jeu a besoin de quelque chose que salon n'a pas encore
 1. **Développe ensemble.** Modifie `soiree/salon` et le jeu en même temps. Le `[patch]` fait le lien. Le `Cargo.toml` du jeu garde l'ancienne étiquette.
 2. **Vérifie le commun.** Suis `soiree/AGENTS.md`, « Avant d'étiqueter » : le modèle par `soiree new` et `.github/scripts/model-ci.py`, `soiree certify` sur les trois jeux avec le binaire suivant, puis `tools/rehearse-upgrade.py`, `CHANGELOG.md` à jour.
 3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version (`git tag -a vX.Y.Z -m …`), pousse le commit **et** l'étiquette (`git push --follow-tags`, qui ne pousse que les étiquettes annotées).
-4. **Passe le jeu à l'étiquette.** Dans le jeu : `soiree upgrade`, jamais à la main : il réécrit aussi les étiquettes des crates du jeu. Puis `soiree check`.
-5. **Pousse le jeu.** Seulement maintenant.
+4. **Passe le jeu à l'étiquette.** Depuis un clone du jeu, hors de ce dossier : `soiree upgrade`, jamais à la main, car il réécrit aussi les étiquettes des crates du jeu. Puis `soiree check --locked --published`. Sous le `[patch]`, Cargo retire les `source =` de `Cargo.lock`, et ce lock échoue partout ailleurs : ne lance pas cette étape dans `games/`.
+5. **Pousse le jeu.** Seulement maintenant, depuis ce clone, puis ramène le commit dans `games/`.
 
 **Ne pousse jamais un jeu qui dépend d'un salon non publié.** Chez un ami, ou sur la machine de la soirée, il ne compilerait pas, ou compilerait contre l'ancien salon. Si `soiree check` prévient d'un chemin local, demande-toi si le jeu a besoin de ce qui n'est pas encore étiqueté. Si oui, reviens à l'étape 3.
 
