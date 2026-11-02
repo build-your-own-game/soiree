@@ -39,7 +39,7 @@ salon-core = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.
 Ici, `.cargo/config.toml` remplace ces dépendances par les dossiers de `soiree/`. Cargo lit ce fichier pour tout projet placé sous ce dossier. Conséquences :
 - Un changement dans `soiree/salon` se voit tout de suite dans les trois jeux, sans étiquette ni push.
 - Le jeu compile ici avec un salon que les amis n'ont pas. Chez eux, c'est l'étiquette qui compte.
-- `soiree check` le voit (Cargo dit d'où vient chaque crate) et prévient : « salon-core vient d'un chemin local ».
+- `soiree check` le voit (Cargo dit d'où vient chaque crate) et prévient : « viennent d'un chemin local hors de ce dépôt, pas d'une étiquette git : … ».
 - L'étiquette nommée dans le `Cargo.toml` du jeu doit quand même exister sur GitHub : Cargo la récupère avant d'appliquer le `[patch]`.
 - Cargo affiche `patch … was not used in the crate graph` pour chaque crate qu'un jeu n'utilise pas. C'est normal.
 
@@ -51,7 +51,7 @@ C'est le cas courant : un jeu a besoin de quelque chose que salon n'a pas encore
 
 1. **Développe ensemble.** Modifie `soiree/salon` et le jeu en même temps. Le `[patch]` fait le lien. Le `Cargo.toml` du jeu garde l'ancienne étiquette.
 2. **Vérifie le commun.** Suis `soiree/AGENTS.md` : `soiree check` et `soiree certify` sur le modèle et sur les trois jeux, `CHANGELOG.md` à jour.
-3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version, pousse le commit **et** l'étiquette (`git push --follow-tags`).
+3. **Étiquette salon.** Committe dans `soiree/`, étiquette la nouvelle version (`git tag -a vX.Y.Z -m …`), pousse le commit **et** l'étiquette (`git push --follow-tags`, qui ne pousse que les étiquettes annotées).
 4. **Passe le jeu à l'étiquette.** Dans le jeu : `soiree upgrade`, jamais à la main : il réécrit aussi les étiquettes des crates du jeu. Puis `soiree check`.
 5. **Pousse le jeu.** Seulement maintenant.
 
@@ -68,4 +68,4 @@ Les autres jeux n'ont rien à faire : ils restent sur leur étiquette et passent
 - il clone `soiree/` s'il manque, puis, d'après `soiree/catalogue.toml`, les jeux de l'hôte dans `games/` (`--author <pseudo>`, ou `--all` pour tous) ;
 - il ne touche jamais un dossier qui existe déjà, et prévient s'il n'a pas le bon amont.
 
-`soiree host-setup --dry-run` montre tout sans rien faire. Pour changer ces fichiers pour de bon, change leur modèle dans `soiree/outil/dossier/`, puis relance `soiree host-setup --force`.
+`soiree host-setup --dry-run` montre tout sans rien faire. Pour changer ces fichiers pour de bon, change leur modèle dans `soiree/outil/dossier/`, réinstalle l'outil, qui les embarque à la compilation (`cargo install --locked --path soiree/outil`), puis relance `soiree host-setup --force`.

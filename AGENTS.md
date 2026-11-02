@@ -23,7 +23,7 @@ Chaque jeu dépend d'une étiquette de ce dépôt. Une version figée ici, c'est
 | `tools/cert/` | le harnais de certification (Node, Playwright, Toxiproxy), embarqué par `soiree certify` | ce fichier |
 | `certifications/` | le catalogue d'items par mécanique | son `README.md` ; `soiree check .` vérifie son format |
 | `modele/` | le jeu de départ que copie `soiree new` | ce fichier |
-| `catalogue.toml` | les jeux de la soirée | une ligne par jeu, ajoutée par pull request |
+| `catalogue.toml` | les jeux de la soirée | un bloc `[[game]]` par jeu, ajouté par pull request |
 
 ## Salon
 
@@ -135,7 +135,7 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
 7. `soiree recherche dette` : la dette de niveau 3 est soldée, c'est-à-dire aucun sous-système de niveau 3 sans fiche et aucun trou ouvert dans une fiche de niveau 3, ou chaque ligne restante a sa raison écrite dans la section de cette version de `CHANGELOG.md`. C'est le seul endroit où la dette de recherche bloque.
 8. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
 
-Puis : commit, étiquette, `git push --follow-tags`, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
+Puis : commit, étiquette annotée (`git tag -a vX.Y.Z -m …`), `git push --follow-tags`, qui ne pousse que les étiquettes annotées, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
 
 ## Le modèle
 
