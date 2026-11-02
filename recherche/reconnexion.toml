@@ -370,7 +370,8 @@ citation = "ack echo (≤ the old counter) was discarded until the new counter c
 enonce = "Quand un seul côté repart de zéro, ses numéros restent sous ceux de l'autre et tout est ignoré en silence : la poignée de main doit réaligner chaque compteur."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_reloaded_page_is_heard_at_once", "salon/crates/core/tests/salon.rs::a_state_set_before_the_welcome_of_a_reloaded_page_counts", "C4"]
 trou = "T1"
 
 [[lecon]]
@@ -861,7 +862,8 @@ citation = "fix: prevent duplicate connections when multiplexing"
 enonce = "Une poignée de main répétée ne doit ni rouvrir ni reprendre une connexion."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_late_hello_on_a_replaced_link_changes_nothing", "salon/crates/core/tests/salon.rs::two_tabs_opened_together_leave_one_playing", "salon/crates/core/tests/salon.rs::a_hello_after_a_refusal_makes_no_device", "C5"]
 trou = "T3"
 note = "Hypothèse née de la lecture de Host::hello ; cette référence la recoupe."
 

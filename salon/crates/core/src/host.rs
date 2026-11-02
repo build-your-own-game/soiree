@@ -299,6 +299,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             return;
         }
         let Some(packet) = wire::decode(bytes) else {
+            if current.device.is_none() && wire::another_protocol(bytes) {
+                self.refuse(link, Refusal::Version);
+                return;
+            }
             current.garbage = current.garbage.saturating_add(1);
             if current.device.is_none() && current.garbage >= GARBAGE_BEFORE_HELLO {
                 self.drop_link(link, Why::Closed);
@@ -433,6 +437,12 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             device.peer.reset();
             device.down.unsend();
             device.out_state.unsend();
+            if hello.resume != Some((self.config.epoch.0, id)) {
+                // A client with no memory of this: it numbers from what the
+                // welcome says, and a message half sent stays unfinished.
+                device.up.abandon();
+                device.in_state.abandon();
+            }
             if name.is_some() {
                 device.name = name;
             }
@@ -497,6 +507,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             device: id,
             epoch: self.config.epoch.0,
             up_next: device.up.next(),
+            state: device.in_state.applied(),
             down_first: device.down.oldest(),
         };
         if let Some(current) = self.links.get_mut(&link) {

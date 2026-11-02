@@ -78,7 +78,9 @@
 //!   lobby (C8). The game's version ([`HostConfig::game`]) is computed from
 //!   its sources (`version.rs`, at salon's root), so a page left in a
 //!   browser's cache after a change is refused instead of misreading
-//!   messages.
+//!   messages. A page left open through a change of salon's own packets is
+//!   refused as well ([`Refusal::Version`]), even if its hello no longer
+//!   reads.
 //! - **One connection per device.** When a second tab or a reconnecting
 //!   phone shows the same token, the newest wins; the old one is told it was
 //!   replaced and does not reconnect on its own, so two tabs never evict each
@@ -87,7 +89,11 @@
 //! - **Coming back.** After a cut, a reload or a locked phone, the device
 //!   reconnects on its own, from 250 ms to 2 s between attempts and without
 //!   end, and gets its identity, its latest state and every event it missed
-//!   (C2, C4). The game gets [`DeviceEvent::Back`].
+//!   (C2, C4). The game gets [`DeviceEvent::Back`]. The numbers of its events
+//!   and states are the host's to keep: each welcome says where they stand,
+//!   so a page that reloads, or panics (C10), and starts from nothing is
+//!   heard at once, and its first message never completes one the old page
+//!   left half sent.
 //!   A shell can declare an absolute connection-phase budget with
 //!   [`Client::connecting_for`]. It does not change the next attempt's default
 //!   budget and cannot postpone the handshake of an already open link (C1).

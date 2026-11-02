@@ -6,6 +6,8 @@
 //!   buffer (Quake 3's reliable commands, Fiedler's reliable messages). The
 //!   numbers belong to the device, not to the link: what was in flight when
 //!   a link died goes again on the next one, and is not delivered twice.
+//!   The host owns them: each welcome says where they stand, so a side that
+//!   starts over never numbers under what the other has already seen.
 //! - **The state** is the latest value only: a newer one replaces an older
 //!   one, even half sent. It goes again until acknowledged.
 //!
@@ -245,6 +247,12 @@ impl InEvents {
         self.next
     }
 
+    /// Another sender takes over the numbering: what it sends under the
+    /// number being put back together is not the rest of this message.
+    pub fn abandon(&mut self) {
+        self.partial = None;
+    }
+
     /// The sender says it no longer has what is below `first`: skip ahead.
     pub fn skip_to(&mut self, first: u32) {
         if first > self.next {
@@ -329,6 +337,9 @@ impl InEvents {
 pub(crate) struct OutState {
     seq: u32,
     data: Vec<u8>,
+    /// Something was set: a number alone says nothing, since [`OutState::rebase`]
+    /// moves it.
+    holds: bool,
     acked: bool,
     sent: Vec<Option<Ms>>,
     cut: usize,
@@ -339,19 +350,22 @@ impl OutState {
         OutState {
             seq: 0,
             data: Vec::new(),
+            holds: false,
             acked: true,
             sent: Vec::new(),
             cut: 0,
         }
     }
 
-    pub fn seq(&self) -> u32 {
-        self.seq
+    /// The number of the state held, if any.
+    pub fn holding(&self) -> Option<u32> {
+        self.holds.then_some(self.seq)
     }
 
     pub fn set(&mut self, data: Vec<u8>) {
         self.seq = self.seq.saturating_add(1);
         self.data = data;
+        self.holds = true;
         self.acked = false;
         self.sent.clear();
         self.cut = 0;
@@ -365,11 +379,18 @@ impl OutState {
 
     /// A new link: the latest state goes again.
     pub fn unsend(&mut self) {
-        if self.seq > 0 {
+        if self.holds {
             self.acked = false;
         }
         self.sent.clear();
         self.cut = 0;
+    }
+
+    /// Numbers above `applied`, the last number the other side took from
+    /// anyone: what is held goes again, under a number it will read.
+    pub fn rebase(&mut self, applied: u32) {
+        self.seq = applied.saturating_add(u32::from(self.holds));
+        self.unsend();
     }
 
     pub fn due_at(&self, resend: u64) -> Option<Ms> {
@@ -442,6 +463,11 @@ impl InState {
 
     pub fn restart(&mut self) {
         self.applied = 0;
+        self.building = None;
+    }
+
+    /// See [`InEvents::abandon`].
+    pub fn abandon(&mut self) {
         self.building = None;
     }
 

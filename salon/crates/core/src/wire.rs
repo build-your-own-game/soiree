@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{DeviceId, Kind, Refusal, Token, TvKey};
 
-/// Bumped whenever a packet changes shape. Both sides refuse another one.
-pub const PROTOCOL: u16 = 1;
+/// Bumped whenever a packet changes shape. Both sides refuse another one: a
+/// host reads the number even in a hello it can no longer read
+/// ([`another_protocol`]), and `Refused` keeps its shape for that reason.
+pub const PROTOCOL: u16 = 2;
 
 /// Bytes a packet spends outside its fragments (generous: fields are
 /// varints), and bytes each fragment spends besides its data.
@@ -112,8 +114,28 @@ pub(crate) struct Welcome {
     pub epoch: u32,
     /// The next event number the host expects from this device.
     pub up_next: u32,
+    /// The latest state number the host took from this device: a device that
+    /// starts over numbers above it.
+    pub state: u32,
     /// The oldest event the host still has for this device.
     pub down_first: u32,
+}
+
+/// What every protocol's hello starts with, whatever comes after: up to the
+/// tag of [`Control::Hello`] and its first field.
+#[derive(Deserialize)]
+enum HelloHead {
+    Hello(u16),
+}
+
+/// These bytes do not read as a packet, but they start like a hello of
+/// another protocol: a page left open through an upgrade. Without this, a
+/// page that resumes would be garbage and reconnect for ever.
+pub(crate) fn another_protocol(bytes: &[u8]) -> bool {
+    type Head = (u32, u64, Option<Echo>, Option<HelloHead>);
+    postcard::take_from_bytes::<Head>(bytes).is_ok_and(|((_, _, _, hello), _)| {
+        matches!(hello, Some(HelloHead::Hello(protocol)) if protocol != PROTOCOL)
+    })
 }
 
 pub(crate) fn encode(packet: &Packet) -> Option<Vec<u8>> {

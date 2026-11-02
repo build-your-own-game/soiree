@@ -382,12 +382,15 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 // what we had for it is meaningless now.
                 self.outbox.push_back(ClientOutput::Reset);
                 self.up.restart(welcome.up_next);
+                self.out_state.rebase(welcome.state);
                 self.down.restart(welcome.down_first);
                 self.in_state.restart();
             }
             None => {
-                // First welcome: what the player did while connecting counts.
+                // First welcome: what the player did while connecting counts,
+                // above what the page before this one sent.
                 self.up.renumber(welcome.up_next);
+                self.out_state.rebase(welcome.state);
                 self.down.restart(welcome.down_first);
             }
         }
@@ -478,8 +481,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     events: self.down.next(),
                     state: self.in_state.applied(),
                 });
-                let held = self.out_state.seq();
-                packet.holding = (held > 0).then_some(held);
+                packet.holding = self.out_state.holding();
                 packet.events = self.up.take(now, resend, packet_size, &mut budget);
                 packet.state = self.out_state.take(now, resend, packet_size, &mut budget);
                 has_data = !packet.events.is_empty() || !packet.state.is_empty();

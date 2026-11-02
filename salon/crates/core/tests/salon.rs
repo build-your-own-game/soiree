@@ -876,3 +876,258 @@ fn a_late_hello_on_a_link_refused_for_a_full_room_takes_no_seat() {
     let next = net.add_phone(phone_config(201, Kind::Phone), Caps::DATAGRAM);
     joined(&mut net, next);
 }
+
+fn states_from(net: &Net, device: DeviceId) -> Vec<Up> {
+    net.happened
+        .iter()
+        .filter_map(|(_, event)| match event {
+            DeviceEvent::State { device: from, state } if *from == device => Some(state.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// C4, C10: a reloaded page is a new client that numbers from the start. The
+/// host keeps the old page's numbers, and used to ignore and acknowledge what
+/// the new one sent: a stick dead until it passed them.
+#[test]
+fn a_reloaded_page_is_heard_at_once() {
+    let mut net = Net::new(32, Faults::default());
+    let page = net.add_phone(phone_config(36, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, page);
+    for n in 0..50 {
+        net.phones[page].client.set_state(&Up::Pad(n, 0)).unwrap();
+        net.run(50);
+    }
+    let before = states_from(&net, device).len();
+    net.cut(page);
+    net.phones[page].client.quit();
+    let reloaded = net.add_phone(phone_config(36, Kind::Phone), Caps::DATAGRAM);
+    assert_eq!(joined(&mut net, reloaded), device);
+    for n in 0..10 {
+        net.phones[reloaded]
+            .client
+            .set_state(&Up::Pad(n, 1))
+            .unwrap();
+        net.run(100);
+    }
+    let want: Vec<Up> = (0..10).map(|n| Up::Pad(n, 1)).collect();
+    assert_eq!(states_from(&net, device)[before..], want);
+}
+
+/// A state already set when the welcome comes, on a page reloaded after many
+/// states, gets through too.
+#[test]
+fn a_state_set_before_the_welcome_of_a_reloaded_page_counts() {
+    let mut net = Net::new(33, Faults::default());
+    let page = net.add_phone(phone_config(37, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, page);
+    for n in 0..5 {
+        net.phones[page].client.set_state(&Up::Pad(n, 0)).unwrap();
+        net.run(50);
+    }
+    net.cut(page);
+    net.phones[page].client.quit();
+    let reloaded = net.add_phone(phone_config(37, Kind::Phone), Caps::DATAGRAM);
+    net.phones[reloaded]
+        .client
+        .set_state(&Up::Pad(9, 9))
+        .unwrap();
+    joined(&mut net, reloaded);
+    net.run(500);
+    assert_eq!(states_from(&net, device).last(), Some(&Up::Pad(9, 9)));
+}
+
+/// What the old page held does not stay held by a page that holds nothing:
+/// a game drops an input by its age.
+#[test]
+fn a_reloaded_page_holds_nothing_until_it_says_so() {
+    let mut net = Net::new(34, Faults::default());
+    let page = net.add_phone(phone_config(38, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, page);
+    net.phones[page].client.set_state(&Up::Pad(1, 0)).unwrap();
+    net.run(500);
+    net.cut(page);
+    net.phones[page].client.quit();
+    let reloaded = net.add_phone(phone_config(38, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, reloaded);
+    let held = net.host.device(device).and_then(|info| info.held_at);
+    net.run(2_000);
+    assert_eq!(net.host.device(device).and_then(|info| info.held_at), held);
+}
+
+/// A client and a host joined by hand: `deliver` chooses which packets of the
+/// client reach the host.
+struct Pipe {
+    now: Ms,
+    host: salon_core::Host<Up, Down>,
+    client: salon_core::Client<Up, Down>,
+    link: salon_core::LinkId,
+}
+
+impl Pipe {
+    fn new() -> Pipe {
+        let now = Ms(1_000);
+        let mut pipe = Pipe {
+            now,
+            host: salon_core::Host::new(now, net::host_config(1, Vec::new())),
+            client: salon_core::Client::new(now, phone_config(39, Kind::Phone)),
+            link: salon_core::LinkId(1),
+        };
+        pipe.join();
+        pipe
+    }
+
+    /// Everything the client has to send now.
+    fn from_client(&mut self) -> Vec<Vec<u8>> {
+        use salon_core::ClientOutput;
+        let mut sent = Vec::new();
+        while let Some(output) = self.client.poll(self.now) {
+            match output {
+                ClientOutput::Connect => {
+                    self.client.opened(self.now, Caps::DATAGRAM);
+                    self.host.opened(self.now, self.link, Caps::DATAGRAM);
+                }
+                ClientOutput::Transmit(bytes) => sent.push(bytes),
+                _ => {}
+            }
+        }
+        sent
+    }
+
+    /// What the host has to do now; `to_client` carries its packets across.
+    fn from_host(&mut self, to_client: bool) -> Vec<DeviceEvent<Up>> {
+        let mut happened = Vec::new();
+        while let Some(output) = self.host.poll(self.now) {
+            match output {
+                salon_core::Output::Transmit { link, bytes } => {
+                    if to_client && link == self.link {
+                        self.client.received(self.now, &bytes);
+                    }
+                }
+                salon_core::Output::Device(event) => happened.push(event),
+                salon_core::Output::Close { .. } => {}
+            }
+        }
+        happened
+    }
+
+    fn join(&mut self) {
+        for packet in self.from_client() {
+            self.host.received(self.now, self.link, &packet);
+        }
+        self.from_host(true);
+        assert_eq!(self.client.status(), Status::Connected);
+    }
+
+    /// The page reloads on a new link.
+    fn reload(&mut self) {
+        self.now = self.now.plus(10);
+        self.client = salon_core::Client::new(self.now, phone_config(39, Kind::Phone));
+        self.link = salon_core::LinkId(self.link.0 + 1);
+        self.join();
+    }
+
+    fn deliver(&mut self, packet: &[u8]) -> Vec<DeviceEvent<Up>> {
+        self.host.received(self.now, self.link, packet);
+        self.from_host(false)
+    }
+}
+
+/// A message half sent by the old page is not finished by fragments of the
+/// new page's, which carry the same number: they would make one message of
+/// two.
+#[test]
+fn a_half_sent_state_of_the_old_page_is_not_mixed_with_the_new_ones() {
+    let mut pipe = Pipe::new();
+    let (old, new) = (Up::Blob(vec![1; 3_000]), Up::Blob(vec![2; 3_000]));
+    pipe.client.set_state(&old).unwrap();
+    let packets = pipe.from_client();
+    assert!(packets.len() > 1, "the state must be cut");
+    assert_eq!(pipe.deliver(&packets[0]), Vec::new());
+    pipe.reload();
+    pipe.client.set_state(&new).unwrap();
+    let packets = pipe.from_client();
+    let mut heard = Vec::new();
+    for packet in &packets[1..] {
+        heard.extend(pipe.deliver(packet));
+    }
+    assert_eq!(heard, Vec::new(), "half of each page's state");
+    heard.extend(pipe.deliver(&packets[0]));
+    assert!(matches!(heard.as_slice(), [DeviceEvent::State { state, .. }] if *state == new));
+}
+
+/// The same for an event.
+#[test]
+fn a_half_sent_event_of_the_old_page_is_not_mixed_with_the_new_ones() {
+    let mut pipe = Pipe::new();
+    let (old, new) = (Up::Blob(vec![1; 3_000]), Up::Blob(vec![2; 3_000]));
+    pipe.client.send(&old).unwrap();
+    let packets = pipe.from_client();
+    assert!(packets.len() > 1, "the event must be cut");
+    assert_eq!(pipe.deliver(&packets[0]), Vec::new());
+    pipe.reload();
+    pipe.client.send(&new).unwrap();
+    let packets = pipe.from_client();
+    let mut heard = Vec::new();
+    for packet in &packets[1..] {
+        heard.extend(pipe.deliver(packet));
+    }
+    assert_eq!(heard, Vec::new(), "half of each page's event");
+    heard.extend(pipe.deliver(&packets[0]));
+    assert!(matches!(heard.as_slice(), [DeviceEvent::Event { event, .. }] if *event == new));
+}
+
+/// C8: a page left open through an upgrade of salon speaks the old protocol,
+/// so its hello no longer reads. It is still told to reload, instead of
+/// reconnecting for ever.
+#[test]
+fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
+    use salon_core::{Client, ClientOutput, Host, LinkId, Output, Token};
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct OldHello {
+        protocol: u16,
+        game: u32,
+        kind: Kind,
+        token: Token,
+        name: Option<String>,
+        key: Option<salon_core::TvKey>,
+        resume: Option<(u32, DeviceId)>,
+    }
+    #[derive(Serialize)]
+    enum OldControl {
+        Hello(OldHello),
+    }
+    let packet = (
+        (1_u32, 0_u64, None::<(u64, u32)>),
+        Some(OldControl::Hello(OldHello {
+            protocol: 1,
+            game: net::GAME,
+            kind: Kind::Phone,
+            token: Token([40; 16]),
+            name: None,
+            key: None,
+            resume: Some((1, DeviceId(1))),
+        })),
+        (None::<(u32, u32)>, None::<u32>, None::<u32>),
+        (Vec::<u8>::new(), Vec::<u8>::new()),
+    );
+    let bytes = postcard::to_allocvec(&packet).unwrap();
+    let now = Ms(1_000);
+    let mut host: Host<Up, Down> = Host::new(now, net::host_config(1, Vec::new()));
+    let link = LinkId(1);
+    host.opened(now, link, Caps::DATAGRAM);
+    host.received(now, link, &bytes);
+    // The refusal reads the same in both protocols: the page understands it.
+    let mut page: Client<Up, Down> = Client::new(now, phone_config(40, Kind::Phone));
+    assert_eq!(page.poll(now), Some(ClientOutput::Connect));
+    page.opened(now, Caps::DATAGRAM);
+    while let Some(output) = host.poll(now) {
+        if let Output::Transmit { bytes, .. } = output {
+            page.received(now, &bytes);
+        }
+    }
+    assert_eq!(page.status(), Status::Refused(Refusal::Version));
+}
