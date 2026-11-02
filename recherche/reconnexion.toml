@@ -589,7 +589,7 @@ enonce = "Ne retenir le repli que si le transport principal n'a jamais marché i
 categorie = "usage-reel"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/web/src/rtc_memory.rs::a_failure_after_a_success_does_not_stick_at_the_next_load"]
+garantie = ["salon/crates/web/src/rtc_memory.rs::a_failure_after_a_success_does_not_stick_at_the_next_load", "salon/crates/web/src/rtc_memory.rs::only_an_answered_offer_can_fail_at_the_deadline"]
 trou = "T7"
 
 [[lecon]]
@@ -786,6 +786,7 @@ categorie = "usage-reel"
 decision = "garder"
 etat = "trou"
 trou = "T12"
+note = "Le faux réseau de salon livre désormais une fermeture derrière les données du lien, retard compris : le chaos joue ce cas sur le modèle. Il reste à l'éprouver sur un vrai transport, dans le harnais."
 
 [[lecon]]
 id = "reconnexion-40"
@@ -878,9 +879,9 @@ enonce = "Une poignée de main répétée ne doit ni rouvrir ni reprendre une co
 categorie = "usage-reel"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/core/tests/salon.rs::a_late_hello_on_a_replaced_link_changes_nothing", "salon/crates/core/tests/salon.rs::two_tabs_opened_together_leave_one_playing", "salon/crates/core/tests/salon.rs::a_hello_after_a_refusal_makes_no_device", "C5"]
+garantie = ["salon/crates/core/tests/salon.rs::a_late_hello_on_a_replaced_link_changes_nothing", "salon/crates/core/tests/salon.rs::two_tabs_opened_together_leave_one_playing", "salon/crates/core/tests/salon.rs::a_hello_after_a_refusal_makes_no_device", "salon/crates/core/tests/salon.rs::a_hello_stuck_on_an_abandoned_attempt_does_not_replace_the_link_after_it", "salon/crates/core/tests/salon.rs::a_hello_of_the_page_before_a_reload_does_not_replace_the_new_page", "salon/crates/core/tests/salon.rs::of_two_tabs_the_newest_link_wins_even_when_its_hello_comes_first", "C5"]
 trou = "T3"
-note = "Hypothèse née de la lecture de Host::hello ; cette référence la recoupe."
+note = "Hypothèse née de la lecture de Host::hello ; cette référence la recoupe. Une relecture a trouvé le cas voisin : un hello resté coincé sur un lien abandonné, livré avant la fermeture de ce lien. Depuis, le lien le plus récent gagne, quel que soit le hello arrivé le dernier."
 
 [[trou]]
 id = "T1"
@@ -1036,8 +1037,8 @@ lieux = [
 ]
 cas = "Step ne connaît que Send, Notify, Show, Cut, Freeze, Thaw, Wait, sur 3 téléphones aux jetons distincts, et Faults n'a pas de retard ciblé. T1, T2 et T3 traversent donc ces suites sans les faire rougir. Le harnais n'emploie pas slow_close ni reset_peer."
 preuve = "lecture de properties.rs et de net/mod.rs ; T1 à T3 passent inaperçus à 64 cas."
-verifie = "le contenu des suites ; depuis, retirer seul le correctif de T1, T2, T3 ou T6 fait rougir chaos_keeps_every_page_in_its_place en moins de 3 000 cas"
-suppose = "Ce qui reste ouvert est le harnais : slow_close et reset_peer, sur un vrai transport."
+verifie = "le contenu des suites ; depuis, retirer seul le correctif de T1, T2, T3 ou T6 fait rougir chaos_keeps_every_page_in_its_place en moins de 3 000 cas, et retirer seul celui du hello tardif sur un lien plus ancien la fait rougir à 64 cas"
+suppose = "Ce qui reste ouvert est le harnais, et lui seul : slow_close et reset_peer, sur un vrai transport. Côté salon, le chaos joue redémarrage, rechargement, jumeau, retour du réseau et hello retenu sur une tentative abandonnée, et une page seule doit finir par jouer sans qu'on le lui demande."
 
 [[trou]]
 id = "T13"
