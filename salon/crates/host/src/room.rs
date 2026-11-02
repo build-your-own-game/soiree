@@ -8,6 +8,7 @@
 
 use std::any::Any;
 use std::collections::BTreeMap;
+#[cfg(any(target_os = "macos", test))]
 use std::io;
 use std::sync::mpsc::{SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
