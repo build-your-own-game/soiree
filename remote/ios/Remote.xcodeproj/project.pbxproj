@@ -147,7 +147,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Xcode's environment (SDKROOT, deployment targets...) would make cargo build its\n# host tools against the iOS SDK: run it in a clean one.\nset -e\nexec env -i HOME=\"$HOME\" PATH=\"$HOME/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n  cargo xtask ios --target \"$RUST_TARGET\" $RUST_RELEASE_FLAG\n";
+			shellScript = "# Xcode's environment (SDKROOT, deployment targets...) would make cargo build its\n# host tools against the iOS SDK: run it in a clean one.\nset -e\nexec env -i HOME=\"$HOME\" PATH=\"${CARGO_HOME:-$HOME/.cargo}/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n  cargo xtask ios --target \"$RUST_TARGET\" $RUST_RELEASE_FLAG\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
