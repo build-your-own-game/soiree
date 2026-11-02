@@ -1037,8 +1037,8 @@ lieux = [
 ]
 cas = "Step ne connaît que Send, Notify, Show, Cut, Freeze, Thaw, Wait, sur 3 téléphones aux jetons distincts, et Faults n'a pas de retard ciblé. T1, T2 et T3 traversent donc ces suites sans les faire rougir. Le harnais n'emploie pas slow_close ni reset_peer."
 preuve = "lecture de properties.rs et de net/mod.rs ; T1 à T3 passent inaperçus à 64 cas."
-verifie = "le contenu des suites"
-suppose = "Qu'un chaos étendu aurait trouvé T1 à T3 seul : non essayé, seules les sondes dirigées l'ont fait."
+verifie = "le contenu des suites ; depuis, retirer seul le correctif de T1, T2, T3 ou T6 fait rougir chaos_keeps_every_page_in_its_place en moins de 3 000 cas"
+suppose = "Ce qui reste ouvert est le harnais : slow_close et reset_peer, sur un vrai transport."
 
 [[trou]]
 id = "T13"

@@ -287,6 +287,31 @@ invocations doivent être livrées immédiatement et la destruction doit
 désabonner exactement ce callback. L’ancienne closure `FnMut` rend ce
 contrôle rouge ; aucun événement n’est mis en file ni perdu par le helper.
 
+## Reconnexion : ce que la recherche contre 28 références a corrigé — novembre 2026
+
+La fiche `../recherche/reconnexion.toml` garde les preuves et les liens figés ; ici, ce qu'il en reste. Aucun test, aucune simulation ni le harnais n'avait vu ces trous : le chaos ne jouait qu'un réseau.
+
+| Leçon | Source | Catégorie | Dans salon |
+|---|---|---|---|
+| Quand un seul côté repart de zéro, ses numéros restent sous ceux de l'autre, tout est ignoré, et l'accusé rend le silence invisible. La poignée de main doit réaligner chaque compteur. | Colyseus a22c6c5 | Usage réel | `Welcome` dit où en sont les événements et les états |
+| « Les numéros appartiennent à l'appareil » est faux dès que deux instances montrent le même jeton : comparer les compteurs ne suffit pas, l'autre onglet a pu envoyer moins. Seul l'hôte peut les distinguer. | notre `stream.rs` ; socket.io 121fd7c | Usage réel | `Welcome::session` ; un onglet d'une autre session renumérote ce qui attend, et apprend ce qui était arrivé |
+| Repartir de zéro réutilise des numéros : un message à moitié reçu de l'ancienne page se complétait avec les morceaux de la nouvelle, et faisait un message de deux. Trouvé en écrivant le correctif, pas par la recherche. | ici | Usage réel | chaque nouvelle session abandonne ce qui est à moitié reçu |
+| Une poignée de main répétée ne doit ni rouvrir ni reprendre : un `Hello` en retard sur un lien en fin de vie éjectait le lien courant, ou créait un appareil fantôme. | socket.io 46213a6 | Usage réel | un lien qui a reçu son message final ne dit plus rien |
+| Ce qui est envoyé pendant une coupure part à la reconnexion, quelle que soit l'issue de la reprise ; un travail fait hors ligne se réapplique sur l'état neuf. | socket.io 8adcfbf ; Figma | Usage réel | la file survit à `Reset`, et la phase laisse le jeu juger |
+| Une tentative lancée avant le sommeil reste bloquée au réveil, parfois plus de 10 s ; ouverte hors ligne, elle peut ne jamais finir sur Safari mobile. | Phoenix 2575a6b ; centrifuge-js | Physique | `wake` abandonne une tentative de plus de 1,5 s, `network_back` toutes |
+| Une horloge monotone peut ne pas compter le sommeil : WebKit lit `mach_absolute_time` sur Darwin. Après un sommeil, on compare à l'horloge murale. | socket.io engine.io ; WebKit `CurrentTime.cpp` ; w3c/hr-time#115 | Physique | `SleepClock` ajoute ce que l'horloge murale a gagné d'un coup. Sans effet si le monotone compte le sommeil : il n'y avait pas à mesurer l'iPhone avant de corriger |
+| Ne retenir le repli que si le transport principal n'a jamais marché ici : un échec après un succès est passager. | Phoenix b2eeccf | Usage réel | `RtcMemory::worked`. Deux vrais échecs restent retenus : un binaire neuf bloqué par le pare-feu de macOS est un échec après un succès, et paierait 15 s à chaque reconnexion |
+| Une offre sans réponse ne dit rien de WebRTC : c'est l'hôte qui manque. | ici, en lisant T7 | Usage réel | `Negotiation::NoHost` |
+| `visibilitychange` ne suit plus toujours le dégel. | Phoenix, `socket.js` (Chrome 149) | Physique | écoute de `resume`, non rejouée dans un navigateur |
+| Le chaos doit mêler les pannes de tout le catalogue, et retenir un paquet précis plutôt que d'étaler une gigue. | Jepsen `combined.clj` ; turmoil 61891a3 | Usage réel | `chaos_keeps_every_page_in_its_place` : retirer seul le correctif de T1, T2, T3 ou T6 le fait rougir en moins de 3 000 cas |
+| Un arrêt brutal arrive entre deux écritures : ce qui n'est pas écrit n'a jamais existé. | Jepsen `db.clj` | Usage réel | une identité atteint le disque avant son `Welcome` ; sans `fsync`, donc pas à l'abri d'une coupure de courant |
+
+Ce qu'on n'a pas fait :
+
+- **`forget` ne ferme pas le retour par le jeton.** Colyseus laisse l'autorité refuser un retour (f7831c7). Punchline et le modèle comptent au contraire sur le retour d'un appareil oublié, en appareil neuf : c'est `Host::close` qui ferme la porte, et la doc de `forget` a été corrigée.
+- **`wake` coupe encore un lien peut-être vivant (T9).** centrifuge-js laisse d'abord passer ce qui attend dans le socket (fe060f3). Chez nous, cela retarderait d'une attente chaque lien vraiment mort, pour éviter une renégociation dont le coût n'est pas mesuré, et Sidequest teste la reconnexion dans le même instant.
+- **Le rattrapage ne se distingue pas du direct (T11).** Discord le marque par `RESUMED`. Le marquer ici ajouterait une variante à `Happening` et à `ClientOutput`, que les jeux filtrent de façon exhaustive, pour une gêne supposée.
+
 ## Écarts au manifeste
 
 1. **Respecté.** Le cœur est `#![no_std]` : ni horloge, ni threads, ni E/S, ni `HashMap`. Les valeurs du réseau passent par des types validés à leur construction (`Name`, les tailles, les numéros). Chaque état d'attente a une échéance (`Timing`). Aucune file n'est sans borne.

@@ -80,6 +80,7 @@ Règles :
 - **Tout est indexé par `DeviceId`.** Un téléphone qui revient garde le sien ; après un redémarrage de l'hôte (avec `options.data`), aussi, et il arrive par `Arrived` puisque le nouveau processus ne le connaissait pas.
 - **Un `Arrived` appelle un `show`** : sans état, l'écran du téléphone reste vide.
 - **`host.set_phase(n)`** à chaque changement de manche ou de question : chaque événement porte la phase vue par l'appareil, et le jeu refuse ce qui est périmé.
+- **`host.forget(device)`** oublie un appareil, pas son téléphone : son jeton ne nomme plus personne, et il revient en appareil neuf dans une salle ouverte. `host.close()` le garde dehors.
 - **Les manettes** : `host.add_local(now, Kind::Gamepad, …)`, puis `local_state`, `local_unplugged` et `local_plugged`.
 - **La télécommande native de l'app iPhone** : `Game::remote`, voir plus bas.
 - **Les requêtes HTTP du jeu** (télécharger des résultats) : `Game::http`. Les actions de l'organisateur passent par la TV, en événements : seule la TV a la clé, et seule une connexion de l'ordinateur lui-même peut être la TV.
@@ -160,7 +161,8 @@ connection.send(&Up::Join { name })?;
 ```
 
 - La connexion vit autant que la page ; on peut la cloner.
-- `Status::Replaced` : un autre onglet a pris la place. Proposer « Jouer ici » (`connection.resume()`).
+- `Status::Replaced` : un autre onglet a pris la place. Proposer « Jouer ici » (`connection.resume()`). Ce qui attendait dans cet onglet part alors, une fois, après ce que l'autre a envoyé.
+- `Happening::Reset` n'annule que ce que l'hôte a dit. Ce que la page a envoyé sans accusé part quand même vers la nouvelle partie, avec la phase de son envoi : côté hôte, un `DeviceEvent::Event` peut donc suivre de près un `Arrived`, et se refuse comme tout événement périmé.
 - `?seat=2` donne une autre identité dans le même navigateur, pour essayer plusieurs téléphones ; `?salon=ws` force le WebSocket. La TV passe toujours par WebSocket : elle est sur l'ordinateur même.
 - `connection.host_time()` donne l'heure de l'hôte, pour des comptes à rebours en phase avec la TV.
 

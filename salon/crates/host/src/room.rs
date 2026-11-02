@@ -173,7 +173,7 @@ pub fn run<G: Game>(
         let now = clock.now();
         let effects = driver.step(now, inputs);
         // A number must not leave before it is on disk: after a crash, it
-        // would go to another device (`Timing` does not bound a crash).
+        // would go to another device.
         let identities = driver.host().identities();
         if identities != saved_identities {
             saved_identities = identities;
