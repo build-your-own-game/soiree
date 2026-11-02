@@ -145,8 +145,12 @@ impl Session {
     pub fn receive(&mut self, frame: &[u8]) -> Event {
         match decode::<GameMessage>(frame) {
             Ok(GameMessage::Show(Shown::Pad(layout))) => {
-                self.let_go();
-                self.remote = Some(Remote::new(layout, self.screen, self.insets));
+                // Salon says it again at each reconnection. The same remote
+                // goes on, with its drawing and the fingers on it.
+                if self.remote.as_ref().is_none_or(|r| *r.spec() != layout) {
+                    self.let_go();
+                    self.remote = Some(Remote::new(layout, self.screen, self.insets));
+                }
                 self.shown();
                 Event::ShowPad
             }
@@ -682,7 +686,10 @@ mod tests {
             remote.touch_up(1);
         }
         session.tick(0.003);
-        assert!(pressed(&mut session).is_empty(), "too soon after the last one");
+        assert!(
+            pressed(&mut session).is_empty(),
+            "too soon after the last one"
+        );
         session.tick(0.02);
         assert_eq!(pressed(&mut session), [1]);
     }
@@ -700,6 +707,37 @@ mod tests {
         show(&mut session, presets::buzzer());
         session.tick(0.3);
         assert_eq!(pressed(&mut session), [0]);
+    }
+
+    #[test]
+    fn the_same_show_again_keeps_the_drawing_and_its_numbers() {
+        let (mut session, at) = drawing();
+        session.remote_mut().map(|r| r.touch_up(1));
+        session.tick(0.1);
+        session.drain();
+
+        show(&mut session, presets::draw());
+        assert_eq!(
+            session
+                .remote()
+                .and_then(|r| r.canvas())
+                .map(|c| c.strokes().len()),
+            Some(1)
+        );
+
+        session.remote_mut().map(|r| r.touch_down(2, at, 0.2));
+        session.tick(0.3);
+        assert!(matches!(
+            sent(&mut session).first(),
+            Some(PhoneMessage::Draw(DrawEvent::Begin { stroke: 1, .. }))
+        ));
+    }
+
+    #[test]
+    fn another_show_starts_a_new_remote() {
+        let (mut session, _) = drawing();
+        show(&mut session, presets::buzzer());
+        assert!(session.remote().and_then(Remote::canvas).is_none());
     }
 
     #[test]

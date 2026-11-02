@@ -626,7 +626,8 @@ citation = "Salon asks after every step and sends a change by itself"
 enonce = "Salon renvoie Show à chaque reconnexion : recevoir la même disposition n'est pas recevoir une nouvelle télécommande."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::the_same_show_again_keeps_the_drawing_and_its_numbers", "remote/bench/tests/shell.rs::a_reconnection_keeps_the_drawing_on_the_phone"]
 trou = "T10"
 
 [[lecon]]

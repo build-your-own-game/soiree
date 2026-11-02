@@ -322,6 +322,7 @@ proptest! {
                 }
                 SessionStep::Show(index) => {
                     let (_, spec) = presets::all()[*index % presets::all().len()].clone();
+                    let same = session.remote().is_some_and(|remote| *remote.spec() == spec);
                     session.receive(&encode(&GameMessage::Show(Shown::Pad(spec))));
                     // The old canvas's last steps go out at once: its stroke ends.
                     for message in sent(&mut session) {
@@ -329,7 +330,11 @@ proptest! {
                             follow_stroke(&mut open, event);
                         }
                     }
-                    prop_assert_eq!(open, None, "a stroke cut by a new remote never ended");
+                    // The same remote shown again is no new remote: the stroke
+                    // goes on, and salon does this at each reconnection (T10).
+                    if !same {
+                        prop_assert_eq!(open, None, "a stroke cut by a new remote never ended");
+                    }
                     last_state = None;
                     recent.clear();
                 }

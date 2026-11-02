@@ -307,3 +307,27 @@ fn a_tap_shorter_than_a_refresh_reaches_the_game() {
         "the game saw nothing"
     );
 }
+
+#[test]
+fn a_reconnection_keeps_the_drawing_on_the_phone() {
+    let host = FakeHost::start(Some(Remote::Pad(presets::draw())));
+    let mut shell = joined(&host, "/play");
+    let (x, y) = shell.point("canvas");
+    shell.ask(&format!("down 1 {x} {y}"));
+    shell.ask("up 1");
+    assert!(eventually(SOON, || shell.ask("strokes") == "1"));
+    assert!(host.wait(SOON, |state| state.heard.iter().any(|h| is_end(&h.message))));
+    host.with(|state| state.cut = true);
+    assert!(host.wait(BACK, |state| state.links == 2));
+    assert!(eventually(BACK, || shell.ask("status") == "connected"));
+    assert_eq!(shell.ask("strokes"), "1", "the drawing is gone");
+    shell.ask(&format!("down 2 {x} {y}"));
+    shell.ask("up 2");
+    assert!(
+        host.wait(SOON, |state| state.heard.iter().any(|heard| matches!(
+            heard.message,
+            PhoneMessage::Draw(DrawEvent::Begin { stroke: 1, .. })
+        ))),
+        "the next stroke took a number already used"
+    );
+}
