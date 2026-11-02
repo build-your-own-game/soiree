@@ -4,7 +4,7 @@ Chaque version a sa section, de la plus récente à la plus ancienne. « Passer 
 
 ## v0.4.0 — 2026-11-02
 
-Un téléphone revient mieux : recharger, rejouer dans un onglet, dormir ou traverser un redémarrage de l'hôte ne perd plus ce qu'il a envoyé, et le protocole passe à 2. Un jeu peut choisir le stick natif de l'app iPhone et relier ses tests aux exigences communes, et sa CI ne part plus à chaque commit. `soiree certify` devient plus strict : une page qui écrit `console.error`, ou un `advance` sans `advance.progress`, le font échouer.
+Un téléphone revient mieux : recharger, rejouer dans un onglet, dormir ou traverser un redémarrage de l'hôte ne perd plus ce qu'il a envoyé, et le protocole passe à 2. Un jeu peut choisir le stick natif de l'app iPhone et relier ses tests aux exigences communes, et sa CI ne part plus à chaque commit. `soiree certify` devient plus strict : une page qui écrit `console.error`, ou un `advance` sans `advance.progress`, le font échouer. `soiree check` aussi : une crate dont aucun test ne tourne, un `cert.json` qui retire `socket` ou `phone` sans le dire, une raison vide de sens ou une commande qui n'observe rien ne passent plus.
 
 ### Passer à cette version
 
@@ -16,7 +16,7 @@ Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a 
    soiree upgrade --dry-run
    soiree upgrade
    ```
-   `soiree upgrade` change l'étiquette dans `Cargo.toml` et les crates du jeu, la version dans `soiree.toml`, les règles, `.github/workflows/soiree.yml` et `.soiree/`, met à jour les dépendances communes, puis lance `soiree check`. Ce `soiree check` peut encore échouer sur ce que les étapes suivantes corrigent : continue, et l'étape 11 le relance. Il s'arrête avant toute écriture si `soiree.yml` a été modifié à la main : renomme d'abord ta version. Rien d'autre à faire pour cette CI : `soiree check` refuse un `soiree.yml` modifié. Elle ne part plus qu'à la main (`gh workflow run soiree.yml`) ou sur une pull request. `soiree check` ne lit pas les autres fichiers de `.github/workflows/` : si l'un d'eux part à chaque commit, retire ce déclencheur toi-même.
+   `soiree upgrade` change l'étiquette dans `Cargo.toml` et les crates du jeu, la version dans `soiree.toml`, les règles, `.github/workflows/soiree.yml` et `.soiree/`, met à jour les dépendances communes, puis lance `soiree check`. Ce `soiree check` peut encore échouer sur ce que les étapes suivantes corrigent : continue, et l'étape 12 le relance. Il s'arrête avant toute écriture si `soiree.yml` a été modifié à la main : renomme d'abord ta version. Rien d'autre à faire pour cette CI : `soiree check` refuse un `soiree.yml` modifié. Elle ne part plus qu'à la main (`gh workflow run soiree.yml`) ou sur une pull request. `soiree check` ne lit pas les autres fichiers de `.github/workflows/` : si l'un d'eux part à chaque commit, retire ce déclencheur toi-même.
 2. Si `cert.json` déclare `advance`, ajoute `advance.progress`, une expression JavaScript dont la valeur change quand la partie avance. Sans elle, `certify` échoue, alors qu'il ne faisait que le noter :
    ```json
    "advance": { "key": " " }
@@ -82,7 +82,8 @@ Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a 
    ```
 9. Facultatif : relie à tes tests celles des exigences C6, E5, T1, D1, D3, D4 et D5 que le jeu tient, avec `[[bindings]]` dans `verification.toml` (`VERIFICATION.md`, « Relier une exigence commune »), puis `soiree contracts --write-view`. Le stick natif de l'app passe par `Game::remote`, `Game::on_app` et `Game::feedback`, qui ont tous une valeur par défaut (`.soiree/salon/README.md`).
 10. Dans les passages ciblés, prévois `resources` (R4) : son succès ne remplace pas les trente minutes d'endurance. `rtc` exige un vrai trajet UDP et éprouve les moteurs disponibles, les négociations retardées ou défaillantes et le repli dans son domaine prévu.
-11. `soiree check`, puis `soiree certify`. Pousse le jeu seulement après l'étiquette du commun : un jeu qui dépend d'un salon non publié ne compile pas chez un ami.
+11. Si `soiree check` écrit `rien n'a tourné dans …`, cette crate a des tests et tous sont `#[ignore]` : retire l'attribut d'au moins l'un d'eux. Si le workspace n'a aucun test, écris-en un. Un test ignoré parmi d'autres ne fait rien échouer : le résumé devient `✓ Aucun échec, N point(s) à juger` et le nomme avec sa raison. Lis chaque point, corrige ce qui est un défaut et montre le reste à l'auteur avant de dire que c'est fini.
+12. `soiree check`, puis `soiree certify`. Pousse le jeu seulement après l'étiquette du commun : un jeu qui dépend d'un salon non publié ne compile pas chez un ami.
 
 Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version`) : les joueurs rechargent, il n'y a rien à coder.
 
@@ -100,6 +101,9 @@ Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version
 - **`soiree check` et `soiree certify` finissent par un résumé en clair.** Ce qu'un humain doit juger (`?` dans le rapport du harnais) ne fait plus échouer la commande : T2, C7 et C9 quand la page dit quelque chose, C4 et C5 quand le jeton et l'appareil ont été retrouvés. Cette décision vit dans le noyau prouvé (`passes_run`). Une vérification qui n'a pas pu finir (`~`) fait toujours échouer, avec le statut « pas pu vérifier ». Le harnais échoue maintenant si un retour donne une autre place, si un téléphone reste sur un écran vide après un redémarrage de l'hôte, ou si le stockage rétabli ne rend pas sa place.
 - **Une tentative WebRTC a la même fenêtre absolue de 15 s côté page et côté hôte.** La page la détruisait après 3 s, pendant une négociation encore viable. Les erreurs natives déclenchent le repli WebSocket immédiatement. Un résultat SDP tardif ne remplace jamais ce repli, et la progression ne prolonge pas la fenêtre. Le délai de connexion C1 de 30 s et les budgets de rendu et de latence P1 et P2 ne changent pas.
 - **Le budget d'image se juge à 1 ms près.** Une image sautée à 60 Hz dure 33,33 ms et Chrome la rapporte à 33,3 ou 33,4 ms : le budget de 33 ms échouait sur l'image qu'il nomme. Ce 1 ms est la résolution de la mesure, pas une marge, et une vraie image lente échoue toujours.
+- **`cargo:suite` ne réussit plus quand rien n'a tourné.** Une crate dont tous les tests étaient `#[ignore]` donnait un vert à zéro test exécuté. Si rien ne tourne dans le workspace, ou si une crate a des tests et n'en exécute aucun, le contrôle reste `not-run` et le passage échoue. Un test ignoré parmi d'autres est compté et nommé avec sa raison, sans faire échouer. Une crate sans aucun test, à côté de crates qui en exécutent, ne compte pas comme un trou.
+- **`✓ Aucun problème trouvé` veut dire ce qu'il dit.** Une revue donnait ce titre et le code de sortie 0, alors que `README.md` et `REJOINDRE.md` en font la fin du travail. Le titre devient `✓ Aucun échec, N point(s) à juger`, le code de sortie reste 0, et le résumé dit quoi faire de ces points.
+- **`cert.json` ne retire plus d'item en silence.** Enlever `socket` rendait E1 à E4 et C7 non applicables, et `"phone": null` dix autres items. `phone` exige maintenant `socket`, et un jeu sans téléphone exige `display.role = "desktop"` avec sa raison. Sinon, ces items restent applicables et le passage échoue.
 - **Un jeu n'a plus de CI à chaque commit.** Le workflow du modèle tournait sur macOS à chaque push, sur des dépôts privés qui partagent environ 190 minutes macOS par mois, à 6 à 13 minutes le passage.
 
 ### Réseau et salon
@@ -122,12 +126,16 @@ Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version
 - Le harnais mesure la part occupée du processeur avant de lancer quoi que ce soit et après avoir tout arrêté, garde les deux dans le rapport et prévient dans le résumé à partir de la moitié des cœurs : une compilation à côté faisait de faux échecs sans un mot. Le verdict ne change pas, et une mesure illisible reste inconnue, jamais une machine au repos.
 - L'identité d'un passage ne s'invalide plus pour ce qui n'est pas une source : bruit de la machine, notes que Git ne suit pas, dossier de données ignoré. Ils sont nommés dans la provenance, tout fichier suivi par Git reste une entrée, et rien n'est présumé hors de Git. Une vraie source changée pendant un passage le fait toujours échouer, et l'échec nomme les fichiers. Un `Cargo.lock` périmé faisait échouer le premier passage : un passage ordinaire le rafraîchit d'abord, comme Cargo ; un passage verrouillé le refuse toujours et ne réécrit rien.
 - `[[bindings]]` relie à ses tests C6, E5, T1, D1, D3, D4 ou D5, qui dépendent des règles de chaque jeu. La validation est stricte : contrôle inconnu ou répété, liste vide, exigence reliée deux fois ou hors des sept sont refusés, et un minimum commun garde ses contrôles. Relier une exigence conditionnelle la rend applicable ; rien ne la rend non applicable. Une liaison ne compte que par l'observation de son test. Le modèle relie E5 et D1, les deux que ses tests portent vraiment.
+- Deux tests du harnais supposaient un runner rapide : 250 ms pour atteindre une ressource retenue, 100 ms entre deux images. Une tentative dont le délai a expiré avant sa cause ne conclut plus rien et double ce délai, et le test de cadence vérifie que chaque intervalle vient du reçu du navigateur. Une navigation abandonnée à son délai continue de courir : sa réponse 500 tardive ne se lit plus comme l'échec de la suivante.
 - Le contrôleur conserve les pannes TCP de Toxiproxy, mais borne sa connexion amont par un connecteur possédé : deux secondes pour joindre la vraie adresse LAN, sans nouvelle tentative ni repli. Un SYN bloqué ne retient plus la commande de coupure jusqu'au délai du système. Le connecteur borne ses ressources et les libère à l'arrêt ; les erreurs d'administration restent des pannes d'infrastructure.
 - `certify` signale le pare-feu quand l'adresse du réseau ne répond pas. Les tests du harnais navigateur tournent dans un job indépendant des compilations Rust et iPhone, leurs fichiers l'un après l'autre. Le contrôle de navigation conserve l'historique des requêtes : la fermeture d'une connexion au délai ne signifie pas que sa ressource n'a pas été demandée. Ses délais et ses assertions ne changent pas.
 
 ### Outil
 
 - `soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
+- Une raison tient en au moins deux mots et 12 caractères (`catalogue_decisions`, `ui.not_applicable`, `progression.reason`, `display.reason`, `raison_niveau`) : `x` n'excuse plus rien. Une commande de `ui`, `text`, `progression` ou `layout` sans `{url}` ni `success` est refusée : `["true"]` validait U1, T2 et D2. Avec `{url}` seul, le code de sortie reste toute la preuve, et le rapport du passage note cette limite. Le Markdown des rapports écrit les hypothèses à côté du résultat d'une liaison ou d'une garantie du jeu.
+- Tout fichier suivi par Git reste une entrée de l'identité, même nommé `._x` ou `x~`, et seul un nom qui contient le mot `note` ou `notes` est présumé personnel : `footnotes.txt` restait dehors.
+- `.soiree/modele/tools/` donne à un jeu les exemples que la mise à jour lui demande de copier, dont `progression-exemple.mjs` pour un jeu fini.
 - `soiree check .` lit les documents du commun contre le code : versions, commandes et options, chemins, scénarios, clés de `cert.json` et items. Le catalogue renvoie à `verification.toml`, `CONTRAT.md` dit ce que salon permet vraiment, et seuls les derniers résultats restent dans `certification/` ; les campagnes passées sont dans l'historique git.
 - `soiree check` marche sans Node, sauf si `cert.json` déclare `ui.checks[].success`, et il le dit alors clairement. Le harnais l'exige toujours.
 - `soiree doctor` vérifie l'éditeur de liens, que rustup n'installe pas, et GitHub CLI, qui reste facultatif.
@@ -141,12 +149,15 @@ Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version
 
 - `soiree recherche plan` dit ce que le diff ajoute, le sous-système, le niveau, la fiche, ce qui manque et les étapes à suivre. Il n'empêche rien.
 - `soiree recherche verifie` confronte à l'amont chaque commit et chaque citation des fiches. Un lien mort fait échouer la fiche ; une panne de réseau a son propre code et ne conclut rien.
-- `soiree recherche dette` liste les sous-systèmes de niveau 3 sans fiche et les trous ouverts. `soiree check .` juge les fiches hors ligne, et la dette ne bloque qu'à l'étiquette.
+- `soiree recherche dette` liste les sous-systèmes de niveau 3 sans fiche, les fiches sous leur plancher et les trous ouverts. Elle part du plancher de `sous-systemes.toml`, pas du niveau écrit dans la fiche. `soiree check .` juge les fiches hors ligne, et la dette ne bloque qu'à l'étiquette.
+- `soiree recherche verifie` échoue s'il n'a aucune fiche à vérifier ou si le dossier n'existe pas. Sans `gh`, le 422 de GitHub pour un commit inconnu est un échec, pas une panne, et une réponse 2xx qui n'est pas ce commit, comme un portail Wi-Fi, ne conclut rien.
+- Une fiche doit tenir ses leçons (`lecons` dans `[[niveau]]`), dire dans `consulte` de quoi retrouver sa lecture, et une raison de baisse doit en être une. Un trou ne se ferme que sur un test non ignoré ou un item, jamais sur un fichier ou une ligne de code : `#[cfg(test)]` n'est plus pris pour un test, et `#[test] #[ignore]` sur une ligne est vu.
 
 La dette de niveau 3 restante, ligne par ligne :
 
 - `fiabilite`, `transport-webrtc`, `telecommande` : pas encore de fiche. La méthode a d'abord été éprouvée sur la reconnexion, le sujet le plus risqué pour une soirée. Ces trois fiches sont à écrire pour une version suivante.
 - T12, moyen : le chaos joue maintenant rechargements, jumeaux et redémarrages. Il reste au harnais à employer `slow_close` et `reset_peer`, sur un vrai transport.
+- T8, faible : l'écouteur de `resume` existe, sans test : aucun navigateur ne l'a rejoué, et le comportement de Chrome reste rapporté par Phoenix. Une ligne de code ne ferme plus un trou, il rouvre donc.
 - T9, faible : `wake` coupe un lien encore valide après 1,5 s de silence. Rien n'est perdu, et le coût visible pour un joueur reste à juger sur de vrais téléphones (`REPETITION.md`).
 - T11, faible : le rattrapage ne se distingue pas du direct. Rien ne montre que cela gêne un jeu, et les jeux peuvent horodater leurs événements.
 
