@@ -173,7 +173,7 @@ Trois recherches de plus, une par famille :
 
 Un point par principe d'ingénierie du manifeste : **Respecté.**, **Écart.** (avec sa « Raison : ») ou **À faire.** `soiree check` vérifie que les huit y sont.
 
-1. **À faire.** Le clippy du manifeste passe, sans `unwrap` ni index qui peut paniquer, et ce qui vient d'un jeu est validé avant usage : trames illisibles ignorées, contrôles mal formés écartés, identifiants bornés à 31, le tout testé. Reste la coquille Swift, hors lints et hors tests : la durée d'affichage minimale d'un appui, le choix des vibrations, l'attribution des doigts, la reconnexion.
+1. **À faire.** Le clippy du manifeste passe, sans `unwrap` ni index qui peut paniquer, et ce qui vient d'un jeu est validé avant usage : trames illisibles ignorées, contrôles mal formés écartés, identifiants bornés à 31, le tout testé. La coquille Swift a son banc (`bench/`) pour la reconnexion, la page, l'orientation et les permissions. Reste hors lints et hors tests : la durée d'affichage minimale d'un appui, le choix des vibrations, l'attribution des doigts par `TouchSurface`, que le banc contourne en entrant par `RemoteModel.handle`.
 2. **Écart.** Pas de simulation à pas fixe. Raison : la télécommande n'est pas un jeu ; elle lit les doigts et envoie un état, et la simulation vit dans chaque jeu. Le temps entre tout de même comme paramètre dans les gestes (dessin, pointeur).
 3. **Respecté.** Le temps est une entrée, la trigonométrie passe par `libm`, tout est en `BTreeMap`, et les tests tournent à temps fixe.
 4. **Respecté.** `remote-core` ne dépend que de `remote-protocol` et `libm`, et ses tests tournent sans iOS.
@@ -200,6 +200,21 @@ Le JSON décrit par `CONTRAT.md` est conservé, y compris les commandes combiné
 `cargo xtask web-contract-browser` fait produire les scripts par les vraies liaisons Swift, construit la page de démonstration WASM puis vérifie dans WebKit et Chromium les informations, les trois événements et les commandes issues des gestes. Il vérifie aussi la page hors de l’app. Il utilise les navigateurs installés pour le harnais, à la demande.
 
 Un test négatif a révélé que la désérialisation automatique des structs acceptait des tableaux positionnels à la place des objets JavaScript documentés. La frontière impose désormais des objets pour les commandes, chaque événement haptique, les informations, les capteurs et les datagrammes. Les tests Rust et les vraies liaisons Swift gardent les cas qui reproduisaient ce défaut.
+
+## Ce que le banc de la coquille a appris
+
+`recherche/telecommande.toml` a les trous et leurs preuves. Ici, ce que leur correctif a appris, et qu'aucune sonde n'avait montré.
+
+| Leçon | Source | Cat. | Conséquence ici |
+|---|---|---|---|
+| `state == .running` ne dit pas qu'un socket est ouvert : `URLSessionWebSocketTask` accepte des envois avant, et une tentative ratée les emporte | déduction, doc d'Apple. Le banc ne rougit pas sans cette garde : ses tentatives échouent trop vite pour qu'un trait s'y glisse | A | **Gardé** : `Hello` et ce qui attend partent à `didOpenWithProtocol`. Non éprouvé. |
+| Salon jette les trames d'une app tant qu'il n'a pas posé sa télécommande sur ce socket, et celles au-delà de 240 par seconde | `salon/crates/host/src/apps.rs`, `on_link` | P | **Gardé** : les traits en attente suivent le `Show`, à 180 par seconde. Le banc ne voit pas la première course sur la boucle locale : c'est le test Rust qui la tient. |
+| Un `timeoutIntervalForRequest` de 5 s ne coupe pas un WebSocket ouvert et muet, tant que les Pings passent | banc, T6 | P | **Gardé** : 9 s de page muette contre un vrai salon. |
+| Annuler une navigation la fait échouer avec une erreur de `WebKitErrorDomain`, pas de `WKErrorDomain`, et un nouvel essai naïf ramène alors la page par-dessus la suivante | banc, T13 | A | **Gardé** : cette erreur et l'annulation d'URLSession ne relancent rien. |
+| `_killWebContentProcess` ne recharge jamais seul, contrairement à une vraie mort du processus | banc, T4 | A | Le banc est plus dur que la réalité. Le simulateur ne dit rien de la mémoire d'un vrai iPhone. |
+| Le redimensionnement de la première rotation lève les doigts déjà posés | banc, T9 | U | Un test attend un écran stable avant de toucher. Pour un joueur, il tombe avant la manche. |
+| Le pare-feu du Mac bloque un binaire de test sur l'IP du réseau, pas sur la boucle locale | banc, T12 | A | `localhost.` joue l'adresse locale : même absence de contexte sécurisé. La clé `NSAllowsArbitraryLoadsInWebContent` n'existe que dans le `Info.plist` du banc. |
+| Un banc qui passe par des fichiers `Cargo.toml` de salon casse quand salon bouge | salon en travaux pendant T2 | L | **Gardé** : `salon-door` se construit à part, seuls ses tests en dépendent. |
 
 ## Génération des liaisons dans un clone neuf
 
