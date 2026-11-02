@@ -802,8 +802,9 @@ mod tests {
         assert_eq!(found, Vec::<String>::new());
         assert_eq!(registry_rules(&registre()), Vec::<String>::new());
         let sources: Sources = fiche::read(SOURCES, "sources.toml").unwrap();
+        let folder = crate::recherche::Folder::load(&root).unwrap();
         assert_eq!(
-            sources_rules(&sources, &registre(), &[&parsed]),
+            sources_rules(&sources, &registre(), &folder.read_sheets()),
             Vec::<String>::new()
         );
     }
