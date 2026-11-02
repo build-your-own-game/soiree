@@ -6,7 +6,7 @@
 
 #![expect(
     clippy::expect_used,
-    reason = "test helper outside #[test] functions: a client without a hello stops the test"
+    reason = "test helpers outside #[test] functions: a client without a hello stops the test"
 )]
 
 #[expect(
@@ -17,8 +17,8 @@ mod net;
 
 use net::{Down, Faults, Net, Up, host_config, phone_config};
 use salon_core::{
-    Caps, Client, ClientConfig, ClientOutput, DeviceEvent, Host, Kind, LinkId, Ms, Output, Refusal,
-    Status, Token,
+    Caps, Client, ClientConfig, ClientOutput, DeviceEvent, Host, Kind, LinkId, Ms, Name, Output,
+    Refusal, Status, Token,
 };
 
 type Room = Host<Up, Down>;
@@ -171,11 +171,11 @@ fn a_reloaded_page_is_heard_when_it_sets_its_state() {
     );
 }
 
-/// A name that does not fit a packet: `encode_within` returns `None`, so no
-/// hello ever leaves and the phone stays on `Connecting`, without an error.
-/// The crate documentation promises a typed refusal, never a silent lobby.
+/// A name that does not fit a packet: `encode_within` returned `None`, so no
+/// hello ever left and the phone stayed on `Connecting`, without an error,
+/// against the crate's "never a silent lobby". A name is cut anyway: the
+/// client now cuts it first, on both transports.
 #[test]
-#[ignore = "bug: client.rs `flush` drops a hello that does not fit, in silence and for ever"]
 fn a_name_too_long_for_a_packet_does_not_hang_the_phone() {
     let mut net = Net::new(1, Faults::default());
     let phone = net.add_phone(
@@ -190,4 +190,47 @@ fn a_name_too_long_for_a_packet_does_not_hang_the_phone() {
             != Status::Connecting),
         "still connecting after 30 s"
     );
+    assert_eq!(net.phones[phone].client.status(), Status::Connected);
+    let device = net.phones[phone].client.device().expect("an identity");
+    let name = net.host.device(device).and_then(|info| info.name);
+    assert_eq!(name, Name::new(&"x".repeat(Name::MAX_CHARS)));
+}
+
+/// What the host keeps of a name does not depend on who cut it first.
+#[test]
+fn a_name_cut_by_the_client_is_the_one_the_host_would_keep() {
+    let mut net = Net::new(1, Faults::default());
+    let raw = format!("  Ada\u{7}{}  ", "é".repeat(100));
+    let phone = net.add_phone(
+        ClientConfig {
+            name: Some(raw.clone()),
+            ..phone_config(1, Kind::Phone)
+        },
+        Caps::DATAGRAM,
+    );
+    assert!(net.run_until(3_000, |net| net.phones[phone].client.status()
+        == Status::Connected));
+    let device = net.phones[phone].client.device().expect("an identity");
+    assert_eq!(
+        net.host.device(device).and_then(|info| info.name),
+        Name::new(&raw)
+    );
+}
+
+/// A name made of nothing a name can hold joins without a name, as a phone
+/// without one.
+#[test]
+fn a_name_with_nothing_left_joins_without_a_name() {
+    let mut net = Net::new(1, Faults::default());
+    let phone = net.add_phone(
+        ClientConfig {
+            name: Some(" \u{7} ".repeat(1_000)),
+            ..phone_config(1, Kind::Phone)
+        },
+        Caps::DATAGRAM,
+    );
+    assert!(net.run_until(3_000, |net| net.phones[phone].client.status()
+        == Status::Connected));
+    let device = net.phones[phone].client.device().expect("an identity");
+    assert_eq!(net.host.device(device).and_then(|info| info.name), None);
 }

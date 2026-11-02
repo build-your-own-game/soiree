@@ -74,7 +74,8 @@
 //! Each line names the item of `CERTIFICATION.md` it covers.
 //!
 //! - **Joining** is one `Hello`, answered by a `Welcome`; repeated until
-//!   answered, and answering twice is harmless. A full room, a closed room,
+//!   answered, and answering twice is harmless. A hello always fits a packet:
+//!   a name of any length is cut as [`Name`] says. A full room, a closed room,
 //!   another version or a false TV get a typed [`Refusal`], never a silent
 //!   lobby (C8). The game's version ([`HostConfig::game`]) is computed from
 //!   its sources (`version.rs`, at salon's root), so a page left in a

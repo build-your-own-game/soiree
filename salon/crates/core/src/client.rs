@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::stream::{Budget, InEvents, InState, OutEvents, OutState, Peer};
-use crate::types::{Caps, DeviceId, Kind, Limits, Ms, Refusal, Timing, Token, TvKey};
+use crate::types::{Caps, DeviceId, Kind, Limits, Ms, Name, Refusal, Timing, Token, TvKey};
 use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
 
 /// Packets one flush may send, to drain a large message.
@@ -24,6 +24,8 @@ pub struct ClientConfig {
     /// Drawn once from the OS's secure random generator and kept (the shell
     /// stores it): it is this device's identity.
     pub token: Token,
+    /// Cleaned and cut like a [`Name`]: the host would do the same, and a
+    /// name of any length still leaves in a hello.
     pub name: Option<String>,
     /// Only for the TV, from the page the host served.
     pub tv_key: Option<TvKey>,
@@ -135,7 +137,14 @@ pub struct Client<Up, Down> {
 }
 
 impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
-    pub fn new(now: Ms, config: ClientConfig) -> Self {
+    pub fn new(now: Ms, mut config: ClientConfig) -> Self {
+        // The name is the only field of a hello without a bound: raw, it could
+        // outgrow a packet, and a phone whose hello never leaves waits for ever.
+        config.name = config
+            .name
+            .as_deref()
+            .and_then(Name::new)
+            .map(|name| String::from(name.as_str()));
         let rng = config.seed ^ 0x9e37_79b9_7f4a_7c15;
         Client {
             config,

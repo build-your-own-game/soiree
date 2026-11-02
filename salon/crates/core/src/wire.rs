@@ -165,7 +165,10 @@ pub(crate) fn decode(bytes: &[u8]) -> Option<Packet> {
 
 /// Encodes `packet`, dropping its last fragments until it fits `max`. The
 /// builders size fragments so this never happens; if it did, a dropped
-/// fragment counts as lost and goes again at the next resend.
+/// fragment counts as lost and goes again at the next resend. `None` would
+/// lose its control message in silence: every one of them, at its largest,
+/// fits [`Caps::MIN_PACKET`](crate::types::Caps::MIN_PACKET), and
+/// `every_control_message_fits_the_smallest_packet` holds that true.
 pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
     loop {
         let bytes = encode(&packet)?;
@@ -181,7 +184,10 @@ pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod framing_tests {
+    use alloc::vec;
+
     use super::*;
+    use crate::types::{Caps, Name, Refusal};
 
     #[test]
     fn packet_boundary_does_not_accept_a_valid_prefix() {
@@ -190,5 +196,86 @@ mod framing_tests {
         assert_eq!(decode(&bytes), Some(packet));
         bytes.push(0);
         assert!(decode(&bytes).is_none());
+    }
+
+    /// A packet with every optional field at its largest number, around
+    /// `control`, and more data than any packet takes.
+    fn largest(control: Control) -> Packet {
+        let data = vec![0_u8; Caps::MIN_PACKET];
+        Packet {
+            epoch: u32::MAX,
+            sent: u64::MAX,
+            echo: Some(Echo {
+                sent: u64::MAX,
+                held: u32::MAX,
+            }),
+            control: Some(control),
+            ack: Some(Ack {
+                events: u32::MAX,
+                state: u32::MAX,
+            }),
+            phase: Some(u32::MAX),
+            holding: Some(u32::MAX),
+            events: vec![EventPart {
+                seq: u32::MAX,
+                index: u16::MAX,
+                count: u16::MAX,
+                phase: u32::MAX,
+                at: Some(u64::MAX),
+                data: data.clone(),
+            }],
+            state: vec![StatePart {
+                seq: u32::MAX,
+                index: u16::MAX,
+                count: u16::MAX,
+                data,
+            }],
+        }
+    }
+
+    /// `encode_within` gives up only on what does not fit without its
+    /// fragments, and that would drop a hello or a refusal in silence: a phone
+    /// would wait for ever. The largest of each must fit the smallest packet.
+    #[test]
+    fn every_control_message_fits_the_smallest_packet() {
+        let widest = "\u{1f600}".repeat(Name::MAX_CHARS * 2);
+        let name = Name::new(&widest).expect("a name");
+        let max = Resume {
+            epoch: u32::MAX,
+            device: DeviceId(u32::MAX),
+            session: u32::MAX,
+        };
+        let controls = [
+            Control::Hello(Hello {
+                protocol: u16::MAX,
+                game: u32::MAX,
+                kind: Kind::Keyboard,
+                token: Token([u8::MAX; 16]),
+                name: Some(String::from(name.as_str())),
+                key: Some(TvKey([u8::MAX; 16])),
+                resume: Some(max),
+            }),
+            Control::Welcome(Welcome {
+                device: DeviceId(u32::MAX),
+                epoch: u32::MAX,
+                session: u32::MAX,
+                up_next: u32::MAX,
+                up_seen: u32::MAX,
+                state: u32::MAX,
+                down_first: u32::MAX,
+            }),
+            Control::Refused(Refusal::Removed),
+            Control::Replaced,
+            Control::Bye,
+            Control::Closing,
+        ];
+        for control in controls {
+            let bytes = encode_within(largest(control.clone()), Caps::MIN_PACKET)
+                .expect("a control message fits");
+            assert_eq!(
+                decode(&bytes).and_then(|packet| packet.control),
+                Some(control)
+            );
+        }
     }
 }
