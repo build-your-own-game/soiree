@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { capacityActivityFailures } from './capacity.mjs';
+import { capacityActivityFailures, ordinaryPhones } from './capacity.mjs';
 
 test('a large global gesture total cannot hide the untouched or absent phone', () => {
   const a = { index: 1, label: 'phone 1', gestures: 100, joined: true, live: true };
@@ -10,4 +10,12 @@ test('a large global gesture total cannot hide the untouched or absent phone', (
     assert.ok(capacityActivityFailures([a, changed], 2).length);
   }
   assert.ok(capacityActivityFailures([a], 2).length);
+});
+
+test('a smaller room seats its own players, and no room invents a limit', () => {
+  assert.equal(ordinaryPhones(8, 4), 4);
+  assert.equal(ordinaryPhones(8, 71), 8);
+  assert.equal(ordinaryPhones(12, 8), 8);
+  assert.equal(ordinaryPhones(8, undefined), 8);
+  assert.equal(ordinaryPhones(8, 0), 8);
 });

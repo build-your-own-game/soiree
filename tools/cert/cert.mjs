@@ -32,7 +32,7 @@ import { measureFrames, frameFailures, measureProbe, renderSettled, performActio
 import { Toxiproxy } from "./toxiproxy.mjs";
 import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment } from "./udp.mjs";
 import { verifyRtcNegotiation } from "./rtc-negotiation.mjs";
-import { capacityActivityFailures } from "./capacity.mjs";
+import { capacityActivityFailures, ordinaryPhones } from "./capacity.mjs";
 import { killOwnedGroup } from "./processes.mjs";
 import { recurringScenarios, serverEndurance } from "./endurance.mjs";
 import { freeHostPort } from "./ports.mjs";
@@ -77,6 +77,7 @@ if (args.help || !args.dir) {
 }
 const gameDir = resolve(args.dir);
 const config = JSON.parse(readFileSync(join(gameDir, "cert.json"), "utf8"));
+args.phones = ordinaryPhones(args.phones, config.players?.max);
 const outDir = join(tmpdir(), `cert-${gameDir.split("/").pop()}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
 mkdirSync(outDir, { recursive: true });
 
@@ -376,7 +377,8 @@ class Host {
   usage() {
     try {
       const rss = Number(execFileSync("ps", ["-o", "rss=", "-p", String(this.pid)]).toString().trim());
-      const threads = execFileSync("ps", ["-M", "-p", String(this.pid)]).toString().trim().split("\n").length - 1;
+      // `ps -M` lists threads on macOS only; on Linux it means something else.
+      const threads = execFileSync("ps", [process.platform === "linux" ? "-L" : "-M", "-p", String(this.pid)]).toString().trim().split("\n").length - 1;
       return { rss, threads };
     } catch {
       return null;
@@ -1154,6 +1156,7 @@ const scenarios = {
    * lobby (after `restart`), where joining is allowed. */
   async storage() {
     if (!config.phone) return storageOfPage(tv);
+    if (config.storage) throw new FixtureFailure("cert.json.storage ne vaut que pour un jeu sans téléphone : sur un jeu à téléphones, seul localStorage est éprouvé");
     if (phones.length < 2) return skip("C9", "il faut au moins 2 téléphones");
     const [a, b] = phones;
     // A transport Welcome after C7 can precede the new game's view. Begin
@@ -1330,8 +1333,8 @@ const scenarios = {
    * hearing the page and closes nothing; a page without its own silence
    * timer would wait forever. */
   async silent() {
-    if (phones.length < 5) return skip("C3", "il faut au moins 5 téléphones pour ce scénario");
-    const phone = phones[4];
+    if (!phones.length) return skip("C3", "pas de téléphones");
+    const phone = phones[Math.min(4, phones.length - 1)];
     const baseline = await phone.tab.socketTrace();
     const opened = new Set();
     for (const event of baseline) {

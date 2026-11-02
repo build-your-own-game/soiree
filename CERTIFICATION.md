@@ -101,7 +101,7 @@ Pars du `cert.json` que `soiree new` écrit dans chaque jeu, copie de `modele/ce
 - **`players.max`** est la taille de la salle (R3) : dès que `phone` est déclaré, `capacity` échoue sans lui. **`players.min`**, 1 par défaut, est le nombre de joueurs qu'il faut pour jouer : avec moins de téléphones, `rtc`, `resources` et l'endurance ne concluent pas.
 - **`display`** dit ce qu'est l'écran : `{"role":"desktop","reason":"…"}` retire la zone sûre T3 à un éditeur solo sans téléphone. **`layout`** donne l'oracle d'une TV dessinée sur un canvas : `{"name":"…","command":[…],"timeout_ms":120000}`. `layout: false` seul n'exclut rien, et T3 reste alors non attesté ; **`layout_reason`** garde sa raison pour le rapport.
 - **`text`** liste les contrôles du corpus de textes, **`refused`** le sélecteur et le texte vus par le joueur en trop, **`progression`** la nature de la partie (`{"kind":"finite","checks":[…]}` ou `{"kind":"continuous","reason":"…"}`).
-- **`storage`** identifie la sauvegarde IndexedDB à corrompre (`{"kind":"indexeddb","database":"…","store":"…","key":"…"}`). Sans cette clé, le harnais utilise `localStorage`.
+- **`storage`** identifie la sauvegarde IndexedDB à corrompre (`{"kind":"indexeddb","database":"…","store":"…","key":"…"}`). Sans cette clé, le harnais utilise `localStorage`. Elle ne vaut que pour un jeu sans téléphone : le harnais la refuse dès que `phone` est déclaré, car sur un jeu à téléphones seul `localStorage` est éprouvé.
 - **`jitter`** prépare le scénario de latence : `setup` (étapes d'avant la mesure, de la forme de `performance.setup` : `screen`, `phone`, `action`) et `ready` (expression vraie quand on peut commencer). La partie tourne depuis `start` : si `ready` reste fausse, le harnais la fait avancer par `advance` jusqu'à ce qu'elle soit vraie, et R1 échoue s'il n'y arrive pas.
 - **`phone_upstream`** vaut `lan` par défaut, ou `loopback` si le jeu ne doit pas passer par l'adresse du réseau ; le LAN reste alors non attesté.
 - **`advance.progress`** est une expression dont la valeur change quand la partie avance. Sans elle, la progression de D2 n'est pas attestée et `soiree certify` échoue.
@@ -348,7 +348,8 @@ Avant la sortie de Diablo IV, Blizzard a organisé un « Server Slam » : un wee
 `capacity` ouvre le maximum de téléphones déclaré, vérifie les gestes natifs
 sur chacun, les connexions, les sondes causales et le rendu dans les budgets,
 puis le refus visible du joueur en trop. Il repart ensuite sur des données
-propres. `--phones` règle les parcours ordinaires, sans réduire R3.
+propres. `--phones` règle les parcours ordinaires, 8 par défaut et jamais plus
+que `players.max`, sans réduire R3.
 `refused` déclare `{ "selector": "…", "text": "…" }` ; l'élément doit être
 visible à l'écran, et ce téléphone ne doit pas être accueilli dans le jeu.
 

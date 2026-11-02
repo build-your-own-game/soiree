@@ -19,8 +19,8 @@ const TOXIPROXY: &str = "https://github.com/Shopify/toxiproxy#1-installing-toxip
 const GIT: &str = "https://git-scm.com/downloads";
 const GITHUB_CLI: &str = "https://cli.github.com";
 const WINDOWS_LINKER: &str = "https://rust-lang.github.io/rustup/installation/windows-msvc.html";
-/// The oldest Node the harness is meant to run on (Playwright).
-const NODE_MAJOR: u32 = 20;
+/// The oldest Node the harness runs on: `hostile` needs its global `WebSocket`.
+const NODE_MAJOR: u32 = 22;
 /// Installed Chromium builds, which the harness reaches only through `CHROME`.
 const CHROMIUM: [&str; 3] = [
     "/usr/bin/chromium",

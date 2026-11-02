@@ -1,3 +1,8 @@
+/** A smaller room cannot seat the ordinary count: its players are all there is. */
+export function ordinaryPhones(requested, maximum) {
+  return Number.isSafeInteger(maximum) && maximum >= 1 ? Math.min(requested, maximum) : requested;
+}
+
 /** A global gesture total cannot stand in for participation by every phone. */
 export function capacityActivityFailures(participants, maximum) {
   const failures = [];

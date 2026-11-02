@@ -56,7 +56,7 @@ Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a 
      ```
    - Un jeu sans fin, sans `start` ni `advance`, comme un compteur ou un éditeur, écrit `"progression": {"kind": "continuous", "reason": "Compteur partagé : ni manche, ni départ, ni fin."}`. Un éditeur desktop solo écrit aussi `"display": {"role": "desktop", "reason": "Éditeur solo au clavier et à la souris, sans téléphone."}` ; ses cadres T2 restent requis.
    - Une TV dessinée sur un canvas déclare `"layout": {"name": "…", "command": ["node", "tools/layout-check.mjs", "{url}"], "timeout_ms": 120000}`, un script à toi qui lit les cadres vraiment dessinés et échoue quand l'un sort de la zone sûre. Une TV en DOM n'a rien à déclarer.
-   - Pour une sauvegarde IndexedDB, `"storage": {"kind": "indexeddb", "database": "…", "store": "…", "key": "…"}`.
+   - Pour une sauvegarde IndexedDB d'un jeu sans téléphone, `"storage": {"kind": "indexeddb", "database": "…", "store": "…", "key": "…"}`. Le harnais refuse cette clé dès que `phone` est déclaré.
    - Une raison tient maintenant en au moins deux mots et 12 caractères : `reason` de `catalogue_decisions`, `ui.not_applicable`, `progression.reason` et `display.reason`.
    - Une commande de `ui.checks`, `text.checks`, `progression.checks` ou `layout` contient `{url}` ou déclare `success`. Sans l'un ni l'autre, elle n'observe rien du jeu : `soiree check` et le harnais la refusent, y compris une commande de `ui.checks` qui passait en v0.3.0. Avec `{url}` seul, le code de sortie est toute la preuve : déclare aussi `success`.
 5. Relis comment le jeu reçoit un événement : ce qu'une page a envoyé pendant un redémarrage de l'hôte arrive maintenant à la nouvelle partie, après `DeviceEvent::Arrived` et avec la phase de son envoi. Refuse-le comme tout événement périmé :
@@ -158,6 +158,8 @@ Le flux fiable ne demande aucun changement de code non plus, mais quatre choses 
 
 ### Certification
 
+- Une salle de moins de 8 joueurs se certifie : les parcours ordinaires ouvrent `players.max` téléphones au plus, et `silent` ne demande plus cinq téléphones.
+- `cert.json.storage` est refusé sur un jeu à téléphones, où il ne changeait rien : C9 pouvait passer sans avoir touché la sauvegarde.
 - `rtc` perturbe le vrai transport UDP puis renégocie son DataChannel avec la même identité. Il accepte qu'un effet se termine en revenant à sa valeur ou en cessant de bouger : il supposait un saut qui retombe, et échouait toujours sur un compteur comme celui du modèle.
 - Le nouveau contrôle R4 observe la rétention DOM, JS et WASM et le RSS de Chromium et du GPU ; l'endurance R2 conserve aussi ces mesures. Les contrôles négatifs éprouvent les détecteurs. Le refus de stockage inclut IndexedDB, et `cert.json.storage` peut identifier la sauvegarde à corrompre.
 - La certification complète exerce `capacity` au maximum déclaré, `text` sur un corpus déterministe et `progression` jusqu'à une fin réelle puis une reprise. Les commandes UI, texte et progression ont chacune leur salle. Les champs de 16 px sont contrôlés même avec une TV canvas, dont la géométrie exige un oracle réel.
@@ -176,6 +178,7 @@ Le flux fiable ne demande aucun changement de code non plus, mais quatre choses 
 
 ### Outil
 
+- `soiree doctor` demande Node 22, et non plus 20 : `hostile` a besoin du `WebSocket` global de Node.
 - `soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
 - Une raison tient en au moins deux mots et 12 caractères (`catalogue_decisions`, `ui.not_applicable`, `progression.reason`, `display.reason`, `raison_niveau`) : `x` n'excuse plus rien. Une commande de `ui`, `text`, `progression` ou `layout` sans `{url}` ni `success` est refusée : `["true"]` validait U1, T2 et D2. Avec `{url}` seul, le code de sortie reste toute la preuve, et le rapport du passage note cette limite. Le Markdown des rapports écrit les hypothèses à côté du résultat d'une liaison ou d'une garantie du jeu.
 - Tout fichier suivi par Git reste une entrée de l'identité, même nommé `._x` ou `x~`. Dans un dépôt Git, seul un `.md` ou un `.txt` non suivi est présumé personnel, s'il est dans un dossier `notes/`, si son nom contient le mot `note` ou `notes`, ou s'il commence par `todo`, `scratch` ou `brouillon` : `footnotes.txt` restait dehors.
