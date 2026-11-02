@@ -221,7 +221,7 @@ pub fn summary(report: &VerificationReport) -> String {
             let _: std::fmt::Result = write!(text, "\n\n{title} :\n- {}", lines.join("\n- "));
         }
     }
-    if !judged.is_empty() {
+    if evaluation.selected_scope_satisfied && !judged.is_empty() {
         text.push_str("\n\nCe passage réussit, mais rien n'atteste ces points : montre chaque point à l'auteur et corrige ce qui est un défaut avant de dire que c'est fini.");
     }
     if at_the_table
@@ -475,6 +475,22 @@ mod tests {
         ));
         assert!(text.starts_with("✗ À corriger : 2 point(s)."), "{text}");
         assert!(text.contains("Pas pu vérifier :\n- E4"), "{text}");
+    }
+
+    /// A passage that failed does not say it passed, even with something to
+    /// judge beside what failed.
+    #[test]
+    fn only_a_passage_that_passed_says_so_of_its_judgements() {
+        let text = summary(&report(
+            &[
+                ("C1", Assessment::Failed, automatic()),
+                ("T2", Assessment::ReviewRequired, automatic()),
+            ],
+            "détail",
+        ));
+        assert!(text.starts_with("✗ À corriger : 1 point(s)."), "{text}");
+        assert!(text.contains("À juger par un humain"), "{text}");
+        assert!(!text.contains("Ce passage réussit"), "{text}");
     }
 
     #[test]
