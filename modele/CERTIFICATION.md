@@ -22,4 +22,11 @@ reste non revu, et un rapport ancien ne vaut pas résultat courant.
 ## Décisions du catalogue
 
 
+## Exigences communes reliées
+
+| Exigence | Contrôles |
+|---|---|
+| E5 | `absent_players_cannot_score_and_return_keeps_score` |
+| D1 | `a_versioned_journal_replays_the_complete_state`, `whole_host_is_deterministic_across_thousands_of_network_seeds` |
+
 <!-- soiree:guarantees:end -->
