@@ -1,0 +1,1047 @@
+# Fiche de recherche. Processus et format : recherche/README.md.
+
+sous_systeme = "reconnexion"
+niveau = 3
+question = "Après une coupure, un rechargement, un verrouillage, un onglet jumeau ou un redémarrage de l'hôte, salon rend-il à chaque appareil son identité, son état et ses messages, sans perte silencieuse ni attente injustifiée, et qu'ont appris les systèmes mûrs que salon ignore encore ?"
+compare_a = "319497130bd9d4b4dcaffd4133dd529ada46aa41"
+
+[[reference]]
+id = "salon"
+ordre = 1
+sorte = "chez-nous"
+depot = "build-your-own-game/soiree"
+commit = "319497130bd9d4b4dcaffd4133dd529ada46aa41"
+consulte = [
+  "salon/crates/core/src/{client,host,stream,wire,types,lib}.rs lus en entier",
+  "salon/crates/core/tests/{salon,properties}.rs et net/mod.rs lus en entier",
+  "salon/crates/web/src/lib.rs lu en entier",
+  "salon/crates/host/src/{admission,store,room,ws}.rs",
+  "salon/LEARNINGS.md",
+  "CERTIFICATION.md (C1 à C10)",
+  "tools/cert/{cert,toxiproxy}.mjs (scénarios et toxics)",
+  "13 sondes exécutées sur une copie isolée de salon",
+]
+
+[[reference]]
+id = "punchline"
+ordre = 2
+sorte = "chez-nous"
+depot = "build-your-own-game/punchline"
+commit = "9fdd9b548f7e9adacfc770829729273e12122a33"
+consulte = [
+  "LEARNINGS.md, sections reconnexion et redémarrage",
+  "crates/web/src/lib.rs (usage de resume)",
+]
+
+[[reference]]
+id = "sidequest"
+ordre = 3
+sorte = "chez-nous"
+depot = "build-your-own-game/sidequest"
+commit = "777824079517b802210eae8b846f02c4639ffb05"
+consulte = [
+  "crates/controller/src/session.rs (set_state du stick)",
+  "crates/controller/src/web/mod.rs (resume)",
+  "LEARNINGS.md",
+]
+
+[[reference]]
+id = "colyseus"
+ordre = 4
+sorte = "reel"
+depot = "colyseus/colyseus"
+commit = "a21db0132cb7202291b4d1db0a3532761340b980"
+consulte = [
+  "git log --grep reconnect (233 commits repérés, une soixantaine lus en titre, 16 en entier)",
+  "commits a22c6c5, 98a1b8a, 8a47cc0, d0ef23a, 291c667, 1c8cff6, d6c554f, f7831c7, ae212ea, c665916, 00d9f3c, b2a15c3",
+  "packages/core/src/Room.ts (_onJoin, reconnexion)",
+  "packages/sdk/src/Reconnection.ts, packages/sdk/src/Room.ts",
+  "issue 893",
+]
+
+[[reference]]
+id = "socketio"
+ordre = 5
+sorte = "reel"
+depot = "socketio/socket.io"
+commit = "1eaa582d3b453e3e6f522300ed05b10da0a0799b"
+consulte = [
+  "git log --grep reconnect/recover/ping/throttl (60 titres)",
+  "commits 8adcfbfd, 13c6d2e8, 46213a64, 4996f9ee, 121fd7c7, a63066bd, 3734b74b, d54d12ce, da008a51, 8a2f5a3d, f27cba5b",
+  "packages/engine.io-client/lib/socket.ts",
+  "packages/socket.io-client/lib/{socket,manager}.ts",
+  "packages/socket.io/lib/{namespace,socket,index}.ts",
+  "issues 5135 et 5538",
+]
+
+[[reference]]
+id = "phoenix"
+ordre = 6
+sorte = "reel"
+depot = "phoenixframework/phoenix"
+commit = "11e038409d89c94b68732721d0c92e61f3901e6a"
+consulte = [
+  "git log sur assets/js/phoenix (40 titres)",
+  "commits 2575a6bd, 0fcd805f, 1783345d, f35628b9, 27e28ef0, 1a0e70a7, 4c118407, b2eeccfc, 701070b4",
+  "assets/js/phoenix/socket.js (cycle de vie, repli)",
+  "assets/js/phoenix/channel.js (joinRef, pushBuffer)",
+]
+
+[[reference]]
+id = "nakama"
+ordre = 7
+sorte = "reel"
+depot = "heroiclabs/nakama"
+commit = "f79439808027159a06cf802450b8513fd2309736"
+consulte = [
+  "git log (34 titres)",
+  "commits e5f52b53, c47ce13e, e48928be, 12d05213",
+  "server/session_registry.go (SingleSession)",
+  "server/session_ws.go (ping, backoff)",
+  "server/config.go",
+]
+
+[[reference]]
+id = "nakama-js"
+ordre = 8
+sorte = "reel"
+depot = "heroiclabs/nakama-js"
+commit = "a185f44326ef0c540c4894945fa05edba08a0d85"
+consulte = [
+  "git log (14 titres)",
+  "packages/nakama-js/socket.ts (pingPong, onheartbeattimeout)",
+]
+
+[[reference]]
+id = "rfc6455"
+ordre = 9
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc6455.txt"
+empreinte = "sha256:765775326aee0ecca9b04bde3fd1f52932d498e33e34e428bd61b8a24da0fa3b"
+vu_le = "2026-11-01"
+consulte = [
+  "section 7.2.3 Recovering from Abnormal Closure",
+]
+
+[[reference]]
+id = "rfc7675"
+ordre = 10
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc7675.txt"
+empreinte = "sha256:301ef56c53015c8e10ba42aac959d467bfc4e784cd2b5dbd59db41b835b949dd"
+vu_le = "2026-11-01"
+consulte = [
+  "section 5.1, consentement et expiration",
+]
+
+[[reference]]
+id = "webrtc-pc"
+ordre = 11
+sorte = "normes"
+depot = "w3c/webrtc-pc"
+commit = "bf62a51b8df85f1e66e88379c0fdb57f1b4a6a47"
+consulte = [
+  "webrtc.html, RTCIceConnectionState et RTCPeerConnectionState",
+]
+
+[[reference]]
+id = "page-lifecycle"
+ordre = 12
+sorte = "normes"
+depot = "WICG/page-lifecycle"
+commit = "5ea95470f9709bed5c01c91d1c5d4e03a40530e5"
+consulte = [
+  "spec.bs : états, événements freeze et resume, bfcache",
+]
+
+[[reference]]
+id = "hr-time"
+ordre = 13
+sorte = "normes"
+depot = "w3c/hr-time"
+commit = "1f0b9faf793db3b06c8e85462448e8a812d00fb9"
+consulte = [
+  "index.bs, note sur le gel",
+  "issues 65 et 115",
+]
+
+[[reference]]
+id = "webkit"
+ordre = 14
+sorte = "reel"
+depot = "WebKit/WebKit"
+commit = "56453fdfe0b0ca6258c23e6453b34f70b885d13f"
+consulte = [
+  "Source/WTF/wtf/CurrentTime.cpp",
+  "Source/WTF/wtf/ContinuousTime.h",
+  "Source/WebCore/page/Performance.cpp",
+]
+
+[[reference]]
+id = "jepsen"
+ordre = 15
+sorte = "bancs"
+depot = "jepsen-io/jepsen"
+commit = "08e3e33964808876c2c9bbe4f3f9f948295a108e"
+consulte = [
+  "jepsen/src/jepsen/nemesis/combined.clj",
+  "jepsen/src/jepsen/db.clj",
+  "doc/tutorial/08-set.md",
+  "commit c0f3d2bc",
+]
+
+[[reference]]
+id = "turmoil"
+ordre = 16
+sorte = "bancs"
+depot = "tokio-rs/turmoil"
+commit = "6a1f50223b5a1884bf8890053c85eec04a8af267"
+consulte = [
+  "crates/turmoil/src/lib.rs (hold, release, partition, repair)",
+  "commit 61891a3",
+]
+
+[[reference]]
+id = "toxiproxy"
+ordre = 17
+sorte = "bancs"
+depot = "Shopify/toxiproxy"
+commit = "49299d8838525126e09c85ebe0ba89940a3261e5"
+consulte = [
+  "README.md, liste des toxics",
+  "toxics/ (slow_close, timeout, reset_peer)",
+]
+
+[[reference]]
+id = "autobahn"
+ordre = 18
+sorte = "bancs"
+depot = "crossbario/autobahn-testsuite"
+commit = "ff462c0a7ccb6512ad8442d09dab371a3c40a843"
+consulte = [
+  "autobahntestsuite/autobahntestsuite/case/case7_1_6.py",
+  "les 18 cas de la famille 7 repérés",
+]
+
+[[reference]]
+id = "discord"
+ordre = 19
+sorte = "retours"
+depot = "discord/discord-api-docs"
+commit = "9d2128bb8301e7d9f239ff259f2ee41cf4d73c70"
+consulte = [
+  "developers/events/gateway.mdx : Heartbeat, Disconnecting, Resuming",
+]
+
+[[reference]]
+id = "slack"
+ordre = 20
+sorte = "retours"
+document = "https://slack.engineering/slacks-incident-on-2-22-22/"
+vu_le = "2026-11-01"
+consulte = [
+  "postmortem entier",
+]
+
+[[reference]]
+id = "figma"
+ordre = 21
+sorte = "retours"
+document = "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+vu_le = "2026-11-01"
+consulte = [
+  "section sur la connexion et le hors-ligne",
+]
+
+[[reference]]
+id = "centrifuge"
+ordre = 22
+sorte = "reel"
+depot = "centrifugal/centrifuge"
+commit = "ae446d43faf0e6f34619e42c11935340257669a7"
+consulte = [
+  "git log (30 titres)",
+  "disconnect.go",
+  "client.go (récupération par epoch et offset)",
+  "changelog.md",
+]
+
+[[reference]]
+id = "signalr-spec"
+ordre = 23
+sorte = "normes"
+depot = "dotnet/aspnetcore"
+commit = "4f556f73a610b386e5ec29355a300e493d30c4c5"
+consulte = [
+  "src/SignalR/docs/specs/HubProtocol.md (Ack, Sequence, Close)",
+  "src/SignalR/docs/specs/TransportProtocols.md",
+]
+
+[[reference]]
+id = "mqtt5"
+ordre = 24
+sorte = "normes"
+document = "https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html"
+empreinte = "sha256:16f24e2b021d86b3bbb2b39c8b5ee134b3d39f69320ba61d3c07a38af74e696c"
+vu_le = "2026-11-01"
+consulte = [
+  "sections 3.1.2 Clean Start, 3.1.4 prise de contrôle, 3.2.2.1.1 Session Present, 4.4 renvoi",
+]
+
+[[reference]]
+id = "centrifuge-js"
+ordre = 25
+sorte = "reel"
+depot = "centrifugal/centrifuge-js"
+commit = "bd9f60da92764314903ba6c8998843158fef4171"
+consulte = [
+  "git log (14 titres)",
+  "commits fe060f3, 7ec3ad1, e8129d2",
+  "src/centrifuge.ts (réseau, bfcache, reprise)",
+]
+
+[[reference]]
+id = "signalr-client"
+ordre = 26
+sorte = "reel"
+depot = "dotnet/aspnetcore"
+commit = "4f556f73a610b386e5ec29355a300e493d30c4c5"
+consulte = [
+  "src/SignalR/clients/ts/signalr/src/HubConnection.ts",
+  "src/SignalR/clients/ts/signalr/src/MessageBuffer.ts",
+  "src/SignalR/clients/ts/signalr/src/DefaultReconnectPolicy.ts",
+]
+
+[[reference]]
+id = "livekit"
+ordre = 27
+sorte = "reel"
+depot = "livekit/client-sdk-js"
+commit = "0d7acbd038a06cac0c09cd277dfdb572ad9dff42"
+consulte = [
+  "git log (60 titres)",
+  "commits 23e3afb, 38ba511, 7a39dde, f583181, b6615cd, 8d1269d, 12a72a5, 866072d, 9e3f8eb",
+  "src/room/RTCEngine.ts (online, offline)",
+  "src/room/DefaultReconnectPolicy.ts",
+]
+
+[[reference]]
+id = "graphql-ws"
+ordre = 28
+sorte = "reel"
+depot = "enisdenjo/graphql-ws"
+commit = "7281f1b8f09637ab383c1aab4d14247d683bc15d"
+consulte = [
+  "git log (32 titres)",
+  "src/client.ts (retry, keepAlive, terminate)",
+]
+
+[[lecon]]
+id = "reconnexion-01"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/2f01c3c88f361aeb9ebbf2cc9b247ee230dd815e/salon/LEARNINGS.md#L31"
+citation = "Une coupure n'est pas un départ."
+enonce = "Le jeu distingue une coupure d'un départ voulu ; l'identité survit au lien."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_cut_phone_comes_back_as_itself_without_losing_an_event", "salon/crates/core/tests/salon.rs::a_player_who_quits_leaves_for_that_reason", "C2"]
+
+[[lecon]]
+id = "reconnexion-02"
+source = "punchline"
+lien = "https://github.com/build-your-own-game/punchline/blob/9fdd9b548f7e9adacfc770829729273e12122a33/LEARNINGS.md#L196"
+citation = "Le nouveau éjectait l'ancien, qui se reconnectait aussitôt"
+enonce = "L'onglet éjecté ne doit jamais se reconnecter de lui-même."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_second_tab_takes_over_and_the_first_stays_put", "C5"]
+
+[[lecon]]
+id = "reconnexion-03"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/a22c6c586a6957c49681de318f395ee0683df60c"
+citation = "ack echo (≤ the old counter) was discarded until the new counter caught up,"
+enonce = "Quand un seul côté repart de zéro, ses numéros restent sous ceux de l'autre et tout est ignoré en silence : la poignée de main doit réaligner chaque compteur."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "reconnexion-04"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/d6c554f37a188824befec57a04b8e0854e54836f"
+citation = "Skip the deferred leave() when the ref has been transplanted."
+enonce = "Une fin tardive de l'ancienne connexion ne doit pas toucher la connexion revenue."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_second_tab_takes_over_and_the_first_stays_put", "C5"]
+
+[[lecon]]
+id = "reconnexion-05"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/1c8cff6b081051f1685139ee5eeb3fc0769cdfd8"
+citation = "so one bad-token attempt"
+enonce = "Valider le jeton avant tout effet de bord : un essai faux ne doit rien changer à la place tenue."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_phone_token_never_becomes_the_tv", "salon/crates/core/tests/salon.rs::the_tv_token_never_becomes_a_phone", "E4"]
+
+[[lecon]]
+id = "reconnexion-06"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/f7831c7b209e184dd4ffec1651b252528a27c331"
+citation = "allow to deny a reconnection during onReconnect()"
+enonce = "L'autorité doit pouvoir refuser un retour : un joueur retiré ne revient pas par son jeton."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T13"
+
+[[lecon]]
+id = "reconnexion-07"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/d0ef23a8b7e4a105b4a726ac3d9f7b47eaec6225"
+citation = "leave() now cancels the retries, aborts the attempt in flight and leaves"
+enonce = "Quitter pendant une reconnexion arrête les essais et la tentative en vol."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_reloaded_page_gets_its_device_back", "salon/crates/core/tests/salon.rs::a_player_who_quits_leaves_for_that_reason"]
+note = "Le premier test ne l'établit qu'implicitement : un ancien client qui continuerait éjecterait la page rechargée."
+
+[[lecon]]
+id = "reconnexion-08"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/291c6676981cc5fbeccd1889fdc2fc559f1c0fee"
+citation = "Node 22's global WebSocket (undici) fires error but never close when the"
+enonce = "Un runtime peut signaler l'échec par error sans jamais émettre close."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Propre à Node 22 : nos pages tournent dans des navigateurs. Pas d'équivalent à craindre chez nous : onerror et onclose mènent au même code (salon/crates/web/src/lib.rs)."
+
+[[lecon]]
+id = "reconnexion-09"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/commit/b2a15c3b24eb9656ce05c8eb17f3eb01f9fc8f76"
+citation = "(freeze: holds still rather than replaying last-known input)"
+enonce = "L'entrée tenue d'un absent se fige : on ne rejoue pas sa dernière commande."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_held_state_is_known_to_be_held"]
+note = "DeviceInfo::held_at donne au jeu l'âge de l'entrée ; la décision reste au jeu."
+
+[[lecon]]
+id = "reconnexion-10"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/blob/a21db0132cb7202291b4d1db0a3532761340b980/packages/core/src/Room.ts#L1735"
+citation = "user may be trying to reconnect while the old connection is still open (stale)"
+enonce = "Un retour peut arriver alors que l'autorité croit l'ancien lien vivant ; le plus récent gagne sans départ."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_page_that_wakes_up_reconnects_at_once", "salon/crates/core/tests/salon.rs::a_reloaded_page_gets_its_device_back", "C4"]
+
+[[lecon]]
+id = "reconnexion-11"
+source = "colyseus"
+lien = "https://github.com/colyseus/colyseus/blob/a21db0132cb7202291b4d1db0a3532761340b980/packages/sdk/src/Room.ts#L838"
+citation = "Room uptime too short for reconnection."
+enonce = "Colyseus renonce à reconnecter une salle trop jeune."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Un téléphone de soirée ne renonce jamais : salon garde seulement l'attente croissante (Timing::healthy)."
+
+[[lecon]]
+id = "reconnexion-12"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/blob/1eaa582d3b453e3e6f522300ed05b10da0a0799b/packages/engine.io-client/lib/socket.ts#L916"
+citation = "const hasExpired = Date.now() > this._pingTimeoutTime;"
+enonce = "Après un sommeil, le chien de garde compare une horloge murale, parce que les minuteries et l'horloge monotone ont pu s'arrêter."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "reconnexion-13"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/8adcfbfde50679095ec2abe376650cf2b6814325"
+citation = "message, so that it gets buffered and sent upon reconnection."
+enonce = "Ce qui est envoyé pendant une coupure est gardé et part à la reconnexion, quelle que soit l'issue de la reprise."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "reconnexion-14"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/121fd7c73df1f1e32bf6d3d6308e6a8aaad2dc4d"
+citation = "The packet ID cannot be used for deduplication, because it's only"
+enonce = "Dédupliquer exige des numéros qui survivent à la connexion : ils appartiennent à l'appareil, pas au lien."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event", "salon/crates/core/tests/salon.rs::a_cut_phone_comes_back_as_itself_without_losing_an_event", "C2"]
+
+[[lecon]]
+id = "reconnexion-15"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/issues/5538"
+citation = "cannot recover its session on reconnection"
+enonce = "La reprise ne doit pas dépendre d'un premier événement échangé : le jeton suffit."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::silence_is_noticed_on_both_sides"]
+
+[[lecon]]
+id = "reconnexion-16"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/a63066bdc8ae9e6746c3113d06c2ead78f4a4851"
+citation = "Silently closing the connection when receiving a \"beforeunload\" event"
+enonce = "beforeunload ne prouve pas que la page part : ne pas y fermer le lien."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/web/src/lib.rs#L385"]
+note = "Couvert par construction, sans test : salon n'écoute pas cet événement."
+
+[[lecon]]
+id = "reconnexion-17"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/d54d12ce634193d14b71894496ed57d35d922378"
+citation = "prevent socket from reconnecting after middleware failure"
+enonce = "Un refus de l'autorité arrête la boucle de reconnexion."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::refusals_are_clear_and_final", "C8"]
+
+[[lecon]]
+id = "reconnexion-18"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/da008a514ded71e3058a964c831c69abe417b2f5"
+citation = "refresh ping timeout on incoming packets"
+enonce = "Tout paquet reçu prouve la vie du lien, pas seulement le battement."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::silence_is_noticed_on_both_sides", "C3"]
+
+[[lecon]]
+id = "reconnexion-19"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/blob/1eaa582d3b453e3e6f522300ed05b10da0a0799b/packages/socket.io/lib/index.ts#L332"
+citation = "maxDisconnectionDuration: 2 * 60 * 1000,"
+enonce = "Un serveur public limite la durée de reprise pour borner sa mémoire."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Un seul hôte, 24 appareils au plus, files bornées par Limits::max_pending : salon ne libère jamais une place de lui-même."
+
+[[lecon]]
+id = "reconnexion-20"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/blob/1eaa582d3b453e3e6f522300ed05b10da0a0799b/packages/socket.io-client/lib/socket.ts#L201"
+citation = "Whether the connection state was recovered after a temporary disconnection."
+enonce = "L'application doit savoir si l'état a été repris ou perdu."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_restarted_host_gets_its_phones_back", "salon/crates/core/tests/salon.rs::a_restart_without_memory_makes_new_devices", "C7"]
+
+[[lecon]]
+id = "reconnexion-21"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/commit/2575a6bd16e5ca36c4bb41c8ac2b2075c8005710"
+citation = "seems a bit random, but I've seen 10+ seconds."
+enonce = "Une tentative lancée pendant le sommeil reste bloquée au réveil : il faut l'abandonner et en ouvrir une neuve."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "reconnexion-22"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/commit/b2eeccfc2a56f20f26891f1bc31aebfaa893b97d"
+citation = "Only memorize lonpgoll fallback if primary transport never established connection."
+enonce = "Ne retenir le repli que si le transport principal n'a jamais marché ici : un échec après un succès est passager."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "reconnexion-23"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/blob/11e038409d89c94b68732721d0c92e61f3901e6a/assets/js/phoenix/socket.js#L175"
+citation = "Chrome 149 started to not reliably fire visibilitychange after resume,"
+enonce = "visibilitychange ne suffit plus à détecter le retour d'une page gelée : écouter aussi resume."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "reconnexion-24"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/commit/1a0e70a71bdfefba116b10ecd0fb916fc6491a71"
+citation = "The `error` and `close` events are not triggered"
+enonce = "Sur un réseau coupé, close n'arrive pas : le lien se retire sans attendre son événement."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::silence_is_noticed_on_both_sides", "C3"]
+
+[[lecon]]
+id = "reconnexion-25"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/commit/1783345d0d91cd1ce124cad3ad94b4dee09d3e6a"
+citation = "A middleware might close a WebSocket connection with code 1000, leaving the browser"
+enonce = "Un code de fermeture ne porte pas de sens applicatif : seuls des messages typés arrêtent la reconnexion."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_cut_phone_comes_back_as_itself_without_losing_an_event", "salon/crates/core/tests/salon.rs::refusals_are_clear_and_final"]
+
+[[lecon]]
+id = "reconnexion-26"
+source = "phoenix"
+lien = "https://github.com/phoenixframework/phoenix/commit/f35628b996eb1161eeee027ec807727cc3151859"
+citation = "Scope socket state to the connection it belongs to"
+enonce = "Chaque rappel appartient à sa tentative : un événement d'un transport remplacé ne fait rien."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["tools/cert/rtc-negotiation.mjs", "C1"]
+note = "Générations de salon/crates/web/src/lib.rs, éprouvées par le harnais rtc."
+
+[[lecon]]
+id = "reconnexion-27"
+source = "nakama"
+lien = "https://github.com/heroiclabs/nakama/commit/e5f52b53c6e44742069a2f16d35d2d299f8669bd"
+citation = "Add final notification sent to sockets closed via single socket option."
+enonce = "L'éjecté reçoit un message terminal, sinon il réessaie."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_second_tab_takes_over_and_the_first_stays_put", "C5"]
+
+[[lecon]]
+id = "reconnexion-28"
+source = "nakama-js"
+lien = "https://github.com/heroiclabs/nakama-js/blob/a185f44326ef0c540c4894945fa05edba08a0d85/packages/nakama-js/socket.ts#L697"
+citation = "many browsers don't fire `onclose` until the closing handshake either succeeds or fails"
+enonce = "La mort du lien se décide au niveau applicatif, dans les deux sens."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::silence_is_noticed_on_both_sides", "C3"]
+
+[[lecon]]
+id = "reconnexion-29"
+source = "rfc6455"
+lien = "https://www.rfc-editor.org/rfc/rfc6455.txt#L2453"
+citation = "The first reconnect attempt SHOULD be delayed by a random amount of"
+enonce = "La première reconnexion devrait être retardée au hasard, pour ne pas écraser un serveur."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Écarté en connaissance de cause : Retry::Now rouvre sans délai au réveil et sur silence, parce que C2 et C3 comptent en secondes, sur un seul hôte et 24 appareils au plus. Les essais suivants gardent la gigue. Hypothèse non mesurée à 24 téléphones ; Discord et LiveKit vont dans le sens de la norme."
+
+[[lecon]]
+id = "reconnexion-30"
+source = "rfc7675"
+lien = "https://www.rfc-editor.org/rfc/rfc7675.txt#L258"
+citation = "Consent expires after 30 seconds."
+enonce = "Le transport abandonne au bout de 30 s ; le délai applicatif passe avant."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::silence_is_noticed_on_both_sides", "C3"]
+
+[[lecon]]
+id = "reconnexion-31"
+source = "webrtc-pc"
+lien = "https://github.com/w3c/webrtc-pc/blob/bf62a51b8df85f1e66e88379c0fdb57f1b4a6a47/webrtc.html#L661"
+citation = "to determine whether an ICE restart is"
+enonce = "WebRTC propose de relancer ICE plutôt que de refaire la connexion."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Un lien neuf repasse par le même code que WebSocket, et salon reprend par ses numéros d'appareil ; un ICE restart ajouterait un chemin à éprouver."
+
+[[lecon]]
+id = "reconnexion-32"
+source = "page-lifecycle"
+lien = "https://github.com/WICG/page-lifecycle/blob/5ea95470f9709bed5c01c91d1c5d4e03a40530e5/spec.bs#L75"
+citation = "Frozen: lifecycle state for CPU suspension."
+enonce = "Une page gelée ne tourne plus : aucun rappel ne détecte la panne, il faut vérifier au retour."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_page_that_wakes_up_reconnects_at_once", "C3"]
+note = "Le retour de bfcache passe par pageshow, sans test dédié."
+
+[[lecon]]
+id = "reconnexion-33"
+source = "hr-time"
+lien = "https://github.com/w3c/hr-time/blob/1f0b9faf793db3b06c8e85462448e8a812d00fb9/index.bs#L259"
+citation = "Any such throttling should not affect the resolution or accuracy"
+enonce = "La norme parle du gel d'un onglet, pas du sommeil de l'appareil : l'issue w3c/hr-time#115 relève des horloges qui ne comptent pas le sommeil."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "reconnexion-34"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WTF/wtf/CurrentTime.cpp#L303"
+citation = "return fromMachAbsoluteTime(mach_absolute_time());"
+enonce = "Sur Darwin, MonotonicTime lit mach_absolute_time ; WebKit réserve ContinuousTime au temps qui continue pendant le sommeil, et performance.now() lit MonotonicTime."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "reconnexion-35"
+source = "jepsen"
+lien = "https://github.com/jepsen-io/jepsen/blob/08e3e33964808876c2c9bbe4f3f9f948295a108e/jepsen/src/jepsen/nemesis/combined.clj#L479"
+citation = "more interesting to have a shifting mixture of packages at play over time,"
+enonce = "Le chaos doit mêler toutes les pannes du catalogue, pas seulement celles du réseau."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "reconnexion-36"
+source = "jepsen"
+lien = "https://github.com/jepsen-io/jepsen/blob/08e3e33964808876c2c9bbe4f3f9f948295a108e/doc/tutorial/08-set.md#L364"
+citation = "(gen/log \"Waiting for recovery\")"
+enonce = "Après les pannes, on guérit, on attend, puis on vérifie : la garantie se juge au repos."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event"]
+
+[[lecon]]
+id = "reconnexion-37"
+source = "jepsen"
+lien = "https://github.com/jepsen-io/jepsen/blob/08e3e33964808876c2c9bbe4f3f9f948295a108e/jepsen/src/jepsen/db.clj#L18"
+citation = "Forcibly kills the process"
+enonce = "Un arrêt brutal arrive entre deux écritures : ce qui n'est pas écrit n'a jamais existé."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "reconnexion-38"
+source = "turmoil"
+lien = "https://github.com/tokio-rs/turmoil/commit/61891a36199964dd85ba2b0d0053cdc58c7c5acd"
+citation = "Let network faults affect in-flight messages"
+enonce = "Retenir un paquet précis puis le livrer après coup : le retard utile n'est pas une gigue uniforme."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "reconnexion-39"
+source = "toxiproxy"
+lien = "https://github.com/Shopify/toxiproxy/blob/49299d8838525126e09c85ebe0ba89940a3261e5/README.md#L416"
+citation = "Delay the TCP socket from closing until `delay` has elapsed."
+enonce = "Une fermeture lente éprouve la leçon de la fermeture tardive sur un vrai transport ; le harnais ne l'utilise pas."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "reconnexion-40"
+source = "autobahn"
+lien = "https://github.com/crossbario/autobahn-testsuite/blob/ff462c0a7ccb6512ad8442d09dab371a3c40a843/autobahntestsuite/autobahntestsuite/case/case7_1_6.py#L25"
+citation = "Case outcome depends on implementation defined close behavior."
+enonce = "La fermeture peut dépasser le dernier message : le message terminal doit avoir le temps d'arriver."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_second_tab_takes_over_and_the_first_stays_put", "C5"]
+note = "FINAL_GRACE et FINAL_COPIES dans salon/crates/core/src/host.rs."
+
+[[lecon]]
+id = "reconnexion-41"
+source = "discord"
+lien = "https://github.com/discord/discord-api-docs/blob/9d2128bb8301e7d9f239ff259f2ee41cf4d73c70/developers/events/gateway.mdx#L267"
+citation = "to signal event replay has finished and that all subsequent events will be new."
+enonce = "Le client doit pouvoir distinguer le rattrapage du direct."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T11"
+
+[[lecon]]
+id = "reconnexion-42"
+source = "slack"
+lien = "https://slack.engineering/slacks-incident-on-2-22-22/"
+citation = "clients should ideally avoid sending requests until the system has recovered."
+enonce = "Sous surcharge, les essais des clients aggravent la panne."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Panne d'une flotte et de ses caches. Salon a un hôte, sans base de données, et 24 appareils : aucune surcharge de ce type observée. Non mesuré à 24 téléphones."
+
+[[lecon]]
+id = "reconnexion-43"
+source = "figma"
+lien = "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+citation = "reapplies any offline edits on top of this latest state"
+enonce = "Après une reconnexion à un état neuf, le travail fait hors ligne est réappliqué, pas jeté."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "reconnexion-44"
+source = "centrifuge-js"
+lien = "https://github.com/centrifugal/centrifuge-js/commit/fe060f378461c9dc3c042a6759af8c4555be9720"
+citation = "The no-ping timer closed the connection as soon as it was overdue, before"
+enonce = "Au réveil, laisser passer ce qui attend déjà dans le socket avant de conclure à la mort du lien."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+
+[[lecon]]
+id = "reconnexion-45"
+source = "centrifuge-js"
+lien = "https://github.com/centrifugal/centrifuge-js/blob/bd9f60da92764314903ba6c8998843158fef4171/src/centrifuge.ts#L836"
+citation = "Mobile Safari may never issue the close callback for it,"
+enonce = "Une tentative ouverte hors ligne peut ne jamais se terminer sur Safari mobile : le retour du réseau doit l'abandonner."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "reconnexion-46"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/2f01c3c88f361aeb9ebbf2cc9b247ee230dd815e/salon/crates/core/src/stream.rs#L7"
+citation = "numbers belong to the device, not to the link"
+enonce = "Notre propre promesse : si la numérotation appartient à l'appareil, deux instances d'un même appareil ne peuvent pas garder chacune son compteur."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+note = "Trou trouvé en lisant salon, avant toute référence."
+
+[[lecon]]
+id = "reconnexion-47"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/46213a647ea0d4453b00bca09268f69ffd259509"
+citation = "fix: prevent duplicate connections when multiplexing"
+enonce = "Une poignée de main répétée ne doit ni rouvrir ni reprendre une connexion."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+note = "Hypothèse née de la lecture de Host::hello ; cette référence la recoupe."
+
+[[trou]]
+id = "T1"
+titre = "Après un rechargement, les états tenus n'atteignent plus le jeu"
+gravite = "haute"
+lieux = [
+  "salon/crates/core/src/host.rs:430",
+  "salon/crates/core/src/stream.rs:454",
+  "salon/crates/core/src/stream.rs:361",
+  "salon/crates/core/src/client.rs:150",
+  "salon/crates/core/src/wire.rs:106",
+]
+cas = "Une page envoie 50 set_state, recharge (ou panique, C10), puis envoie 10 set_state : 0 sur 10 atteint le jeu. Le nouveau Client numérote depuis 1, l'hôte garde in_state.applied à 50, ignore les états et accuse quand même : Client::set_state rend Ok, rien ne remonte. Hello.resume distinguerait ce cas, mais host.rs ne le lit jamais, contrairement à ce qu'annonce wire.rs."
+preuve = "sonde h1 : 0/10 sur les sources intactes ; 10/10 en remettant in_state à zéro quand resume est absent (copie isolée) ; les suites salon.rs et properties.rs restent vertes."
+verifie = "salon-core sur faux réseau"
+suppose = "Effet sur Sidequest : le stick passe par set_state (crates/controller/src/session.rs) et resterait mort jusqu'à dépasser l'ancien numéro. Lu dans le code, pas rejoué dans le jeu."
+
+[[trou]]
+id = "T2"
+titre = "Après « Jouer ici », les événements de l'onglet repris se perdent sans erreur"
+gravite = "haute"
+lieux = [
+  "salon/crates/core/src/client.rs:377",
+  "salon/crates/core/src/stream.rs:275",
+]
+cas = "Onglet 1 remplacé, onglet 2 envoie 3 événements, onglet 1 reprend (Client::resume) puis envoie 2 événements : aucun n'arrive. L'onglet 1 garde son compteur, numérote 0 et 1 sous up_next = 3 ; l'hôte les ignore et les accuse. send a rendu Ok. Punchline et Sidequest offrent ce bouton."
+preuve = "sonde h2 : 3 événements au lieu de 5 ; 5 sur 5 en renumérotant quand up_next dépasse le compteur (copie isolée), tests existants verts."
+verifie = "salon-core sur faux réseau"
+suppose = "Fréquence réelle inconnue : il faut un jumeau qui a envoyé des événements, puis un retour au premier onglet."
+
+[[trou]]
+id = "T3"
+titre = "Un Hello sur un lien en fin de vie reprend l'appareil au lien courant"
+gravite = "haute"
+lieux = [
+  "salon/crates/core/src/host.rs:386",
+  "salon/crates/core/src/host.rs:659",
+  "salon/crates/core/src/host.rs:543",
+]
+cas = "Host::hello ne regarde pas closing. Après replace ou refuse, le lien reste une seconde sans appareil : une copie de Hello y arrive, passe tout le chemin et éjecte le lien courant. Deux onglets simultanés à 20 % de pertes, 10 % de doublons, 80 ms de gigue : les deux finissent Replaced dans 138 graines sur 2000. Si le pair ne ferme pas, flush retire le lien sans detach : l'appareil reste Weak pour toujours, sans Left, et son retour ne donne ni Left ni Back. Un Hello sur un lien refusé Full crée un appareil fantôme qui garde la salle pleine."
+preuve = "sondes h3, h3b, h3c, h3d ; la seule garde `if current.closing { return; }` (copie isolée) ramène 138 à 0 et lève le fantôme, tests existants verts."
+verifie = "salon-core sur faux réseau, avec Faults du banc"
+suppose = "Taux à 20 % de pertes seulement ; pas mesuré sur un vrai Wi-Fi."
+
+[[trou]]
+id = "T4"
+titre = "wake ne relance pas une tentative en cours"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/client.rs:296",
+]
+cas = "Tentative lancée puis page gelée. Au réveil à 8 s, wake ne fait rien : l'échéance reste à 20 s (15 s RTC + 5 s TCP), au-delà des 10 s de C3."
+preuve = "sonde h5 : aucune sortie après wake, échéance inchangée."
+verifie = "le comportement de Client::wake"
+suppose = "Qu'une vraie tentative reste bloquée sur iPhone : décrit par Phoenix et centrifuge-js, non reproduit ici."
+
+[[trou]]
+id = "T5"
+titre = "Le réveil rapide dépend d'une horloge qui peut ne pas compter le sommeil"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/web/src/lib.rs:228",
+  "salon/crates/core/src/client.rs:286",
+]
+cas = "wake compare now à last_heard. Si performance.now() n'a pas avancé pendant le verrouillage, l'écart reste petit : wake ne fait rien et il faut attendre le chien de garde, jusqu'à 6 s après le réveil, au lieu d'une reconnexion immédiate."
+preuve = "sonde h6 avec une horloge figée pendant le sommeil ; lecture de WebKit au commit figé : Performance::now lit MonotonicTime, mach_absolute_time sur Darwin."
+verifie = "le comportement de wake si l'horloge est figée ; le chemin de code de WebKit"
+suppose = "Que mach_absolute_time s'arrête pendant le verrouillage d'un iPhone. À mesurer sur l'appareil avant tout correctif."
+
+[[trou]]
+id = "T6"
+titre = "Les événements en attente disparaissent au redémarrage de l'hôte"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/client.rs:384",
+  "salon/crates/core/src/stream.rs:152",
+]
+cas = "Une réponse envoyée pendant le redémarrage rend Ok, puis Welcome d'une autre époque vide la file. La page reçoit Reset, sans savoir qu'un envoi a été perdu. La doc de Client::send promet la livraison « even across reconnections »."
+preuve = "sonde h4 : send rend Ok, 0 événement arrivé."
+verifie = "salon-core sur faux réseau"
+suppose = "Choix à trancher : garder et renuméroter, ou signaler la perte. La phase permet déjà au jeu de refuser un événement périmé."
+
+[[trou]]
+id = "T7"
+titre = "Un échec pendant un redémarrage de l'hôte retient le repli WebSocket"
+gravite = "faible"
+lieux = [
+  "salon/crates/web/src/lib.rs:766",
+  "salon/crates/web/src/rtc_memory.rs:54",
+]
+cas = "Une page dont WebRTC marchait voit deux échecs pendant un redémarrage de l'hôte : elle reste en WebSocket dix minutes, rechargements compris, puisque ni online ni une ouverture WebRTC ne surviennent. rtc_memory ne distingue pas un WebRTC qui a déjà marché ici."
+preuve = "lecture du code à ce commit ; rtc_memory.rs est arrivé par 0a24d04 pendant cette recherche (avant : repli définitif)."
+verifie = "le flux de contrôle, par lecture"
+suppose = "Effet sur un jeu temps réel ; non exécuté dans un navigateur."
+
+[[trou]]
+id = "T8"
+titre = "Le retour d'une page gelée n'écoute pas resume"
+gravite = "faible"
+lieux = [
+  "salon/crates/web/src/lib.rs:385",
+]
+cas = "Chrome 149 et suivants sur Android : si visibilitychange ne vient pas, wake n'est pas appelé et le chien de garde prend jusqu'à 6 s."
+preuve = "lecture du code : ni pagehide ni resume écoutés."
+verifie = "l'absence de l'écouteur"
+suppose = "Le comportement de Chrome, rapporté par Phoenix, non reproduit ici."
+
+[[trou]]
+id = "T9"
+titre = "wake détruit un lien vivant sans attendre ce qui est déjà reçu"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/client.rs:288",
+  "salon/crates/core/tests/salon.rs:686",
+]
+cas = "Gel de 3 s, sous les 6 s de l'hôte, lien encore valide : wake le coupe dès 1,5 s de silence, avant de lire ce qui attend dans le socket. Rien n'est perdu, mais chaque coup d'œil à une notification coûte une renégociation et un état Reconnecting. Le test existant fige ce comportement."
+preuve = "le test a_page_that_wakes_up_reconnects_at_once exige connects == 2."
+verifie = "salon-core"
+suppose = "Le coût visible pour le joueur."
+
+[[trou]]
+id = "T10"
+titre = "Un identifiant peut resservir après un arrêt brutal"
+gravite = "faible"
+lieux = [
+  "salon/crates/host/src/room.rs:32",
+  "salon/crates/core/src/host.rs:233",
+]
+cas = "Un appareil rejoint moins d'une seconde avant un arrêt brutal : il n'est pas dans known, et son numéro est redonné à un autre appareil. lib.rs annonce que les identités ne reviennent jamais à un ancien numéro (C7)."
+preuve = "sonde h10 : b avait #2, c reçoit #2."
+verifie = "salon-core avec un known antérieur"
+suppose = "Effet sur un jeu qui restaurerait son état par DeviceId."
+
+[[trou]]
+id = "T11"
+titre = "Le rattrapage ne se distingue pas du direct"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/client.rs:349",
+]
+cas = "Après une longue absence, jusqu'à 256 événements arrivent d'un coup, comme s'ils étaient en direct : sons et vibrations se déclenchent en rafale. Aucune marque ne dit où finit le rattrapage."
+preuve = "lecture du code ; sans sonde."
+verifie = "l'absence de marque"
+suppose = "Que cela gêne un jeu : les jeux peuvent horodater leurs événements."
+
+[[trou]]
+id = "T12"
+titre = "Le chaos ne joue ni redémarrage, ni rechargement, ni jumeau"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/tests/properties.rs:58",
+  "tools/cert/toxiproxy.mjs:256",
+]
+cas = "Step ne connaît que Send, Notify, Show, Cut, Freeze, Thaw, Wait, sur 3 téléphones aux jetons distincts, et Faults n'a pas de retard ciblé. T1, T2 et T3 traversent donc ces suites sans les faire rougir. Le harnais n'emploie pas slow_close ni reset_peer."
+preuve = "lecture de properties.rs et de net/mod.rs ; T1 à T3 passent inaperçus à 64 cas."
+verifie = "le contenu des suites"
+suppose = "Qu'un chaos étendu aurait trouvé T1 à T3 seul : non essayé, seules les sondes dirigées l'ont fait."
+
+[[trou]]
+id = "T13"
+titre = "forget ne ferme pas le retour par le jeton"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/host.rs:764",
+]
+cas = "Host::forget sur un appareil absent : il revient avec le même jeton et devient un nouvel appareil, dans une salle ouverte. La doc dit que le jeton cesse de marcher."
+preuve = "sonde h9 : nouvel identifiant #2 pour l'ancien jeton."
+verifie = "salon-core sur faux réseau"
+suppose = "L'intention : refuser le retour, ou corriger la doc."
+
+[saturation]
+sources = ["signalr-client", "livekit", "graphql-ws"]
+derniere_lecon = "centrifuge-js"
+note = "Les références centrifuge, signalr-spec et mqtt5 n'avaient apporté aucune leçon nouvelle, ce qui remplissait déjà la règle des 3 ; la poursuite a trouvé deux leçons dans centrifuge-js. Ces trois lectures portaient sur des serveurs et des spécifications : seul le code client avait encore à dire. Les 3 sources retenues sont donc postérieures à centrifuge-js."
+
+[saturation.recoupe]
+signalr-client = "Séquences réalignées à la reconnexion et retard des accusés : déjà reconnexion-03 et T1. L'événement freeze n'y sert qu'à journaliser."
+livekit = "Gigue du premier essai : déjà reconnexion-29. Retour du réseau sans attendre : déjà reconnexion-45. Événements après l'annonce du retour : déjà salon/LEARNINGS.md. Taire Reconnecting sur une reprise suppose deux sortes de reconnexion, que salon n'a pas."
+graphql-ws = "Coupure immédiate du socket et gigue exponentielle : déjà reconnexion-24 et salon. Son drapeau de nouvel essai rejoint reconnexion-20."
+
+[cout]
+minutes = 32
+references = 28
+sondes_executees = 13
+note = "Temps horloge d'un agent, clones et recompilations compris, rédaction incluse. 18 dépôts clonés, WebKit et aspnetcore lus par gh api. Les citations ont été revérifiées depuis le réseau par un script distinct du générateur, qui ne lit que ce fichier."

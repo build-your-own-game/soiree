@@ -1,0 +1,177 @@
+# Les sous-systèmes, ce qui les déclenche, leur plancher de recherche.
+# Processus : README.md. Chemins relatifs à la racine du commun, ou à celle du
+# jeu quand perimetre = "jeu". Un fichier peut déclencher plusieurs sous-systèmes.
+#
+# Les quotas sont une première proposition, calée sur un seul pilote : à ajuster
+# après d'autres fiches. Le pilote de niveau 3 a lu 28 références.
+
+# L'échelle, dans l'ordre de lecture.
+marches = ["chez-nous", "reel", "normes", "bancs", "retours"]
+
+# Ce qui compte comme du nouveau, sous un chemin déclencheur.
+nouveau = ["fichier", "api-publique", "dependance", "delai", "message-de-protocole"]
+
+[[niveau]]
+numero = 1
+intention = "un ajout local, sans frontière ni garantie commune"
+references = 3
+saturation = 3
+quota = { chez-nous = 1, reel = 2 }
+
+[[niveau]]
+numero = 2
+intention = "un ajout qui touche une frontière, ou dont dépend un jeu"
+references = 6
+saturation = 3
+quota = { chez-nous = 1, reel = 3, normes = 1, bancs = 1 }
+
+[[niveau]]
+numero = 3
+intention = "une garantie commune que chaque jeu suppose vraie le soir même"
+references = 12
+saturation = 3
+quota = { chez-nous = 1, reel = 4, normes = 2, bancs = 2, retours = 2 }
+
+# Le commun.
+
+[[sous_systeme]]
+id = "reconnexion"
+perimetre = "commun"
+niveau = 3
+marches = ["chez-nous", "reel", "normes", "bancs", "retours"]
+chemins = [
+  "salon/crates/core/src/client.rs",
+  "salon/crates/core/src/host.rs",
+  "salon/crates/core/src/wire.rs",
+  "salon/crates/host/src/store.rs",
+  "salon/crates/web/src/lib.rs",
+  "salon/crates/web/src/rtc_memory.rs",
+]
+
+[[sous_systeme]]
+id = "fiabilite"
+perimetre = "commun"
+niveau = 3
+marches = ["chez-nous", "reel", "normes", "bancs"]
+chemins = ["salon/crates/core/src/stream.rs", "salon/crates/core/src/wire.rs", "salon/crates/core/src/codec.rs"]
+
+[[sous_systeme]]
+id = "transport-webrtc"
+perimetre = "commun"
+niveau = 3
+marches = ["chez-nous", "reel", "normes", "bancs"]
+chemins = ["salon/crates/host/src/rtc.rs", "salon/crates/crypto/**", "salon/crates/web/src/rtc_memory.rs"]
+
+[[sous_systeme]]
+id = "transport-websocket"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "normes", "bancs"]
+chemins = ["salon/crates/host/src/ws.rs", "salon/crates/host/src/http.rs", "salon/crates/host/src/admission.rs"]
+
+[[sous_systeme]]
+id = "temps-et-mesure"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "normes"]
+chemins = ["salon/crates/host/src/clock.rs", "salon/crates/host/src/room/inbox.rs", "salon/crates/host/src/room/inbox/**"]
+
+[[sous_systeme]]
+id = "journal-et-replay"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "bancs"]
+chemins = ["salon/crates/core/src/journal.rs", "salon/crates/host/src/journal.rs", "salon/crates/host/src/simulation.rs", "salon/crates/web/src/journal.rs"]
+
+[[sous_systeme]]
+id = "interface-web"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "normes", "bancs"]
+chemins = ["salon/crates/web/src/ui.rs", "salon/crates/web/src/ui/**", "salon/crates/web/src/style.rs", "salon/crates/web/src/recovery.rs"]
+
+[[sous_systeme]]
+id = "audio-web"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "normes"]
+chemins = ["salon/crates/web/src/audio.rs", "salon/crates/web/src/audio/**"]
+
+[[sous_systeme]]
+id = "telecommande"
+perimetre = "commun"
+niveau = 3
+marches = ["chez-nous", "reel", "normes", "bancs", "retours"]
+chemins = ["remote/crates/**", "remote/ios/**", "remote/CONTRAT.md"]
+
+[[sous_systeme]]
+id = "verification"
+perimetre = "commun"
+niveau = 2
+marches = ["chez-nous", "reel", "bancs"]
+chemins = ["tools/cert/**", "outil/src/verification/**", "outil/verification-kernel/**", "certifications/**"]
+
+# Les jeux. Le plancher d'un jeu reste bas : la dette ne bloque que le commun.
+
+[[sous_systeme]]
+id = "rendu"
+perimetre = "jeu"
+niveau = 2
+marches = ["chez-nous", "reel", "normes"]
+chemins = ["crates/screen/**", "crates/*/src/**/render*", "crates/*/src/**/scene*"]
+
+[[sous_systeme]]
+id = "physique"
+perimetre = "jeu"
+niveau = 2
+marches = ["chez-nous", "reel", "bancs"]
+chemins = ["crates/*/src/physics*", "crates/*/src/**/physics*"]
+
+[[sous_systeme]]
+id = "entrees"
+perimetre = "jeu"
+niveau = 2
+marches = ["chez-nous", "reel", "normes"]
+chemins = ["crates/controller/**", "crates/*/src/**/input*", "crates/*/src/**/gamepad*"]
+
+[[sous_systeme]]
+id = "audio"
+perimetre = "jeu"
+niveau = 1
+marches = ["chez-nous", "reel"]
+chemins = ["crates/*/src/**/audio*"]
+
+[[sous_systeme]]
+id = "animation"
+perimetre = "jeu"
+niveau = 1
+marches = ["chez-nous", "reel"]
+chemins = ["crates/*/src/**/timeline*", "crates/*/src/**/anim*"]
+
+[[sous_systeme]]
+id = "interface"
+perimetre = "jeu"
+niveau = 1
+marches = ["chez-nous", "reel"]
+chemins = ["crates/web/**", "crates/*/src/web/**", "web/**"]
+
+[[sous_systeme]]
+id = "game-feel"
+perimetre = "jeu"
+niveau = 1
+marches = ["chez-nous", "retours"]
+chemins = ["crates/core/src/game*", "crates/core/src/game/**"]
+
+[[sous_systeme]]
+id = "regles-et-determinisme"
+perimetre = "jeu"
+niveau = 2
+marches = ["chez-nous", "reel", "bancs"]
+chemins = ["crates/core/src/rng*", "crates/core/src/replay*", "crates/core/src/journal*", "crates/core/src/record*"]
+
+[[sous_systeme]]
+id = "texte"
+perimetre = "jeu"
+niveau = 1
+marches = ["chez-nous", "normes"]
+chemins = ["crates/core/src/text*", "crates/core/src/validate*"]

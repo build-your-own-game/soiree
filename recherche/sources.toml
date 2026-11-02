@@ -1,0 +1,236 @@
+# Les références candidates, en repartant des points de départ du manifeste.
+# etat = "candidate" : jamais lue pour une fiche. etat = "consultee" : lue,
+# voir la fiche du sous-système. Vérifié le 02/11/2026 : chaque dépôt et chaque
+# adresse répondent. Ajoute ce que tu trouves en route.
+
+# Reconnexion : tout est consulté ; le détail est dans reconnexion.toml.
+[[source]]
+sous_systeme = "reconnexion"
+ids = ["colyseus/colyseus", "socketio/socket.io", "phoenixframework/phoenix", "heroiclabs/nakama", "heroiclabs/nakama-js", "WebKit/WebKit", "centrifugal/centrifuge", "centrifugal/centrifuge-js", "dotnet/aspnetcore", "livekit/client-sdk-js", "enisdenjo/graphql-ws"]
+marche = "reel"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "reconnexion"
+ids = ["https://www.rfc-editor.org/rfc/rfc6455.txt", "https://www.rfc-editor.org/rfc/rfc7675.txt", "w3c/webrtc-pc", "WICG/page-lifecycle", "w3c/hr-time", "https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html"]
+marche = "normes"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "reconnexion"
+ids = ["jepsen-io/jepsen", "tokio-rs/turmoil", "Shopify/toxiproxy", "crossbario/autobahn-testsuite"]
+marche = "bancs"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "reconnexion"
+ids = ["discord/discord-api-docs", "https://slack.engineering/slacks-incident-on-2-22-22/", "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"]
+marche = "retours"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "reconnexion"
+ids = ["colyseus/colyseus.js", "boardgameio/boardgame.io", "geckosio/geckos.io"]
+marche = "reel"
+etat = "candidate"
+pourquoi = "Clonés ou déjà cités par LEARNINGS.md, non relus pour cette fiche ; la saturation est arrivée avant."
+
+[[source]]
+sous_systeme = "fiabilite"
+ids = ["ioquake/ioq3", "quinn-rs/quinn", "lucaspoffo/renet", "algesten/str0m"]
+marche = "reel"
+etat = "candidate"
+pourquoi = "Accusés, fragmentation, files bornées : le netcode de Quake 3, et des moteurs Rust sans entrées-sorties."
+
+[[source]]
+sous_systeme = "fiabilite"
+ids = ["https://www.rfc-editor.org/rfc/rfc9000.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "fiabilite"
+ids = ["tokio-rs/turmoil", "proptest-rs/proptest"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-webrtc"
+ids = ["algesten/str0m", "geckosio/geckos.io", "livekit/client-sdk-js"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-webrtc"
+ids = ["w3c/webrtc-pc", "https://www.rfc-editor.org/rfc/rfc8445.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-webrtc"
+ids = ["web-platform-tests/wpt"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-websocket"
+ids = ["snapview/tungstenite-rs", "websockets/ws"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-websocket"
+ids = ["https://www.rfc-editor.org/rfc/rfc6455.txt", "whatwg/websockets"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "transport-websocket"
+ids = ["crossbario/autobahn-testsuite", "Shopify/toxiproxy"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "temps-et-mesure"
+ids = ["apple-oss-distributions/xnu", "WebKit/WebKit"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "temps-et-mesure"
+ids = ["w3c/hr-time"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "journal-et-replay"
+ids = ["pond3r/ggpo", "ioquake/ioq3"]
+marche = "reel"
+etat = "candidate"
+pourquoi = "Rollback et replays déterministes."
+
+[[source]]
+sous_systeme = "journal-et-replay"
+ids = ["apple/foundationdb", "jepsen-io/jepsen"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "interface-web"
+ids = ["leptos-rs/leptos", "DioxusLabs/dioxus", "yewstack/yew", "rustwasm/gloo"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "interface-web"
+ids = ["whatwg/html", "w3c/uievents"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "interface-web"
+ids = ["web-platform-tests/wpt", "microsoft/playwright"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "audio-web"
+ids = ["goldfire/howler.js", "Tonejs/Tone.js"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "audio-web"
+ids = ["WebAudio/web-audio-api"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "telecommande"
+ids = ["mozilla/uniffi-rs"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "verification"
+ids = ["sourcefrog/cargo-mutants", "verus-lang/verus", "jepsen-io/jepsen", "microsoft/playwright"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "rendu"
+ids = ["gfx-rs/wgpu", "bevyengine/bevy", "godotengine/godot", "mrdoob/three.js", "google/filament"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "rendu"
+ids = ["gpuweb/gpuweb"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "physique"
+ids = ["dimforge/rapier", "erincatto/box2d", "jrouwe/JoltPhysics"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "entrees"
+ids = ["libsdl-org/SDL", "mdqinc/SDL_GameControllerDB"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "entrees"
+ids = ["w3c/gamepad"]
+marche = "normes"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "audio"
+ids = ["goldfire/howler.js", "bevyengine/bevy"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "animation"
+ids = ["bevyengine/bevy", "phaserjs/phaser"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "interface"
+ids = ["emilk/egui", "ocornut/imgui", "phaserjs/phaser"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "game-feel"
+ids = ["NoelFB/Celeste", "id-Software/Quake", "id-Software/Quake-III-Arena"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "game-feel"
+ids = ["https://gafferongames.com/post/fix_your_timestep/"]
+marche = "retours"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "regles-et-determinisme"
+ids = ["pond3r/ggpo", "SanderMertens/flecs", "bevyengine/bevy"]
+marche = "reel"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "regles-et-determinisme"
+ids = ["proptest-rs/proptest", "apple/foundationdb"]
+marche = "bancs"
+etat = "candidate"
+
+[[source]]
+sous_systeme = "texte"
+ids = ["https://www.unicode.org/reports/tr15/", "https://www.unicode.org/reports/tr29/"]
+marche = "normes"
+etat = "candidate"
