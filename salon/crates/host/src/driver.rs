@@ -332,15 +332,49 @@ mod tests {
             [GameMessage::Refuse { .. }]
         ));
         assert!(closes(&effects, 3));
-        // A player who is away gives up the place, and is new when back.
+        // A player who is away gives up the place, and the game still knows
+        // her: `Arrived` is for who this run has not seen.
         let _: Vec<Effect> = driver.step(Ms(3), [Input::Closed { link: LinkId(1) }]);
         let effects = driver.step(Ms(4), [hello(4, EVE)]);
         assert!(!closes(&effects, 4));
         let _: Vec<Effect> = driver.step(Ms(5), [Input::Closed { link: LinkId(2) }]);
         let _: Vec<Effect> = driver.step(Ms(6), [hello(5, ADA)]);
-        assert!(matches!(
+        assert_eq!(
             driver.game().heard.last(),
-            Some(AppEvent::Arrived { player, .. }) if *player == ADA
+            Some(&AppEvent::Back { player: ADA })
+        );
+    }
+
+    /// How Ada comes back after `strangers` connections took places in turn.
+    /// The table holds two, and Bob keeps one.
+    fn back_after(strangers: u32) -> Option<AppEvent> {
+        let stranger = |number: u32| {
+            let mut id = [0xee; 16];
+            id[..4].copy_from_slice(&number.to_le_bytes());
+            PlayerId::new(id)
+        };
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA), hello(2, BOB)]);
+        let _: Vec<Effect> = driver.step(Ms(2), [Input::Closed { link: LinkId(1) }]);
+        for number in 0..strangers {
+            let link = u64::from(number) + 3;
+            let _: Vec<Effect> = driver.step(Ms(link), [hello(link, stranger(number))]);
+            let _: Vec<Effect> = driver.step(Ms(link), [Input::Closed { link: LinkId(link) }]);
+        }
+        let link = u64::from(strangers) + 3;
+        let _: Vec<Effect> = driver.step(Ms(link), [hello(link, ADA)]);
+        driver.game().heard.last().cloned()
+    }
+
+    /// Whoever claims a place gets one, so the room cannot remember for ever
+    /// those who gave theirs up: the oldest falls off, at this exact bound.
+    #[test]
+    fn the_players_who_lost_their_place_are_remembered_up_to_a_bound() {
+        let kept = u32::try_from(crate::apps::EVICTED_KEPT).unwrap();
+        assert_eq!(back_after(kept), Some(AppEvent::Back { player: ADA }));
+        assert!(matches!(
+            back_after(kept + 1),
+            Some(AppEvent::Arrived { player, .. }) if player == ADA
         ));
     }
 
@@ -355,15 +389,69 @@ mod tests {
         assert_eq!(heard.len(), burst);
     }
 
+    /// A connection is one player, the first it names: what it claims next
+    /// is not read. A claim used to be a whole new player, with a budget of
+    /// its own.
     #[test]
-    fn a_connection_that_changes_player_leaves_the_first() {
+    fn a_connection_keeps_the_player_it_first_named() {
         let mut driver = on_a_pad();
         let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA), hello(1, BOB)]);
         let heard = &driver.game().heard;
-        assert!(heard.contains(&AppEvent::Left { player: ADA }));
         assert!(matches!(
-            heard.last(),
-            Some(AppEvent::Arrived { player, .. }) if *player == BOB
+            heard.as_slice(),
+            [AppEvent::Arrived { player, .. }] if *player == ADA
+        ));
+        // Bob is nobody here: Ada still sends, and Bob can join on his own.
+        let _: Vec<Effect> = driver.step(Ms(2), [input(1), hello(2, BOB)]);
+        let heard = &driver.game().heard;
+        assert!(matches!(heard[1], AppEvent::Input { player, .. } if player == ADA));
+        assert!(matches!(heard[2], AppEvent::Arrived { player, .. } if player == BOB));
+    }
+
+    /// E3 at the app's door: the budget is the connection's. It was the
+    /// player's, and read after the player's place was taken, so a new name
+    /// on each frame got through all of it: 100 000 frames, 199 999 events.
+    #[test]
+    fn a_flood_of_new_players_on_one_connection_stays_within_its_budget() {
+        let limits = Limits::default();
+        let stranger = |frame: u32| {
+            let mut id = [0xff; 16];
+            id[..4].copy_from_slice(&frame.to_le_bytes());
+            PlayerId::new(id)
+        };
+        let config = HostConfig { limits, ..config() };
+        let mut driver =
+            Driver::new(Ms(0), config, 10, Remotes::default()).with_app_page(PAGE.to_owned());
+        driver.game_mut().pad = true;
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let _: Vec<Effect> = driver.step(Ms(2), [Input::Closed { link: LinkId(1) }]);
+        let flood = (0..100_000).map(|frame| hello(2, stranger(frame)));
+        let _: Vec<Effect> = driver.step(Ms(3), flood);
+        // The first name of the connection, and nothing else.
+        assert_eq!(driver.game().heard.len(), 3);
+        // Ada lost no place.
+        let _: Vec<Effect> = driver.step(Ms(4), [hello(3, ADA)]);
+        assert_eq!(
+            driver.game().heard.last(),
+            Some(&AppEvent::Back { player: ADA })
+        );
+    }
+
+    /// Frames past the budget of a connection are not read, whatever they
+    /// are, and hellos count as much as inputs.
+    #[test]
+    fn hellos_spend_the_budget_of_their_connection() {
+        let burst = usize::try_from(Limits::default().packets_burst).unwrap();
+        let mut driver = on_a_pad();
+        let flood = vec![hello(1, ADA); burst];
+        let _: Vec<Effect> = driver.step(Ms(1), flood);
+        let _: Vec<Effect> = driver.step(Ms(1), [input(1)]);
+        assert_eq!(driver.game().heard.len(), 1);
+        // A second of that budget comes back with time.
+        let _: Vec<Effect> = driver.step(Ms(1_001), [input(1)]);
+        assert!(matches!(
+            driver.game().heard.last(),
+            Some(AppEvent::Input { .. })
         ));
     }
 

@@ -3,7 +3,7 @@
 //! an app shows is derived from the game ([`crate::Game::remote`]): salon sends
 //! a change, and puts the remote back up after a reconnection.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use remote_protocol::web::PlayerId;
 use remote_protocol::{DrawEvent, Feedback, GameMessage, InputState, Remote, encode};
@@ -14,8 +14,10 @@ use crate::driver::Effect;
 /// What an iPhone app did ([`crate::Game::on_app`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppEvent {
-    /// A player this run had not seen. Everything is indexed by `player`, the
-    /// same on every reconnection, and in every game.
+    /// A player this run had not seen, or lost track of: past the last
+    /// [`EVICTED_KEPT`] players who gave up their place to a stranger.
+    /// Everything is indexed by `player`, the same on every reconnection, and
+    /// in every game.
     Arrived {
         player: PlayerId,
         name: Option<Name>,
@@ -59,12 +61,26 @@ struct App {
     heard: Ms,
     /// The latest state of this connection.
     seq: Option<u32>,
+}
+
+/// One connection: the one player it named first, whatever it claims next,
+/// and its budget, spent before anything else is read of a frame.
+struct Door {
+    player: PlayerId,
     frames: Bucket,
 }
+
+/// Players who gave up their place and whom the room still knows, at most.
+/// They come back with [`AppEvent::Back`]: the game knows them. A place is
+/// given up to whoever claims it, so the list has a bound, and the oldest
+/// falls off it.
+pub(crate) const EVICTED_KEPT: usize = 256;
 
 /// Every app the room knows, at most [`Limits::max_devices`].
 pub(crate) struct Apps {
     players: BTreeMap<PlayerId, App>,
+    doors: BTreeMap<LinkId, Door>,
+    evicted: VecDeque<PlayerId>,
     page: Option<String>,
     timing: Timing,
     limits: Limits,
@@ -81,6 +97,8 @@ impl Apps {
     pub(crate) fn new(timing: Timing, limits: Limits) -> Apps {
         Apps {
             players: BTreeMap::new(),
+            doors: BTreeMap::new(),
+            evicted: VecDeque::new(),
             page: None,
             timing,
             limits,
@@ -113,14 +131,17 @@ impl Apps {
                 return None;
             };
             self.players.remove(&away);
+            if self.evicted.len() >= EVICTED_KEPT {
+                self.evicted.pop_front();
+            }
+            self.evicted.push_back(away);
         }
-        let limits = self.limits;
+        self.evicted.retain(|evicted| *evicted != player);
         Some(self.players.entry(player).or_insert_with(|| App {
             link: None,
             shown: Shown::Nothing,
             heard: now,
             seq: None,
-            frames: Bucket::new(now, limits.packets_per_s, limits.packets_burst),
         }))
     }
 
@@ -133,21 +154,18 @@ impl Apps {
         events: &mut Vec<AppEvent>,
         effects: &mut Vec<Effect>,
     ) {
-        // The same connection, as someone else: the previous one has left.
-        for (other, app) in &mut self.players {
-            if *other != player && app.link == Some(link) {
-                app.link = None;
-                app.shown = Shown::Nothing;
-                events.push(AppEvent::Left { player: *other });
-            }
+        let limits = self.limits;
+        let door = self.doors.entry(link).or_insert_with(|| Door {
+            player,
+            frames: Bucket::new(now, limits.packets_per_s, limits.packets_burst),
+        });
+        if !door.frames.allow(now) || door.player != player {
+            return;
         }
-        let known = self.players.contains_key(&player);
+        let known = self.players.contains_key(&player) || self.evicted.contains(&player);
         let Some(app) = self.seat(now, link, player, effects) else {
             return;
         };
-        if !app.frames.allow(now) {
-            return;
-        }
         app.heard = now;
         app.shown = Shown::Nothing;
         match app.link.replace(link) {
@@ -170,12 +188,14 @@ impl Apps {
     /// The app on `link`, if the frame fits its budget. Above, frames are
     /// dropped unread, as those of a device.
     fn on_link(&mut self, now: Ms, link: LinkId) -> Option<(PlayerId, &mut App)> {
-        let (player, app) = self
-            .players
-            .iter_mut()
-            .find(|(_, app)| app.link == Some(link))?;
+        let door = self.doors.get_mut(&link)?;
+        let player = door.player;
+        let app = self.players.get_mut(&player)?;
+        if app.link != Some(link) {
+            return None;
+        }
         app.heard = now;
-        app.frames.allow(now).then_some((*player, app))
+        door.frames.allow(now).then_some((player, app))
     }
 
     pub(crate) fn input(
@@ -207,14 +227,15 @@ impl Apps {
     }
 
     pub(crate) fn closed(&mut self, link: LinkId, events: &mut Vec<AppEvent>) {
-        if let Some((player, app)) = self
-            .players
-            .iter_mut()
-            .find(|(_, app)| app.link == Some(link))
+        if let Some(door) = self.doors.remove(&link)
+            && let Some(app) = self.players.get_mut(&door.player)
+            && app.link == Some(link)
         {
             app.link = None;
             app.shown = Shown::Nothing;
-            events.push(AppEvent::Left { player: *player });
+            events.push(AppEvent::Left {
+                player: door.player,
+            });
         }
     }
 
