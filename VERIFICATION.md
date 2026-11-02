@@ -322,9 +322,6 @@ pour isoler la continuité UI et la récupération d’une panique de la disponi
 du LAN. Le rapport inscrit ce choix dans le périmètre des observations. Les
 exigences de réseau local restent alors non attestées ; ce passage ne satisfait
 pas leur applicabilité. Le mode par défaut est `lan`, sans repli automatique.
-Le modèle temporaire de validation locale utilise cette portée UI lorsque le
-pare-feu de l’hôte bloque son nouvel exécutable ; aucune règle du pare-feu
-n’est changée par le harnais.
 
 Avant les observations, le harnais prépare les fichiers servis puis prend leur
 empreinte. Une voie LAN indisponible produit une panne de préparation du
