@@ -3,7 +3,8 @@
 //! must show: the game's phone page ([`crate::Options::app_page`]), which then
 //! talks to the game through salon like any phone with the app's sensors on
 //! top, or the native remote the game chose ([`crate::Game::remote`]). Another
-//! version of the app gets `Refuse`, with a reason it shows.
+//! version of the app gets `Refuse`, with a reason it shows, then the socket
+//! closes.
 //!
 //! This thread only reads: the app's states and strokes go to the room, in
 //! order, and what the room says leaves through the same writer as a
@@ -28,7 +29,7 @@ use tungstenite::{Message, WebSocket};
 use crate::admission::DeadlineReader;
 use crate::clock::Clock;
 use crate::driver::Input;
-use crate::room::{Net, OUTBOX, Outlet, WsOut, inbox};
+use crate::room::{Net, OUTBOX, Outlet, inbox};
 use crate::ws::{self, Reading};
 
 const HANDSHAKE: Duration = Duration::from_secs(10);
@@ -99,7 +100,7 @@ fn run_with_handshake(
     let (outbox, outgoing) = sync_channel(OUTBOX);
     let opened = Net::AppOpened {
         link,
-        outlet: Outlet::Ws(outbox.clone()),
+        outlet: Outlet::Ws(outbox),
     };
     if net.send(opened).is_err() {
         return;
@@ -126,10 +127,11 @@ fn run_with_handshake(
                     }
                 }
                 Heard::Refused(answer) => {
-                    greeted = true;
-                    if outbox.try_send(WsOut::Packet(encode(&answer))).is_err() {
-                        break;
-                    }
+                    // From here, so that the close below comes behind it. The
+                    // app has nothing more to say: it would keep this thread
+                    // and its permit for as long as it stayed.
+                    let _: tungstenite::Result<()> = socket.send(Message::binary(encode(&answer)));
+                    break;
                 }
                 Heard::Nothing => {}
             },
@@ -218,6 +220,56 @@ mod tests {
             close[0], 0x88,
             "ungreeted peer was not sent a WebSocket close"
         );
+    }
+
+    /// The contract refuses another version with a reason the app shows. The
+    /// connection ends there: said nothing more, it kept its thread and its
+    /// permit for as long as the app stayed.
+    #[test]
+    fn a_refused_app_reads_why_and_gives_its_permit_back() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let (net, inbox) = inbox::channel(16).unwrap();
+        let task = thread::spawn(move || {
+            run_with_handshake(server, LinkId(1), &net, Duration::from_millis(50));
+        });
+        let mut socket = WebSocket::from_raw_socket(client, Role::Client, None);
+        let hello = encode(&PhoneMessage::Hello {
+            version: VERSION + 1,
+            player: [1; 16],
+            name: String::new(),
+        });
+        socket.send(Message::binary(hello)).unwrap();
+        let Message::Binary(answer) = socket.read().unwrap() else {
+            panic!("the reason, first");
+        };
+        assert!(matches!(
+            decode::<GameMessage>(&answer),
+            Ok(GameMessage::Refuse { .. })
+        ));
+        assert!(matches!(socket.read(), Ok(Message::Close(_)) | Err(_)));
+        let start = Clock::instant();
+        while !task.is_finished() {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the thread and its permit stay taken"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(
+            inbox.recv_timeout(Duration::from_secs(5)),
+            Ok(Net::AppOpened { .. })
+        ));
+        assert!(matches!(
+            inbox.recv_timeout(Duration::from_secs(5)),
+            Ok(Net::Closed { link: LinkId(1) })
+        ));
     }
 
     #[test]
