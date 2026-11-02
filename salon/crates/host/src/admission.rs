@@ -73,7 +73,7 @@ impl Drop for Permit {
 /// Socket timeouts alone renew at every syscall, allowing slow-drip requests.
 /// Recompute the remaining budget before every actual read instead.
 pub struct DeadlineReader {
-    stream: TcpStream,
+    stream: Arc<TcpStream>,
     deadline: Instant,
 }
 
@@ -83,7 +83,7 @@ fn deadline(budget: Duration) -> Instant {
 }
 
 impl DeadlineReader {
-    pub fn new(stream: TcpStream, budget: Duration) -> Self {
+    pub fn new(stream: Arc<TcpStream>, budget: Duration) -> Self {
         Self {
             stream,
             deadline: deadline(budget),
@@ -105,18 +105,18 @@ impl Read for DeadlineReader {
             ));
         }
         self.stream.set_read_timeout(Some(remaining))?;
-        self.stream.read(buffer)
+        (&*self.stream).read(buffer)
     }
 }
 
 /// A complete response/frame shares one budget, even with partial writes.
 pub struct DeadlineWriter<'a> {
-    stream: &'a mut TcpStream,
+    stream: &'a TcpStream,
     deadline: Instant,
 }
 
 impl<'a> DeadlineWriter<'a> {
-    pub fn new(stream: &'a mut TcpStream, budget: Duration) -> Self {
+    pub fn new(stream: &'a TcpStream, budget: Duration) -> Self {
         Self {
             stream,
             deadline: deadline(budget),
@@ -194,7 +194,7 @@ mod tests {
             }
         });
         let started = Clock::instant();
-        let mut reader = DeadlineReader::new(server, Duration::from_millis(80));
+        let mut reader = DeadlineReader::new(Arc::new(server), Duration::from_millis(80));
         let mut bytes = Vec::new();
         let error = reader.read_to_end(&mut bytes).unwrap_err();
         assert!(matches!(
@@ -214,7 +214,7 @@ mod tests {
         client
             .set_read_timeout(Some(Duration::from_millis(100)))
             .unwrap();
-        let (mut server, _) = listener.accept().unwrap();
+        let (server, _) = listener.accept().unwrap();
         let reader = thread::spawn(move || {
             let mut buffer = [0; 1024];
             for _ in 0..50 {
@@ -226,7 +226,7 @@ mod tests {
         });
         let body = vec![0; 32 * 1024 * 1024];
         let started = Clock::instant();
-        let error = DeadlineWriter::new(&mut server, Duration::from_millis(80))
+        let error = DeadlineWriter::new(&server, Duration::from_millis(80))
             .write_all(&body)
             .unwrap_err();
         assert!(matches!(
@@ -242,8 +242,8 @@ mod tests {
     fn successful_short_writes_do_not_reset_the_total_deadline() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let (mut server, _) = listener.accept().unwrap();
-        let mut writer = DeadlineWriter::new(&mut server, Duration::from_millis(30));
+        let (server, _) = listener.accept().unwrap();
+        let mut writer = DeadlineWriter::new(&server, Duration::from_millis(30));
         writer.write_all(b"a").unwrap();
         thread::sleep(Duration::from_millis(60));
         assert_eq!(

@@ -32,7 +32,7 @@ const MAX_FRAME: usize = 64 * 1024;
 /// (pongs, the closing handshake) through the shared lock.
 pub(crate) struct Reading {
     pub(crate) read: DeadlineReader,
-    pub(crate) write: Arc<Mutex<TcpStream>>,
+    pub(crate) write: Arc<Mutex<Arc<TcpStream>>>,
 }
 
 impl Read for Reading {
@@ -43,20 +43,18 @@ impl Read for Reading {
 
 impl Write for Reading {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let mut stream = self.write.lock().unwrap_or_else(PoisonError::into_inner);
-        stream.write_all(buffer)?;
+        let stream = self.write.lock().unwrap_or_else(PoisonError::into_inner);
+        (&**stream).write_all(buffer)?;
         Ok(buffer.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.write
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .flush()
+        let stream = self.write.lock().unwrap_or_else(PoisonError::into_inner);
+        (&**stream).flush()
     }
 }
 
-pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net>) {
+pub fn run(stream: Arc<TcpStream>, link: LinkId, net: &crate::room::inbox::Sender<Net>) {
     if stream.set_nodelay(true).is_err()
         || stream
             .set_write_timeout(Some(Duration::from_secs(10)))
@@ -68,13 +66,8 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
     let local = stream
         .peer_addr()
         .is_ok_and(|peer| peer.ip().to_canonical().is_loopback());
-    let Ok(write) = stream.try_clone() else {
-        return;
-    };
-    let Ok(shutdown) = stream.try_clone() else {
-        return;
-    };
-    let write = Arc::new(Mutex::new(write));
+    let shutdown = Arc::clone(&stream);
+    let write = Arc::new(Mutex::new(Arc::clone(&stream)));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_FRAME))
         .max_frame_size(Some(MAX_FRAME));
@@ -122,10 +115,8 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
                 }));
                 let mut buffer = Vec::new();
                 if close.format(&mut buffer).is_ok() {
-                    let _: std::io::Result<()> = write
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .write_all(&buffer);
+                    let stream = write.lock().unwrap_or_else(PoisonError::into_inner);
+                    let _: std::io::Result<()> = (&**stream).write_all(&buffer);
                 }
                 break;
             }
@@ -143,7 +134,11 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
 
 /// Writes what the room sends, one whole frame at a time, until it says
 /// close or forgets the link.
-pub(crate) fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>, stopped: &AtomicBool) {
+pub(crate) fn send(
+    outgoing: &Receiver<WsOut>,
+    write: &Mutex<Arc<TcpStream>>,
+    stopped: &AtomicBool,
+) {
     while !stopped.load(Ordering::Relaxed) {
         let out = match outgoing.recv_timeout(Duration::from_millis(100)) {
             Ok(out) => out,
@@ -161,8 +156,8 @@ pub(crate) fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>, stopped
         if frame.format(&mut buffer).is_err() {
             break;
         }
-        let mut stream = write.lock().unwrap_or_else(PoisonError::into_inner);
-        if DeadlineWriter::new(&mut stream, Duration::from_secs(10))
+        let stream = write.lock().unwrap_or_else(PoisonError::into_inner);
+        if DeadlineWriter::new(&stream, Duration::from_secs(10))
             .write_all(&buffer)
             .is_err()
             || last
@@ -197,7 +192,7 @@ mod tests {
         let (net, inbox) = crate::room::inbox::channel(64).unwrap();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            run(stream, LinkId(1), &net);
+            run(Arc::new(stream), LinkId(1), &net);
         });
         let mut client =
             WebSocket::from_raw_socket(TcpStream::connect(address).unwrap(), Role::Client, None);

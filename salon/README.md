@@ -91,6 +91,12 @@ Une panique dans une méthode de `Game`, ou une attente du système qui échoue 
 
 Une panique ne se rattrape pas ici : un état à moitié modifié ne vaut pas une partie qui continue.
 
+### Les limites
+
+- **Ce qui attend :** chaque file a sa borne (`Limits`), et l'atteindre rend une erreur à l'appelant (`SendError::Full`).
+- **Les connexions :** au plus `max(2 × max_devices + 64, 128)`, soit 128 par défaut, dont 32 gardées pour cet ordinateur. Chacune prend un descripteur de fichier, et un WebSocket deux fils. La suivante est fermée sans réponse. Ces 128 tiennent dans les 256 descripteurs qu'un terminal de macOS donne par défaut.
+- **Les identités : aucun plafond.** `Limits::max_devices` borne les appareils connectés à la fois, pas ceux dont salon se souvient : chaque jeton neuf accepté ajoute une identité, gardée jusqu'à `host.forget` et d'une soirée à l'autre dans `salon.json`. Une page qui se connecte, se ferme et recommence avec un autre jeton la fait grandir au rythme de ses connexions. Une identité prend environ 90 octets dans `salon.json`, réécrit en entier sur le fil de la salle à chaque identité neuve : mesuré à 1,2 ms pour 10 000 identités et 12 ms pour 100 000, sur un Mac avec SSD. Refuser au-delà d'un débit laisserait une rafale de jetons fermer la salle aux vrais joueurs (`ghosts_do_not_fill_the_room`, E3).
+
 ### Le QR code
 
 L'hôte fabrique l'adresse et le code ; la page les dessine.

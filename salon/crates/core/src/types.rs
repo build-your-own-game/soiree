@@ -276,7 +276,7 @@ impl Default for Timing {
     }
 }
 
-/// Every bound salon enforces. Nothing grows without one.
+/// Every bound salon enforces. What has none is in `salon/README.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     /// Largest encoded message (event or state) a device may send.

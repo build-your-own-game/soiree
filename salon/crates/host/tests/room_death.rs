@@ -90,14 +90,18 @@ fn free_port() -> u16 {
 /// Starts the server on `port`, and waits for it.
 fn start(port: u16, logging: Option<&str>) -> (Server, impl Sized) {
     let mut child = Command::new(std::env::current_exe().unwrap());
+    if let Some(logging) = logging {
+        child.env("SALON_LOG", logging);
+    }
+    run(child, port)
+}
+
+fn run(mut child: Command, port: u16) -> (Server, impl Sized) {
     child
         .args(["--exact", "serve_a_doomed_game", "--ignored", "--nocapture"])
         .env(PORT, port.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(logging) = logging {
-        child.env("SALON_LOG", logging);
-    }
     let mut server = Server(child.spawn().unwrap());
     let mut stdout = BufReader::new(server.0.stdout.take().unwrap()).lines();
     let ready = stdout
@@ -128,6 +132,31 @@ fn is_closed(read: tungstenite::Result<tungstenite::Message>) -> bool {
             std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
         ),
         Err(_) => true,
+    }
+}
+
+/// Admission counts connections and the system counts descriptors, and macOS
+/// gives a shell 256 of them: three per link ran out before admission did, and
+/// the links that followed died in silence. One link is one descriptor.
+#[test]
+fn a_link_takes_one_descriptor() {
+    const DESCRIPTORS: u32 = 96;
+    /// Three per link would need 180.
+    const LINKS: usize = 60;
+    let port = free_port();
+    let mut limited = Command::new("sh");
+    limited.args([
+        "-c",
+        &format!("ulimit -n {DESCRIPTORS}; exec \"$0\" \"$@\""),
+        std::env::current_exe().unwrap().to_str().unwrap(),
+    ]);
+    let (_server, _stdout) = run(limited, port);
+    let links: Vec<_> = (0..LINKS).map(|_| socket(port)).collect();
+    // Each link is alive on the server's side: a ping is answered.
+    for mut link in links {
+        link.send(tungstenite::Message::Ping(Vec::new().into()))
+            .unwrap();
+        assert!(matches!(link.read(), Ok(tungstenite::Message::Pong(_))));
     }
 }
 

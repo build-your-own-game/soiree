@@ -68,12 +68,12 @@ fn heard(frame: &[u8], link: LinkId) -> Heard {
     }
 }
 
-pub fn run(stream: TcpStream, link: LinkId, net: &inbox::Sender<Net>) {
+pub fn run(stream: Arc<TcpStream>, link: LinkId, net: &inbox::Sender<Net>) {
     run_with_handshake(stream, link, net, HANDSHAKE);
 }
 
 fn run_with_handshake(
-    stream: TcpStream,
+    stream: Arc<TcpStream>,
     link: LinkId,
     net: &inbox::Sender<Net>,
     handshake: Duration,
@@ -85,10 +85,8 @@ fn run_with_handshake(
     {
         return;
     }
-    let (Ok(write), Ok(shutdown)) = (stream.try_clone(), stream.try_clone()) else {
-        return;
-    };
-    let write = Arc::new(Mutex::new(write));
+    let shutdown = Arc::clone(&stream);
+    let write = Arc::new(Mutex::new(Arc::clone(&stream)));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_FRAME))
         .max_frame_size(Some(MAX_FRAME));
@@ -198,7 +196,7 @@ mod tests {
         let (server, _) = listener.accept().unwrap();
         let (net, _inbox) = inbox::channel(16).unwrap();
         let task = thread::spawn(move || {
-            run_with_handshake(server, LinkId(1), &net, Duration::from_millis(80));
+            run_with_handshake(Arc::new(server), LinkId(1), &net, Duration::from_millis(80));
         });
         let writer_stream = client.try_clone().unwrap();
         let writer = thread::spawn(move || {
@@ -237,7 +235,7 @@ mod tests {
         let (server, _) = listener.accept().unwrap();
         let (net, inbox) = inbox::channel(16).unwrap();
         let task = thread::spawn(move || {
-            run_with_handshake(server, LinkId(1), &net, Duration::from_millis(50));
+            run_with_handshake(Arc::new(server), LinkId(1), &net, Duration::from_millis(50));
         });
         let mut socket = WebSocket::from_raw_socket(client, Role::Client, None);
         let hello = encode(&PhoneMessage::Hello {
@@ -284,7 +282,7 @@ mod tests {
         let (server, _) = listener.accept().unwrap();
         let (net, inbox) = inbox::channel(16).unwrap();
         let task = thread::spawn(move || {
-            run_with_handshake(server, LinkId(1), &net, Duration::from_millis(80));
+            run_with_handshake(Arc::new(server), LinkId(1), &net, Duration::from_millis(80));
         });
         // The room: one answer to each hello, until the link closes.
         let room = thread::spawn(move || {

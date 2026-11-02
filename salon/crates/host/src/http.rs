@@ -143,7 +143,13 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let _: std::io::Result<()> = writeln!(stdout, "{}", options.ready);
     let _: std::io::Result<()> = writeln!(stdout, "  TV (this computer): http://localhost:{port}");
     let _: std::io::Result<()> = stdout.flush();
-    for stream in listener.incoming().flatten() {
+    for stream in listener.incoming() {
+        let Ok(stream) = stream else {
+            // Out of descriptors, most likely. The ones taken come back by
+            // themselves; meanwhile, this must not spin.
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        };
         let Some(permit) = stream
             .peer_addr()
             .ok()
@@ -271,7 +277,7 @@ impl Payload {
 }
 
 fn respond(
-    stream: &mut TcpStream,
+    stream: &TcpStream,
     status: u16,
     kind: &str,
     body: &[u8],
@@ -303,10 +309,13 @@ fn respond(
     stream.flush()
 }
 
-fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
+fn handle(stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
     stream.set_write_timeout(Some(READ_TIMEOUT))?;
     let peer = stream.peer_addr()?;
-    let mut reader = BufReader::new(DeadlineReader::new(stream.try_clone()?, READ_TIMEOUT));
+    // One descriptor for all that uses this connection: each is a file of the
+    // process, and admission counts connections.
+    let stream = Arc::new(stream);
+    let mut reader = BufReader::new(DeadlineReader::new(Arc::clone(&stream), READ_TIMEOUT));
     let head = read_head(&mut reader)?;
     let link = || LinkId(shared.links.fetch_add(1, Ordering::Relaxed));
 
@@ -322,7 +331,7 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
              Sec-WebSocket-Accept: {accept}\r\n\r\n"
         );
-        DeadlineWriter::new(&mut stream, READ_TIMEOUT).write_all(answer.as_bytes())?;
+        DeadlineWriter::new(&stream, READ_TIMEOUT).write_all(answer.as_bytes())?;
         if app {
             crate::app::run(stream, link(), &shared.net);
         } else {
@@ -336,23 +345,17 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         .and_then(|length| length.parse::<usize>().ok())
         .unwrap_or(0);
     if length > MAX_BODY {
-        return respond(
-            &mut stream,
-            413,
-            "text/plain",
-            b"too large",
-            Payload::Included,
-        );
+        return respond(&stream, 413, "text/plain", b"too large", Payload::Included);
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
-    route(&mut stream, shared, &head, body, peer)
+    route(&stream, shared, &head, body, peer)
 }
 
 /// Diagnostic traffic never enters game input queues untyped. The log
 /// is flushed on this HTTP thread before acknowledging its receipt.
 fn diagnostic(
-    stream: &mut TcpStream,
+    stream: &TcpStream,
     shared: &Shared,
     head: &Head,
     body: &[u8],
@@ -429,7 +432,7 @@ fn diagnostic(
 /// Answers a plain HTTP request: an offer, the TV key, the game's own, or a
 /// file.
 fn route(
-    stream: &mut TcpStream,
+    stream: &TcpStream,
     shared: &Shared,
     head: &Head,
     body: Vec<u8>,

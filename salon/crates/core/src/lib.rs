@@ -137,9 +137,10 @@
 //!   takes room for the fragments that came, and a packet with more parts
 //!   than a sender can fit is garbage. Without the token, nobody takes
 //!   another's place; without the key, nobody becomes the TV (E4).
-//! - **Nothing grows without bound**: every queue has a limit ([`Limits`]),
-//!   and reaching it is an error returned to the caller
-//!   ([`SendError::Full`]), never a silent drop.
+//! - **Every queue has a limit** ([`Limits`]), and reaching it is an error
+//!   returned to the caller ([`SendError::Full`]), never a silent drop. What
+//!   has no limit is the number of identities remembered: each new token adds
+//!   one for good (`salon/README.md`, « Les limites »).
 //! - **Stale messages are the game's call, made easy**: every event carries
 //!   the phase its sender had seen ([`Host::set_phase`]), so a late answer
 //!   for a finished round is recognised and refused (E5), while
