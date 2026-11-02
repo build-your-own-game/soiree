@@ -2,6 +2,7 @@
 //! mutant that survived the simulated network.
 
 use salon_core::journal::{Diagnostic, PanicReport, fingerprint};
+use salon_core::transport::Backlog;
 use salon_core::{DeviceId, Kind, Ms, Name, Token, TvKey};
 
 #[test]
@@ -75,4 +76,39 @@ fn a_fingerprint_is_the_sha_256_of_the_postcard_bytes() {
         fingerprint(&0_u8).unwrap(),
         "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
     );
+}
+
+/// A burst is no backlog: it may go over the floor at once, and stay there
+/// for as long as an acknowledgement takes.
+#[test]
+fn a_backlog_is_what_stays_over_the_floor() {
+    let mut backlog = Backlog::default();
+    let over = Backlog::FLOOR + 1;
+    let patience = Backlog::PATIENCE_MS;
+    assert!(!backlog.behind(Backlog::FLOOR, Ms(0)));
+    assert!(!backlog.behind(over, Ms(1_000)));
+    assert!(!backlog.behind(100 * over, Ms(1_000)));
+    assert!(!backlog.behind(over, Ms(1_000 + patience - 1)));
+    // The one packet that tries, then nothing until the next one.
+    assert!(!backlog.behind(over, Ms(1_000 + patience)));
+    assert!(backlog.behind(over, Ms(1_000 + patience)));
+    assert!(backlog.behind(over, Ms(1_000 + 2 * patience - 1)));
+    assert!(!backlog.behind(over, Ms(1_000 + 2 * patience)));
+    assert!(backlog.behind(over, Ms(1_000 + 2 * patience + 1)));
+}
+
+/// Only coming back under the floor ends it: a link stays behind until what
+/// waits is gone, and the next burst has its whole patience again.
+#[test]
+fn a_backlog_ends_under_the_floor() {
+    let mut backlog = Backlog::default();
+    let over = Backlog::FLOOR + 1;
+    let patience = Backlog::PATIENCE_MS;
+    assert!(!backlog.behind(over, Ms(0)));
+    assert!(!backlog.behind(over, Ms(patience)));
+    assert!(backlog.behind(over, Ms(patience + 1)));
+    assert!(!backlog.behind(Backlog::FLOOR, Ms(patience + 2)));
+    for burst in 3..20 {
+        assert!(!backlog.behind(over, Ms(patience + burst)));
+    }
 }

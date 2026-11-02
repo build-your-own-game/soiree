@@ -30,16 +30,18 @@ const VERSION: u32 = 1;
 /// A peer that has not done it by then will not.
 const PATIENCE_MS: u64 = 8_000;
 
-/// Says each event back.
+/// Says each event back, as many octets long as the event says.
 struct Echo;
 
 impl Game for Echo {
     type Up = u32;
-    type Down = u32;
+    type Down = Vec<u8>;
 
-    fn on(&mut self, _: Ms, event: DeviceEvent<u32>, host: &mut Host<u32, u32>) {
+    fn on(&mut self, _: Ms, event: DeviceEvent<u32>, host: &mut Host<u32, Vec<u8>>) {
         if let DeviceEvent::Event { device, event, .. } = &event {
-            host.send(*device, event).unwrap();
+            let times = usize::try_from(event / 4).unwrap().max(1);
+            host.send(*device, &event.to_be_bytes().repeat(times))
+                .unwrap();
         }
     }
 }
@@ -120,9 +122,9 @@ struct Peer {
     socket: UdpSocket,
     address: SocketAddr,
     timeout: Instant,
-    client: Client<u32, u32>,
+    client: Client<u32, Vec<u8>>,
     clock: Clock,
-    events: Vec<u32>,
+    events: Vec<Vec<u8>>,
     conduct: Conduct,
 }
 
@@ -267,8 +269,11 @@ fn says(phone: &mut Peer, others: &mut [&mut Peer], event: u32) {
     phone.client.send(&event).unwrap();
     let mut peers: Vec<&mut Peer> = others.iter_mut().map(|peer| &mut **peer).collect();
     peers.insert(0, phone);
+    let echo = event.to_be_bytes();
     assert!(
-        until(&mut peers, |peers| peers[0].events.contains(&event)),
+        until(&mut peers, |peers| {
+            peers[0].events.iter().any(|said| said.starts_with(&echo))
+        }),
         "no echo of {event}"
     );
 }
@@ -299,4 +304,17 @@ fn a_panic_in_a_dependency_costs_one_link() {
     says(&mut late, &mut [&mut phone], 3);
     assert!(late.channel.is_some(), "a new phone must get WebRTC");
     says(&mut phone, &mut [&mut late], 4);
+}
+
+/// T5: what keeps a link from piling up must not starve what is sent all at
+/// once: a resend repeats the same burst, and a limit under it can lose the
+/// same last fragments each time, on a healthy link.
+#[test]
+fn messages_of_many_fragments_get_through_the_backlog_guard() {
+    let port = serve("large");
+    let mut phone = Peer::dial(port, 1, Clock::start(), Conduct::Honest);
+    for size in [1_000, 4_000, 4_100, 8_000, 16_000, 60_000] {
+        says(&mut phone, &mut [], size);
+    }
+    assert_eq!(phone.events.last().map(Vec::len), Some(60_000));
 }

@@ -205,6 +205,63 @@ pub mod transport {
     /// SDP, ICE, DTLS and DataChannel opening. Both shells use this bound:
     /// packet loss must be allowed to use the native handshake retransmissions.
     pub const RTC_NEGOTIATION_SECONDS: u16 = 15;
+
+    use crate::types::Ms;
+
+    /// What waits in a DataChannel's own buffer, as the shell that writes to
+    /// it sees it. The channel does not retransmit, but its buffer loses
+    /// nothing: on a link slower than the game, fresh states wait behind stale
+    /// ones, for seconds (a phone at 30 Ko/s: 6.7 s with str0m's 128 KiB).
+    ///
+    /// Bytes alone cannot tell that from a burst: salon sends a message of
+    /// many fragments at once, and a resend repeats the same burst, so a fixed
+    /// limit under it would lose the same last fragments for ever. What is
+    /// behind is what stays: the buffer over [`FLOOR`](Self::FLOOR) for
+    /// [`PATIENCE_MS`](Self::PATIENCE_MS) in a row. Writes are then skipped,
+    /// like lost packets, until the buffer comes back under the floor.
+    ///
+    /// All but one every [`PATIENCE_MS`](Self::PATIENCE_MS): a buffer that gets
+    /// nothing new is left to SCTP's retransmission timer, which has backed
+    /// off by then. After a cut of 3 s, at 60 Hz on str0m in virtual time, a
+    /// fresh packet took 6.8 s without this one, 4 s with it, as without any
+    /// limit.
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Backlog {
+        over_since: Option<Ms>,
+        tried: Option<Ms>,
+    }
+
+    impl Backlog {
+        /// A healthy link holds a few packets on their way, whatever its
+        /// rhythm: 60 Hz, 1 000 octets, 50 ms of round trip is 3 Kio.
+        pub const FLOOR: usize = 4 * 1024;
+        /// Longer than a Wi-Fi's bad moment for an acknowledgement (99th
+        /// percentile 67 ms on an iPhone, `salon/LEARNINGS.md`), and the delay
+        /// `LiveKit` gives its own lossy channel. With [`FLOOR`](Self::FLOOR), a
+        /// link at 30 Ko/s lags 333 ms, on str0m in virtual time, not 6.7 s.
+        pub const PATIENCE_MS: u64 = 100;
+
+        /// Whether the next write should be skipped, with `buffered` octets
+        /// in the channel's buffer at `now`.
+        pub fn behind(&mut self, buffered: usize, now: Ms) -> bool {
+            if buffered <= Self::FLOOR {
+                *self = Backlog::default();
+                return false;
+            }
+            let since = *self.over_since.get_or_insert(now);
+            if now.since(since) < Self::PATIENCE_MS {
+                return false;
+            }
+            if self
+                .tried
+                .is_some_and(|tried| now.since(tried) < Self::PATIENCE_MS)
+            {
+                return true;
+            }
+            self.tried = Some(now);
+            false
+        }
+    }
 }
 
 /// The paths salon serves next to the game's pages, named once for the host

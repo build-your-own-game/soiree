@@ -40,6 +40,7 @@ use std::rc::{Rc, Weak};
 use js_sys::{Reflect, Uint8Array};
 use recovery::wall_ms;
 use rtc_memory::{Blame, ICE_SILENCE_MS, Offer, RtcMemory, ice_is_silent};
+use salon_core::transport::Backlog;
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
     Refusal, SleepClock, Status, Timing, Token, TvKey, route,
@@ -59,9 +60,6 @@ use web_sys::{
 /// negotiation errors fall back immediately; progress never renews this bound.
 pub const RTC_PATIENCE_MS: i32 =
     (salon_core::transport::RTC_NEGOTIATION_SECONDS as i32).saturating_mul(1_000);
-/// A DataChannel with this much waiting is behind: skip a packet rather than
-/// pile up (geckos.io drops on any backlog; salon resends what matters).
-const RTC_BACKLOG: u32 = 64 * 1024;
 
 /// What the page wants.
 pub struct Options {
@@ -129,6 +127,9 @@ enum Transport {
         pc: RtcPeerConnection,
         channel: RtcDataChannel,
         open: bool,
+        /// A channel that is behind skips a packet rather than pile up
+        /// (geckos.io drops on any backlog; salon resends what matters).
+        backlog: Cell<Backlog>,
         _closures: Vec<Listener>,
         _patience: Option<ui::Timer>,
         /// [`ICE_SILENCE_MS`], once the answer is applied.
@@ -146,9 +147,14 @@ impl Transport {
             Transport::Rtc {
                 channel,
                 open: true,
+                backlog,
                 ..
             } => {
-                if channel.buffered_amount() < RTC_BACKLOG {
+                let mut watched = backlog.get();
+                let waiting = usize::try_from(channel.buffered_amount()).unwrap_or(usize::MAX);
+                let behind = watched.behind(waiting, now());
+                backlog.set(watched);
+                if !behind {
                     // A failed send is a lost packet: salon sends again.
                     let _: Result<(), JsValue> = channel.send_with_u8_array(bytes);
                 }
@@ -886,6 +892,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             pc,
             channel,
             open: false,
+            backlog: Cell::default(),
             _closures: closures,
             _patience: None,
             _silence: None,
@@ -906,6 +913,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         pc,
         channel,
         open: false,
+        backlog: Cell::default(),
         _closures: closures,
         _patience: Some(patience),
         _silence: None,

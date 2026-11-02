@@ -18,7 +18,8 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use salon_core::{Caps, LinkId};
+use salon_core::transport::Backlog;
+use salon_core::{Caps, LinkId, Ms};
 use salon_crypto::DtlsCert;
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
@@ -118,9 +119,23 @@ struct Entry {
     /// str0m drops a check that is not for one of its candidates, and the
     /// socket listens on every interface without saying which one heard.
     reached: SocketAddr,
+    backlog: Backlog,
 }
 
 impl Entry {
+    /// Writes a packet, unless what waits in str0m's buffer has gone stale:
+    /// its 128 KiB would keep fresh states behind for seconds. Skipped or
+    /// refused, a packet is lost like any other, and salon sends it again.
+    fn send(&mut self, id: ChannelId, bytes: &[u8], now: Instant) {
+        let waited = now.saturating_duration_since(self.created).as_millis();
+        let at = Ms(u64::try_from(waited).unwrap_or(u64::MAX));
+        if let Some(mut channel) = self.rtc.channel(id)
+            && !self.backlog.behind(channel.buffered_amount(), at)
+        {
+            let _: Result<bool, str0m::RtcError> = channel.write(true, bytes);
+        }
+    }
+
     /// Runs `work` on this link. One page must never cost more than its own
     /// link, whatever it sends: dimpl 0.7.6 panics on two equal records from a
     /// peer without a token (`recherche/transport-webrtc.toml`, T1), and
@@ -265,6 +280,7 @@ fn run(rtcs: &Rtcs, entries: &mut Entries) {
                         timeout: None,
                         local: false,
                         broken: false,
+                        backlog: Backlog::default(),
                     };
                     let _: Option<()> = entry.guarded(link, |entry| drive(rtcs, link, entry));
                     entries.insert(link, entry);
@@ -280,11 +296,7 @@ fn run(rtcs: &Rtcs, entries: &mut Entries) {
                         && let Some(id) = entry.channel
                     {
                         let _: Option<()> = entry.guarded(link, |entry| {
-                            if let Some(mut channel) = entry.rtc.channel(id) {
-                                // `false`: str0m's buffer is full; the packet is
-                                // lost and salon sends it again.
-                                let _: Result<bool, str0m::RtcError> = channel.write(true, &bytes);
-                            }
+                            entry.send(id, &bytes, Clock::instant());
                             drive(rtcs, link, entry);
                         });
                     }
@@ -463,10 +475,9 @@ mod tests {
     /// memory and in virtual time.
     struct Pair {
         page: Rtc,
-        host: Rtc,
+        host: Entry,
         now: Instant,
         page_channel: Option<ChannelId>,
-        host_channel: Option<ChannelId>,
         /// The size of each datagram the host sent.
         down: Vec<usize>,
         /// What the page read on its channel.
@@ -477,7 +488,7 @@ mod tests {
         /// Offer, answer, ICE, DTLS, SCTP: both ends of the channel are open.
         fn opened() -> Pair {
             let mut pair = Pair::answered();
-            pair.run_until(|pair| pair.page_channel.is_some() && pair.host_channel.is_some());
+            pair.run_until(|pair| pair.page_channel.is_some() && pair.host.channel.is_some());
             pair.down.clear();
             pair
         }
@@ -500,15 +511,23 @@ mod tests {
             let offer = serde_json::to_vec::<SdpOffer>(&offer).unwrap();
             let cert = salon_crypto::dtls_cert().unwrap();
             let host_address = HOST.parse().unwrap();
-            let (host, answer_body) = answer(&offer, host_address, host_address, &cert).unwrap();
+            let (rtc, answer_body) = answer(&offer, host_address, host_address, &cert).unwrap();
             let answered: SdpAnswer = serde_json::from_slice(&answer_body).unwrap();
             page.sdp_api().accept_answer(pending, answered).unwrap();
             Pair {
                 page,
-                host,
+                host: Entry {
+                    rtc,
+                    channel: None,
+                    created: now,
+                    timeout: None,
+                    local: false,
+                    broken: false,
+                    reached: host_address,
+                    backlog: Backlog::default(),
+                },
                 now,
                 page_channel: None,
-                host_channel: None,
                 down: Vec::new(),
                 heard: Vec::new(),
             }
@@ -533,11 +552,26 @@ mod tests {
                     },
                 );
                 if destination == HOST.parse().unwrap() {
-                    self.host.handle_input(input).unwrap();
+                    self.host.rtc.handle_input(input).unwrap();
                 } else {
                     self.page.handle_input(input).unwrap();
                 }
             }
+        }
+
+        /// Virtual time goes by.
+        fn tick(&mut self, by: Duration) {
+            self.now += by;
+            let now = Input::Timeout(self.now);
+            self.host.rtc.handle_input(now).unwrap();
+            self.page.handle_input(Input::Timeout(self.now)).unwrap();
+        }
+
+        /// What both ends want to send is lost.
+        fn lose_everything(&mut self) {
+            let mut wire = VecDeque::new();
+            self.drain_page(&mut wire);
+            self.drain_host(&mut wire);
         }
 
         fn drain_page(&mut self, wire: &mut VecDeque<(SocketAddr, SocketAddr, Vec<u8>)>) {
@@ -556,13 +590,13 @@ mod tests {
 
         fn drain_host(&mut self, wire: &mut VecDeque<(SocketAddr, SocketAddr, Vec<u8>)>) {
             loop {
-                match self.host.poll_output().unwrap() {
+                match self.host.rtc.poll_output().unwrap() {
                     Output::Timeout(_) => return,
                     Output::Transmit(sent) => {
                         self.down.push(sent.contents.len());
                         wire.push_back((sent.source, sent.destination, sent.contents.to_vec()));
                     }
-                    Output::Event(Event::ChannelOpen(id, _)) => self.host_channel = Some(id),
+                    Output::Event(Event::ChannelOpen(id, _)) => self.host.channel = Some(id),
                     Output::Event(_) => {}
                 }
             }
@@ -575,9 +609,7 @@ mod tests {
                 if done(self) {
                     return;
                 }
-                self.now += Duration::from_millis(10);
-                self.host.handle_input(Input::Timeout(self.now)).unwrap();
-                self.page.handle_input(Input::Timeout(self.now)).unwrap();
+                self.tick(Duration::from_millis(10));
             }
             panic!("not done within 30 virtual seconds");
         }
@@ -598,18 +630,6 @@ mod tests {
         (rtcs, inbox)
     }
 
-    fn entry_of(pair: Pair) -> Entry {
-        Entry {
-            rtc: pair.host,
-            channel: pair.host_channel,
-            created: pair.now,
-            timeout: None,
-            local: false,
-            broken: false,
-            reached: HOST.parse().unwrap(),
-        }
-    }
-
     /// What panics out of the loop, past every guard, costs the links of this
     /// start: the room hears of them, and the thread is there for the next
     /// offer. Dead, it left every later offer a 503.
@@ -621,7 +641,7 @@ mod tests {
         keep_up(&rtcs, |_, entries| {
             starts.set(starts.get() + 1);
             if let Some(pair) = pair.take() {
-                entries.insert(LinkId(7), entry_of(pair));
+                entries.insert(LinkId(7), pair.host);
                 std::panic::panic_any("outside every guard");
             }
         });
@@ -634,7 +654,7 @@ mod tests {
     /// nothing, and a second panic there would prove nothing either.
     #[test]
     fn a_broken_link_is_never_touched_again() {
-        let mut entry = entry_of(Pair::opened());
+        let mut entry = Pair::opened().host;
         let link = LinkId(1);
         assert_eq!(entry.guarded(link, |_| 1), Some(1));
         let panicked: Option<u8> = entry.guarded(link, |_| std::panic::panic_any("a dependency"));
@@ -676,8 +696,8 @@ mod tests {
         pair.exchange();
         pair.down.clear();
         let packet = vec![7; Caps::DATAGRAM.max_packet];
-        let id = pair.host_channel.unwrap();
-        let mut channel = pair.host.channel(id).unwrap();
+        let id = pair.host.channel.unwrap();
+        let mut channel = pair.host.rtc.channel(id).unwrap();
         assert!(channel.write(true, &packet).unwrap());
         pair.exchange();
         assert_eq!(pair.down.len(), 1, "{:?}", pair.down);
@@ -685,6 +705,84 @@ mod tests {
         // Under what a Wi-Fi carries, and what IPv6 promises any path, with
         // the 28 octets of IP and UDP.
         assert!(pair.down[0] + 28 <= 1280, "{:?}", pair.down);
+    }
+
+    /// T5: a page that reads slower than the game leaves what is fresh
+    /// behind what is stale. 60 packets a second, nothing acknowledged: the
+    /// buffer stops at what the patience lets in, not at str0m's 128 KiB.
+    #[test]
+    fn what_waits_for_a_slow_page_stops_growing() {
+        let mut entry = Pair::opened().host;
+        let id = entry.channel.unwrap();
+        let tick = Duration::from_millis(16);
+        let packet = [0; 1_000];
+        let mut now = entry.created;
+        for _ in 0..120 {
+            entry.send(id, &packet, now);
+            now += tick;
+        }
+        let waiting = entry.rtc.channel(id).unwrap().buffered_amount();
+        // The patience, then one try each patience over the 2 s.
+        let tries = usize::try_from(2_000 / Backlog::PATIENCE_MS).unwrap();
+        let patience = usize::try_from(Backlog::PATIENCE_MS.div_ceil(16)).unwrap();
+        let most = Backlog::FLOOR + packet.len() * (patience + tries);
+        assert!(waiting <= most, "{waiting} octets wait, {most} at most");
+    }
+
+    /// T5: the guard must not keep a link down once the network is back. SCTP
+    /// alone takes 4 s after this cut, its retransmission timer having backed
+    /// off, and a page gives up on a silent link at 6 s.
+    #[test]
+    fn a_link_behind_comes_back_with_sctp() {
+        let mut pair = Pair::opened();
+        let id = pair.host.channel.unwrap();
+        let tick = Duration::from_millis(16);
+        let mut sent = 0_u32;
+        let mut write = |pair: &mut Pair| {
+            let now = pair.now;
+            let mut packet = sent.to_be_bytes().to_vec();
+            packet.resize(1_000, 0);
+            pair.host.send(id, &packet, now);
+            sent += 1;
+        };
+        for _ in 0..120 {
+            pair.tick(tick);
+            pair.exchange();
+            write(&mut pair);
+            pair.exchange();
+        }
+        for _ in 0..190 {
+            pair.tick(tick);
+            pair.lose_everything();
+            write(&mut pair);
+            pair.lose_everything();
+        }
+        let fresh = 310_u32.to_be_bytes();
+        let back = pair.now;
+        while pair.now - back < Duration::from_secs(5)
+            && !pair.heard.iter().any(|heard| heard[..4] >= fresh[..])
+        {
+            pair.tick(tick);
+            pair.exchange();
+            write(&mut pair);
+            pair.exchange();
+        }
+        let waited = pair.now - back;
+        assert!(waited < Duration::from_millis(4_500), "{waited:?}");
+    }
+
+    /// T5: a burst all at once is not a backlog. Salon sends this much.
+    #[test]
+    fn a_burst_goes_out_whole() {
+        let mut entry = Pair::opened().host;
+        let id = entry.channel.unwrap();
+        let now = entry.created;
+        let packet = vec![0; Caps::DATAGRAM.max_packet];
+        for _ in 0..32 {
+            entry.send(id, &packet, now);
+        }
+        let waiting = entry.rtc.channel(id).unwrap().buffered_amount();
+        assert!(waiting >= 32 * packet.len(), "{waiting} octets");
     }
 
     /// T3: a phone has just reached this address, the one the host would have
@@ -723,7 +821,7 @@ mod tests {
         }
         let (source, _, check) = wire.pop_front().unwrap();
         let mut entries = Entries::new();
-        entries.insert(LinkId(1), entry_of(pair));
+        entries.insert(LinkId(1), pair.host);
         deliver(&rtcs, &mut entries, source, &check);
         // A check str0m took makes the source a known one: a DTLS packet from
         // there belongs to this link now.
