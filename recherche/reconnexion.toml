@@ -598,8 +598,10 @@ citation = "Chrome 149 started to not reliably fire visibilitychange after resum
 enonce = "visibilitychange ne suffit plus à détecter le retour d'une page gelée : écouter aussi resume."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/web/src/lib.rs#L421"]
 trou = "T8"
+note = "Couvert par construction, sans test : aucun navigateur ne l'a rejoué, et le comportement de Chrome reste rapporté par Phoenix."
 
 [[lecon]]
 id = "reconnexion-24"
