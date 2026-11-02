@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
+use crate::stream::Order;
 use crate::types::{DeviceId, Kind, Refusal, Token, TvKey};
 
 /// Bumped whenever a packet changes shape. Both sides refuse another one: a
@@ -85,9 +86,14 @@ pub(crate) struct Parts {
 }
 
 impl Parts {
-    /// Fragments up to the last one that arrived.
-    pub fn span(self) -> usize {
-        let past = u64::BITS.saturating_sub(self.more.leading_zeros());
+    /// Fragments this says enough of to tell which are not there: up to the
+    /// last one that arrived, or on a stream, where nothing can still be on
+    /// its way, all of those it has a bit for.
+    pub fn span(self, order: Order) -> usize {
+        let past = match order {
+            Order::Any => u64::BITS.saturating_sub(self.more.leading_zeros()),
+            Order::Kept => u64::BITS.saturating_add(1),
+        };
         usize::from(self.first).saturating_add(usize::try_from(past).unwrap_or(0))
     }
 }
@@ -251,6 +257,19 @@ mod framing_tests {
         first: u16::MAX,
         more: u64::MAX,
     };
+
+    /// Past the bits of an ack nothing is known, even on a stream: those
+    /// fragments stay on their way until a later ack names them.
+    #[test]
+    fn an_ack_tells_of_the_fragments_it_has_a_bit_for_and_no_more() {
+        let parts = Parts {
+            seq: 0,
+            first: 3,
+            more: 0b100,
+        };
+        assert_eq!(parts.span(Order::Any), 6);
+        assert_eq!(parts.span(Order::Kept), 68);
+    }
 
     /// A fragment cut for this overhead must fit beside the largest ack: a
     /// packet that could not hold both would leave without its fragment, every

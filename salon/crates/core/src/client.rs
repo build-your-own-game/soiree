@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::stream::{Budget, Heard, InEvents, InState, OutEvents, OutState, Peer, Window};
+use crate::stream::{Budget, Heard, InEvents, InState, Order, OutEvents, OutState, Peer, Window};
 use crate::types::{Caps, DeviceId, Kind, Limits, Ms, Name, Refusal, Timing, Token, TvKey};
 use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
 
@@ -364,9 +364,10 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         self.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
-            let wait = self.wait();
-            let learned = self.up.ack(&ack, heard);
-            let learned = learned.with(self.out_state.ack(&ack, heard));
+            let order = Order::of(open.caps);
+            let wait = order.wait(&self.peer, &self.window, &self.config.timing);
+            let learned = self.up.ack(&ack, heard, order);
+            let learned = learned.with(self.out_state.ack(&ack, heard, order));
             self.window.heard(learned, now, wait);
         }
         if let Some(phase) = packet.phase {
@@ -486,13 +487,6 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         self.outbox.pop_front()
     }
 
-    /// How long a fragment waits for news.
-    fn wait(&self) -> u64 {
-        let timing = self.config.timing;
-        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
-        self.window.wait(resend, timing.resend_max)
-    }
-
     /// Data bytes the window lets out now.
     fn room(&self, now: Ms, wait: u64, packet: usize) -> usize {
         let flying = self
@@ -504,12 +498,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
 
     fn flush(&mut self, now: Ms) {
         let timing = self.config.timing;
-        let wait = self.wait();
         let resend = self.peer.resend(timing.resend_min, timing.resend_max);
         let Link::Open(open) = &self.link else {
             return;
         };
         let packet_size = open.caps.packet();
+        let wait = Order::of(open.caps).wait(&self.peer, &self.window, &timing);
         let mut room = self.room(now, wait, packet_size);
         let Link::Open(open) = &mut self.link else {
             return;
@@ -599,7 +593,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     .map_or(self.now, |at| at.plus(timing.heartbeat));
                 if open.welcomed {
                     next = next.min(open.last_heard.plus(timing.absent));
-                    let wait = self.wait();
+                    let wait = Order::of(open.caps).wait(&self.peer, &self.window, &timing);
                     let room = self.room(self.now, wait, open.caps.packet());
                     for due in [
                         self.up.due_at(wait, room),

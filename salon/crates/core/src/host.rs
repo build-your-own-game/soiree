@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::stream::{Bucket, Budget, InEvents, InState, OutEvents, OutState, Peer, Window};
+use crate::stream::{Bucket, Budget, InEvents, InState, Order, OutEvents, OutState, Peer, Window};
 use crate::types::{
     Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Refusal, Timing, Token, TvKey,
     Why,
@@ -183,10 +183,9 @@ impl Device {
         }
     }
 
-    /// How long a fragment waits for news.
-    fn wait(&self, timing: &Timing) -> u64 {
-        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
-        self.window.wait(resend, timing.resend_max)
+    /// How long a fragment waits for news on a link of this `order`.
+    fn wait(&self, order: Order, timing: &Timing) -> u64 {
+        order.wait(&self.peer, &self.window, timing)
     }
 
     /// Data bytes the window lets out now.
@@ -407,9 +406,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         device.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
-            let wait = device.wait(&self.config.timing);
-            let learned = device.down.ack(&ack, heard);
-            let learned = learned.with(device.out_state.ack(&ack, heard));
+            let order = Order::of(current.caps);
+            let wait = device.wait(order, &self.config.timing);
+            let learned = device.down.ack(&ack, heard, order);
+            let learned = learned.with(device.out_state.ack(&ack, heard, order));
             device.window.heard(learned, now, wait);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
@@ -713,7 +713,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         for (&id, link) in &mut self.links {
             let mut device = link.device.and_then(|device| self.devices.get_mut(&device));
             let packet_size = link.caps.packet();
-            let wait = device.as_deref().map_or(0, |device| device.wait(&timing));
+            let order = Order::of(link.caps);
+            let wait = device
+                .as_deref()
+                .map_or(0, |device| device.wait(order, &timing));
             let mut room = device
                 .as_deref()
                 .map_or(0, |device| device.room(now, wait, packet_size));
@@ -808,7 +811,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                         timing.absent
                     };
                     consider(device.last_heard.plus(quiet));
-                    let wait = device.wait(&timing);
+                    let wait = device.wait(Order::of(link.caps), &timing);
                     let room = device.room(self.now, wait, link.caps.packet());
                     if let Some(at) = device.down.due_at(wait, room) {
                         consider(at.max(self.now));

@@ -192,7 +192,9 @@ impl fmt::Display for Name {
 /// What a transport can carry in one piece. Salon cuts messages to fit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Caps {
-    /// Largest packet the transport takes whole, in bytes.
+    /// Largest packet the transport takes whole, in bytes. Past one network
+    /// frame ([`Caps::DATAGRAM`]), it can only be a stream: salon trusts it to
+    /// hand over what survives in order, and sends again what it proves lost.
     pub max_packet: usize,
     /// The link comes from the host's own computer (loopback). Only such a
     /// link can be the TV, key or not: a key replayed from the network is
@@ -208,7 +210,8 @@ impl Caps {
         max_packet: 1100,
         local: false,
     };
-    /// A WebSocket: nothing is lost, packets can be larger.
+    /// A WebSocket: nothing it took is lost, packets can be larger. The host
+    /// may still drop a packet before it, when its file to the link is full.
     pub const STREAM: Caps = Caps {
         max_packet: 16 * 1024,
         local: false,
@@ -228,6 +231,12 @@ impl Caps {
     pub(crate) fn packet(self) -> usize {
         self.max_packet
             .clamp(Caps::MIN_PACKET, crate::wire::MAX_PACKET)
+    }
+
+    /// A packet this big is cut by the transport, not lost whole by the
+    /// network: it hands over what survives in order.
+    pub(crate) fn in_order(self) -> bool {
+        self.max_packet > Caps::DATAGRAM.max_packet
     }
 }
 

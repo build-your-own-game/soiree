@@ -751,6 +751,58 @@ fn a_state_of_one_packet_goes_whatever_the_window() {
     assert_eq!(sent(&drain(&mut room, Ms(1)).1), (vec![], vec![(1, 0)]));
 }
 
+/// A room with one device on a stream.
+fn on_a_stream() -> (Room, DeviceId) {
+    let (mut room, device) = joined(Limits::default());
+    room.opened(Ms(1), LinkId(2), Caps::STREAM);
+    let hello = Packet {
+        control: Some(Control::Hello(Hello {
+            protocol: PROTOCOL,
+            game: 7,
+            kind: Kind::Phone,
+            token: Token([1; 16]),
+            name: None,
+            key: None,
+            resume: None,
+        })),
+        ..Packet::default()
+    };
+    room.received(Ms(1), LinkId(2), &encode(&hello));
+    drain(&mut room, Ms(1));
+    (room, device)
+}
+
+/// No timer on a stream: only what comes back says a packet was dropped, and
+/// an echo of something that left after it is what proves it.
+#[test]
+fn a_stream_sends_again_what_an_echo_proves_lost_and_nothing_else() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1]).unwrap();
+    room.send(device, &vec![2]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 2);
+    assert_eq!(leaving(&mut room, Ms(5_000)), 0);
+    let ack = |sent: u64, echoed: u64| {
+        encode(&Packet {
+            epoch: EPOCH,
+            sent,
+            echo: Some(Echo {
+                sent: echoed,
+                held: 0,
+            }),
+            ack: Some(Ack {
+                ahead: 1 << 1,
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        })
+    };
+    // The same millisecond proves nothing: both left then.
+    room.received(Ms(5_001), LinkId(2), &ack(5_001, 10));
+    assert_eq!(leaving(&mut room, Ms(5_001)), 0);
+    room.received(Ms(5_002), LinkId(2), &ack(5_002, 11));
+    assert_eq!(sent(&drain(&mut room, Ms(5_002)).1).0, vec![(0, 0)]);
+}
+
 /// The resend delay is twice the round trip, between its two bounds.
 #[test]
 fn the_resend_delay_follows_the_round_trip_within_its_bounds() {

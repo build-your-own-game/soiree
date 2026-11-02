@@ -22,7 +22,7 @@ use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::types::{Caps, Ms};
+use crate::types::{Caps, Ms, Timing};
 use crate::wire::{Ack, EventPart, PACKET_OVERHEAD, PART_OVERHEAD, Parts, StatePart};
 
 /// One message being put back together. It costs what arrived, never what the
@@ -169,6 +169,39 @@ impl Budget {
         self.bytes = left;
         self.room = self.room.saturating_sub(data);
         true
+    }
+}
+
+/// What a transport does with what survives it, which says how to read an ack.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Order {
+    /// A packet may overtake another: it takes a few acks to call one lost.
+    Any,
+    /// A stream: past what the other side heard, whatever it does not have
+    /// was dropped on this side of the transport. A WebSocket loses nothing
+    /// by itself, so no timer runs on it: a copy of what is on its way would
+    /// only stand in front of what is fresh.
+    Kept,
+}
+
+impl Order {
+    pub fn of(caps: Caps) -> Order {
+        if caps.in_order() {
+            Order::Kept
+        } else {
+            Order::Any
+        }
+    }
+
+    /// How long a fragment waits for news: on a stream, for ever.
+    pub fn wait(self, peer: &Peer, window: &Window, timing: &Timing) -> u64 {
+        match self {
+            Order::Any => window.wait(
+                peer.resend(timing.resend_min, timing.resend_max),
+                timing.resend_max,
+            ),
+            Order::Kept => u64::MAX,
+        }
     }
 }
 
@@ -377,20 +410,27 @@ impl Pieces {
         Heard { bytes, lost: false }
     }
 
-    /// An ack that was written after `heard` left says something past these
-    /// first `count` fragments arrived, and not them. What left after `heard`
-    /// is not passed over: the ack could not have known.
-    fn passed_over(&mut self, count: usize, heard: Ms) -> Heard {
+    /// An ack that was written after `heard` left says these first `count`
+    /// fragments are not there. What left after `heard` is not passed over:
+    /// the ack could not have known.
+    fn passed_over(&mut self, count: usize, heard: Ms, order: Order) -> Heard {
         let mut lost = false;
         for piece in self.each.iter_mut().take(count) {
-            if let Piece::Sent(at, reports) = piece
-                && *at <= heard
-            {
-                *reports = reports.saturating_add(1);
-                if *reports >= REPORTS {
-                    *piece = Piece::Waiting;
-                    lost = true;
+            let Piece::Sent(at, reports) = piece else {
+                continue;
+            };
+            let gone = match order {
+                Order::Any if *at <= heard => {
+                    *reports = reports.saturating_add(1);
+                    *reports >= REPORTS
                 }
+                // Within the same millisecond, the order is not known.
+                Order::Kept => *at < heard,
+                Order::Any => false,
+            };
+            if gone {
+                *piece = Piece::Waiting;
+                lost = true;
             }
         }
         Heard { bytes: 0, lost }
@@ -477,7 +517,7 @@ impl OutEvents {
     }
 
     /// What an ack says of events, written once `heard` reached the other side.
-    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) -> Heard {
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>, order: Order) -> Heard {
         let mut learned = self.ack_below(ack.events);
         let parts = ack.event_parts;
         // The last number something arrived of: what lies before was passed
@@ -499,10 +539,13 @@ impl OutEvents {
                 && parts.seq == event.seq
             {
                 learned = learned.with(event.pieces.arrived(parts));
-                holes = holes.max(parts.span());
+                holes = holes.max(parts.span(order));
+            } else if order == Order::Kept && parts.is_none() {
+                // No event is half here: this one has nothing here at all.
+                holes = usize::MAX;
             }
             if let Some(heard) = heard {
-                learned = learned.with(event.pieces.passed_over(holes, heard));
+                learned = learned.with(event.pieces.passed_over(holes, heard, order));
             }
         }
         learned
@@ -792,7 +835,7 @@ impl OutState {
 
     /// What an ack says of the state, written once `heard` reached the other
     /// side.
-    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) -> Heard {
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>, order: Order) -> Heard {
         if self.acked {
             return Heard::default();
         }
@@ -801,13 +844,17 @@ impl OutState {
             return self.pieces.all_arrived();
         }
         let mut learned = Heard::default();
-        if let Some(parts) = ack.state_parts
-            && parts.seq == self.seq
-        {
-            learned = self.pieces.arrived(parts);
-            if let Some(heard) = heard {
-                learned = learned.with(self.pieces.passed_over(parts.span(), heard));
+        let mut holes = 0;
+        match ack.state_parts {
+            Some(parts) if parts.seq == self.seq => {
+                learned = self.pieces.arrived(parts);
+                holes = parts.span(order);
             }
+            None if order == Order::Kept => holes = usize::MAX,
+            Some(_) | None => {}
+        }
+        if let Some(heard) = heard {
+            learned = learned.with(self.pieces.passed_over(holes, heard, order));
         }
         learned
     }

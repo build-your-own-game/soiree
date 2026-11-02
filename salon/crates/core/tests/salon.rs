@@ -1799,7 +1799,6 @@ fn a_silent_link_is_not_hammered() {
 /// T4. A WebSocket loses nothing: a copy of what is on its way only delays
 /// what is fresh, and the state shown waits behind it.
 #[test]
-#[ignore = "T4: the resend timer also runs on a link that loses nothing"]
 fn a_lossless_link_carries_no_copies() {
     let mut net = Net::new(5, Faults::default());
     net.narrow = Some(Narrow::kilobits(300, Narrow::OUTBOX));
@@ -1860,4 +1859,30 @@ fn a_hole_in_the_queue_does_not_cost_what_follows() {
     let lossy = Faults { loss: 10, ..jitter };
     let lost = delivery(lossy, 200, 900);
     assert!(lost < 1.5, "{lost} s");
+}
+
+/// T4. A WebSocket is lossless past the host's file to it, not before: when
+/// that file is full, a packet is lost, and what comes back shows it. Here
+/// one in five, more than any file would drop: the events all arrive.
+#[test]
+fn a_stream_that_drops_a_packet_recovers_it() {
+    let mut net = Net::new(
+        5,
+        Faults {
+            loss: 20,
+            ..Faults::default()
+        },
+    );
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::STREAM);
+    let device = joined(&mut net, phone);
+    for n in 0..20 {
+        net.host
+            .send(device, &Down::View(n, vec![0; 60_000]))
+            .unwrap();
+        net.phones[phone].client.send(&Up::Answer(n)).unwrap();
+    }
+    assert!(
+        net.run_until(20_000, |net| net.phones[phone].events.len() == 20
+            && net.events_from(device).len() == 20)
+    );
 }
