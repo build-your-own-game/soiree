@@ -34,23 +34,11 @@ Depuis 0.3.0, les engagements propres au jeu vivent dans `verification.toml`.
 `soiree contracts --write-view` actualise leur vue dans le `CERTIFICATION.md` du
 jeu. Ce document commun reste la description du socle, pas un rapport de passage.
 Le format et les limites sont dans
-[`VERIFICATION.md`](VERIFICATION.md), aussi distribué dans `.soiree/`.
-
-Les méthodes et les résultats restent séparés : un test, une mesure, une preuve
-et une justification ne répondent pas aux mêmes questions. Un contrôle absent,
-ignoré, partiel ou périmé ne devient pas réussi. Une panne du contrôleur se
-distingue d’un bug du jeu. Le code de sortie porte sur les contrôles demandés :
-`check --fast` et `certify -- --only …` peuvent réussir pour leur périmètre tout
-en laissant le reste en attente. Les passages distincts ne sont pas fusionnés
-automatiquement en une certification globale.
-
-La couverture reste à examiner. La liste textuelle ci-dessous, les obligations
+[`VERIFICATION.md`](VERIFICATION.md), aussi distribué dans `.soiree/`. Ce
+qu’un résultat établit est dans ses sections « Méthodes et résultats » et
+« Catalogue, applicabilité et décisions ». La liste ci-dessous, les obligations
 résolues par l’outil et les propriétés propres au jeu ne sont pas trois listes
-automatiquement équivalentes. Un rapport décrit ce que son plan et ses oracles
-ont effectivement vérifié ; il ne démontre pas l’exhaustivité des déclarations.
-Les 97 items du catalogue sont des enseignements à examiner : ceux sans décision
-explicite restent non revus, sans être déclarés tous applicables ou tous écartés.
-Les jugements sur appareils réels gardent leur statut de revue humaine.
+automatiquement équivalentes.
 
 ## La règle du bug trouvé en jouant
 
@@ -74,13 +62,17 @@ Les scénarios, dans l'ordre : `capacity`, `join`, `rtc`, `text`, `ui`, `perform
 Si le harnais doit fermer de force un contexte après une commande native bloquée, le passage s’arrête avec **H1**, une panne de l’infrastructure de test. Les observations déjà terminées restent dans le rapport ; les scénarios restants sont explicitement non vérifiés. Un contexte détruit ne doit jamais produire ensuite de faux verdicts sur la reconnexion ou le stockage. Le diagnostic conserve l’opération native, son historique récent et l’état observable de la page.
 
 Le harnais garde trois oracles pendant tous les scénarios :
-- aucune exception dans aucune page ;
+- aucune exception dans aucune page, ni aucun `console.error` ou `console.assert` ;
 - aucune panique dans l'hôte, qui tourne toujours ;
 - la TV dessine toujours.
 
+Le navigateur écrit lui-même deux messages en `console.error` quand le harnais coupe le réseau : `Failed to load resource…` et `WebSocket connection to … failed`. Ceux-là ne comptent pas. Tout autre `console.error` ou `console.assert` laisse son item non vérifié, ce qui fait échouer le passage.
+
 ## Le fichier `cert.json`
 
-Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint. C'est le seul endroit où le harnais apprend quelque chose du jeu. Le plus petit est celui de la démo de salon (`salon/cert.json`) : on y rejoint sans aucune étape.
+Chaque jeu décrit dans ce fichier comment le harnais le lance et le rejoint. C'est le seul endroit où le harnais apprend quelque chose du jeu.
+
+Pars du `cert.json` que `soiree new` écrit dans chaque jeu, copie de `modele/cert.json` du dépôt commun : c'est la base complète. L'extrait ci-dessous montre seulement le lancement et l'entrée d'un jeu à étapes. Seul, il ne passe pas : `soiree check` exige `ui`, et `soiree certify` exige aussi `text`, `progression`, `refused` et `performance.probes`, décrits plus bas.
 
 ```json
 {
@@ -97,7 +89,7 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
     { "press": "Enter" }
   ],
   "joined": "document.querySelector('input') === null",
-  "advance": { "key": " " }
+  "advance": { "key": " ", "progress": "document.querySelector('#manche')?.textContent" }
 }
 ```
 
@@ -106,13 +98,14 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`tv`** et **`phone`** sont les chemins des pages ; le harnais y ajoute `salon=ws`, à la suite de la requête s'il y en a une (`/play?room=X&salon=ws`). **`socket`** est le chemin du WebSocket de salon, `/salon/ws` : le harnais y envoie des paquets binaires de salon (postcard), vrais, mutés ou inventés.
 - **`join`** liste les étapes pour rejoindre depuis un téléphone : `fill` (un champ et son texte, `{name}` étant le prénom), `click` (un sélecteur), `press` (une touche). **`joined`** est une expression évaluée dans la page téléphone, vraie une fois le joueur dans la partie.
 - **`start`** lance la partie depuis la TV, et **`advance`** la fait avancer (passer une étape), pour la parcourir vite. Chacun est `{ "key": "…" }` ou `{ "text": "Play" }` (le bouton qui porte ce texte).
-- **`players.max`** est la taille de la salle (R3).
+- **`players.max`** est la taille de la salle (R3) : dès que `phone` est déclaré, `capacity` échoue sans lui. **`players.min`**, 1 par défaut, est le nombre de joueurs qu'il faut pour jouer : avec moins de téléphones, `rtc`, `resources` et l'endurance ne concluent pas.
 - **`display`** dit ce qu'est l'écran : `{"role":"desktop","reason":"…"}` retire la zone sûre T3 à un éditeur solo sans téléphone. **`layout`** donne l'oracle d'une TV dessinée sur un canvas : `{"name":"…","command":[…],"timeout_ms":120000}`. `layout: false` seul n'exclut rien, et T3 reste alors non attesté ; **`layout_reason`** garde sa raison pour le rapport.
 - **`text`** liste les contrôles du corpus de textes, **`refused`** le sélecteur et le texte vus par le joueur en trop, **`progression`** la nature de la partie (`{"kind":"finite","checks":[…]}` ou `{"kind":"continuous","reason":"…"}`).
 - **`storage`** identifie la sauvegarde IndexedDB à corrompre (`{"kind":"indexeddb","database":"…","store":"…","key":"…"}`). Sans cette clé, le harnais utilise `localStorage`.
 - **`jitter`** prépare le scénario de latence : `setup` (actions d'avant la mesure) et `ready` (expression vraie quand on peut commencer). La partie tourne depuis `start` : si `ready` reste fausse, le harnais la fait avancer par `advance` jusqu'à ce qu'elle soit vraie, et R1 échoue s'il n'y arrive pas.
 - **`phone_upstream`** vaut `lan` par défaut, ou `loopback` si le jeu ne doit pas passer par l'adresse du réseau ; le LAN reste alors non attesté.
-- **`advance.progress`** est une expression dont la valeur change quand la partie avance. Sans elle, la progression de D2 n'est pas attestée.
+- **`advance.progress`** est une expression dont la valeur change quand la partie avance. Sans elle, la progression de D2 n'est pas attestée et `soiree certify` échoue.
+- **`advance.forward`** et **`advance.backward`** remplacent `key` ou `text` quand on parcourt le jeu dans les deux sens, comme les questions de Sidequest. Chacun est une action, de la même forme que `advance`. **`advance.can_forward`** et **`advance.can_backward`** sont des expressions qui disent, par `true` ou `false`, si cette action est possible maintenant. Le harnais garde sa direction et ne fait demi-tour qu'à un bout. Il faut les quatre, en plus de `advance.progress`.
 - **`phone`** déclaré exige **`socket`** : sans lui, E1 à E4 et C7 ne seraient plus exercés, et `soiree check` refuse. Un jeu sans téléphone écrit `"phone": null`, `"socket": null` et `display` avec `"role":"desktop"` et sa raison ; sans cela, `soiree check` refuse aussi. Il passe alors seulement les items qui le concernent : le singe joue sur sa page.
 - **`ui`** décrit les contrôles d’interface U1 ci-dessous. Chaque catégorie
   `editing`, `lifecycle`, `async`, `effects` est couverte par un scénario ou
@@ -122,7 +115,7 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`painted`** peut donner une expression qui lit un compteur de présentations réussies, pour l’oracle de l’écran vivant. Le canvas de Sidequest utilise les événements post-rendu capturés par le harnais (`window.__certPaints`) ; un simple `requestAnimationFrame` ne prouve pas que son GPU dessine. Les pages DOM gardent le compteur de disponibilité de la boucle navigateur.
 - **`performance.setup`** peut contenir des étapes `{ "screen": "tv", "action": { "key": "Enter" } }` (ou `screen: "phone"`, avec `phone`) pour afficher la scène avant la mesure. Cette préparation est terminée avant le prélèvement des images et le chronomètre des sondes.
 - Pour **`rendered`**, vise une projection précise de l’effet de l’action (texte d’un élément, position du joueur concerné), jamais une horloge, un compteur d’images ou toute mutation DOM quelconque. Un canvas peut publier cette projection après son dessin ; un état mis à jour seulement dans la simulation ne prouve pas un rendu. Une action sans effet rend la sonde rouge au lieu de produire une latence inventée.
-- Les budgets par défaut sont **33 ms** pour l’image la plus lente, **60 images/s**, **80 ms** du téléphone au rendu et **50 ms** du clavier/souris au rendu. Le budget d'image se juge à 1 ms près, soit 34 ms pour le défaut : une image sautée à 60 Hz dure 33,33 ms et Chrome la rapporte à 33,3 ou 33,4 ms, et ce 1 ms est la résolution de la mesure, pas une marge. `performance.max_frame_ms`, `performance.min_fps` et `performance.probes[].budget_ms` permettent les ajustements de genre prévus par le manifeste ; leur raison et leurs valeurs se documentent dans « Écarts au manifeste ». Le harnais prélève 3 s d’images après le chargement, puis un second échantillon pendant `monkey`, avec les téléphones qui envoient des gestes réels en jeu ; ce second échantillon précède les captures et ne comprend ni gel injecté ni redimensionnement. Le rapport distingue `frames_lobby` et `frames_gameplay`, et indique le nombre de gestes pendant la fenêtre en jeu. Il mesure la cadence `requestAnimationFrame`, pas le temps GPU ni l’arrivée physique d’un photon sur la TV.
+- Les budgets par défaut sont **33 ms** pour l’image la plus lente, **60 images/s**, **80 ms** du téléphone au rendu et **50 ms** du clavier/souris au rendu. Le budget d'image se juge à 1 ms près, soit 34 ms pour le défaut : une image sautée à 60 Hz dure 33,33 ms et Chrome la rapporte à 33,3 ou 33,4 ms, et ce 1 ms est la résolution de la mesure, pas une marge. `performance.max_frame_ms`, `performance.min_fps` et `performance.probes[].budget_ms` permettent les ajustements de genre prévus par le manifeste ; leur raison et leurs valeurs se documentent dans « Écarts au manifeste ». `performance.sample_ms` règle la durée de chaque échantillon d’images, 3000 ms par défaut. Le harnais prélève ainsi 3 s d’images après le chargement, puis un second échantillon pendant `monkey`, avec les téléphones qui envoient des gestes réels en jeu ; ce second échantillon précède les captures et ne comprend ni gel injecté ni redimensionnement. Le rapport distingue `frames_lobby` et `frames_gameplay`, et indique le nombre de gestes pendant la fenêtre en jeu. Il mesure la cadence `requestAnimationFrame`, pas le temps GPU ni l’arrivée physique d’un photon sur la TV.
 
 Effectue les mesures sur secteur, sans autre certification ou compilation en parallèle.
 Sous 20 % sur batterie, l’économiseur de Chrome peut limiter tous les rendus à
@@ -288,7 +281,7 @@ Sur un serveur qui fait autorité, une panique termine la soirée. Les clones de
 | E3 | Un téléphone qui inonde l'hôte (des milliers de messages par seconde) ne ralentit pas les autres. | Colyseus (limiteur) | salon, 2 `hostile` |
 | E4 | Un téléphone ne peut ni devenir la TV, ni prendre la place d'un autre avec un jeton inventé. Le premier paquet de la TV, rejoué depuis le réseau, reçoit un refus court et sa connexion se ferme en 3 s, sans jamais l'écran de la TV. | red team | salon, 2 `hostile` |
 | E5 | Une action hors de sa phase, ou d'un joueur qui n'est pas concerné, est refusée sans rien changer. Exemples : voter pour soi, répondre après l'échéance, agir dans une partie finie. | Drawphone #124 | à relier |
-| E6 | 8 téléphones qui tapent et écrivent au hasard pendant toute une partie ne font apparaître aucune exception, ni dans les pages ni dans l'hôte. | gremlins.js, Android monkey | 2 `monkey` |
+| E6 | 8 téléphones qui tapent et écrivent au hasard pendant toute une partie ne font apparaître aucune exception, ni dans les pages ni dans l'hôte, et aucun `console.error` ou `console.assert` dans les pages, hors les deux messages réseau du navigateur. | gremlins.js, Android monkey | 2 `monkey` |
 
 ### T — Texte et affichage
 
