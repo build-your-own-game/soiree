@@ -26,6 +26,7 @@ web-sys = { version = "0.3", features = [
   "MessageEvent", "WebSocket", "BinaryType", "CloseEvent",
   "RtcPeerConnection", "RtcDataChannel", "RtcDataChannelInit", "RtcDataChannelType", "RtcDataChannelState",
   "RtcSessionDescriptionInit", "RtcSdpType", "RtcPeerConnectionState", "RtcSessionDescription",
+  "RtcIceConnectionState",
   "Request", "RequestInit", "Response", "Headers",
 ] }
 

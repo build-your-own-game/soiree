@@ -19,6 +19,9 @@ export function rewrittenJsonFulfillment(response, value) {
   return { status: response.status(), headers, body };
 }
 
+/** RFC 9443 demultiplexing: STUN goes on through a DTLS silence. */
+const isDtls = bytes => bytes[0] >= 20 && bytes[0] <= 63;
+
 export class UdpProxy {
   static async open(host, port, { listenPort = 0 } = {}) {
     const proxy = new UdpProxy(host, port);
@@ -39,7 +42,7 @@ export class UdpProxy {
     this.host = host; this.target = port;
     this.socket = dgram.createSocket('udp4');
     this.peers = new Map(); this.timers = new Map(); this.errors = [];
-    this.profile = { dropEvery: 0, delayMs: 0, reorderEvery: 0, blackhole: false };
+    this.profile = { dropEvery: 0, delayMs: 0, reorderEvery: 0, blackhole: false, dropDtls: false };
     this.stats = { upstream: 0, downstream: 0, dropped: 0, delayed: 0, reordered: 0, forwarded: 0,
       directions: Object.fromEntries(['upstream','downstream'].map(direction=>[direction,{received:0,dropped:0,delayed:0,reordered:0,forwarded:0}])) };
     this.sequences = {upstream:0,downstream:0}; this.closed = false;
@@ -63,7 +66,7 @@ export class UdpProxy {
     for (const key of ['dropEvery', 'delayMs', 'reorderEvery']) {
       if (profile[key] !== undefined && (!Number.isSafeInteger(profile[key]) || profile[key] < 0)) throw new Error(`invalid UDP ${key}`);
     }
-    this.profile = { dropEvery: 0, delayMs: 0, reorderEvery: 0, blackhole: false, ...profile };
+    this.profile = { dropEvery: 0, delayMs: 0, reorderEvery: 0, blackhole: false, dropDtls: false, ...profile };
     this.sequences = {upstream:0,downstream:0};
     // Pending packets must not escape a newly imposed silence.
     if (this.profile.blackhole) for (const [timer,direction] of this.timers) { clearTimeout(timer); this.timers.delete(timer); this.drop(direction); }
@@ -75,7 +78,7 @@ export class UdpProxy {
     const directional = this.stats.directions[direction];
     directional.received++;
     const n = ++this.sequences[direction], p = this.profile;
-    if (this.closed || p.blackhole || (p.dropEvery && n % p.dropEvery === 0)) { this.drop(direction); return; }
+    if (this.closed || p.blackhole || (p.dropEvery && n % p.dropEvery === 0) || (p.dropDtls && isDtls(bytes))) { this.drop(direction); return; }
     let delay = p.delayMs;
     if (p.reorderEvery && n % p.reorderEvery === 0) { delay += 80; this.stats.reordered++; directional.reordered++; }
     const send = () => {

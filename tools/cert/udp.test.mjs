@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import vm from 'node:vm';
 import { launchBrowser } from './browser.mjs';
-import { forgetTab } from './rtc-negotiation.mjs';
+import { absoluteDeadlineMs, forgetTab, iceSilenceMs, resumeMs } from './rtc-negotiation.mjs';
 import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment, observeRtc, welcomeDevice } from './udp.mjs';
 import { FixtureFailure } from './performance.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -110,6 +110,41 @@ test('UDP relay applies actual loss, delay, reordering, silence and recovery', {
   const rewritten=relay.rewrite({sdp:'a=candidate:1 1 UDP 1 192.0.2.1 4000 typ host\r\n'});
   assert.ok(rewritten.sdp.includes(`127.0.0.1 ${relay.port}`));
  } finally { await relay.close(); client.close(); server.close(); }
+});
+
+test('a DTLS silence lets STUN through, and only DTLS is dropped',{timeout:10000},async()=>{
+ const server=dgram.createSocket('udp4'), client=dgram.createSocket('udp4');
+ server.bind(0,'127.0.0.1'); await once(server,'listening');
+ server.on('message',(bytes,peer)=>server.send(bytes,peer.port,peer.address));
+ const relay=await UdpProxy.open('127.0.0.1',server.address().port);
+ const received=[]; client.on('message',bytes=>received.push(bytes[0]));
+ const send=first=>client.send(Buffer.from([first,0,0]),relay.port,'127.0.0.1');
+ try {
+  relay.set({dropDtls:true});
+  for(const first of [0,1,20,22,63,128]) send(first);
+  await pause(100);
+  assert.deepEqual(received,[0,1,128]);
+  assert.equal(relay.stats.dropped,3);
+  relay.set(); send(22); await pause(80);
+  assert.equal(received.at(-1),22);
+ } finally { await relay.close(); client.close(); server.close(); }
+});
+
+test('the negotiation oracles tell the 3 s silence from the 15 s window, and refuse the other one',()=>{
+ const attempt=(answer,close)=>[{kind:'peer',at:1000},{kind:'setRemoteDescription:fulfilled',at:1000+answer},{kind:'close',at:1000+close}];
+ assert.equal(iceSilenceMs(attempt(4000,7100)),3100);
+ assert.throws(()=>iceSilenceMs(attempt(4000,15100)),/not enforced/,'the old 15 s must not pass the silence');
+ assert.throws(()=>iceSilenceMs(attempt(4000,5000)),/not enforced/,'giving up early must not pass either');
+ assert.throws(()=>iceSilenceMs([{kind:'peer',at:1}]),/no applied answer/);
+ assert.equal(absoluteDeadlineMs(attempt(4000,15100)),15100);
+ assert.throws(()=>absoluteDeadlineMs(attempt(4000,7100)),/renewed or not enforced/,'3 s must not pass for the absolute deadline');
+ assert.throws(()=>absoluteDeadlineMs(attempt(4000,19100)),/renewed or not enforced/);
+ assert.throws(()=>absoluteDeadlineMs([]),/never tried/);
+ const two=[{kind:'peer',at:1},{kind:'peer',at:2}];
+ assert.equal(resumeMs(two,[{},{openedAt:4300}],1000),3300);
+ assert.throws(()=>resumeMs(two,[{},{openedAt:16000}],1000),/paid the window/);
+ assert.throws(()=>resumeMs(two.slice(1),[{},{openedAt:1100}],1000),/did not try WebRTC/);
+ assert.throws(()=>resumeMs(two,[{}],1000),/no WebSocket/);
 });
 
 test('failed route registration and unroute always close a real UDP socket',async()=>{

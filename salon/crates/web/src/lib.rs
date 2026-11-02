@@ -8,10 +8,11 @@
 //!   the device arrives as new (C9);
 //! - **WebRTC first**: one DataChannel, unordered and without
 //!   retransmission, to the host (`POST /salon/offer`). If it does not open
-//!   within [`RTC_PATIENCE_MS`], **WebSocket** (`/salon/ws`) takes over, for
-//!   good after two failures in a row. The tab remembers the failure, so that
-//!   a reload does not wait again: for ten minutes, or until the browser says
-//!   it is `online` again, or until a WebRTC link opens. An offer nobody
+//!   within [`RTC_PATIENCE_MS`], or if ICE stays silent 3 s after the host's
+//!   answer, **WebSocket** (`/salon/ws`) takes over, for good after two
+//!   failures in a row. The tab remembers the failure, so that a reload does
+//!   not wait again: for ten minutes, or until the browser says it is `online`
+//!   again, or until a WebRTC link opens. An offer nobody
 //!   answers is no failure, and where WebRTC worked one failure does not
 //!   outlive the page: a host restarting says nothing of WebRTC;
 //! - **the clock** (`performance.now()`, and `Date.now()` to count the sleep
@@ -38,7 +39,7 @@ use std::rc::{Rc, Weak};
 
 use js_sys::{Reflect, Uint8Array};
 use recovery::wall_ms;
-use rtc_memory::{Blame, Offer, RtcMemory};
+use rtc_memory::{Blame, ICE_SILENCE_MS, Offer, RtcMemory, ice_is_silent};
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
     Refusal, SleepClock, Status, Timing, Token, TvKey, route,
@@ -130,6 +131,8 @@ enum Transport {
         open: bool,
         _closures: Vec<Listener>,
         _patience: Option<ui::Timer>,
+        /// [`ICE_SILENCE_MS`], once the answer is applied.
+        _silence: Option<ui::Timer>,
     },
     Ws {
         socket: WebSocket,
@@ -885,6 +888,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             open: false,
             _closures: closures,
             _patience: None,
+            _silence: None,
         }
         .close();
         return None;
@@ -893,7 +897,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let offering = pc.clone();
     spawn_local(async move {
         match negotiate(&offering, &progress).await {
-            Negotiation::Done => {}
+            Negotiation::Done => watch_ice(&weak, generation, offering),
             Negotiation::Failed => fall_back(&weak, generation, Blame::WebRtc),
             Negotiation::NoHost => fall_back(&weak, generation, Blame::Nobody),
         }
@@ -904,7 +908,31 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         open: false,
         _closures: closures,
         _patience: Some(patience),
+        _silence: None,
     })
+}
+
+/// The answer is applied: ICE has [`ICE_SILENCE_MS`] to hear from the host. The
+/// attempt owns the timer, so that its end cancels it. Without a timer, the
+/// absolute window still holds.
+fn watch_ice<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
+    weak: &Weak<Shared<Up, Down>>,
+    generation: u32,
+    pc: RtcPeerConnection,
+) {
+    let listening = weak.clone();
+    let Ok(timer) = ui::Timer::after(ICE_SILENCE_MS, move || {
+        if ice_is_silent(pc.ice_connection_state()) {
+            fall_back(&listening, generation, Blame::WebRtc);
+        }
+    }) else {
+        return;
+    };
+    on_transport(weak, generation, |inner, _| {
+        if let Some(Transport::Rtc { _silence, .. }) = inner.transport.as_mut() {
+            *_silence = Some(timer);
+        }
+    });
 }
 
 /// How a negotiation ended, before the DataChannel opens.

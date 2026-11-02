@@ -13,11 +13,53 @@ const CASES = [
   { name: 'native SDP rejection', badSdp: true, expect: 'ws' },
   { name: 'native DTLS fingerprint rejection', badCertificate: true, expect: 'ws' },
   { name: 'remembered failure skips the window', remembered: true, expect: 'ws' },
-  { name: 'absolute deadline after SDP progress', delay: 4000, blackhole: true, deadline: true, expect: 'ws' },
+  { name: 'ICE silent after the answer', delay: 4000, blackhole: true, iceSilence: true, expect: 'ws' },
+  { name: 'a healthy WebSocket cut under silent UDP', blackhole: true, resume: true, expect: 'ws' },
+  { name: 'absolute deadline after ICE progress', delay: 4000, dtlsBlackhole: true, deadline: true, expect: 'ws' },
   { name: 'absolute deadline and late SDP', delay: 16000, deadline: true, late: true, expect: 'ws' },
   { name: 'deadline registration failure releases attempt', armFailure: true, expect: 'ws' },
 ];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** What the page owes after a SDP answer ICE stays silent on: salon-web's
+ * ICE_SILENCE_MS, and timers a little late at worst. */
+const ICE_SILENCE = { least: 2900, most: 3500 };
+/** Its absolute window, renewed by nothing: RTC_NEGOTIATION_SECONDS. */
+const ABSOLUTE = { least: 14900, most: 15500 };
+/** ICE_SILENCE and what comes around it (the client's retry, the new socket).
+ * The 15 s window does not fit, and neither does C2's 10 s. */
+const RESUME_MS = 5000;
+
+/** From the answer the browser applied to the attempt's end. */
+export function iceSilenceMs(events) {
+  const answered = events.find(event => event.kind === 'setRemoteDescription:fulfilled'), closed = events.find(event => event.kind === 'close');
+  assert.ok(answered, 'no applied answer: nothing tests the silence after it');
+  assert.ok(closed, 'the silence after the answer did not close its peer');
+  const ms = closed.at - answered.at;
+  assert.ok(ms >= ICE_SILENCE.least && ms <= ICE_SILENCE.most, `3 s of ICE silence after the answer not enforced: ${ms} ms`);
+  return ms;
+}
+
+/** From the peer to the attempt's end. */
+export function absoluteDeadlineMs(events) {
+  const peer = events.find(event => event.kind === 'peer'), closed = events.find(event => event.kind === 'close');
+  assert.ok(peer, 'the page never tried WebRTC, so nothing tests its deadline');
+  assert.ok(closed, 'absolute deadline did not close its peer');
+  const ms = closed.at - peer.at;
+  assert.ok(ms >= ABSOLUTE.least && ms <= ABSOLUTE.most, `absolute 15 s deadline was renewed or not enforced: ${ms} ms`);
+  return ms;
+}
+
+/** From the cut to the next WebSocket. A resume that goes through WebRTC again
+ * must have tried it, or nothing says what it paid. */
+export function resumeMs(events, sockets, cutAt) {
+  assert.equal(events.filter(event => event.kind === 'peer').length, 2, 'the resume did not try WebRTC again');
+  const opened = sockets[1]?.openedAt;
+  assert.ok(Number.isFinite(opened), 'no WebSocket after the cut');
+  const ms = opened - cutAt;
+  assert.ok(ms >= 0 && ms <= RESUME_MS, `the resume of a healthy WebSocket paid the window: ${ms} ms`);
+  return ms;
+}
 
 /** A new tab under the same identity: sessionStorage goes, localStorage stays. */
 export const forgetTab = page => page.evaluate(() => sessionStorage.clear());
@@ -29,14 +71,17 @@ function installCaseObserver() {
   globalThis.WebSocket = new Proxy(Native, {
     construct(target, args, newTarget) {
       const socket = Reflect.construct(target, args, newTarget === globalThis.WebSocket ? target : newTarget);
-      const row = { at: performance.timeOrigin + performance.now(), open: false, closed: false };
+      const row = { at: performance.timeOrigin + performance.now(), open: false, closed: false, openedAt: null, packets: [] };
       if (trace.ws.length < 8) trace.ws.push(row);
-      socket.addEventListener('open', () => { row.open = true; });
+      globalThis.__certNegotiationSocket = socket;
+      socket.addEventListener('open', () => { row.open = true; row.openedAt = performance.timeOrigin + performance.now(); });
       socket.addEventListener('close', () => { row.closed = true; });
       socket.addEventListener('message', async event => {
         const value = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data;
-        if (typeof value === 'string' || trace.packets.length >= 64) return;
-        trace.packets.push(Array.from(new Uint8Array(value).slice(0, 64)));
+        if (typeof value === 'string') return;
+        const bytes = Array.from(new Uint8Array(value).slice(0, 64));
+        if (row.packets.length < 8) row.packets.push(bytes);
+        if (trace.packets.length < 64) trace.packets.push(bytes);
       });
       return socket;
     },
@@ -70,6 +115,7 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
       for (const definition of CASES) {
         const relay = await UdpProxy.open(upstream, port);
         if (definition.blackhole) relay.set({ blackhole: true });
+        if (definition.dtlsBlackhole) relay.set({ dropDtls: true });
         const controller = new AbortController(), active = new Set(), routeErrors = [];
         const wait = ms => new Promise(resolve => {
           const abort = () => { clearTimeout(timer); resolve(false); };
@@ -114,6 +160,16 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
             if (routeErrors.length) break;
             await sleep(50);
           }
+          let cutAt;
+          if (definition.resume) {
+            // The page is welcomed on a live socket: cut it, under the same silence.
+            cutAt = await page.evaluate(() => { const at = performance.timeOrigin + performance.now(); globalThis.__certNegotiationSocket.close(); return at; });
+            while (Date.now() < until) {
+              state = await snapshot(page);
+              if (state.ws?.ws[1]?.packets.map(welcomeDevice).includes(expectedDevice)) break;
+              await sleep(50);
+            }
+          }
           if (definition.late) {
             // Let the actual delayed response settle after WebSocket is live.
             while (active.size && Date.now() < until) await sleep(50);
@@ -132,8 +188,8 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
             assert.equal(sockets.length, 0, `${definition.name}: viable negotiation fell back to TCP`);
           } else {
             assert.ok(wsDevices.includes(expectedDevice), `${definition.name}: fallback lost the welcomed identity`);
-            assert.equal(sockets.length, 1, `${definition.name}: late work replaced/reopened WebSocket`);
-            assert.equal(sockets[0].closed, false, `${definition.name}: fallback WebSocket was evicted`);
+            assert.equal(sockets.length, definition.resume ? 2 : 1, `${definition.name}: late work replaced/reopened WebSocket`);
+            assert.equal(sockets.at(-1).closed, false, `${definition.name}: fallback WebSocket was evicted`);
             assert.equal(rtcDevices.length, 0, `${definition.name}: negative control unexpectedly opened RTC`);
           }
           if (definition.badSdp) assert.ok(events.some(event => event.kind === 'setRemoteDescription:rejected'), 'SDP rejection was not native');
@@ -141,17 +197,17 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
           if (definition.badSdp || definition.badCertificate || definition.armFailure)
             assert.ok(sockets[0].at - events.find(event => event.kind === 'peer').at < 3000, `${definition.name}: native failure did not fall back immediately`);
           if (definition.remembered) assert.ok(!events.some(event => event.kind === 'peer'), 'a reload paid the WebRTC window again after a failure');
-          if (definition.deadline) {
-            const peer = events.find(event => event.kind === 'peer'), closed = events.find(event => event.kind === 'close');
-            assert.ok(peer, 'the page never tried WebRTC, so nothing tests its deadline');
-            assert.ok(closed, 'absolute deadline did not close its peer');
-            result.closed_ms = closed.at - peer.at;
-            assert.ok(result.closed_ms >= 14900 && result.closed_ms <= 15500, `absolute 15 s deadline was renewed or not enforced: ${result.closed_ms} ms`);
+          if (definition.deadline) result.closed_ms = absoluteDeadlineMs(events);
+          if (definition.iceSilence) result.closed_ms = iceSilenceMs(events);
+          if (definition.resume) {
+            result.resume_ms = resumeMs(events, sockets, cutAt);
+            assert.equal(sockets[0].closed, true, 'the cut did not end the first WebSocket');
           }
-          if (definition.blackhole) {
+          if (definition.blackhole || definition.dtlsBlackhole) {
             assert.ok(events.some(event => event.kind === 'setRemoteDescription:fulfilled'), 'SDP must make real progress before the deadline');
             assert.ok(result.relay.dropped > 0, 'the permanent UDP failure was not injected');
           }
+          if (definition.dtlsBlackhole) assert.ok(events.some(event => ['connected', 'completed'].includes(event.ice)), 'ICE must answer before DTLS stalls, or the silence decides instead');
           if (definition.late) assert.ok(events.some(event => event.kind === 'setRemoteDescription:rejected'), 'late completion was not actually delivered to the closed peer');
           if (definition.armFailure) {
             assert.ok(events.some(event => event.kind === 'close'), 'unbounded attempt was not released');

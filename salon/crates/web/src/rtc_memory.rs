@@ -4,6 +4,7 @@
 //! value lives in the tab's session storage.
 
 use serde::{Deserialize, Serialize};
+use web_sys::RtcIceConnectionState;
 
 /// In session storage: one tab, gone with it. Another address of the host is
 /// another origin, with its own memory.
@@ -16,6 +17,26 @@ const FAILURES: u32 = 2;
 /// how long such a phone stays on WebSocket, against a window paid again this
 /// often by a phone where UDP stays blocked.
 const REMEMBERED_MS: u64 = 10 * 60 * 1_000;
+
+/// How long ICE may stay silent once the page has applied the host's answer.
+/// Where UDP does not arrive and TCP does, the answer comes at once and then
+/// nothing does: the browser takes 15 to 30 s to say `failed`, and C2 gives
+/// 10 s. On a local network a STUN answer takes milliseconds, and the browser
+/// repeats its check several times within this delay, so that 40 % of losses
+/// did not cost more fallbacks over 36 tries. 36 tries is what this is worth:
+/// `recherche/transport-webrtc.toml`, T2. A slower network pays WebSocket,
+/// not a lost player.
+pub(crate) const ICE_SILENCE_MS: i32 = 3_000;
+
+/// Whether ICE has heard nothing back, once [`ICE_SILENCE_MS`] have gone by.
+/// From `connected` on, the host answered: what is slow then is DTLS or SCTP,
+/// and only the absolute window bounds them.
+pub(crate) fn ice_is_silent(state: RtcIceConnectionState) -> bool {
+    matches!(
+        state,
+        RtcIceConnectionState::New | RtcIceConnectionState::Checking
+    )
+}
 
 /// What a move to WebSocket says of WebRTC.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +141,24 @@ mod tests {
     use super::*;
 
     const SAVED: u64 = 1_000_000;
+
+    /// Only an ICE that never answered ends the attempt early: a slow DTLS
+    /// keeps the whole window, and a failure is the browser's to report.
+    #[test]
+    fn only_a_silent_ice_ends_an_attempt_early() {
+        use RtcIceConnectionState as Ice;
+        assert!(ice_is_silent(Ice::New));
+        assert!(ice_is_silent(Ice::Checking));
+        for state in [
+            Ice::Connected,
+            Ice::Completed,
+            Ice::Disconnected,
+            Ice::Failed,
+            Ice::Closed,
+        ] {
+            assert!(!ice_is_silent(state), "{state:?}");
+        }
+    }
 
     /// What the next page reads after these failures.
     fn saved(failures: u32) -> String {
