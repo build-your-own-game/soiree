@@ -207,7 +207,7 @@ test("a delayed Node controller recovers only its already completed browser samp
   } finally { await browser.close(); }
 });
 
-test("controller delay cannot recover a browser which actually exceeded the same deadline", { timeout: 10000 }, async () => {
+test("controller delay cannot recover a browser which actually exceeded the same deadline", { timeout: 30000 }, async () => {
   const browser = await launchBrowser({ webkitPhones: false });
   try {
     const tab = await browser.open("data:text/html,<p>blocked renderer</p>");

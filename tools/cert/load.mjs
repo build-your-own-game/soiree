@@ -13,7 +13,7 @@ import { cpus, loadavg } from "node:os";
 
 /** Half the cores busy elsewhere: a parallel compile reaches this, a browser tab does not. */
 export const LOADED_CPU_SHARE = 0.5;
-const WINDOW_MS = 2000;
+const WINDOW_MS = 1000;
 
 const busy = ({ user, nice, sys, irq }) => user + nice + sys + irq;
 const total = (times) => busy(times) + times.idle;
