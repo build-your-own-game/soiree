@@ -27,7 +27,7 @@ id = "punchline"
 ordre = 2
 sorte = "chez-nous"
 depot = "build-your-own-game/punchline"
-commit = "9fdd9b548f7e9adacfc770829729273e12122a33"
+commit = "6770a99f27ad6f15763b85094ea8145786dd8da5"
 consulte = [
   "LEARNINGS.md, sections reconnexion et redémarrage",
   "crates/web/src/lib.rs (usage de resume)",
@@ -38,7 +38,7 @@ id = "sidequest"
 ordre = 3
 sorte = "chez-nous"
 depot = "build-your-own-game/sidequest"
-commit = "777824079517b802210eae8b846f02c4639ffb05"
+commit = "fd0c42e666b98a0030aae293a4d41e297d4278a7"
 consulte = [
   "crates/controller/src/session.rs (set_state du stick)",
   "crates/controller/src/web/mod.rs (resume)",
@@ -350,7 +350,7 @@ garantie = ["salon/crates/core/tests/salon.rs::a_cut_phone_comes_back_as_itself_
 [[lecon]]
 id = "reconnexion-02"
 source = "punchline"
-lien = "https://github.com/build-your-own-game/punchline/blob/9fdd9b548f7e9adacfc770829729273e12122a33/LEARNINGS.md#L196"
+lien = "https://github.com/build-your-own-game/punchline/blob/6770a99f27ad6f15763b85094ea8145786dd8da5/LEARNINGS.md#L196"
 citation = "Le nouveau éjectait l'ancien, qui se reconnectait aussitôt"
 enonce = "L'onglet éjecté ne doit jamais se reconnecter de lui-même."
 categorie = "usage-reel"
@@ -1041,7 +1041,7 @@ livekit = "Gigue du premier essai : déjà reconnexion-29. Retour du réseau san
 graphql-ws = "Coupure immédiate du socket et gigue exponentielle : déjà reconnexion-24 et salon. Son drapeau de nouvel essai rejoint reconnexion-20."
 
 [cout]
-minutes = 32
+minutes = 33
 references = 28
 sondes_executees = 13
 note = "Temps horloge d'un agent, clones et recompilations compris, rédaction incluse. 18 dépôts clonés, WebKit et aspnetcore lus par gh api. Les citations ont été revérifiées depuis le réseau par un script distinct du générateur, qui ne lit que ce fichier."
