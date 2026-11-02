@@ -124,13 +124,12 @@ pub(crate) const LARGEST_MESSAGE: usize =
 /// [`Limits`]: crate::types::Limits
 const MOST_WAITING: usize = 256 * 4 * 1024;
 /// Numbers a receiver keeps from the next one it expects: the bits of
-/// [`Ack::ahead`]. A sender does not go past them, so a whole queue of small
-/// events still fits: 64 of them in a burst, as many as
-/// [`Limits::events_burst`](crate::types::Limits::events_burst) lets in.
+/// [`Ack::ahead`]. A sender does not go past them. About as many events as
+/// [`Limits::events_burst`](crate::types::Limits::events_burst) lets in at once.
 const AHEAD: u32 = u64::BITS;
-/// Fragments kept past the next event. Without this, 64 messages announcing
-/// 1,024 empty fragments each would hold what a million cost: as much as one
-/// whole message of the largest count is plenty, the rest goes again.
+/// Fragments kept past the next event: as many as one message of the largest
+/// count. Without this bound, 64 messages announcing 1,024 empty fragments each
+/// would hold 65,536 of them for nothing. The rest goes again.
 const HELD_PAST_NEXT: usize = MAX_FRAGMENTS as usize;
 /// Acknowledgements that pass over a fragment before it goes again without
 /// waiting for its timer: three, like SCTP and TCP. Fewer, and a packet that
