@@ -353,3 +353,37 @@ fn the_next_deadline_allocates_nothing() {
     });
     assert_eq!(spent, 0);
 }
+
+/// The bound holds for what joins a message already begun as well: one
+/// fragment under each of the 63 numbers, then the rest of each one.
+#[test]
+fn what_joins_a_message_past_a_hole_counts_against_the_bound() {
+    let parts = |seqs: std::ops::Range<u32>, indices: std::ops::Range<u16>| {
+        encode(&Packet {
+            epoch: EPOCH,
+            events: seqs
+                .flat_map(|seq| {
+                    indices.clone().map(move |index| EventPart {
+                        seq,
+                        index,
+                        count: 1024,
+                        phase: 0,
+                        at: None,
+                        data: Vec::new(),
+                    })
+                })
+                .collect(),
+            ..Packet::default()
+        })
+    };
+    let mut room = joined(Limits::default());
+    room.received(Ms(1), LINK, &parts(1..64, 0..1));
+    let first = parts(1..2, 1..1024);
+    let kept = allocated_by(|| room.received(Ms(1), LINK, &first));
+    let mut turned_away = 0;
+    for seq in 2..64 {
+        let next = parts(seq..seq + 1, 1..1024);
+        turned_away = allocated_by(|| room.received(Ms(1), LINK, &next)).max(turned_away);
+    }
+    assert!(turned_away < kept / 4 * 3, "{turned_away} against {kept}");
+}

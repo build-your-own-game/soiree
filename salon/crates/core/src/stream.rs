@@ -824,11 +824,12 @@ impl InEvents {
                 received.garbage = received.garbage.saturating_add(1);
                 continue;
             }
-            let room = part.seq == self.next || self.fragments < HELD_PAST_NEXT;
+            if part.seq != self.next && self.fragments >= HELD_PAST_NEXT {
+                continue;
+            }
             let (seq, index, count) = (part.seq, part.index, part.count);
             let held = match self.held.get_mut(&seq) {
                 Some(held) if held.count == count => held,
-                _ if !room => continue,
                 _ => {
                     if let Some(gone) = self.held.insert(seq, Assembly::new(count)) {
                         self.fragments = self.fragments.saturating_sub(gone.parts.len());
