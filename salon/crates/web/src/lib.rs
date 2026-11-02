@@ -37,7 +37,7 @@ use std::rc::{Rc, Weak};
 
 use js_sys::{Reflect, Uint8Array};
 use recovery::wall_ms;
-use rtc_memory::RtcMemory;
+use rtc_memory::{Blame, Offer, RtcMemory};
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
     Refusal, SleepClock, Status, Timing, Token, TvKey, route,
@@ -770,14 +770,6 @@ fn websocket<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     })
 }
 
-/// What a move to WebSocket says of WebRTC.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Blame {
-    WebRtc,
-    /// Nothing: the host did not answer.
-    Nobody,
-}
-
 /// Switches the current attempt from WebRTC to WebSocket.
 fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     weak: &Weak<Shared<Up, Down>>,
@@ -889,13 +881,15 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     // Arm the absolute deadline before starting any asynchronous negotiation.
     // A timer registration failure must release the attempt and use WebSocket.
     let weak = Rc::downgrade(shared);
+    let progress = Rc::new(Cell::new(Offer::Making));
+    let reached = Rc::clone(&progress);
     let remaining = u64::from(salon_core::transport::RTC_NEGOTIATION_SECONDS)
         .saturating_mul(1_000)
         .saturating_sub(now().since(started));
     let remaining = i32::try_from(remaining).unwrap_or(0);
     let closures = vec![opened, message, closed, failed];
     let Ok(patience) = ui::Timer::after(remaining, move || {
-        fall_back(&weak, generation, Blame::WebRtc);
+        fall_back(&weak, generation, reached.get().blame());
     }) else {
         Transport::Rtc {
             pc,
@@ -910,7 +904,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let weak = Rc::downgrade(shared);
     let offering = pc.clone();
     spawn_local(async move {
-        match negotiate(&offering).await {
+        match negotiate(&offering, &progress).await {
             Negotiation::Done => {}
             Negotiation::Failed => fall_back(&weak, generation, Blame::WebRtc),
             Negotiation::NoHost => fall_back(&weak, generation, Blame::Nobody),
@@ -934,13 +928,15 @@ enum Negotiation {
 }
 
 /// Posts the offer to the host and applies its answer.
-async fn negotiate(pc: &RtcPeerConnection) -> Negotiation {
+async fn negotiate(pc: &RtcPeerConnection, progress: &Cell<Offer>) -> Negotiation {
     let Some(body) = offer(pc).await else {
         return Negotiation::Failed;
     };
+    progress.set(Offer::Posted);
     let Some(response) = fetch(route::OFFER, Some(&body)).await else {
         return Negotiation::NoHost;
     };
+    progress.set(Offer::Answered);
     match answer(pc, response).await {
         Some(()) => Negotiation::Done,
         None => Negotiation::Failed,

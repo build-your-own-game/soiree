@@ -17,6 +17,35 @@ const FAILURES: u32 = 2;
 /// often by a phone where UDP stays blocked.
 const REMEMBERED_MS: u64 = 10 * 60 * 1_000;
 
+/// What a move to WebSocket says of WebRTC.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Blame {
+    WebRtc,
+    /// Nothing: the host did not answer.
+    Nobody,
+}
+
+/// How far an offer went when the window of a negotiation closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Offer {
+    Making,
+    /// On its way to the host, and no answer yet.
+    Posted,
+    Answered,
+}
+
+impl Offer {
+    /// An offer that stayed without an answer says nothing of WebRTC: the host
+    /// is restarting, or its answer is lost. The other two ways, the browser
+    /// and the host had all they needed, and WebRTC did not open.
+    pub(crate) fn blame(self) -> Blame {
+        match self {
+            Offer::Making | Offer::Answered => Blame::WebRtc,
+            Offer::Posted => Blame::Nobody,
+        }
+    }
+}
+
 /// WebRTC's failures in a row, the last one at `at`, in wall-clock
 /// milliseconds: unlike `performance.now()`, it means something to the next
 /// page.
@@ -99,6 +128,15 @@ mod tests {
             memory = memory.failed(SAVED);
         }
         serde_json::to_string(&memory).unwrap()
+    }
+
+    /// A window that closes on an unanswered offer is not a failure of WebRTC:
+    /// remembered, it sent the next reload straight to WebSocket.
+    #[test]
+    fn only_an_answered_offer_can_fail_at_the_deadline() {
+        assert_eq!(Offer::Posted.blame(), Blame::Nobody);
+        assert_eq!(Offer::Answered.blame(), Blame::WebRtc);
+        assert_eq!(Offer::Making.blame(), Blame::WebRtc);
     }
 
     /// Phoenix b2eeccf: once WebRTC worked in this tab, a failure may just be
