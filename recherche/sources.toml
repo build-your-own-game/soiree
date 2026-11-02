@@ -37,22 +37,28 @@ pourquoi = "Clonés ou déjà cités par LEARNINGS.md, non relus pour cette fich
 
 [[source]]
 sous_systeme = "fiabilite"
-ids = ["ioquake/ioq3", "quinn-rs/quinn", "lucaspoffo/renet", "algesten/str0m"]
+ids = ["ioquake/ioq3", "quinn-rs/quinn", "lucaspoffo/renet", "algesten/str0m", "jamesmunns/postcard", "lsalzman/enet", "skywind3000/kcp", "ValveSoftware/GameNetworkingSockets", "networkprotocol/reliable", "networkprotocol/yojimbo", "mozilla/neqo", "geckosio/geckos.io"]
 marche = "reel"
-etat = "candidate"
+etat = "consultee"
 pourquoi = "Accusés, fragmentation, files bornées : le netcode de Quake 3, et des moteurs Rust sans entrées-sorties."
 
 [[source]]
 sous_systeme = "fiabilite"
-ids = ["https://www.rfc-editor.org/rfc/rfc9000.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt"]
+ids = ["https://www.rfc-editor.org/rfc/rfc9000.txt", "https://www.rfc-editor.org/rfc/rfc9002.txt", "https://www.rfc-editor.org/rfc/rfc6298.txt", "https://www.rfc-editor.org/rfc/rfc8085.txt", "https://www.rfc-editor.org/rfc/rfc8831.txt", "https://www.rfc-editor.org/rfc/rfc9260.txt", "https://www.rfc-editor.org/rfc/rfc8260.txt", "https://www.rfc-editor.org/rfc/rfc9221.txt"]
 marche = "normes"
-etat = "candidate"
+etat = "consultee"
 
 [[source]]
 sous_systeme = "fiabilite"
 ids = ["tokio-rs/turmoil", "proptest-rs/proptest"]
 marche = "bancs"
-etat = "candidate"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "fiabilite"
+ids = ["https://gafferongames.com/post/sending_large_blocks_of_data/", "https://gafferongames.com/post/packet_fragmentation_and_reassembly/", "https://gafferongames.com/post/reliable_ordered_messages/"]
+marche = "retours"
+etat = "consultee"
 
 [[source]]
 sous_systeme = "transport-webrtc"
@@ -147,9 +153,35 @@ etat = "candidate"
 
 [[source]]
 sous_systeme = "telecommande"
-ids = ["mozilla/uniffi-rs"]
+ids = ["mozilla/uniffi-rs", "moonlight-stream/moonlight-ios", "moonlight-stream/moonlight-common-c", "ionic-team/capacitor", "apache/cordova-ios", "react-native-webview/react-native-webview", "WebKit/WebKit", "AirConsole/airconsole-controls", "AirConsole/airconsole-api", "socketio/socket.io", "daltoniam/Starscream", "rileytestut/DeltaCore"]
 marche = "reel"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "telecommande"
+ids = ["https://developer.apple.com/tutorials/data/documentation/technotes/tn3179-understanding-local-network-privacy.json", "https://developer.apple.com/library/archive/technotes/tn2277/_index.html", "https://www.rfc-editor.org/rfc/rfc6455.txt", "https://www.rfc-editor.org/rfc/rfc3986.txt", "w3c/mediacapture-main"]
+marche = "normes"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "telecommande"
+ids = ["Shopify/toxiproxy", "facebook/idb"]
+marche = "bancs"
+etat = "consultee"
+
+[[source]]
+sous_systeme = "telecommande"
+ids = ["apache/cordova-ios"]
+marche = "retours"
+etat = "consultee"
+pourquoi = "Issues 1232 et 1166 : écran vide au retour, double question de permission."
+
+[[source]]
+sous_systeme = "telecommande"
+ids = ["chadaustin/is-it-snappy"]
+marche = "bancs"
 etat = "candidate"
+pourquoi = "Mesure du toucher à l'image par caméra rapide : son dépôt ne documente rien, la méthode est sur isitsnappy.com. À reprendre pour l'écart 7."
 
 [[source]]
 sous_systeme = "verification"

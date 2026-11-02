@@ -1,0 +1,1070 @@
+# Fiche de recherche. Processus et format : recherche/README.md.
+
+sous_systeme = "telecommande"
+niveau = 3
+question = "L'app iPhone garde-t-elle ce que CONTRAT.md, LEARNINGS.md et S1 à S10 promettent (entrée complète et à 60 états par seconde, traits tous livrés, reconnexion seule, message clair si le réseau local est refusé, page jamais vide, orientation et capacités annoncées, pont réservé à la page du jeu), et que savent les clients de jeu en streaming, les ponts WKWebView et les notes d'Apple que remote ignore encore ?"
+compare_a = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+
+[[reference]]
+id = "remote"
+ordre = 1
+sorte = "chez-nous"
+depot = "build-your-own-game/soiree"
+commit = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+consulte = [
+  "remote/ios/Remote/{GameConnection,GameScreen,RemoteModel,RemoteApp,WebRemote,PadScreen,TouchSurface,JoinView}.swift et remote/ios/Info.plist lus en entier",
+  "remote/crates/core/src/{session,join,remote}.rs lus en entier, controls.rs et draw.rs pour le toucher et la toile",
+  "remote/crates/ffi/src/lib.rs, remote/crates/protocol/src/lib.rs, remote/crates/demo/src/main.rs lus en entier",
+  "remote/crates/core/tests/properties.rs (les propriétés de session)",
+  "remote/CONTRAT.md, remote/LEARNINGS.md, remote/README.md, remote/AGENTS.md lus en entier",
+  "CERTIFICATION.md (S1 à S10), REPETITION.md",
+  "25 hypothèses écrites avant toute lecture extérieure, puis 21 sondes et 14 variantes sur une copie hors dépôt",
+]
+
+[[reference]]
+id = "salon"
+ordre = 2
+sorte = "chez-nous"
+depot = "build-your-own-game/soiree"
+commit = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+consulte = [
+  "salon/crates/host/src/{app,apps}.rs lus en entier",
+  "salon/crates/host/src/{http,lib,address}.rs (la porte /remote, le QR)",
+  "salon/README.md, section La télécommande native",
+  "salon/LEARNINGS.md, lignes sur remote",
+]
+
+[[reference]]
+id = "moonlight-ios"
+ordre = 3
+sorte = "reel"
+depot = "moonlight-stream/moonlight-ios"
+commit = "02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a"
+nature = "code-client"
+consulte = [
+  "git log --grep background, suspend, local network, idle, reconnect (18 commits repérés)",
+  "commits e697938, ff5e8d1, 5fd2c29, fcc770d",
+  "Limelight/ViewControllers/StreamFrameViewController.m (cycle de vie)",
+  "Limelight/Input/ControllerSupport.m, Limelight/Input/StreamView.m",
+  "Limelight/Limelight-Info.plist",
+  "gh search issues local network (6 titres)",
+]
+
+[[reference]]
+id = "moonlight-common-c"
+ordre = 4
+sorte = "reel"
+depot = "moonlight-stream/moonlight-common-c"
+commit = "f050b13b6a3d61e132ba10ab611cf1949aa0fca7"
+nature = "code-client"
+consulte = [
+  "git log --grep nodelay, qos, batch, input, ping, timeout (60 titres)",
+  "commits 615b5e2, e59a5f5, 448b2c6, 830187e, c0e3dc6, 421bd74",
+  "src/InputStream.c (file d'entrées, regroupement)",
+  "src/PlatformSockets.c (TCP_NODELAY, QoS)",
+]
+
+[[reference]]
+id = "capacitor"
+ordre = 5
+sorte = "reel"
+depot = "ionic-team/capacitor"
+commit = "02a7cf9d2461ae6e19d61a49c715ba5e29a8ffcf"
+nature = "code-client"
+consulte = [
+  "git log --grep terminate, WebContent, blank sur ios/ (6 commits)",
+  "commits beebff45, d04da9fd, 1de1f157, d0391576",
+  "ios/Capacitor/Capacitor/WebViewDelegationHandler.swift lu en entier",
+]
+
+[[reference]]
+id = "cordova-ios"
+ordre = 6
+sorte = "reel"
+depot = "apache/cordova-ios"
+commit = "f9bb658eff94169adb45791d61ca703d96259e9f"
+nature = "code-client"
+consulte = [
+  "git log --grep terminate, process, WebContent, blank (20 titres)",
+  "commit 5a13d635 et son diff",
+  "CordovaLib/Classes/Private/Plugins/CDVWebViewEngine/CDVWebViewEngine.m (reprise, navigation)",
+]
+
+[[reference]]
+id = "react-native-webview"
+ordre = 7
+sorte = "reel"
+depot = "react-native-webview/react-native-webview"
+commit = "054572b187824084aa19e709f5d2f569a33a6f4a"
+nature = "code-client"
+consulte = [
+  "git log --grep terminate, WebContent, blank (20 titres)",
+  "commits a76811d, 7a44d9b",
+  "apple/RNCWebViewImpl.m (échec de chargement, processus, messages)",
+]
+
+[[reference]]
+id = "webkit"
+ordre = 8
+sorte = "reel"
+depot = "WebKit/WebKit"
+commit = "56453fdfe0b0ca6258c23e6453b34f70b885d13f"
+consulte = [
+  "Source/WebKit/UIProcess/WebPageProxy.cpp (tryReloadAfterProcessTermination, resetRecentCrashCount)",
+  "Source/WebCore/Modules/mediastream/Navigator+MediaDevices.idl",
+]
+
+[[reference]]
+id = "uniffi"
+ordre = 9
+sorte = "reel"
+depot = "mozilla/uniffi-rs"
+commit = "ef9625b68dd51207f55f024a27649e58edb52b09"
+consulte = [
+  "uniffi_core/src/ffi/rustcalls.rs (rust_call, catch_unwind)",
+  "remote/ios/Generated/remote_ffi.swift généré à ce protocole : 25 appels en try! rustCall",
+]
+
+[[reference]]
+id = "airconsole-controls"
+ordre = 10
+sorte = "reel"
+depot = "AirConsole/airconsole-controls"
+commit = "cdaebd96f1733ce4f5614854d834f4b2c7333b54"
+nature = "code-client"
+consulte = [
+  "git log --grep touch, cancel, stuck (6 titres)",
+  "rate-limiter/rate-limiter.js lu en entier",
+  "button/button.js, joystick/joystick.js",
+]
+
+[[reference]]
+id = "socketio"
+ordre = 11
+sorte = "reel"
+depot = "socketio/socket.io"
+commit = "1eaa582d3b453e3e6f522300ed05b10da0a0799b"
+consulte = [
+  "commit 8adcfbfde50679095ec2abe376650cf2b6814325, message entier",
+]
+
+[[reference]]
+id = "tn3179"
+ordre = 12
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/technotes/tn3179-understanding-local-network-privacy.json"
+vu_le = "2026-11-02"
+consulte = [
+  "TN3179 entière : états de la permission, opérations locales, exceptions WKWebView, détection du refus",
+]
+
+[[reference]]
+id = "tn2277"
+ordre = 13
+sorte = "normes"
+document = "https://developer.apple.com/library/archive/technotes/tn2277/_index.html"
+vu_le = "2026-11-02"
+consulte = [
+  "TN2277 : suspension, data sockets, reprise des ressources",
+]
+
+[[reference]]
+id = "rfc6455"
+ordre = 14
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc6455.txt"
+empreinte = "sha256:765775326aee0ecca9b04bde3fd1f52932d498e33e34e428bd61b8a24da0fa3b"
+vu_le = "2026-11-02"
+consulte = [
+  "section 5.5.2 Ping",
+]
+
+[[reference]]
+id = "rfc3986"
+ordre = 15
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc3986.txt"
+empreinte = "sha256:3102dae4b68cebe40337730312fcb612297b8928547267e8b3d1ee6002b2d683"
+vu_le = "2026-11-02"
+consulte = [
+  "section 5.2.2 Transform References",
+]
+
+[[reference]]
+id = "mediacapture"
+ordre = 16
+sorte = "normes"
+depot = "w3c/mediacapture-main"
+commit = "e0bde2206a9ac3af9536fe97208b4bd4c5b7aa1a"
+consulte = [
+  "getusermedia.html : Navigator.mediaDevices et les interfaces SecureContext",
+]
+
+[[reference]]
+id = "apple-sendping"
+ordre = 17
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/foundation/urlsessionwebsockettask/sendping(pongreceivehandler:).json"
+vu_le = "2026-11-02"
+consulte = [
+  "URLSessionWebSocketTask.sendPing(pongReceiveHandler:), page entière",
+]
+
+[[reference]]
+id = "apple-timeout"
+ordre = 18
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/foundation/urlsessionconfiguration/timeoutintervalforrequest.json"
+vu_le = "2026-11-02"
+consulte = [
+  "URLSessionConfiguration.timeoutIntervalForRequest, page entière",
+]
+
+[[reference]]
+id = "apple-terminate"
+ordre = 19
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/webkit/wknavigationdelegate/webviewwebcontentprocessdidterminate(_:).json"
+vu_le = "2026-11-02"
+consulte = [
+  "WKNavigationDelegate.webViewWebContentProcessDidTerminate(_:), page entière",
+]
+
+[[reference]]
+id = "apple-idle"
+ordre = 20
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/uikit/uiapplication/isidletimerdisabled.json"
+vu_le = "2026-11-02"
+consulte = [
+  "UIApplication.isIdleTimerDisabled, page entière",
+]
+
+[[reference]]
+id = "apple-wifi"
+ordre = 21
+sorte = "normes"
+document = "https://developer.apple.com/tutorials/data/documentation/bundleresources/information-property-list/uirequirespersistentwifi.json"
+vu_le = "2026-11-02"
+consulte = [
+  "Information Property List, clé UIRequiresPersistentWiFi, page entière",
+]
+
+[[reference]]
+id = "toxiproxy"
+ordre = 22
+sorte = "bancs"
+depot = "Shopify/toxiproxy"
+commit = "49299d8838525126e09c85ebe0ba89940a3261e5"
+consulte = [
+  "README.md, toxic timeout",
+]
+
+[[reference]]
+id = "idb"
+ordre = 23
+sorte = "bancs"
+depot = "facebook/idb"
+commit = "c793afad2a31092628f7013cf1aa96f266c85024"
+consulte = [
+  "README.md : ce que le banc pilote, simulateurs et appareils",
+]
+
+[[reference]]
+id = "cordova-1232"
+ordre = 24
+sorte = "retours"
+depot = "apache/cordova-ios"
+commit = "f9bb658eff94169adb45791d61ca703d96259e9f"
+vu_le = "2026-11-02"
+consulte = [
+  "issue 1232 et ses commentaires",
+  "gh search issues blank screen (6 titres), issue 1355",
+]
+
+[[reference]]
+id = "cordova-1166"
+ordre = 25
+sorte = "retours"
+depot = "apache/cordova-ios"
+commit = "f9bb658eff94169adb45791d61ca703d96259e9f"
+vu_le = "2026-11-02"
+consulte = [
+  "issue 1166, demande de requestMediaCapturePermissionForOrigin",
+]
+
+[[reference]]
+id = "starscream"
+ordre = 26
+sorte = "reel"
+depot = "daltoniam/Starscream"
+commit = "c6bfd1af48efcc9a9ad203665db12375ba6b145a"
+nature = "code-client"
+consulte = [
+  "git log --grep ping, viability, background, timeout (21 titres)",
+  "Sources/Transport/TCPTransport.swift, Sources/Transport/FoundationTransport.swift, Sources/Engine/NativeEngine.swift",
+  "gh search issues URLSessionWebSocketTask (10 titres)",
+]
+
+[[reference]]
+id = "airconsole-api"
+ordre = 27
+sorte = "reel"
+depot = "AirConsole/airconsole-api"
+commit = "53d7be952c2374ffa14efb74a1ceef3aa23afa69"
+nature = "code-client"
+consulte = [
+  "git log --grep reconnect, disconnect, sleep, vibrate (30 titres)",
+  "airconsole-1.11.0.js (onConnect, onDisconnect, vibrate, orientation)",
+  "ARCHITECTURE.md",
+]
+
+[[reference]]
+id = "deltacore"
+ordre = 28
+sorte = "reel"
+depot = "rileytestut/DeltaCore"
+commit = "869042a5699b19df3cf9f3369a950737ff818149"
+nature = "code-client"
+consulte = [
+  "DeltaCore/UI/Controller/ButtonsInputView.swift",
+  "DeltaCore/UI/Controller/TouchInputView.swift",
+]
+
+[[lecon]]
+id = "telecommande-01"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/CONTRAT.md#L38"
+citation = "Le WebSocket les livre tous."
+enonce = "Un trait est un événement : le contrat promet chaque étape, donc ce qui part pendant une coupure doit attendre, pas disparaître."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "telecommande-02"
+source = "socketio"
+lien = "https://github.com/socketio/socket.io/commit/8adcfbfde50679095ec2abe376650cf2b6814325"
+citation = "message, so that it gets buffered and sent upon reconnection."
+enonce = "Un client mûr garde ce qui est émis sur un lien mort et l'envoie à la reconnexion."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "telecommande-03"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/host/src/apps.rs#L260"
+citation = "its silence means a phone gone"
+enonce = "L'hôte surveille le silence du téléphone ; le téléphone, lui, ne surveille pas celui de l'hôte."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "telecommande-04"
+source = "rfc6455"
+lien = "https://www.rfc-editor.org/rfc/rfc6455.txt#L2050"
+citation = "A Ping frame may serve either as a keepalive"
+enonce = "Le WebSocket a sa propre preuve de vie : un Ping sans Pong dit que le lien est mort quand TCP se tait."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "telecommande-05"
+source = "apple-sendping"
+lien = "https://developer.apple.com/tutorials/data/documentation/foundation/urlsessionwebsockettask/sendping(pongreceivehandler:).json"
+citation = "Sends a ping frame from the client side"
+enonce = "URLSessionWebSocketTask ne pingue pas seul : c'est à l'app d'appeler sendPing et de borner l'attente du pong."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "telecommande-06"
+source = "toxiproxy"
+lien = "https://github.com/Shopify/toxiproxy/blob/49299d8838525126e09c85ebe0ba89940a3261e5/README.md#L424"
+citation = "Stops all data from getting through, and closes the connection after `timeout`."
+enonce = "Un banc doit jouer le trou noir, lien ouvert et rien ne passe : c'est le cas où un client sans chien de garde reste content."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "telecommande-07"
+source = "capacitor"
+lien = "https://github.com/ionic-team/capacitor/commit/beebff4550575c28c233937a11a8eacf5a76411c"
+citation = "Reload webView on webViewWebContentProcessDidTerminate"
+enonce = "Un pont WKWebView mûr traite lui-même la mort du processus de la page, sans compter sur WebKit."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-08"
+source = "capacitor"
+lien = "https://github.com/ionic-team/capacitor/commit/1de1f157169bc0e23060ffabf044c6d391b98efe"
+citation = "also call bridge.reset() on webViewWebContentProcessDidTerminate"
+enonce = "Après la mort de la page, l'état du pont appartient à une page disparue : capteurs et sockets doivent repartir de zéro."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-09"
+source = "cordova-ios"
+lien = "https://github.com/apache/cordova-ios/commit/5a13d635e74d4c236917a923cb72717adf814cfb"
+citation = "This doesn't solve the root issue where sometimes refreshing the WebView"
+enonce = "Recharger ne suffit pas toujours : Cordova laisse choisir entre rafraîchir et repartir de la page de départ."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-10"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebKit/UIProcess/WebPageProxy.cpp#L513"
+citation = "static constexpr unsigned maximumWebProcessRelaunchAttempts = 1;"
+enonce = "Sans délégué, WebKit ne recharge qu'une fois par fenêtre de 30 s : la mort suivante laisse la vue vide, sans rien dire."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-11"
+source = "apple-terminate"
+lien = "https://developer.apple.com/tutorials/data/documentation/webkit/wknavigationdelegate/webviewwebcontentprocessdidterminate(_:).json"
+citation = "the process for the specified web view terminates for any reason"
+enonce = "Apple donne le point d'entrée : mémoire, plantage ou arrière-plan passent tous par ce rappel."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-12"
+source = "cordova-1232"
+lien = "https://github.com/apache/cordova-ios/issues/1232"
+citation = "app displays white blank screen and no way to control by user"
+enonce = "Le symptôme vu par les joueurs : écran vide au retour du premier plan, rien à toucher, cause invisible pendant des mois."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-13"
+source = "react-native-webview"
+lien = "https://github.com/react-native-webview/react-native-webview/blob/054572b187824084aa19e709f5d2f569a33a6f4a/apple/RNCWebViewImpl.m#L1472"
+citation = '@"didFailProvisionalNavigation": @YES,'
+enonce = "Un échec de chargement est un événement à traiter : la vue ne réessaie pas et ne dit rien d'elle-même."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "telecommande-14"
+source = "react-native-webview"
+lien = "https://github.com/react-native-webview/react-native-webview/commit/a76811da9356e0dfd9dd87c82ff7d112dcfcd014"
+citation = "Add callback for webViewWebContentProcessDidTerminate"
+enonce = "Le rappel de mort du processus est remonté à l'application : c'est elle qui sait quoi montrer au joueur."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "telecommande-15"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/CERTIFICATION.md#L347"
+citation = "Un message clair, pas un écran vide."
+enonce = "Refuser le réseau local doit produire un message qui dit quoi faire."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "telecommande-16"
+source = "tn3179"
+lien = "https://developer.apple.com/tutorials/data/documentation/technotes/tn3179-understanding-local-network-privacy.json"
+citation = "the current path lists an unsatisfied reason of"
+enonce = "Le refus se lit sur le chemin d'une NWConnection (localNetworkDenied), la première opération peut échouer avant la réponse à l'alerte, et le trafic de WKWebView n'est pas soumis à la permission : refusée, la page resterait joignable alors que /remote ne l'est pas."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "telecommande-17"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/ios/Remote/GameConnection.swift#L119"
+citation = "Back-off as Sidequest's phones do: 0.5 s, doubling up to 5 s."
+enonce = "Le plafond de 5 s ne vaut qu'entre deux essais : un essai sans échéance propre dure bien plus."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "telecommande-18"
+source = "apple-timeout"
+lien = "https://developer.apple.com/tutorials/data/documentation/foundation/urlsessionconfiguration/timeoutintervalforrequest.json"
+citation = "how long (in seconds) a task should wait for additional data"
+enonce = "URLSession.shared attend 60 s par défaut : mesuré 60,6 s sur une adresse muette."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "telecommande-19"
+source = "airconsole-controls"
+lien = "https://github.com/AirConsole/airconsole-controls/blob/cdaebd96f1733ce4f5614854d834f4b2c7333b54/rate-limiter/rate-limiter.js#L16"
+citation = "It sends data immediately in the beginning and then starts"
+enonce = "Un frein de débit n'a pas à retarder ce qui arrive après un silence : il ne doit mordre que sur un vrai excès."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "telecommande-20"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/crates/core/tests/properties.rs#L369"
+citation = "two states within 1/60 s"
+enonce = "La propriété fige le défaut : un frein comparé à 1/60 s pile saute une image sur deux dès que l'horloge gigote. La latence entre le toucher et la TV reste non mesurée (LEARNINGS, écart 7)."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "telecommande-21"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/LEARNINGS.md#L94"
+citation = "Une pression plus courte qu'une image ne doit pas se perdre"
+enonce = "La leçon est notée Gardé ; le cœur traite le toucher, mais l'état envoyé ne garde pas la trace d'un appui déjà relâché."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "telecommande-22"
+source = "moonlight-ios"
+lien = "https://github.com/moonlight-stream/moonlight-ios/blob/02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a/Limelight/Input/ControllerSupport.m#L683"
+citation = "older MFi controllers can send an instant down+up event for the start button"
+enonce = "Un appui et son relâchement peuvent arriver d'un bloc : Moonlight le traite exprès pour qu'il atteigne quand même le PC."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "telecommande-23"
+source = "moonlight-common-c"
+lien = "https://github.com/moonlight-stream/moonlight-common-c/commit/421bd74e0184a5cfd760efbf84433134c6f6e00b"
+citation = "End mouse motion batches on mouse button events"
+enonce = "Un bouton n'entre jamais dans un regroupement : il le clôt, les mouvements se fondent, les appuis non."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "telecommande-24"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/crates/core/src/remote.rs#L161"
+citation = "The app lost its touches (app switcher, phone call): nothing may stay"
+enonce = "release_all parle de touchers perdus ; une coupure réseau ne les perd pas, et le doigt reste posé."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+
+[[lecon]]
+id = "telecommande-25"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/host/src/lib.rs#L114"
+citation = "Salon asks after every step and sends a change by itself"
+enonce = "Salon renvoie Show à chaque reconnexion : recevoir la même disposition n'est pas recevoir une nouvelle télécommande."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "telecommande-26"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/remote/ios/Remote/WebRemote.swift#L221"
+citation = "A web view that says when its size changes"
+enonce = "Déduire l'orientation de la taille manque le retournement de 180°, qui ne change ni la taille ni les marges."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T11"
+
+[[lecon]]
+id = "telecommande-27"
+source = "mediacapture"
+lien = "https://github.com/w3c/mediacapture-main/blob/e0bde2206a9ac3af9536fe97208b4bd4c5b7aa1a/getusermedia.html#L2787"
+citation = "[SameObject, SecureContext] readonly attribute MediaDevices mediaDevices;"
+enonce = "La norme réserve mediaDevices aux contextes sécurisés : une page en http sur une IP du réseau local n'y a pas droit."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "telecommande-28"
+source = "webkit"
+lien = "https://github.com/WebKit/WebKit/blob/56453fdfe0b0ca6258c23e6453b34f70b885d13f/Source/WebCore/Modules/mediastream/Navigator+MediaDevices.idl#L38"
+citation = "[SameObject, SecureContext, ContextAllowsMediaDevices] readonly attribute MediaDevices? mediaDevices;"
+enonce = "WebKit applique la règle dans WKWebView comme dans Safari."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "telecommande-29"
+source = "capacitor"
+lien = "https://github.com/ionic-team/capacitor/blob/02a7cf9d2461ae6e19d61a49c715ba5e29a8ffcf/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift#L107"
+citation = "a main frame navigation but to an outside source"
+enonce = "Un pont mûr décide de chaque navigation : le pont natif n'accompagne pas une page qui part ailleurs."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T13"
+
+[[lecon]]
+id = "telecommande-30"
+source = "cordova-1166"
+lien = "https://github.com/apache/cordova-ios/issues/1166"
+citation = "every getUserMedia leads to new permission"
+enonce = "Le besoin d'éviter la double question est réel ; il se règle pour une page choisie par l'app, pas pour toute adresse lue dans un QR."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T14"
+
+[[lecon]]
+id = "telecommande-31"
+source = "moonlight-ios"
+lien = "https://github.com/moonlight-stream/moonlight-ios/commit/e697938afcc07b5af494b1c1a7988cf97a01bedf"
+citation = "Re-enable the idle timer when streaming has ended"
+enonce = "Écran toujours allumé pendant la partie, et rendu au système à chaque sortie."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T15"
+
+[[lecon]]
+id = "telecommande-32"
+source = "apple-idle"
+lien = "https://developer.apple.com/tutorials/data/documentation/uikit/uiapplication/isidletimerdisabled.json"
+citation = "should be sure to reset it to"
+enonce = "Apple demande de remettre le réglage dès que le besoin cesse."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T15"
+
+[[lecon]]
+id = "telecommande-33"
+source = "rfc3986"
+lien = "https://www.rfc-editor.org/rfc/rfc3986.txt#L1768"
+citation = "T.query = R.query;"
+enonce = "Une adresse relative avec un chemin remplace la requête de sa base : le code de salle d'un QR ne suit pas Show(Web { url: \"/play\" })."
+categorie = "heritage"
+decision = "garder"
+etat = "trou"
+trou = "T16"
+
+[[lecon]]
+id = "telecommande-34"
+source = "apple-wifi"
+lien = "https://developer.apple.com/tutorials/data/documentation/bundleresources/information-property-list/uirequirespersistentwifi.json"
+citation = "iOS closes the active Wi-Fi connection after 30 minutes."
+enonce = "Une soirée dure plus de 30 min ; l'app ne déclare pas qu'elle a besoin du Wi-Fi."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T17"
+
+[[lecon]]
+id = "telecommande-35"
+source = "moonlight-common-c"
+lien = "https://github.com/moonlight-stream/moonlight-common-c/commit/c0e3dc64a4b9bf4fdbdc275fe1dc3829d2fa679c"
+citation = "Add basic QoS attributes to our A/V sockets"
+enonce = "Un client de streaming marque son trafic pour le Wi-Fi ; URLSession.shared n'annonce aucun type de service."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T17"
+
+[[lecon]]
+id = "telecommande-36"
+source = "idb"
+lien = "https://github.com/facebook/idb/blob/c793afad2a31092628f7013cf1aa96f266c85024/README.md#L6"
+citation = "is a command line interface for automating iOS Simulators and Devices"
+enonce = "La coquille iOS se pilote par une machine : gestes, rotation, processus. Rien chez nous ne le fait."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T18"
+
+[[lecon]]
+id = "telecommande-37"
+source = "moonlight-common-c"
+lien = "https://github.com/moonlight-stream/moonlight-common-c/blob/f050b13b6a3d61e132ba10ab611cf1949aa0fca7/src/PlatformSockets.c#L608"
+citation = "TCP_NODELAY must be enabled on the socket for this function to work!"
+enonce = "Une entrée sur TCP coupe Nagle des deux côtés."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/host/src/app.rs#L81"]
+note = "Côté téléphone, sonde H19 : lsof -T f sur le socket de l'app dans le simulateur donne les mêmes drapeaux (0x440203e4) qu'un socket témoin avec TCP_NODELAY, et non ceux d'un témoin sans (0x440203e0). URLSessionWebSocketTask le pose seul. Sur un vrai iPhone : supposé."
+
+[[lecon]]
+id = "telecommande-38"
+source = "moonlight-common-c"
+lien = "https://github.com/moonlight-stream/moonlight-common-c/blob/f050b13b6a3d61e132ba10ab611cf1949aa0fca7/src/InputStream.c#L42"
+citation = "This batching wait paradoxically _decreases_"
+enonce = "Fondre les états en attente réduit la file et donc le retard."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_state_goes_out_on_change_at_most_60_times_a_second_and_every_250_ms"]
+note = "Vrai jusqu'à URLSession seulement. Après 25 s d'hôte figé, 98 états périmés arrivent d'un bloc (sonde H2) ; attendre la fin de send ne le corrige pas, le noyau les a déjà acceptés. Laissé sans trou : aucune variante n'a passé."
+
+[[lecon]]
+id = "telecommande-39"
+source = "moonlight-ios"
+lien = "https://github.com/moonlight-stream/moonlight-ios/commit/ff5e8d167d82db786fc46af730d7680f78951e07"
+citation = "Add support for iOS 14 local network privacy changes"
+enonce = "L'app déclare son usage du réseau local dans Info.plist."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["remote/ios/Info.plist#L24"]
+
+[[lecon]]
+id = "telecommande-40"
+source = "moonlight-ios"
+lien = "https://github.com/moonlight-stream/moonlight-ios/blob/02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a/Limelight/Limelight-Info.plist#L55"
+citation = "<key>NSBonjourServices</key>"
+enonce = "Moonlight découvre ses PC par Bonjour."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Le QR de la TV donne l'adresse : l'app ne découvre rien et ne fait aucune opération Bonjour. Si l'IP de l'hôte change, il faut quitter et rescanner ; salon la montre sur la TV."
+
+[[lecon]]
+id = "telecommande-41"
+source = "moonlight-ios"
+lien = "https://github.com/moonlight-stream/moonlight-ios/blob/02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a/Limelight/ViewControllers/StreamFrameViewController.m#L325"
+citation = "Terminate the stream if the app is inactive for 60 seconds"
+enonce = "Moonlight met fin au flux quand l'app quitte le premier plan."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Un flux vidéo coûte ; une place de soirée se garde. L'app reste sur sa page et se reconnecte."
+
+[[lecon]]
+id = "telecommande-42"
+source = "tn2277"
+lien = "https://developer.apple.com/library/archive/technotes/tn2277/_index.html"
+citation = "the system may choose to reclaim resources out from underneath a network socket"
+enonce = "Un socket peut mourir pendant la suspension : au retour, seule une erreur le dit."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["S1", "S2"]
+note = "lost() traite l'erreur de receive. Dans le simulateur, 15 s en arrière-plan n'ont pas tué le socket : le pad a repris seul. La reprise après verrouillage sur un vrai iPhone reste à faire dans S1 et S2."
+
+[[lecon]]
+id = "telecommande-43"
+source = "uniffi"
+lien = "https://github.com/mozilla/uniffi-rs/blob/ef9625b68dd51207f55f024a27649e58edb52b09/uniffi_core/src/ffi/rustcalls.rs#L160"
+citation = "`out_status.code` will be set to `CALL_PANIC`"
+enonce = "Une panique Rust est rattrapée puis rendue à Swift, dont les 25 try! rustCall générés arrêtent l'app."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["remote/crates/core/tests/properties.rs::any_frame_from_the_game_is_acted_on_or_ignored", "remote/fuzz/fuzz_targets/phone_session.rs"]
+note = "Le commentaire de Session::lock dit qu'une panique laisse des données encore utilisables : côté Swift, l'app est déjà morte. Le rempart est l'absence de panique, tenue par ces cibles."
+
+[[lecon]]
+id = "telecommande-44"
+source = "remote"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/REPETITION.md#L63"
+citation = "Une perte de 200 ms peut lâcher le personnage un instant"
+enonce = "Le pad passe par TCP : une perte retient tout ce qui suit."
+categorie = "physique"
+decision = "garder"
+etat = "non-applicable"
+raison = "Écart 6 assumé par remote/LEARNINGS.md et déjà noté à mesurer dans REPETITION.md ; il faut un vrai Wi-Fi, le simulateur n'en a pas."
+
+[[trou]]
+id = "T1"
+titre = "Les traits envoyés pendant une coupure disparaissent, et le trait ne finit jamais"
+gravite = "haute"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:140",
+  "remote/ios/Remote/GameConnection.swift:143",
+]
+cas = "flush vide session.drain() avant de regarder le socket. Pendant le repli de 0,5 à 5 s, socket vaut nil : les trames sont jetées. Dessin en cours, hôte qui coupe : l'hôte reçoit Begin et 19 points, puis plus rien, ni le reste ni End, alors que release_all a bien produit End. Le jeu garde un trait ouvert pour toujours. CONTRAT.md dit que le WebSocket les livre tous. Les envois partis sans accusé juste avant la coupure sont perdus aussi, send ignore son erreur."
+preuve = "sonde H1, app réelle dans le simulateur, hôte de sonde qui coupe après 20 trames : témoin sans coupure Begin + 19 points + End ; avec coupure pas de End ; en gardant les trames jusqu'au socket suivant, Hello d'abord, End arrive 0,5 s plus tard, à la reconnexion. Seul flush a changé."
+verifie = "le chemin complet dans l'app sur simulateur iOS 26.5, sur boucle locale"
+suppose = "La fréquence sur un vrai Wi-Fi. Il faudrait aussi rendre les trames encore en vol : un numéro de trait accusé par l'hôte, à trancher."
+
+[[trou]]
+id = "T2"
+titre = "L'app ne voit pas un hôte devenu muet"
+gravite = "haute"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:80",
+  "remote/ios/Remote/GameConnection.swift:75",
+]
+cas = "Aucun sendPing, aucune échéance : seule une erreur de receive dit que le lien est mort. Sur un pad, l'hôte n'envoie rien tant que rien ne change, et sur une page l'app se tait aussi. Hôte figé 25 s : l'app affiche le pad, sans mot, sans reconnexion, et ne saurait pas distinguer ce silence d'une partie calme. Le joueur appuie dans le vide."
+preuve = "sonde H2 : SIGSTOP de l'hôte 25 s, aucune erreur ni reconnexion, 98 états périmés livrés au dégel. Avec sendPing toutes les 2 s et coupure sans pong, seule variante, reconnexion moins de 4 s après le gel et retour dès le dégel."
+verifie = "l'app sur simulateur, hôte figé au niveau du processus : le noyau accuse encore réception"
+suppose = "Le temps avant une erreur TCP quand l'hôte disparaît vraiment (couvercle fermé, borne éteinte) : non mesuré, pfctl demande les droits root. Le réglage de 2 s sur un Wi-Fi réel. tungstenite répond au ping à la lecture : à revérifier contre salon, seul l'hôte de sonde a été essayé."
+
+[[trou]]
+id = "T3"
+titre = "Un chargement raté laisse un écran vide pour toujours"
+gravite = "haute"
+lieux = [
+  "remote/ios/Remote/WebRemote.swift:45",
+  "remote/ios/Remote/GameScreen.swift:60",
+]
+cas = "Aucun didFailProvisionalNavigation. /remote a répondu, status vaut connected, donc aucune notice ; la page du jeu ne vient pas et rien ne réessaie. C'est le chemin par défaut de tous les jeux. Le joueur voit un fond vide et la croix."
+preuve = "sonde H8 : hôte qui coupe les premières requêtes de la page, WebKit essaie 4 fois en quelques ms, code -1005, 0 chargement réussi en 15 s. Avec un nouvel essai après 1 s dans didFailProvisionalNavigation, seule variante, la page se charge."
+verifie = "l'app sur simulateur, échec provoqué côté hôte"
+suppose = "À quelle fréquence un vrai Wi-Fi coupe à cet instant. Une seule coupure est rejouée par la pile réseau : il en a fallu plusieurs."
+
+[[trou]]
+id = "T4"
+titre = "Le processus de la page meurt deux fois : écran vide sans mot"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/WebRemote.swift:63",
+  "remote/ios/Remote/WebRemote.swift:140",
+]
+cas = "Aucun webViewWebContentProcessDidTerminate. WebKit recharge seul une fois par fenêtre de 30 s : une page lourde qui replante reste vide, status connected, sans notice. Bridge garde motion et sockets d'une page morte, donc une page rechargée trouve ses 8 sockets pris."
+preuve = "sonde H7 : kill du processus WebContent dans le simulateur. Une fois : rechargé. Deux fois de suite : plus aucun chargement en 17 s, capture vide. Avec webView.reload() dans le rappel, seule variante, 3 morts donnent 3 chargements."
+verifie = "l'app sur simulateur ; la constante et le chemin de code de WebKit au commit figé"
+suppose = "Ce que fait iOS à un WASM lourd sur un vrai iPhone, et si la mort en arrière-plan suit ce chemin. Le nettoyage du pont n'a pas été exécuté, seulement lu."
+
+[[trou]]
+id = "T5"
+titre = "Réseau local refusé : aucun message, l'erreur est jetée"
+gravite = "haute"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:81",
+  "remote/ios/Remote/GameScreen.swift:23",
+  "remote/ios/Remote/GameScreen.swift:55",
+]
+cas = "receive attrape l'erreur et ne la lit pas. Tout échec donne « Connexion perdue, on réessaie… », même sans avoir jamais été connecté, à jamais. Les deux notices se superposent et le texte devient illisible. S6 exige un message clair ; REPETITION.md note déjà que le code n'a pas de texte dédié. WKWebView échappe à la permission : refusée, la page marcherait, mais /remote ne dit jamais quelle page ouvrir."
+preuve = "sonde H4 sur port fermé : capture des deux notices superposées, erreur -1004 lue seulement par le journal de sonde. Avec une seule notice et un texte qui nomme Réglages, variante, capture lisible."
+verifie = "la superposition, l'erreur ignorée, l'absence de texte, sur simulateur"
+suppose = "Le refus lui-même : le simulateur n'applique pas cette permission. L'erreur exacte vient de TN3179, à lire sur un vrai iPhone (S6) ; passer par NWConnection et localNetworkDenied est le correctif proposé, non essayé."
+
+[[trou]]
+id = "T6"
+titre = "Une tentative vers une adresse muette dure 60 s"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:67",
+]
+cas = "URLSession.shared garde 60 s par défaut. Au premier scan comme après une coupure, l'app attend une minute avant l'essai suivant, loin du plafond de 5 s écrit juste au-dessus et des 10 s de S1 à S3."
+preuve = "sonde H3 sur 10.255.255.1 : -1001 après 60,6 s. Avec une session dont timeoutIntervalForRequest vaut 5, seule variante, un échec toutes les 5,0 s."
+verifie = "le délai dans l'app sur simulateur"
+suppose = "Qu'une adresse reste muette ainsi sur un vrai réseau plutôt que de refuser : c'est le cas d'un hôte éteint ou d'une IP changée."
+
+[[trou]]
+id = "T7"
+titre = "Les états partent à 36 par seconde, pas à 60"
+gravite = "moyenne"
+lieux = [
+  "remote/crates/core/src/session.rs:18",
+  "remote/crates/core/src/session.rs:134",
+  "remote/crates/core/tests/properties.rs:369",
+]
+cas = "tick compare l'écart à 1/60 s pile, sur une horloge lue à chaque image. Un écart de 16,6 ms échoue, l'envoi saute une image : 33 ms au lieu de 16. Le contrat dit au plus 60 fois par seconde, le budget de latence perd une image à une frappe sur deux, et la propriété interdit le correctif."
+preuve = "app réelle sur simulateur : 35,9 états par seconde, 18 écarts de 33 ms sur 28. Sonde Rust H15 : 38,5 à 60 Hz, 46,4 à 120 Hz, écart max 34 ms. Avec une marge de 4 ms, seule variante : 60,1 états par seconde dans tous les cas, écart max 18,5 ms. Tests unitaires verts ; la propriété du frein rougit, comme attendu."
+verifie = "le cœur Rust ; le rythme dans l'app sur simulateur"
+suppose = "Le rythme d'un vrai CADisplayLink, à 60 Hz sur iPhone 17e et ailleurs, et la part que cela pèse sur le trajet jusqu'à la TV, jamais mesuré."
+
+[[trou]]
+id = "T8"
+titre = "Un appui plus court qu'un envoi n'atteint pas le jeu"
+gravite = "moyenne"
+lieux = [
+  "remote/crates/core/src/session.rs:129",
+  "remote/crates/core/src/controls.rs:612",
+]
+cas = "L'état ne se lit qu'au tick. Appui et relâchement entre deux envois, y compris dans le frein de T7 ou après un fil principal bloqué : pressed revient à 0, le jeu ne voit rien. Sur un buzzer, c'est un appui perdu, et le téléphone a vibré. LEARNINGS.md marque cette leçon Gardé."
+preuve = "app réelle : 4 touchers de 4 ms vus par l'app, 0 appui vu par l'hôte ; un appui de 120 ms passe. Sonde Rust H16 : 0 bit vu. Avec un verrou d'appui vidé à l'envoi, seule variante : bit vu en Rust, tests existants verts, et dans l'app 3 états sur 5 touchers, les touchers à 12 ms d'écart se fondant en un."
+verifie = "le cœur Rust ; la perte dans l'app sur simulateur"
+suppose = "Quelle durée d'appui atteint un vrai pouce : la fenêtre monte à 33 ms avec T7, un fil principal gelé l'élargit. Le toucher de 4 ms du simulateur est un cas limite."
+
+[[trou]]
+id = "T9"
+titre = "Après une coupure, le pouce resté posé est mort"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:123",
+  "remote/crates/core/src/controls.rs:572",
+]
+cas = "lost appelle releaseAll, qui oublie les doigts ; un toucher inconnu ne se reprend pas au mouvement. Après une micro-coupure, le stick ne répond plus tant que le joueur n'a pas levé le pouce, sans que rien ne le dise."
+preuve = "sonde Rust H17 : stick à 101, après coupure et Show, 0 malgré le mouvement du doigt. Sans release_all et avec la garde de T10 : 114."
+verifie = "le cœur Rust"
+suppose = "L'hôte voit déjà Left ; garder le doigt demande que le premier état après Hello parte aussitôt. Non rejoué sur simulateur."
+
+[[trou]]
+id = "T10"
+titre = "La reconnexion efface la toile et réemploie les numéros de trait"
+gravite = "moyenne"
+lieux = [
+  "remote/crates/core/src/session.rs:76",
+  "remote/crates/core/src/draw.rs:97",
+]
+cas = "Salon renvoie Show à chaque reconnexion, et Session recrée Remote : le téléphone perd son dessin alors que la TV le garde, Annuler ne peut plus rien et le trait suivant reprend l'identifiant 0."
+preuve = "capture de la toile vide après reconnexion. Sonde Rust H18 : traits [0, 1], après Show identique 0 trait, trait suivant id 0. En gardant Remote quand la disposition est identique, seule variante : 2 traits, id 2, tests existants verts."
+verifie = "l'effacement dans l'app sur simulateur ; le cœur Rust"
+suppose = "Comment un jeu réagit à deux traits de même numéro : aucun jeu de la soirée ne dessine aujourd'hui."
+
+[[trou]]
+id = "T11"
+titre = "Un retournement de 180° n'est dit à personne"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/TouchSurface.swift:60",
+  "remote/ios/Remote/WebRemote.swift:227",
+]
+cas = "L'orientation n'est relue que si la taille ou les marges changent. D'un paysage à l'autre, ni l'une ni les autres ne bougent : telecommande:orientation ne part pas, window.telecommande.orientation ment, et RemoteModel garde landscapeLeft périmé, ce qui inverse le volant."
+preuve = "sonde H14 : géométrie passée à landscapeLeft dans l'app, aucun événement, aucun reportLayout, capture de la page qui affiche encore landscapeRight. En lisant effectiveGeometry, seule variante : événement reçu 8 ms après. Rust : même inclinaison, volant 83 ou -83 selon l'orientation."
+verifie = "le silence de la page et du pad dans l'app sur simulateur ; le signe en Rust"
+suppose = "Le volant lui-même, le simulateur n'a pas de capteurs. La sonde lit la géométrie par minuterie ; le vrai correctif passe par un rappel de scène, à choisir."
+
+[[trou]]
+id = "T12"
+titre = "getUserMedia n'existe pas sur l'adresse d'une vraie soirée"
+gravite = "moyenne"
+lieux = [
+  "remote/CONTRAT.md:92",
+  "remote/ios/Info.plist:26",
+]
+cas = "CONTRAT.md offre micro et caméra par les API web habituelles, mais les jeux sont servis en http sur une IP du réseau local, qui n'est pas un contexte sécurisé. navigator.mediaDevices y vaut undefined : le bouton Micro de la page du faux jeu lève une exception, et le code de permission de l'app n'est jamais appelé."
+preuve = "sonde H10 : http://172.20.10.4 donne secure false et mediaDevices undefined ; la même page sur http://127.0.0.1 donne secure true et getUserMedia function. Seule l'origine change."
+verifie = "le contexte et l'API dans WKWebView sur simulateur"
+suppose = "Rien d'autre à vérifier sur iPhone pour l'API. Correctif à trancher : le retirer du contrat, servir en https, ou passer par le pont natif. Aucun jeu du dossier n'appelle getUserMedia aujourd'hui."
+
+[[trou]]
+id = "T13"
+titre = "Le pont et l'identité suivent n'importe quelle origine"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/WebRemote.swift:30",
+  "remote/ios/Remote/WebRemote.swift:86",
+  "remote/ios/Remote/WebRemote.swift:28",
+]
+cas = "userContentController ne regarde ni le cadre ni l'origine, et aucune navigation n'est filtrée. Un iframe d'une autre origine atteint le pont et envoie de l'UDP vers l'hôte du jeu. Une page qui navigue ailleurs reçoit window.telecommande, donc player, ces 16 octets identiques dans tous les jeux que Sidequest emploie comme jeton de salon."
+preuve = "sonde H11 : iframe localhost sous une page 127.0.0.1, bridge true et datagramme reçu ; navigation vers localhost, player lu. Avec le contrôle de frameInfo et un decidePolicyFor, seule variante : 3 messages refusés, 0 datagramme, navigation annulée."
+verifie = "l'app sur simulateur, deux origines de la même machine"
+suppose = "Une attaque réelle : il faut une page de jeu qui embarque ou renvoie vers un tiers. L'UDP reste limité à l'hôte du jeu."
+
+[[trou]]
+id = "T14"
+titre = "N'importe quel QR obtient le micro et la caméra sans question"
+gravite = "moyenne"
+lieux = [
+  "remote/ios/Remote/WebRemote.swift:131",
+  "remote/ios/Remote/JoinView.swift:114",
+  "remote/crates/core/src/join.rs:35",
+]
+cas = "L'hôte de confiance est celui du QR, et join accepte toute adresse http ou https. Le scanner rejoint au premier code lu, sans confirmation, et la caméra est déjà accordée pour scanner. Une page servie par cet hôte reçoit grant sans que le joueur voie rien."
+preuve = "sonde H12, micro accordé à l'app : getUserMedia réussit sans alerte, capture décidée grant. Avec prompt, seule variante : WebKit demande « Autoriser 127.0.0.1 à utiliser votre micro ? »."
+verifie = "la décision dans l'app sur simulateur, en contexte sécurisé"
+suppose = "Le chemin complet avec une vraie caméra et un QR public ; le simulateur n'a pas de scanner. Le lien telecommande:// passe, lui, par une question d'iOS."
+
+[[trou]]
+id = "T15"
+titre = "L'écran ne s'éteint plus jamais après une partie"
+gravite = "faible"
+lieux = [
+  "remote/ios/Remote/GameScreen.swift:43",
+]
+cas = "isIdleTimerDisabled passe à true à l'apparition du jeu et n'est jamais remis. Sur l'accueil, scanner ouvert, le téléphone ne se met plus en veille."
+preuve = "sonde H6 : JoinView lit true après le départ. Remis à false dans onDisappear, seule variante : false."
+verifie = "la valeur dans l'app sur simulateur"
+suppose = "Le coût en batterie."
+
+[[trou]]
+id = "T16"
+titre = "La requête du QR n'atteint pas la page"
+gravite = "faible"
+lieux = [
+  "remote/ios/Remote/GameConnection.swift:105",
+]
+cas = "CONTRAT.md dit que la requête passe telle quelle. C'est vrai du socket. Show(Web { url: \"/room\" }) sur http://hôte/room?code=AB12 charge /room sans code."
+preuve = "sonde H13 : hôte reçoit /remote?code=AB12 puis /room. En reportant la requête de la page, seule variante : /room?code=AB12."
+verifie = "l'app sur simulateur"
+suppose = "Effet borné aux jeux hors de salon : son QR n'a pas de requête."
+
+[[trou]]
+id = "T17"
+titre = "L'app ne dit rien de son usage du Wi-Fi"
+gravite = "faible"
+lieux = [
+  "remote/ios/Info.plist:3",
+  "remote/ios/Remote/GameConnection.swift:67",
+]
+cas = "Ni UIRequiresPersistentWiFi, ni networkServiceType. Apple annonce la fermeture du Wi-Fi après 30 minutes sans cette clé, et le trafic d'entrée ne dit pas qu'il est pressé."
+preuve = "Lecture du bundle construit, clé absente, et d'URLSession.shared. Aucune sonde de comportement possible : le simulateur partage la carte réseau du Mac."
+verifie = "l'absence de la clé et du réglage"
+suppose = "Tout l'effet, qui demande de vrais iPhones et une partie de plus de 30 min. Moonlight n'a pas cette clé non plus : à mesurer avant de corriger."
+
+[[trou]]
+id = "T18"
+titre = "Aucun banc n'exécute la coquille Swift"
+gravite = "moyenne"
+lieux = [
+  "remote/LEARNINGS.md:176",
+]
+cas = "Les tests s'arrêtent à Rust et à JavaScriptCore. Reconnexion, flush, page, orientation et permissions ne tournent nulle part : les trous de cette fiche passent tous ces contrôles en vert. xcodebuild refuse ici la destination simulateur, CoreSimulator 1174.9.2 étant plus vieux que Xcode 27.2 ; le build passe par -sdk iphonesimulator."
+preuve = "un hôte de sonde de 165 lignes, simctl et un journal d'app suffisent à les faire tous rougir, sur une copie isolée."
+verifie = "le contenu des suites et de soiree check remote"
+suppose = "Le coût d'un banc stable en CI : les gestes passent ici par un outil du poste. Le correctif proposé est une commande cargo xtask qui lance ces sondes et un faux hôte, avec idb ou XCUITest."
+
+[saturation]
+sources = ["starscream", "airconsole-api", "deltacore"]
+derniere_lecon = "cordova-1166"
+note = "Lues en dernier, après les 25 références qui ont donné des leçons : un client WebSocket iOS, l'API d'une console par téléphones et une manette tactile iOS, trois codes clients. Aucune n'apprend rien que la fiche n'ait déjà."
+
+[saturation.recoupe]
+starscream = "connectionTimeout et l'échéance de 10 s de FoundationTransport : déjà T6. sendPing : déjà T2. waiting, viability, better path : déjà T5 et TN3179."
+airconsole-api = "onConnect, onDisconnect, vibrate et orientation : le contrat de remote les couvre, et un identifiant stable par appareil rejoint salon. La détection d'absence est côté serveur, déjà couvert par apps.rs."
+deltacore = "touchesCancelled relâche comme touchesEnded : déjà remote/LEARNINGS.md. Vibration et préparation : déjà dans LEARNINGS.md, qui a étudié Delta."
+
+[cout]
+minutes = 46
+references = 28
+sondes_executees = 35
+note = "Temps horloge d'un agent, 13 builds Xcode et rédaction compris. 9 dépôts clonés en filtré, le reste lu par raw.githubusercontent et gh api. Réfutées, sans trou : H5 (bouton tenu en changeant d'app, le relâchement part), H9 (updateUIView ne recharge pas la page), H19 (Nagle déjà coupé), H21 (scanner présent avant autorisation), H23 (retour au premier plan). Non essayées : H24 et le bouton latéral de verrouillage. La FAQ Local Network des forums Apple est derrière une vérification de navigateur : lue nulle part, non citée. Un commit local de Sidequest portant la même leçon que telecommande-44 n'est pas publié : REPETITION.md est cité à sa place."

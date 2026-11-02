@@ -1,0 +1,1129 @@
+# Fiche de recherche. Processus et format : recherche/README.md.
+
+sous_systeme = "fiabilite"
+niveau = 3
+question = "Sous perte, doublon, réordonnancement, débit borné et données hostiles, le flux ordonné de salon livre-t-il chaque événement une fois et dans l'ordre, chaque dernier état, sans blocage, sans perte silencieuse ni travail non borné, avec ses numéros, ses tailles, ses accusés et ses fragments, et que savent quinn, renet, str0m, ioquake3 et les RFC que salon ignore ?"
+compare_a = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+
+[[reference]]
+id = "salon"
+ordre = 1
+sorte = "chez-nous"
+depot = "build-your-own-game/soiree"
+commit = "048b16a0e5063aaa4ce590249681e5188c57e4c6"
+consulte = [
+  "salon/crates/core/src/{stream,wire,codec,client,host,types,lib}.rs lus en entier",
+  "salon/crates/core/tests/{stream_edges,stream_cost,found_bugs,properties}.rs et tests/{net,wire}/mod.rs lus en entier",
+  "salon/crates/host/src/{rtc,ws,room}.rs, chemin de Transmit et files bornées",
+  "salon/crates/web/src/lib.rs, Transport::send et ClientConfig",
+  "salon/README.md, section Les limites ; salon/LEARNINGS.md, section Fiabilité et état",
+  "24 sondes exécutées sur une copie isolée de salon-core, dont 13 correctifs d'une seule cause",
+]
+
+[[reference]]
+id = "punchline"
+ordre = 2
+sorte = "chez-nous"
+depot = "build-your-own-game/punchline"
+commit = "6770a99f27ad6f15763b85094ea8145786dd8da5"
+consulte = [
+  "crates/core/src/lib.rs (phase_number, E5)",
+  "crates/host/src/room.rs (publish : show seulement si la vue change)",
+]
+
+[[reference]]
+id = "sidequest"
+ordre = 3
+sorte = "chez-nous"
+depot = "build-your-own-game/sidequest"
+commit = "fd0c42e666b98a0030aae293a4d41e297d4278a7"
+consulte = [
+  "crates/host/src/room.rs (tick, show_tvs, show_all_phones)",
+  "crates/host/src/main.rs (tick de 100 ms)",
+]
+
+[[reference]]
+id = "ioq3"
+ordre = 4
+sorte = "reel"
+depot = "ioquake/ioq3"
+commit = "87a99d18206e878a20289f05ac3c16005dcae5c3"
+nature = "code-serveur"
+consulte = [
+  "git log --grep sur netchan, reliable, fragment, overflow, sequence, snapshot (50 titres)",
+  "commits 47c96419, cc18246f",
+  "code/qcommon/net_chan.c (Netchan_Process en entier)",
+  "code/server/sv_snapshot.c (SV_UpdateServerCommandsToClient)",
+  "code/server/sv_main.c (SV_AddServerCommand)",
+  "code/server/sv_client.c (Lost reliable commands)",
+]
+
+[[reference]]
+id = "quinn"
+ordre = 5
+sorte = "reel"
+depot = "quinn-rs/quinn"
+commit = "2c5750139fa09aab588bf0f939c83f521d658baf"
+consulte = [
+  "git log --grep sur reassembl, overflow, wrap, out of order, duplicate, flow control, pacing, spurious, PTO, panic (70 titres)",
+  "commits 4b88c940, 62b4f3fe, 553fbd4c, ecb72da1, 531ca90e",
+  "quinn-proto/src/connection/mod.rs (RTT sur le plus grand accusé, PTO, recul)",
+  "quinn-proto/src/connection/pacing.rs",
+  "quinn-proto/src/connection/paths.rs (RttEstimator)",
+  "quinn-proto/src/connection/datagrams.rs (tampon d'envoi, Blocked)",
+]
+
+[[reference]]
+id = "renet"
+ordre = 6
+sorte = "reel"
+depot = "lucaspoffo/renet"
+commit = "ec43e8016eb9443e9d6e20729553bb850cdc7538"
+vu_le = "2026-11-02"
+consulte = [
+  "git log sur reliab, fragment, slice, ack, order, memory, wrap (60 titres)",
+  "commits 207091a, 3ff7dd0, 0c6311c, 9eeaf11, 7fb7876, edec20e, 0aa1a4d, d05984e",
+  "renet/src/channel/reliable.rs (envoi et réception)",
+  "renet/src/channel/slice_constructor.rs",
+  "renet/src/channel/mod.rs (max_memory_usage_bytes)",
+  "renet/src/remote_connection.rs (available_bytes_per_tick, RTT)",
+  "issues 123 et 83",
+]
+
+[[reference]]
+id = "str0m"
+ordre = 7
+sorte = "reel"
+depot = "algesten/str0m"
+commit = "f7bc4a6029f5219b4c6ec50c56519bb6619bf942"
+consulte = [
+  "git log --grep sur sctp, channel, buffered, fragment, chunk (40 titres)",
+  "commits 0c26e81, 18ffec8",
+  "src/sctp/mod.rs (DEFAULT_MAX_BUFFERED_AMOUNT, available)",
+  "src/channel.rs (write)",
+]
+
+[[reference]]
+id = "postcard"
+ordre = 8
+sorte = "reel"
+depot = "jamesmunns/postcard"
+commit = "ea583e40ea63994859e7a38da77797fc53fdc6a1"
+consulte = [
+  "git log sur size_hint, alloc, recurs, depth, varint, overflow (17 titres)",
+  "commit 6338601",
+  "source/postcard/src/de/deserializer.rs (longueurs, aucune borne de profondeur repérée)",
+]
+
+[[reference]]
+id = "enet"
+ordre = 9
+sorte = "reel"
+depot = "lsalzman/enet"
+commit = "5a9c537fd464b3c6d3c55e1d3bd47588faf71b42"
+consulte = [
+  "git log --grep sur fragment, reliable, overflow, window, throttle, sequence (40 titres)",
+  "commits 0d1fb32, 4de13a2, 5181443, b8713bd, 657eaf9, 7c27a5d",
+  "protocol.c (renvoi, délai doublé)",
+  "peer.c (enet_peer_disconnect_later, fenêtres de fiabilité)",
+]
+
+[[reference]]
+id = "kcp"
+ordre = 10
+sorte = "reel"
+depot = "skywind3000/kcp"
+commit = "b1a7a2101dcbb96017681a500d6b82bbe5a88766"
+consulte = [
+  "git log --grep sur fast, resend, wnd, rto, overflow (30 titres)",
+  "commits 3580539, 9158f84, a5d82ca, 49bea97",
+  "ikcp.c, lignes du renvoi rapide (fastresend, fastack) et du RTO",
+]
+
+[[reference]]
+id = "gns"
+ordre = 11
+sorte = "reel"
+depot = "ValveSoftware/GameNetworkingSockets"
+commit = "d534c19aa760df3fb75fd20db13ba1932b8a5463"
+consulte = [
+  "git log --grep sur reliable, fragment, segment, nack, sack, overflow, bandwidth, pacing (40 titres)",
+  "commits a39de80, dbe5a29, a1f9413, 10f2446, 8ac7997",
+  "src/steamnetworkingsockets/clientlib/steamnetworkingsockets_snp.h (bornes des trous)",
+  "include/steam/steamnetworkingtypes.h (FakePacket*, FakeRateLimit*)",
+]
+
+[[reference]]
+id = "reliable"
+ordre = 12
+sorte = "reel"
+depot = "networkprotocol/reliable"
+commit = "3d06ae1ead42ec1532ee93be43d80f1e31cfba95"
+consulte = [
+  "git log --grep sur fragment, fuzz, wrap, overflow, sequence, soak (25 titres)",
+  "commits 259f4c8, f8d8ded",
+  "reliable.c (reliable_sequence_buffer_generate_ack_bits)",
+]
+
+[[reference]]
+id = "rfc9000"
+ordre = 13
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc9000.txt"
+empreinte = "sha256:f88aae47f8b18e102024916e975e919201d8dde689cba79b01079eaedd402e22"
+vu_le = "2026-11-02"
+consulte = [
+  "section 9.3 (paquet le plus haut, paquets réordonnés)",
+]
+
+[[reference]]
+id = "rfc9002"
+ordre = 14
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc9002.txt"
+empreinte = "sha256:3a8a54eea1ad5d1c134a548bf15edfa0e21bfb4106dbd7db3c09cace842099af"
+vu_le = "2026-11-02"
+consulte = [
+  "section 7.7 (pacing) ; sections 5.3 et 6.2 repérées par mots-clés (RTT, recul)",
+]
+
+[[reference]]
+id = "rfc6298"
+ordre = 15
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc6298.txt"
+empreinte = "sha256:f3a6d937c0a7653bd431fdbbdcd7920f4e9d9cdb6134fa9db7a74b90d215edf6"
+vu_le = "2026-11-02"
+consulte = [
+  "formules du RTO en section 2, règle de recul en section 5",
+]
+
+[[reference]]
+id = "rfc8085"
+ordre = 16
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8085.txt"
+empreinte = "sha256:9fc8fa172098ef296040c6e3708d56ff5941fdeda3faf4071c58c68059629f3c"
+vu_le = "2026-11-02"
+consulte = [
+  "début de la section 3.1 (contrôle de congestion d'une application UDP)",
+]
+
+[[reference]]
+id = "rfc8831"
+ordre = 17
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8831.txt"
+empreinte = "sha256:86bec13ce9ebb28dfea37ad2ea2ccd771ab7adb9a95668ed8736eee2b028ea5c"
+vu_le = "2026-11-02"
+consulte = [
+  "paragraphe sur la taille des messages et l'entrelacement",
+]
+
+[[reference]]
+id = "rfc9260"
+ordre = 18
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc9260.txt"
+empreinte = "sha256:04bdd3255e9e5ddf1e401e9d5d726ec2750e5269cb52485db3f7f4fe77500354"
+vu_le = "2026-11-02"
+consulte = [
+  "section 7.2.4 (renvoi rapide) ; Gap Ack Blocks repérés en section 3.3.4",
+]
+
+[[reference]]
+id = "rfc8260"
+ordre = 19
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc8260.txt"
+empreinte = "sha256:fc7345af5beafa61a0c46341987c3073bb17cee7acde000c90bfba595349af68"
+vu_le = "2026-11-02"
+consulte = [
+  "paragraphe de l'introduction sur le blocage en tête de file à l'envoi",
+]
+
+[[reference]]
+id = "rfc9221"
+ordre = 20
+sorte = "normes"
+document = "https://www.rfc-editor.org/rfc/rfc9221.txt"
+empreinte = "sha256:ee8c04c5228fd120030ba7a8f6725c2ca609da107ad2ba8c44fdd44f73edb3b4"
+vu_le = "2026-11-02"
+consulte = [
+  "section 3 (taille annoncée par le pair) ; sections 5.3 et 5.4 repérées",
+]
+
+[[reference]]
+id = "turmoil"
+ordre = 21
+sorte = "bancs"
+depot = "tokio-rs/turmoil"
+commit = "6a1f50223b5a1884bf8890053c85eec04a8af267"
+consulte = [
+  "git log --grep sur hold, loss, duplicate, reorder, fail_rate, udp (20 titres)",
+  "commit 61891a3",
+  "crates/turmoil/src/config.rs (capacités, latences, fail_rate)",
+]
+
+[[reference]]
+id = "proptest"
+ordre = 22
+sorte = "bancs"
+depot = "proptest-rs/proptest"
+commit = "70cf37d46b7d83393b6ed94c611f8c52209f585d"
+consulte = [
+  "git log --grep sur regression, shrink, state machine, persist (20 titres)",
+  "commits bb61ba5, 8a26cfe",
+  "proptest-state-machine/README.md",
+]
+
+[[reference]]
+id = "gaffer-blocs"
+ordre = 23
+sorte = "retours"
+document = "https://gafferongames.com/post/sending_large_blocks_of_data/"
+vu_le = "2026-11-02"
+consulte = [
+  "passages sur les paquets Slice et Ack et sur le budget d'envoi, repérés par mots-clés",
+]
+
+[[reference]]
+id = "gaffer-fragments"
+ordre = 24
+sorte = "retours"
+document = "https://gafferongames.com/post/packet_fragmentation_and_reassembly/"
+vu_le = "2026-11-02"
+consulte = [
+  "passages sur les attaques par fragments et le test d'endurance, repérés par mots-clés",
+]
+
+[[reference]]
+id = "gaffer-ordre"
+ordre = 25
+sorte = "retours"
+document = "https://gafferongames.com/post/reliable_ordered_messages/"
+vu_le = "2026-11-02"
+consulte = [
+  "passages sur les accusés et la fenêtre du récepteur, repérés par mots-clés",
+]
+
+[[reference]]
+id = "ioq3-client"
+ordre = 26
+sorte = "reel"
+depot = "ioquake/ioq3"
+commit = "87a99d18206e878a20289f05ac3c16005dcae5c3"
+nature = "code-client"
+consulte = [
+  "code/client/cl_parse.c (CL_ParseCommandString, reliableAcknowledge)",
+  "code/client/cl_input.c, boucle sur les commandes non accusées",
+  "code/client/cl_main.c, garde de CL_AddReliableCommand",
+]
+
+[[reference]]
+id = "yojimbo"
+ordre = 27
+sorte = "reel"
+depot = "networkprotocol/yojimbo"
+commit = "f0cde95f5a27ca345f83dad65dc36712366077db"
+consulte = [
+  "git log --grep sur reliable, fragment, block, overflow, sequence (30 titres)",
+  "commit 84715fa",
+  "source/yojimbo_reliable_ordered_channel.cpp (choix des messages à renvoyer, prochain fragment non accusé)",
+  "include/yojimbo_config.h (délais et tailles)",
+]
+
+[[reference]]
+id = "neqo"
+ordre = 28
+sorte = "reel"
+depot = "mozilla/neqo"
+commit = "a5150f62698b28bf3131be7b2d075e3ffcd093b8"
+nature = "code-client"
+consulte = [
+  "git log --grep sur ack delay, persistent, spurious, pto, reorder, overflow, fuzz (30 titres)",
+  "commit 16a55f96",
+  "neqo-transport/src/recv_stream.rs (check_gap_limit)",
+  "neqo-transport/src/recovery/mod.rs (pto_period_inner)",
+  "neqo-transport/src/rtt.rs (rttvar, lignes repérées)",
+  "fuzz/fuzz_targets (12 cibles repérées)",
+]
+
+[[reference]]
+id = "geckos"
+ordre = 29
+sorte = "reel"
+depot = "geckosio/geckos.io"
+commit = "d069b53049782bcf75dcc10e6f0891fb2a907db9"
+nature = "code-client"
+consulte = [
+  "git log --grep sur reliable, duplicate, bufferedAmount, fragment (9 titres)",
+  "packages/common/src/reliableMessage.ts",
+  "packages/client/src/geckos/channel.ts (doublons par identifiant)",
+  "packages/server/src/geckos/channel.ts (autoManageBuffering)",
+]
+
+[[lecon]]
+id = "fiabilite-01"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/LEARNINGS.md#L56"
+citation = "ordre garanti sans tampon de réception"
+enonce = "Salon crédite Quake 3 de son ordre sans tampon, mais Quake 3 remet tout le non-accusé dans chaque paquet : un paquet perdu ne crée pas de trou. Salon ne renvoie qu'à la minuterie, et jette tout ce qui suit le trou."
+categorie = "heritage"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "fiabilite-02"
+source = "salon"
+lien = "https://github.com/build-your-own-game/soiree/blob/048b16a0e5063aaa4ce590249681e5188c57e4c6/salon/crates/core/src/types.rs#L211"
+citation = "A WebSocket: nothing is lost, packets can be larger."
+enonce = "Le type dit qu'un WebSocket ne perd rien, et le flux y renvoie quand même à la minuterie : des copies s'empilent devant ce qui est frais."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T4"
+
+[[lecon]]
+id = "fiabilite-03"
+source = "punchline"
+lien = "https://github.com/build-your-own-game/punchline/blob/6770a99f27ad6f15763b85094ea8145786dd8da5/crates/core/src/lib.rs#L482"
+citation = "stamps every action with the number its sender"
+enonce = "Un jeu refuse une action dont la phase est périmée (E5) : la phase que porte un événement doit être la plus récente vue, jamais une plus ancienne."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "fiabilite-04"
+source = "sidequest"
+lien = "https://github.com/build-your-own-game/sidequest/blob/fd0c42e666b98a0030aae293a4d41e297d4278a7/crates/host/src/room.rs#L439"
+citation = "self.show_tvs(now, host);"
+enonce = "Un jeu réel envoie un état à chaque pas de sa boucle : l'état plus fréquent que le renvoi est un usage, pas un cas d'école. Ici la TV est locale, en WebSocket, sans perte."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "fiabilite-05"
+source = "ioq3"
+lien = "https://github.com/ioquake/ioq3/blob/87a99d18206e878a20289f05ac3c16005dcae5c3/code/qcommon/net_chan.c#L305"
+citation = "discard out of order or duplicated packets"
+enonce = "Un paquet plus vieux que le dernier lu ne doit changer aucun état courant."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+note = "Salon a raison de lire les fragments et les accusés d'un vieux paquet : ils sont sûrs. Seuls les champs qui écrasent une valeur courante, comme la phase, ne le sont pas."
+
+[[lecon]]
+id = "fiabilite-06"
+source = "ioq3"
+lien = "https://github.com/ioquake/ioq3/blob/87a99d18206e878a20289f05ac3c16005dcae5c3/code/server/sv_snapshot.c#L221"
+citation = "write any unacknowledged serverCommands"
+enonce = "Tout le non-accusé repart dans chaque paquet : une perte se répare au paquet suivant, sans minuterie, parce que la file est courte (64 commandes)."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "fiabilite-07"
+source = "ioq3"
+lien = "https://github.com/ioquake/ioq3/commit/47c9641939d84cfae249b38d2691d37ff84be817"
+citation = "Having a reliableAcknowledge of 0x7FFFFFFF causes a massive"
+enonce = "Un accusé forgé hors de la plage faisait tourner le serveur dans une boucle géante."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "OutEvents::ack vide la file tant que le numéro est plus petit, sans arithmétique circulaire ni boucle sur l'écart. Sonde s13b : u32::MAX en 3 µs, et il ne vide que la file de l'appareil qui ment."
+
+[[lecon]]
+id = "fiabilite-08"
+source = "ioq3"
+lien = "https://github.com/ioquake/ioq3/blob/87a99d18206e878a20289f05ac3c16005dcae5c3/code/server/sv_main.c#L173"
+citation = "Server command overflow"
+enonce = "Une file fiable pleine ne doit jamais jeter en silence. Quake 3 éjecte le client ; salon rend Full à l'appelant."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_flooding_phone_does_not_slow_down_the_others"]
+
+[[lecon]]
+id = "fiabilite-09"
+source = "quinn"
+lien = "https://github.com/quinn-rs/quinn/commit/4b88c9403a3bfebd7910dd1f6173882d5bbbebce"
+citation = "Either way the buffered chunk count is unbounded, which is the"
+enonce = "Le réassemblage se borne en nombre de morceaux, pas seulement en octets : des morceaux vides ou répétés ne coûtent aucun octet utile."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_cost.rs::a_packet_costs_what_it_carries_not_what_it_announces"]
+
+[[lecon]]
+id = "fiabilite-10"
+source = "quinn"
+lien = "https://github.com/quinn-rs/quinn/blob/2c5750139fa09aab588bf0f939c83f521d658baf/quinn-proto/src/connection/mod.rs#L1923"
+citation = "let backoff = 2u32.pow(self.pto_count.min(MAX_BACKOFF_EXPONENT));"
+enonce = "Chaque minuterie expirée sans réponse double l'attente suivante."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-11"
+source = "quinn"
+lien = "https://github.com/quinn-rs/quinn/blob/2c5750139fa09aab588bf0f939c83f521d658baf/quinn-proto/src/connection/pacing.rs#L134"
+citation = "The goal is to emit a burst (of size `capacity`) in timer intervals"
+enonce = "Les paquets partent par petites rafales espacées, jamais la file entière d'un coup."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-12"
+source = "quinn"
+lien = "https://github.com/quinn-rs/quinn/commit/62b4f3fec9d4b61371af13c5858fd8ade6722135"
+citation = "we might attempt to transmit a smaller flow control credit"
+enonce = "Sous réordonnancement, une valeur tardive redescend sous une valeur déjà annoncée : ce qui est monotone se compare avant d'écrire."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "fiabilite-13"
+source = "quinn"
+lien = "https://github.com/quinn-rs/quinn/commit/553fbd4c533256ca45306ef1fd09ec6d5978b7eb"
+citation = "This was the last per-poll scan of the sent-packet window"
+enonce = "Le calcul de la prochaine échéance ne parcourt pas toute la fenêtre à chaque tour."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T13"
+
+[[lecon]]
+id = "fiabilite-14"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/blob/ec43e8016eb9443e9d6e20729553bb850cdc7538/renet/src/channel/reliable.rs#L146"
+citation = "let start_index = *next_slice_to_send;"
+enonce = "Un message découpé s'accuse morceau par morceau, et chaque passe reprend où la précédente s'est arrêtée : un budget d'envoi ne recoupe jamais toujours les mêmes morceaux."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "fiabilite-15"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/commit/207091a12eb74e037af2642fec2aaa7dd62c2b28"
+citation = "Only ack the packet when all fragments are received."
+enonce = "Accuser au premier fragment fait croire à l'autre côté que tout est arrivé : il ne renvoie plus jamais le reste."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::fragments_come_together_in_their_order_whatever_the_order_of_arrival", "salon/crates/core/tests/salon.rs::the_latest_state_wins_and_a_big_one_is_cut_to_fit"]
+
+[[lecon]]
+id = "fiabilite-16"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/commit/9eeaf11e4eb2c0a197753aac5d897d2823ded183"
+citation = "on creation instead of when the first fragmentation happened."
+enonce = "Une configuration que la fragmentation ne peut pas porter se refuse à la création, pas au premier gros message."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T8"
+
+[[lecon]]
+id = "fiabilite-17"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/issues/123"
+citation = "client never receives any message if you constantly sending it"
+enonce = "Un gros message remplacé sans cesse n'arrive plus jamais : chaque remplacement perd ce qui était déjà arrivé."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "fiabilite-18"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/commit/0aa1a4d08fde68a04df923ff553a0050801bef15"
+citation = "Large unreliable message are susceptible to packet loss."
+enonce = "Un message découpé sans renvoi de ses morceaux meurt d'un seul morceau perdu : renet avertit au-delà de 20 fragments. Un état de salon vit ainsi dès qu'il est remplacé avant son renvoi."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T5"
+
+[[lecon]]
+id = "fiabilite-19"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/blob/ec43e8016eb9443e9d6e20729553bb850cdc7538/renet/src/channel/mod.rs#L31"
+citation = "Maximum number of bytes that the channel may hold without acknowledgement"
+enonce = "Ce qui attend un accusé se borne en octets, pas en nombre de messages."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T11"
+
+[[lecon]]
+id = "fiabilite-20"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/commit/3ff7dd0b7ed4cf30e2ee36a849986fc8e6e99f78"
+citation = "were being kept in the received_messages Set indefinitely."
+enonce = "Un ensemble de messages reçus hors d'ordre grossissait sans fin."
+categorie = "accident"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Salon ne garde rien de hors d'ordre aujourd'hui. À reprendre si T2 ajoute un tampon : il devra être borné et vidé à chaque changement de session."
+
+[[lecon]]
+id = "fiabilite-21"
+source = "renet"
+lien = "https://github.com/lucaspoffo/renet/commit/d05984e2d720861fa6a1d2cc09e18c4b0771fbca"
+citation = "use wrapping add on chunk id"
+enonce = "Des numéros courts reviennent à zéro, et chaque comparaison doit le prévoir."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Salon numérote en u32 sans retour à zéro, et une époque neuve les remet à zéro : à 60 messages par seconde, la plage dure plus de deux ans. Au bout, push rend Full. Sonde s13 : un état forgé à u32::MAX rend muet l'appareil qui le forge, même rechargé, et lui seul : il faut son jeton."
+
+[[lecon]]
+id = "fiabilite-22"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/commit/18ffec809f46db3dc5510e0a05e69a0f21fd1d6d"
+citation = "so it also caps data channel throughput at about that many"
+enonce = "Le tampon SCTP compte ce qui n'est pas encore accusé : tout ce qui dépasse 128 Kio par aller-retour est refusé, ce qui en fait un tuyau qui jette la fin d'une rafale."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "fiabilite-23"
+source = "str0m"
+lien = "https://github.com/algesten/str0m/blob/f7bc4a6029f5219b4c6ec50c56519bb6619bf942/src/channel.rs#L61"
+citation = "If it's not available, don't accept."
+enonce = "Écrire dans le canal dit si c'est accepté : ce retour renseigne l'expéditeur. Salon l'ignore, et le fragment compte comme parti."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-24"
+source = "postcard"
+lien = "https://github.com/jamesmunns/postcard/commit/6338601498b23e962632087c44b19830d579227d"
+citation = "Don't give SecAccess size hint if len > remaining bytes"
+enonce = "Une longueur annoncée ne réserve pas de mémoire au-delà des octets reçus."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/src/codec.rs::framed_messages_reject_valid_prefixes_and_incomplete_payloads"]
+note = "Salon est sur postcard 1.1.3, qui a ce correctif. Sonde s11a : 17 octets annonçant 2^64 parts, 0 octet alloué. Postcard n'a pas de borne de profondeur : un type récursif décode 4 095 niveaux sur 2 Mio de pile et déborde à 20 000 (sonde s11b), hors de portée de max_up. Une liste de types sans taille coûte 1,35 s pour 4 octets (s11c). Aucun jeu n'a ces types : à surveiller, pas un trou."
+
+[[lecon]]
+id = "fiabilite-25"
+source = "enet"
+lien = "https://github.com/lsalzman/enet/commit/b8713bdf88dba9a3e1ac75fc50923b7f23e00115"
+citation = "delay handling of DISCONNECT_LATER until in-flight unreliable packets are sent"
+enonce = "Un départ passe après ce qui a été envoyé avant lui."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T10"
+
+[[lecon]]
+id = "fiabilite-26"
+source = "enet"
+lien = "https://github.com/lsalzman/enet/blob/5a9c537fd464b3c6d3c55e1d3bd47588faf71b42/protocol.c#L1388"
+citation = "outgoingCommand -> roundTripTimeout *= 2;"
+enonce = "Chaque renvoi double l'attente du suivant, pour chaque commande."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-27"
+source = "enet"
+lien = "https://github.com/lsalzman/enet/commit/4de13a2c2e98845f681c6e6221dc444877bd1cb7"
+citation = "avoid sending packets in unacknowledged window"
+enonce = "Avec des numéros sur 16 bits, envoyer trop loin devant fait confondre un numéro neuf avec un ancien."
+categorie = "heritage"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Numéros sur 32 bits sans retour à zéro, et un récepteur qui ne lit que le numéro attendu : aucune confusion possible."
+
+[[lecon]]
+id = "fiabilite-28"
+source = "enet"
+lien = "https://github.com/lsalzman/enet/commit/518144338dd2d55192446e5ef37bc2eb97fe9bc8"
+citation = "fix maximumWaitingData handling to allow acknowledgements when the packet already exists"
+enonce = "Le budget de réception ne doit pas empêcher d'accuser ce qui est déjà là."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_flooding_phone_does_not_slow_down_the_others"]
+
+[[lecon]]
+id = "fiabilite-29"
+source = "enet"
+lien = "https://github.com/lsalzman/enet/commit/657eaf97d9d335917c58484a4a4b5e03838ebd8e"
+citation = "totalLength < fragmentCount ||"
+enonce = "Un fragment incohérent se refuse avant de toucher au réassemblage."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::nonsense_fragments_are_counted_and_the_largest_legal_count_is_not", "E1"]
+note = "Salon ne vérifie ni la longueur d'un fragment ni leur somme. Ce n'est pas un trou : un message forgé reste borné par max_up et finit garbage au décodage, ou passe pour un message valide de son propre appareil."
+
+[[lecon]]
+id = "fiabilite-30"
+source = "kcp"
+lien = "https://github.com/skywind3000/kcp/blob/b1a7a2101dcbb96017681a500d6b82bbe5a88766/ikcp.c#L1113"
+citation = "resent = (kcp->fastresend > 0)? (IUINT32)kcp->fastresend : 0xffffffff;"
+enonce = "Un segment dépassé plusieurs fois par les accusés repart sans attendre sa minuterie."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "fiabilite-31"
+source = "kcp"
+lien = "https://github.com/skywind3000/kcp/commit/3580539e0ff6875512b9abd3ec8273efb791a905"
+citation = "fixed the crash issue when len is minus caused by invalid data."
+enonce = "Une longueur reçue signée a fait tomber le décodeur : le réseau n'a pas à faire paniquer le code."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::garbage_from_a_phone_is_ignored", "salon/fuzz/fuzz_targets/decode.rs", "E1"]
+
+[[lecon]]
+id = "fiabilite-32"
+source = "gns"
+lien = "https://github.com/ValveSoftware/GameNetworkingSockets/commit/a39de80f9b53d20ecdfada8935e16c9279882d03"
+citation = "This means we might be acking packets that we did not actually process!"
+enonce = "Un accusé ne couvre que ce qui a été traité, jamais ce qu'on a choisi de jeter."
+categorie = "accident"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::an_acknowledgement_covers_what_it_names_and_nothing_more", "salon/crates/core/tests/salon.rs::a_flooding_phone_does_not_slow_down_the_others"]
+note = "Une exception à regarder : un événement trop gros est sauté et accusé, voir T9."
+
+[[lecon]]
+id = "fiabilite-33"
+source = "gns"
+lien = "https://github.com/ValveSoftware/GameNetworkingSockets/commit/dbe5a29a94badf5bc1d5d0d9c28383880fc3c59b"
+citation = "Add another recv limit to protect against malicious peers"
+enonce = "Le nombre de morceaux par paquet se borne, parce qu'un minuscule morceau coûte plus qu'il ne pèse."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_cost.rs::a_packet_with_more_parts_than_a_sender_can_fit_is_garbage"]
+
+[[lecon]]
+id = "fiabilite-34"
+source = "gns"
+lien = "https://github.com/ValveSoftware/GameNetworkingSockets/blob/d534c19aa760df3fb75fd20db13ba1932b8a5463/src/steamnetworkingsockets/clientlib/steamnetworkingsockets_snp.h#L36"
+citation = "Discard reliable data past the end of the stream, if it would cause"
+enonce = "Garder ce qui arrive après un trou demande une borne : au-delà, on jette et on compte sur le renvoi."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "fiabilite-35"
+source = "gns"
+lien = "https://github.com/ValveSoftware/GameNetworkingSockets/commit/a1f94137842278b66d137152341ebcb8d38f1ac4"
+citation = "Adding config vars to simulate bandwidth limit"
+enonce = "Un banc de réseau simule aussi un débit et une rafale bornés, pas seulement la perte et le désordre."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "fiabilite-36"
+source = "reliable"
+lien = "https://github.com/networkprotocol/reliable/commit/259f4c8ae0f577c8874164a4a07fe7703b9065b7"
+citation = "Config now refuses a product that does not fit"
+enonce = "La configuration se vérifie quand on la donne, pas quand elle casse."
+categorie = "accident"
+decision = "garder"
+etat = "trou"
+trou = "T12"
+
+[[lecon]]
+id = "fiabilite-37"
+source = "rfc9000"
+lien = "https://www.rfc-editor.org/rfc/rfc9000.txt#L2735"
+citation = "response to the highest-numbered non-probing packet."
+enonce = "Un changement d'état ne vient que du paquet le plus récent : c'est écrit pour que des paquets réordonnés ne ramènent pas en arrière."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T6"
+
+[[lecon]]
+id = "fiabilite-38"
+source = "rfc9002"
+lien = "https://www.rfc-editor.org/rfc/rfc9002.txt#L1192"
+citation = "Senders MUST either use pacing or limit such bursts."
+enonce = "Une rafale se limite ou s'étale : envoyer sans délai crée la perte qu'on cherche à réparer."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-39"
+source = "rfc6298"
+lien = "https://www.rfc-editor.org/rfc/rfc6298.txt#L137"
+citation = "RTO <- SRTT + max (G, K*RTTVAR)"
+enonce = "La minuterie de renvoi tient compte de la variance du temps d'aller-retour, pas seulement de sa moyenne."
+categorie = "physique"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Salon prend deux fois l'aller-retour lissé, borné à 100 ms : déjà au-dessus du 99e centile mesuré, 67 ms (salon-core, lib.rs). Un renvoi inutile coûte des octets, jamais une erreur, le doublon étant filtré. Non éprouvé sous forte gigue : ce coût-là appartient à T3."
+
+[[lecon]]
+id = "fiabilite-40"
+source = "rfc8085"
+lien = "https://www.rfc-editor.org/rfc/rfc8085.txt#L326"
+citation = "application SHOULD perform congestion control over all UDP traffic it"
+enonce = "Le contrôle de congestion n'est pas optionnel, et se compte sur tout le trafic vers un destinataire."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T3"
+
+[[lecon]]
+id = "fiabilite-41"
+source = "rfc8831"
+lien = "https://www.rfc-editor.org/rfc/rfc8831.txt#L554"
+citation = "is not supported, the sender SHOULD limit the maximum message size to"
+enonce = "Sans entrelacement, un gros message monopolise l'association SCTP : les messages restent petits."
+categorie = "physique"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::the_latest_state_wins_and_a_big_one_is_cut_to_fit"]
+note = "Caps::DATAGRAM écrit 1 100 octets au plus. La norme parle d'un message SCTP, et salon en fait un par paquet."
+
+[[lecon]]
+id = "fiabilite-42"
+source = "rfc9260"
+lien = "https://www.rfc-editor.org/rfc/rfc9260.txt#L4699"
+citation = "(via subsequent SACK chunks for a total of three missing reports) on"
+enonce = "L'accusé dit aussi ce qui est arrivé après le trou, et trois signalements déclenchent le renvoi : la perte se répare sans attendre la minuterie."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T2"
+
+[[lecon]]
+id = "fiabilite-43"
+source = "rfc8260"
+lien = "https://www.rfc-editor.org/rfc/rfc8260.txt#L189"
+citation = "of sender-side head-of-line blocking (e.g., when the transmission of"
+enonce = "Un gros message bloque à l'envoi ceux qui le suivent."
+categorie = "physique"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Pour les événements, attendre le précédent est la promesse d'ordre elle-même. L'état a sa propre file et part dans la même rafale. Le seul blocage durable connu est celui de T1, qui a sa cause propre."
+
+[[lecon]]
+id = "fiabilite-44"
+source = "rfc9221"
+lien = "https://www.rfc-editor.org/rfc/rfc9221.txt#L152"
+citation = "than the max_datagram_frame_size value it has received from its peer."
+enonce = "La taille maximale qu'un côté accepte s'annonce à l'autre : l'envoi la connaît avant d'envoyer."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T9"
+
+[[lecon]]
+id = "fiabilite-45"
+source = "turmoil"
+lien = "https://github.com/tokio-rs/turmoil/commit/61891a36199964dd85ba2b0d0053cdc58c7c5acd"
+citation = "the state of messages already in the `sent` queue, instead of having"
+enonce = "Une panne touche aussi ce qui est déjà en vol."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place"]
+
+[[lecon]]
+id = "fiabilite-46"
+source = "turmoil"
+lien = "https://github.com/tokio-rs/turmoil/blob/6a1f50223b5a1884bf8890053c85eec04a8af267/crates/turmoil/src/config.rs#L23"
+citation = "- udp_capacity: 64"
+enonce = "Un banc borne ses files : au-delà, le simulé perd, comme le vrai."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "fiabilite-47"
+source = "proptest"
+lien = "https://github.com/proptest-rs/proptest/commit/bb61ba5e4bfde42dcf2f302468803cd865fcb51c"
+citation = "Run most recently added regression first"
+enonce = "Un cas trouvé par le hasard devient un test fixe, rejoué d'abord."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::proptest_cases_really_widens_the_chaos"]
+
+[[lecon]]
+id = "fiabilite-48"
+source = "proptest"
+lien = "https://github.com/proptest-rs/proptest/commit/8a26cfee997746e5dc9dc03eca4be3fa145c0911"
+citation = "add state_machine strategy and sequential test runner with custom macro"
+enonce = "Une suite aléatoire d'opérations réduite au plus petit cas éprouve un protocole mieux que des cas écrits."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event", "salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place"]
+
+[[lecon]]
+id = "fiabilite-49"
+source = "gaffer-blocs"
+lien = "https://gafferongames.com/post/sending_large_blocks_of_data/"
+citation = "a bitfield indicating which slices have been received so far."
+enonce = "Pour un gros bloc, l'accusé dit quels morceaux sont arrivés : on ne renvoie que les autres."
+categorie = "physique"
+decision = "garder"
+etat = "trou"
+trou = "T1"
+
+[[lecon]]
+id = "fiabilite-50"
+source = "gaffer-fragments"
+lien = "https://gafferongames.com/post/packet_fragmentation_and_reassembly/"
+citation = "Your soak test passes when it runs overnight and doesn’t hang or assert."
+enonce = "L'endurance avec de gros paquets est ce qui trouve les bugs de fragmentation : le critère est de ne jamais rester bloqué."
+categorie = "usage-reel"
+decision = "garder"
+etat = "trou"
+trou = "T7"
+
+[[lecon]]
+id = "fiabilite-51"
+source = "gaffer-ordre"
+lien = "https://gafferongames.com/post/reliable_ordered_messages/"
+citation = "you must never send a message id equal to or more recent than"
+enonce = "L'expéditeur reste dans la fenêtre que le récepteur peut tenir, sinon un message s'accuse sans avoir été gardé."
+categorie = "physique"
+decision = "jeter"
+etat = "non-applicable"
+raison = "Le récepteur de salon n'a pas de fenêtre : il n'accuse que ce qu'il a livré, et un accusé est cumulatif. La règle reviendrait avec le tampon de T2."
+
+[[lecon]]
+id = "fiabilite-52"
+source = "ioq3-client"
+lien = "https://github.com/ioquake/ioq3/blob/87a99d18206e878a20289f05ac3c16005dcae5c3/code/client/cl_parse.c#L842"
+citation = "see if we have already executed stored it off"
+enonce = "Côté client aussi, un numéro déjà vu ne repasse pas."
+categorie = "usage-reel"
+decision = "garder"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage", "salon/crates/core/tests/properties.rs::chaos_never_loses_or_doubles_an_event"]
+
+[[trou]]
+id = "T1"
+titre = "Un message plus gros que ce que le tuyau passe d'un renvoi au suivant n'arrive jamais, et bloque tout ce qui le suit"
+gravite = "haute"
+lieux = [
+  "salon/crates/core/src/stream.rs:223",
+  "salon/crates/core/src/stream.rs:453",
+  "salon/crates/core/src/wire.rs:55",
+  "salon/crates/host/src/rtc.rs:177",
+]
+cas = "Chaque renvoi repart du fragment 0 et l'accusé ne dit rien d'un message incomplet. Un tuyau qui garde le début d'une rafale et jette la fin transporte donc toujours les mêmes fragments. Sur un tuyau simulé à tampon de 32 Kio, 60 000 octets : 0 message sur 1 en 120 s, à 1, 5 et 20 Mb/s, avec 325 à 1 230 fois sa taille offerte. Avec le tampon de 128 Kio de str0m : 5 messages de 60 000 octets à 300 kb/s, 2 sur 5 en 120 s ; 5 de 32 000 à 200 kb/s, 4 sur 5. Comme la file est ordonnée, tous les événements suivants restent derrière. send rend Ok, le lien reste vivant, rien ne remonte au jeu. L'état a le même chemin."
+preuve = "Sondes s6_a_message_bigger_than_the_pipe_still_arrives, s6c et s6d : échec sur les sources intactes. La seule rotation du fragment de départ à chaque passe (copie isolée) donne 1 sur 1 en moins d'une seconde aux trois débits, 5 sur 5 en 19,5 s à 300 kb/s, 5 sur 5 en 12,3 s pour 5 x 32 000 à 200 kb/s, et 500 cas verts de chaos à rafale bornée ; les suites de salon-core restent vertes. La rotation ne suffit pas à tout : à 100 kb/s, 5 x 60 000 reste à 4 sur 5 en 120 s."
+verifie = "salon-core sur un tuyau simulé avec débit et tampon qui jette l'excédent, à message de 60 000 octets ; lu dans le code : 128 Kio par association dans str0m 0.24.1, write qui rend false, résultat ignoré par rtc.rs."
+suppose = "Que la pile SCTP réelle se comporte comme ce tuyau : pas rejoué avec str0m ni sur Wi-Fi. Aux limites par défaut, il faut environ 300 kb/s par téléphone et des messages de 32 Ko et plus ; je n'ai vu aucun jeu en envoyer sur DataChannel, sans mesurer leurs tailles. Un max_down au-dessus de 128 Kio rendrait le blocage permanent à tout débit, par déduction de la lecture de str0m."
+
+[[trou]]
+id = "T2"
+titre = "Un trou dans la file fait jeter tout ce qui suit jusqu'au renvoi suivant"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/stream.rs:315",
+  "salon/crates/core/src/stream.rs:1",
+]
+cas = "InEvents ne lit que le numéro attendu, et l'expéditeur n'apprend le trou qu'à sa minuterie. Sur un tuyau de 2 Mb/s à 5 % de perte, 100 événements de 2 000 octets prennent 12,6 s au lieu de 0,8, pour 12 fois leur taille. Sur le banc, 200 événements de 900 octets prennent 10,3 s sans aucune perte, à cause d'une gigue de 5 ms."
+preuve = "Sondes s7 et s6_table. Un tampon de 64 numéros au récepteur (copie isolée) donne 0,27 s sans perte, 0,57 s à 10 % de perte au lieu de 11,9, et 2,3 s au lieu de 12,6 sur le tuyau. La suite reste verte sauf a_gap_and_a_repeat_deliver_nothing_and_are_not_garbage, qui écrit le comportement actuel : ce test changerait avec le correctif."
+verifie = "salon-core sur le banc et sur le tuyau simulé, moyenne de 5 graines pour s7."
+suppose = "L'effet sur un vrai jeu : de petits événements tiennent à vingt par paquet, donc un seul paquet perdu en emporte peu. La gigue uniforme du banc sur une rafale est plus dure qu'un vrai Wi-Fi."
+
+[[trou]]
+id = "T3"
+titre = "Salon ne ralentit jamais : tout part d'un coup, et repart au même rythme sur un lien muet ou saturé"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/stream.rs:208",
+  "salon/crates/core/src/stream.rs:629",
+  "salon/crates/core/src/host.rs:705",
+  "salon/crates/core/src/client.rs:490",
+]
+cas = "BURST ne borne rien : poll relance flush dès que l'outbox est vide, donc toute la file part au même instant. Le renvoi ne recule pas. Sur 5,9 s de silence avant Timing::absent, un état de 60 000 octets à 10 ms d'aller-retour coûte 3 599 paquets, 3,6 Mo, 60 fois sa taille. 20 événements de 8 000 octets à 1 Mb/s coûtent 2,3 fois leur taille, dont 48 % jetés. Le refus de str0m ne remonte pas."
+preuve = "Sondes s6b et s6_a_full_queue. Allonger l'attente du silence en cours, plafonnée à resend_max, dans host.rs seul : de 60 à 6,1 fois la taille, suites vertes. Une fenêtre fixe de 64 Kio en vol : de 2,3 à 1,4 fois, 0 % jeté à 1 Mb/s, suites vertes, mais à 300 kb/s 20 x 8 000 tombe de 20 sur 20 à 12 sur 20 en 120 s : une fenêtre doit suivre les accusés."
+verifie = "Les octets offerts par salon-core sur tuyau simulé et sur coupure."
+suppose = "Ce que cela coûte sur un Wi-Fi partagé par quinze téléphones : pas mesuré. Le réglage d'une fenêtre qui suit les accusés reste à concevoir."
+
+[[trou]]
+id = "T4"
+titre = "Sur WebSocket, les renvois s'empilent devant ce qui est frais"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/stream.rs:224",
+  "salon/crates/core/src/types.rs:211",
+  "salon/crates/host/src/room.rs:79",
+]
+cas = "Un WebSocket ne perd rien, mais le renvoi à la minuterie y tourne quand même. Sur un lien sans perte de 300 kb/s, un état de 60 000 octets toutes les 2 s fait monter la file à 1 805 Kio, soit 49 s de retard : 15 états vus sur 30."
+preuve = "Sonde s8 : même lien, sans renvoi à la minuterie sur un lien en flux (copie isolée) : 1,0 fois la taille, 1,6 s de file, 30 états sur 30, suites vertes."
+verifie = "salon-core sur un tuyau sans perte, à file de 256 paquets de 16 Kio comme OUTBOX."
+suppose = "Le comportement d'un vrai TCP lent. Le correctif éprouvé est trop simple : quand OUTBOX est pleine, un paquet est bien perdu, et il faudra le renvoyer."
+
+[[trou]]
+id = "T5"
+titre = "Un gros état rafraîchi plus vite que son renvoi n'arrive jamais"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/stream.rs:392",
+  "salon/crates/core/src/stream.rs:527",
+]
+cas = "set efface ce qui a été envoyé, et le récepteur jette l'assemblage du numéro précédent. Tout fragment perdu tue l'état s'il est remplacé avant son renvoi. Pour un état montré toutes les 100 ms pendant 30 s : 30 000 octets à 10 % de perte, 10 sur 300 ; 60 000 octets, 0 sur 300. La documentation promet qu'il est renvoyé jusqu'à son arrivée."
+preuve = "Sondes s3 et s3_a_big_state_refreshed_often_still_arrives. Laisser finir un état de plusieurs fragments déjà en vol et garder le plus récent en attente (copie isolée) : 193 sur 300 et 165 sur 300, suites vertes."
+verifie = "salon-core sur faux réseau."
+suppose = "Aucun jeu lu n'envoie de gros état fréquent sur DataChannel : Sidequest envoie à chaque pas vers une TV locale, en WebSocket, et les téléphones ne reçoivent qu'un changement. Le seuil suit l'aller-retour : il descend quand le renvoi s'allonge."
+
+[[trou]]
+id = "T6"
+titre = "Un paquet en retard fait reculer la phase, et l'événement suivant part périmé"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/src/client.rs:367",
+]
+cas = "Client::received écrit la phase de tout paquet lu, même plus vieux que le dernier. Une réponse donnée après la vue de la phase n part avec la phase n-1, et le jeu la refuse (E5), jusqu'au paquet suivant, 250 ms au plus. Sur 1 000 réponses : 0 avec 2 % de doublons et 30 ms de gigue ; de 4 à 32 avec 5 à 20 % de perte, 10 % de doublons et 40 à 100 ms de gigue."
+preuve = "Sondes s1 et s1b. Comparer packet.sent au plus récent déjà lu avant d'écrire la phase (copie isolée) : 0 sur 1 000 dans tous les cas, suites vertes."
+verifie = "salon-core avec paquets forgés et sur faux réseau, de bout en bout jusqu'à la phase reçue par l'hôte."
+suppose = "La fréquence réelle du réordonnancement sur Wi-Fi. Un joueur qui répond en moins de 250 ms après un changement de phase est surtout le cas d'un buzzer."
+
+[[trou]]
+id = "T7"
+titre = "Le banc ne peut voir ni T1, ni T3, ni T4 : il n'a ni débit, ni tampon, ni gros message"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/core/tests/net/mod.rs:45",
+  "salon/crates/core/tests/properties.rs:200",
+]
+cas = "Faults connaît la perte, le doublon et la gigue. Le chaos de properties.rs reste sur Caps::DATAGRAM, à 3 000 octets au plus. Il est vert alors que T1 bloque un message pour toujours."
+preuve = "Chaos élargi : messages de 60 Ko, alternance WebSocket et WebRTC, 40 % de doublons, 200 ms de gigue, 3 000 cas verts : il ne voit rien non plus. La seule limite de 32 000 octets par pas dans Net::schedule le fait échouer au premier cas, réduit à un seul événement de 31 260 octets. Avec la rotation de T1, 500 cas verts."
+verifie = "Le banc sur une copie, avec et sans cette limite ; PROPTEST_CASES=3000 sur les deux chaos existants, verts."
+suppose = "Quelle rafale et quel débit valent un vrai Wi-Fi : la limite de 32 000 octets est choisie pour la démonstration."
+
+[[trou]]
+id = "T8"
+titre = "Un message de plus de 1 024 fragments rend Ok, puis bloque la file pour toujours"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/stream.rs:75",
+  "salon/crates/core/src/stream.rs:319",
+  "salon/crates/core/src/host.rs:795",
+]
+cas = "Rien à l'envoi ne compare la taille à MAX_FRAGMENTS. Avec max_down à 2 Mio, send de 1,1 Mo rend Ok ; chaque fragment devient garbage sans faire avancer le numéro. L'événement suivant n'arrive jamais, sans erreur : 0 reçu en 5 s."
+preuve = "Sonde s4. Refuser TooBig au-delà de 1 024 fragments de datagramme (copie isolée) : le suivant arrive, suites vertes."
+verifie = "salon-core sur faux réseau, avec des limites relevées."
+suppose = "Aucun jeu ne relève max_down aujourd'hui. Aux limites par défaut, le message le plus gros tient en 432 fragments, sur le plus petit paquet."
+
+[[trou]]
+id = "T9"
+titre = "La page ne connaît pas les limites de l'hôte : ce qu'elle refuse disparaît, ou tourne sans fin"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/stream.rs:335",
+  "salon/crates/core/src/stream.rs:534",
+  "salon/crates/web/src/lib.rs:364",
+]
+cas = "salon-web fixe Limits::default, alors que Options::limits est public côté hôte. Avec max_down à 256 Kio, un événement de 100 000 octets rend Ok, puis la page le saute et l'accuse : perdu en silence, contre la promesse des files. Un état de même taille repart sans fin : 3 030 paquets et 3 Mo en 3 s, 0 état affiché."
+preuve = "Sondes s5 et s5b. Mêmes limites des deux côtés, sans rien changer d'autre : l'événement arrive, et l'état passe en 112 paquets."
+verifie = "salon-core avec deux configurations ; le code de salon-web lu."
+suppose = "Aucun jeu ne relève ces limites aujourd'hui. Reste à trancher : annoncer les limites dans Welcome, ou ne pas les rendre réglables d'un seul côté."
+
+[[trou]]
+id = "T10"
+titre = "Un événement envoyé juste avant quit est perdu"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/host.rs:364",
+  "salon/crates/core/src/client.rs:517",
+]
+cas = "Les premiers Bye portent les fragments en attente, et l'hôte ferme le lien sans lire le reste du paquet. send rend Ok, quit suit, et l'événement n'arrive pas."
+preuve = "Sonde s2. Lire le paquet avant de fermer, une ligne dans Host::received (copie isolée) : l'événement arrive, suites vertes."
+verifie = "salon-core sur faux réseau sans faute."
+suppose = "Aucune page de jeu lue n'appelle quit : seuls les robots de Sidequest et ses tests. Ce qui est en vol et perdu au moment de quit reste perdu, même corrigé."
+
+[[trou]]
+id = "T11"
+titre = "Ce qui attend se compte en messages, pas en octets"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/stream.rs:143",
+]
+cas = "max_pending vaut 256 messages. Vers un seul appareil muet, 256 événements de 60 000 octets sont acceptés : 16 Mio retenus, 384 Mio pour 24 appareils."
+preuve = "Sonde s10. Plafonner à 1 Mio en plus du nombre (copie isolée) : Full arrive, suites vertes."
+verifie = "La mémoire retenue, comptée par l'allocateur."
+suppose = "Aucun jeu n'envoie de tels événements. Le bon plafond reste à choisir."
+
+[[trou]]
+id = "T12"
+titre = "Un Timing incohérent fait paniquer la salle"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/stream.rs:631",
+]
+cas = "Timing est public et non validé. Avec resend_min au-dessus de resend_max, clamp panique à la première mesure d'aller-retour, sur le fil de la salle."
+preuve = "Sonde s12. Remplacer clamp par max puis min (copie isolée) : plus de panique, suites vertes."
+verifie = "La panique à stream.rs:631, sur faux réseau."
+suppose = "Une erreur de configuration d'un jeu, qu'un test verrait aussitôt. Valider Timing et Limits à la création servirait aussi T8."
+
+[[trou]]
+id = "T13"
+titre = "next_deadline alloue une fois par événement en attente"
+gravite = "faible"
+lieux = [
+  "salon/crates/core/src/stream.rs:191",
+]
+cas = "due_at construit un Vec par événement : 256 allocations et 6 144 octets à chaque appel avec une file pleine, par appareil et par tour de boucle."
+preuve = "Sonde s14. Le minimum de chaque événement, sans Vec (copie isolée) : le seuil de la sonde passe, suites vertes."
+verifie = "Les allocations, comptées par l'allocateur ; 50 µs par appel en debug."
+suppose = "Le coût sur la salle réelle : borné à 256 par appareil, jamais observé."
+
+[saturation]
+sources = ["yojimbo", "neqo", "geckos"]
+derniere_lecon = "ioq3-client"
+note = "Les trois dernières sources couvrent un moteur fiable de jeu et deux codes client, dont celui de Firefox. Elles n'apportent aucune leçon nouvelle. Trois résultats positifs sont à garder avec cette fiche : à débit non borné, 3 000 cas de chacun des deux chaos existants et 3 000 cas d'un chaos à gros messages n'ont trouvé ni perte, ni doublon, ni désordre, ni mélange de fragments ; le décodage hostile tient ; aucun numéro d'événement ou d'état ne revient à zéro. Les trous sont aux bords : débit, tampons, configuration, paquets en retard."
+
+[saturation.recoupe]
+yojimbo = "Fragments d'un bloc accusés un par un : déjà T1. Calcul de fragments en 64 bits et plafond à la création : déjà T8 et T12. Délai minimal entre deux renvois d'un message : déjà la minuterie de salon."
+neqo = "Borne sur les trous du réassemblage : déjà fiabilite-09 et fiabilite-34. Recul de PTO et variance du temps d'aller-retour : déjà T3 et fiabilite-39. Ses cibles de fuzz recoupent salon/fuzz."
+geckos = "Le fiable émulé répète un message dix fois et le client filtre les doublons par identifiant pendant 15 s : déjà dans salon/LEARNINGS.md et fiabilite-52. Son serveur jette le non-fiable quand bufferedAmount monte : ce retour du canal rejoint fiabilite-23."
+
+[cout]
+minutes = 36
+references = 29
+sondes_executees = 24
+note = "Temps horloge d'un agent, clones, recompilations et rédaction inclus : 31 minutes mesurées depuis les hypothèses, 5 estimées pour la lecture qui les précède. 14 dépôts clonés, 8 RFC et 3 articles lus. 13 correctifs d'une seule cause éprouvés sur une copie, chacun avec les suites de salon-core. Les citations ont été confrontées à l'amont par soiree recherche verifie."
