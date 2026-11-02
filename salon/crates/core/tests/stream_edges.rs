@@ -803,6 +803,97 @@ fn a_stream_sends_again_what_an_echo_proves_lost_and_nothing_else() {
     assert_eq!(sent(&drain(&mut room, Ms(5_002)).1).0, vec![(0, 0)]);
 }
 
+/// The states that left, by number.
+fn states_leaving(room: &mut Room, now: Ms) -> Vec<u32> {
+    let mut numbers: Vec<u32> = sent(&drain(room, now).1)
+        .1
+        .iter()
+        .map(|(seq, _)| *seq)
+        .collect();
+    numbers.dedup();
+    numbers
+}
+
+fn applied(state: u32, now: u64) -> Vec<u8> {
+    encode(&Packet {
+        epoch: EPOCH,
+        sent: now,
+        ack: Some(Ack {
+            state,
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    })
+}
+
+/// A state of several fragments on its way finishes, and only the latest of
+/// those shown meanwhile follows it.
+#[test]
+fn a_state_on_its_way_finishes_and_the_latest_follows() {
+    let (mut room, device) = joined(Limits::default());
+    room.show(device, &vec![1; 2_500]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(0)), vec![1]);
+    room.show(device, &vec![2; 2_500]).unwrap();
+    room.show(device, &vec![3; 2_500]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(250)), vec![1]);
+    room.received(Ms(251), LINK, &applied(1, 251));
+    let (_, packets) = drain(&mut room, Ms(251));
+    assert_eq!(sent(&packets).1, vec![(2, 0), (2, 1), (2, 2)]);
+    // Past the first fragment, which starts with the message's length.
+    let tail = packets
+        .iter()
+        .flat_map(|packet| &packet.state)
+        .filter(|part| part.index > 0);
+    assert!(tail.flat_map(|part| &part.data).all(|byte| *byte == 3));
+}
+
+/// Nothing is lost by replacing a state that fits one packet, or one that has
+/// not left yet.
+#[test]
+fn a_state_with_nothing_on_its_way_is_replaced() {
+    let (mut room, device) = joined(Limits::default());
+    room.show(device, &vec![1]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(0)), vec![1]);
+    room.show(device, &vec![2]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(1)), vec![2]);
+
+    let (mut room, device) = joined(Limits::default());
+    room.show(device, &vec![1; 2_500]).unwrap();
+    room.show(device, &vec![2; 2_500]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(0)), vec![2]);
+}
+
+/// A new link owes nothing to what was on its way on the old one: the latest
+/// goes first.
+#[test]
+fn a_new_link_starts_from_the_latest_state() {
+    let (mut room, device) = joined(Limits::default());
+    room.show(device, &vec![1; 2_500]).unwrap();
+    drain(&mut room, Ms(0));
+    room.show(device, &vec![2; 2_500]).unwrap();
+    room.opened(Ms(1), LinkId(2), Caps::DATAGRAM);
+    let hello = Packet {
+        control: Some(Control::Hello(Hello {
+            protocol: PROTOCOL,
+            game: 7,
+            kind: Kind::Phone,
+            token: Token([1; 16]),
+            name: None,
+            key: None,
+            resume: None,
+        })),
+        ..Packet::default()
+    };
+    room.received(Ms(1), LinkId(2), &encode(&hello));
+    let parts = drain(&mut room, Ms(1)).1;
+    let numbers: Vec<u32> = parts
+        .iter()
+        .flat_map(|packet| &packet.state)
+        .map(|part| part.seq)
+        .collect();
+    assert_eq!(numbers.first(), Some(&2));
+}
+
 /// The resend delay is twice the round trip, between its two bounds.
 #[test]
 fn the_resend_delay_follows_the_round_trip_within_its_bounds() {

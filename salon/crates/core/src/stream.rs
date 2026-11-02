@@ -11,7 +11,10 @@
 //!   The host owns them: each welcome says where they stand, so a side that
 //!   starts over never numbers under what the other has already seen.
 //! - **The state** is the latest value only: a newer one replaces an older
-//!   one, even half sent. It goes again until acknowledged.
+//!   one, unless that one is on its way in several fragments. It finishes,
+//!   then the latest takes its place: replaced at each refresh, a state of
+//!   many fragments would never arrive whole. It goes again until
+//!   acknowledged.
 //!
 //! A message bigger than one packet is cut into fragments, sized for the
 //! current link when it is sent. What leaves follows what comes back
@@ -350,6 +353,11 @@ impl Pieces {
     fn forget(&mut self) {
         self.cut = 0;
         self.each.clear();
+    }
+
+    /// Several fragments, and some have left.
+    fn under_way(&self) -> bool {
+        self.each.len() > 1 && self.each.iter().any(|piece| *piece != Piece::Waiting)
     }
 
     /// The next fragment due now, from `from` on.
@@ -807,6 +815,8 @@ pub(crate) struct OutState {
     holds: bool,
     acked: bool,
     pieces: Pieces,
+    /// The latest one, while one of several fragments finishes.
+    latest: Option<Vec<u8>>,
 }
 
 impl OutState {
@@ -817,6 +827,7 @@ impl OutState {
             holds: false,
             acked: true,
             pieces: Pieces::default(),
+            latest: None,
         }
     }
 
@@ -826,11 +837,27 @@ impl OutState {
     }
 
     pub fn set(&mut self, data: Vec<u8>) {
+        if self.acked || !self.pieces.under_way() {
+            self.replace(data);
+        } else {
+            self.latest = Some(data);
+        }
+    }
+
+    fn replace(&mut self, data: Vec<u8>) {
         self.seq = self.seq.saturating_add(1);
         self.data = data;
         self.holds = true;
         self.acked = false;
+        self.latest = None;
         self.pieces.forget();
+    }
+
+    /// The one that waited takes over.
+    fn next(&mut self) {
+        if let Some(latest) = self.latest.take() {
+            self.replace(latest);
+        }
     }
 
     /// What an ack says of the state, written once `heard` reached the other
@@ -841,7 +868,9 @@ impl OutState {
         }
         if ack.state >= self.seq {
             self.acked = true;
-            return self.pieces.all_arrived();
+            let learned = self.pieces.all_arrived();
+            self.next();
+            return learned;
         }
         let mut learned = Heard::default();
         let mut holes = 0;
@@ -861,6 +890,7 @@ impl OutState {
 
     /// A new link: the latest state goes again.
     pub fn unsend(&mut self) {
+        self.next();
         if self.holds {
             self.acked = false;
         }
@@ -870,6 +900,7 @@ impl OutState {
     /// Numbers above `applied`, the last number the other side took from
     /// anyone: what is held goes again, under a number it will read.
     pub fn rebase(&mut self, applied: u32) {
+        self.next();
         self.seq = applied.saturating_add(u32::from(self.holds));
         self.unsend();
     }

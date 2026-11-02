@@ -1886,3 +1886,38 @@ fn a_stream_that_drops_a_packet_recovers_it() {
             && net.events_from(device).len() == 20)
     );
 }
+
+/// T5. A state shown more often than it can arrive: each one used to wipe out
+/// what was on its way, so none ever arrived. The one on its way finishes,
+/// and the latest takes its place.
+#[test]
+fn a_big_state_refreshed_often_still_arrives() {
+    for size in [30_000, 60_000] {
+        let mut net = Net::new(
+            3,
+            Faults {
+                loss: 10,
+                jitter: 5,
+                ..Faults::default()
+            },
+        );
+        let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);
+        let device = joined(&mut net, phone);
+        let (mut shown, every) = (0, 100);
+        while shown < 300 {
+            shown += 1;
+            net.host
+                .show(device, &Down::View(shown, vec![0; size]))
+                .unwrap();
+            net.run(every);
+        }
+        let seen = net.phones[phone].states.len();
+        assert!(seen >= 60, "{size} bytes: {seen} of {shown}");
+        net.run(3_000);
+        assert_eq!(
+            net.phones[phone].states.last(),
+            Some(&Down::View(shown, vec![0; size])),
+            "the latest arrives"
+        );
+    }
+}

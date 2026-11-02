@@ -855,8 +855,9 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             .map_err(|_| SendError::Full)
     }
 
-    /// What `device` should show now. Replaces the previous state, even half
-    /// sent; resent until the device has it, and again on each reconnection.
+    /// What `device` should show now. Replaces the previous state, unless that
+    /// one is on its way in several packets: it finishes, then the latest
+    /// follows. Resent until the device has it, and again on each reconnection.
     pub fn show(&mut self, device: DeviceId, state: &Down) -> Result<(), SendError> {
         let data = self.encode(state)?;
         self.remote(device)?.out_state.set(data);

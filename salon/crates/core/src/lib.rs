@@ -24,8 +24,9 @@
 //!   reconnections. [`Host::send`], [`Client::send`].
 //! - **A state** is what is true now, and only the latest one matters: a
 //!   gamepad's sticks, what a phone should show. A newer one replaces an
-//!   older one, even half sent; it is resent until it arrives, and again on
-//!   each reconnection. [`Host::show`], [`Client::set_state`].
+//!   older one, unless that one is on its way in several packets: it arrives,
+//!   then the latest. A state is resent until it arrives, and again on each
+//!   reconnection. [`Host::show`], [`Client::set_state`].
 //! - **Time** enters only through the calls, as [`Ms`].
 //!
 //! ## The host
