@@ -369,9 +369,9 @@ impl Window {
 }
 
 /// How long the other side has said nothing new of one queue, `T` being what an
-/// ack says of it. What counts is that the ack moves, not what it frees: a
-/// state replaced before its ack is never acknowledged, yet the number applied
-/// climbs.
+/// ack says of it. Only an ack that moves ends it: a state replaced before its
+/// ack is never acknowledged, yet the number applied climbs, and a state shown
+/// again on a stuck link is no news from the other side.
 struct Silence<T> {
     said: Option<T>,
     since: Option<Ms>,
@@ -394,10 +394,6 @@ impl<T: PartialEq> Silence<T> {
 
     fn lasted(&mut self, now: Ms) -> u64 {
         now.since(*self.since.get_or_insert(now))
-    }
-
-    fn at_rest(&mut self) {
-        self.since = None;
     }
 }
 
@@ -716,7 +712,6 @@ impl OutEvents {
         if self.sendable().any(|event| event.pieces.owed()) {
             self.silence.lasted(now)
         } else {
-            self.silence.at_rest();
             0
         }
     }
@@ -1003,7 +998,6 @@ impl OutState {
         if !self.acked && self.pieces.owed() {
             self.silence.lasted(now)
         } else {
-            self.silence.at_rest();
             0
         }
     }

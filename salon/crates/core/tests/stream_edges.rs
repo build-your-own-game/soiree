@@ -969,18 +969,42 @@ fn the_next_deadline_is_the_first_timer_even_with_a_shut_window() {
     assert_eq!(room.next_deadline(), Some(Ms(160)));
 }
 
-/// Room that opens is a reason to wake up at once, and what has not left yet
-/// is none while the window stays shut.
+/// Room that opens is a reason to wake up at once, for the rest of a message
+/// and for a message not cut yet alike, and neither is while the window stays
+/// shut.
 #[test]
 fn the_next_deadline_follows_the_window_for_what_has_not_left() {
     let (mut room, device) = joined(Limits::default());
     measured(&mut room, 60);
     room.send(device, &vec![1; 60_000]).unwrap();
     assert_eq!(leaving(&mut room, Ms(60)), 12);
-    room.send(device, &vec![2; 60_000]).unwrap();
     assert_eq!(room.next_deadline(), Some(Ms(160)), "the window is shut");
     room.received(Ms(61), LINK, &fragments_below(12, 64, 61));
     assert_eq!(room.next_deadline(), Some(Ms(61)), "the acks opened it");
+
+    let (mut room, device) = joined(Limits::default());
+    measured(&mut room, 60);
+    room.send(device, &vec![1; 2_000]).unwrap();
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(60)), 13);
+    room.send(device, &vec![2; 2_000]).unwrap();
+    assert_eq!(room.next_deadline(), Some(Ms(160)), "the window is shut");
+}
+
+/// A timer that ran out with room in the window is a reason to wake up now.
+#[test]
+fn the_next_deadline_is_now_once_a_timer_ran_out() {
+    let (mut room, device) = joined(Limits::default());
+    measured(&mut room, 60);
+    room.send(device, &vec![1]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(60)), 1);
+    let later = Packet {
+        epoch: EPOCH,
+        sent: 200,
+        ..Packet::default()
+    };
+    room.received(Ms(200), LINK, &encode(&later));
+    assert_eq!(room.next_deadline(), Some(Ms(200)));
 }
 
 /// A fragment known lost has left what is on its way, and nothing else may
@@ -1476,6 +1500,24 @@ fn what_arrived_and_is_never_delivered_is_given_up_on_too() {
         closes(&mut room, LinkId(2), now)
     });
     assert_eq!(gone.map(|step| 20 + step * 500), Some(20 + PATIENCE));
+}
+
+/// A state shown again and again leaves each time, and the ack still does not
+/// move: a screen refreshed ten times a second is no sign of a live link, and
+/// must not keep putting off the moment it is given up on.
+#[test]
+fn a_state_refreshed_on_a_stuck_stream_is_given_up_on() {
+    let (mut room, device) = on_a_stream();
+    let gone = (0..60_u64).find(|step| {
+        let now = 10 + step * 500;
+        room.show(device, &vec![1]).unwrap();
+        drain(&mut room, Ms(now));
+        room.show(device, &vec![2]).unwrap();
+        room.received(Ms(now + 1), LinkId(2), &saying(Ack::default(), now + 1));
+        closes(&mut room, LinkId(2), now + 1)
+    });
+    let gone = 10 + gone.expect("nothing moves, and the link goes") * 500;
+    assert!((PATIENCE..PATIENCE + 1_000).contains(&gone), "{gone}");
 }
 
 /// Nothing waits, so nothing has to move: an idle stream is left alone.
