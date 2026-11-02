@@ -193,7 +193,7 @@ soiree dom crates/web/src/page.rs --html ../../../web/index.html --css ../../../
 
 ### Les chemins de salon
 
-Salon sert ses propres chemins à côté des pages du jeu : l'offre WebRTC, la clé de la TV, le WebSocket. Ils sont nommés une fois, dans `salon_core::route` (`OFFER`, `TV_KEY`, `SOCKET`) : un jeu qui en a besoin, pour ne pas les masquer par une page ou dans un test, les nomme par là, jamais en littéral.
+Salon sert ses propres chemins à côté des pages du jeu : l'offre WebRTC, la clé de la TV, le diagnostic de panique, le WebSocket. Ils sont nommés une fois, dans `salon_core::route` (`OFFER`, `TV_KEY`, `DIAGNOSTIC`, `SOCKET`) : un jeu qui en a besoin, pour ne pas les masquer par une page ou dans un test, les nomme par là, jamais en littéral.
 
 ## Construire
 
