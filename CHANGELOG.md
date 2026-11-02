@@ -2,118 +2,134 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
-## v0.4.0 — Non publié
+## v0.4.0 — 2026-11-02
 
-`soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
-
-Le scénario `rtc` accepte qu’un effet se termine en revenant à sa valeur ou en
-cessant de bouger : il supposait un saut qui retombe, et échouait toujours sur
-un compteur comme celui du modèle.
-
-`soiree check .` lit désormais les documents du commun contre le code : versions,
-commandes et options, chemins, scénarios, clés de `cert.json` et items. Le catalogue
-renvoie à `verification.toml`, `CONTRAT.md` dit ce que salon permet vraiment, et
-seuls les derniers résultats restent dans `certification/` ; les campagnes passées
-sont dans l’historique git.
-
-`certify` signale le pare-feu quand l’adresse du réseau ne répond pas, et le
-modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
-
-Le serveur borne les connexions avant de créer leurs threads (deux connexions par appareil configuré, 32 places HTTP et 32 places
-réservées au loopback ; au moins 128 places au total), applique une échéance absolue aux lectures HTTP
-et WebSocket et borne les écritures. La fermeture d'un lecteur arrête aussi son
-writer, même si un destinataire conserve sa file. Les événements et états de jeu
-ne changent pas de format.
-
-Le contrôle `rtc` perturbe désormais le vrai transport UDP puis renégocie son
-DataChannel avec la même identité. Le nouveau contrôle R4 observe la rétention
-DOM/JS/WASM et le RSS de Chromium/GPU ; l'endurance R2 conserve aussi ces mesures.
-Les contrôles négatifs éprouvent les détecteurs. Le refus de stockage inclut
-IndexedDB et `cert.json.storage` peut identifier la sauvegarde à corrompre.
-
-Le contrôleur conserve les pannes TCP de Toxiproxy, mais borne sa connexion
-amont par un connecteur possédé : deux secondes pour joindre la vraie adresse
-LAN, sans nouvelle tentative ni repli. Un SYN bloqué ne retient plus la commande
-de coupure jusqu'au délai du système. Le connecteur borne ses ressources et les
-libère à l'arrêt ; les erreurs d'administration restent des pannes d'infrastructure.
-
-`salon_web::audio` ajoute des effets TV bornés, identifiés et périssables,
-débloqués par un geste réel, avec coupure/volume et libération du graphe. Ses
-régressions rendent le vrai signal et éprouvent les navigateurs. L'activation
-et la qualité de la sortie physique restent à contrôler sur les appareils.
-
-La certification complète exerce `capacity` au maximum déclaré, `text` sur
-un corpus déterministe et `progression` jusqu'à une fin réelle puis reprise.
-Les commandes UI/texte/progression ont chacune leur salle propre. Les champs
-16 px sont contrôlés même avec une TV canvas, dont la géométrie exige un oracle
-réel. La cadence garde le reçu d'une mesure déjà terminée si Node est retardé,
-sans nouvel échantillon ni acceptation d'un arrêt réel du rendu. L'endurance
-garde ses séries brutes, un temps monotone, cinq minutes de chauffe effective
-et aucun thread supplémentaire conservé.
+Un téléphone revient mieux : recharger, rejouer dans un onglet, dormir ou traverser un redémarrage de l'hôte ne perd plus ce qu'il a envoyé, et le protocole passe à 2. Un jeu peut choisir le stick natif de l'app iPhone et relier ses tests aux exigences communes, et sa CI ne part plus à chaque commit. `soiree certify` devient plus strict : une page qui écrit `console.error`, ou un `advance` sans `advance.progress`, le font échouer.
 
 ### Passer à cette version
 
-1. Après publication : `soiree upgrade` puis `soiree check` et `soiree certify`.
-2. Prévoir `resources` (R4) dans les passages ciblés ; son succès ne remplace
-   pas les trente minutes d'endurance. `rtc` exige un vrai trajet UDP et éprouve les moteurs disponibles,
-   les négociations retardées/défaillantes et le repli dans son domaine prévu.
-3. Pour IndexedDB, déclarer `"storage": {"kind": "indexeddb", "database": "…",
-   "store": "…", "key": "…"}` dans `cert.json` (syntaxe JSON, pas TOML).
-4. Les jeux intégrés à l'audio local ou à ces changements de salon ne doivent
-   être publiés qu'après le commun ; ils gardent leur ancienne étiquette ici.
+Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a disparu. Ce qui suit concerne son comportement et sa certification.
 
-5. Ajouter `refused: {"selector":"…","text":"…"}`, `text.checks` et, pour
-   un jeu fini, `progression: {"kind":"finite","checks":[…]}` dans `cert.json`.
-   Les commandes fonctionnent sur un hôte frais via `{url}` ; le modèle fournit
-   les fichiers et les variables d'environnement.
-6. Les éditeurs/compteurs continus sans `start`/`advance` motivent
-   `progression.kind="continuous"`. Un éditeur desktop solo peut motiver
-   `display.role="desktop"` ; ses cadres T2 restent requis. Une TV canvas
-   déclare une commande `layout` observant ses cadres réels.
+1. Installe l'outil de cette version, puis, à la racine du jeu, regarde ce qui va changer et applique-le :
+   ```sh
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.4.0 soiree
+   soiree upgrade --dry-run
+   soiree upgrade
+   ```
+   `soiree upgrade` change l'étiquette dans `Cargo.toml` et les crates du jeu, la version dans `soiree.toml`, les règles et `.github/workflows/soiree.yml`, puis lance `soiree check`. Rien d'autre à faire pour la CI : `soiree check` refuse tout autre workflow. Elle ne part plus qu'à la main (`gh workflow run soiree.yml`) ou sur une pull request.
+2. Si `cert.json` déclare `advance`, ajoute `advance.progress`, une expression JavaScript dont la valeur change quand la partie avance. Sans elle, `certify` échoue, alors qu'il ne faisait que le noter :
+   ```json
+   "advance": { "key": " " }
+   "advance": { "key": " ", "progress": "document.querySelector('#manche')?.textContent" }
+   ```
+   Remplace `#manche` par ce qui, sur ta TV, change à chaque étape.
+3. Cherche `console.error` et `console.assert` dans les pages du jeu. Pendant un scénario, chacun fait désormais échouer `certify`. Corrige ce qu'ils signalent, ou écris en `console.warn` ce qui n'est pas une erreur.
+4. Dans `cert.json`, déclare ce que la certification exerce maintenant :
+   - `refused: {"selector":"…","text":"…"}`, `text.checks` et, pour un jeu fini, `progression: {"kind":"finite","checks":[…]}`. Les commandes fonctionnent sur un hôte frais via `{url}` ; le modèle fournit les fichiers et les variables d'environnement.
+   - Un éditeur ou un compteur continu, sans `start` ni `advance`, motive `progression.kind="continuous"`. Un éditeur desktop solo peut motiver `display.role="desktop"` ; ses cadres T2 restent requis. Une TV canvas déclare une commande `layout` qui observe ses cadres réels.
+   - Pour une sauvegarde IndexedDB, `"storage": {"kind": "indexeddb", "database": "…", "store": "…", "key": "…"}` (syntaxe JSON, pas TOML).
+5. Relis comment le jeu reçoit un événement : ce qu'une page a envoyé pendant un redémarrage de l'hôte arrive maintenant à la nouvelle partie, après `DeviceEvent::Arrived` et avec la phase de son envoi. Refuse-le comme tout événement périmé :
+   ```rust
+   DeviceEvent::Event { device, event, phase, .. } => {
+       if phase != host.phase() {
+           return; // périmé : envoyé pour une autre manche
+       }
+       self.jouer(device, event);
+   }
+   ```
+   Des phases qui repartent de zéro à chaque lancement peuvent tomber juste : un jeu qui garde son état d'un lancement à l'autre doit reconnaître lui-même une action déjà comptée, car un événement en vol quand l'hôte est mort peut atteindre les deux lancements.
+6. Sur la page, ne renvoie rien à la main après `Happening::Reset` ni après `connection.resume()` : salon envoie déjà ce qui attendait, une fois. `Happening::Reset` reste l'endroit où oublier l'écran et attendre le nouveau.
+7. Si le jeu comptait sur `host.forget(device)` pour tenir un téléphone dehors, ajoute `host.close()` : un jeton oublié ne nomme plus personne, et le téléphone revient en appareil neuf dans une salle ouverte.
+   ```rust
+   host.forget(device);
+   host.close(); // personne de nouveau n'entre, ce téléphone non plus
+   ```
+8. Ajoute à `.gitignore` ces quatre lignes, réécrites à chaque `soiree check`, puis retire-les du dépôt avec `git rm --cached --ignore-unmatch certification/check.json certification/check.md certification/check-fast.json certification/check-fast.md` :
+   ```text
+   /certification/check.json
+   /certification/check.md
+   /certification/check-fast.json
+   /certification/check-fast.md
+   ```
+9. Facultatif : relie à tes tests celles des exigences C6, E5, T1, D1, D3, D4 et D5 que le jeu tient, avec `[[bindings]]` dans `verification.toml` (`VERIFICATION.md`, « Relier une exigence commune »), puis `soiree contracts --write-view`. Le stick natif de l'app passe par `Game::remote`, `Game::on_app` et `Game::feedback`, qui ont tous une valeur par défaut (`.soiree/salon/README.md`).
+10. Dans les passages ciblés, prévois `resources` (R4) : son succès ne remplace pas les trente minutes d'endurance. `rtc` exige un vrai trajet UDP et éprouve les moteurs disponibles, les négociations retardées ou défaillantes et le repli dans son domaine prévu.
+11. `soiree check`, puis `soiree certify`. Pousse le jeu seulement après l'étiquette du commun : un jeu qui dépend d'un salon non publié ne compile pas chez un ami.
+
+Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version`) : les joueurs rechargent, il n'y a rien à coder.
 
 ### Change de sens
 
-- `soiree check` et `soiree certify` finissent par un résumé en clair. Ce qu’un
-  humain doit juger (`?` dans le rapport du harnais) ne fait plus échouer la
-  commande : T2, C7 et C9 quand la page dit quelque chose, C4 et C5 quand le
-  jeton et l’appareil ont été retrouvés. Cette décision vit dans le noyau
-  prouvé (`passes_run`). Une vérification qui n’a pas pu finir (`~`) fait
-  toujours échouer, avec le statut « pas pu vérifier ». Le harnais échoue
-  maintenant si un retour donne une autre place, si un téléphone reste sur un
-  écran vide après un redémarrage de l’hôte, ou si le stockage rétabli ne rend
-  pas sa place.
-- Une tentative WebRTC dispose maintenant de la même fenêtre absolue de 15 s
-  côté page et côté hôte, au lieu d'être détruite par la page après 3 s pendant
-  une négociation encore viable. Les erreurs natives déclenchent immédiatement
-  le repli WebSocket. Un résultat SDP tardif ne remplace jamais ce repli et la
-  progression ne prolonge pas la fenêtre. Le délai de connexion C1 de 30 s et
-  les budgets de rendu/latence P1/P2 restent inchangés.
+- **`Happening::Reset` n'annule plus que ce que l'hôte a dit.** Avant, la file de la page était vidée : une réponse envoyée pendant un redémarrage rendait `Ok`, puis disparaissait sans un mot. Elle part maintenant vers la nouvelle partie, après l'arrivée de l'appareil et avec la phase de son envoi. Un événement en vol quand l'hôte est mort peut atteindre les deux lancements, une fois chacun.
+- **« Jouer ici » (`connection.resume()`) rend ce qui attendait dans l'onglet.** Deux onglets montrent un seul jeton, et chacun gardait ses compteurs : après la reprise, l'onglet numérotait sous ce que l'autre avait envoyé, et l'hôte ignorait ses événements en les accusant. L'hôte numérote maintenant chaque client qui prend l'appareil (`Welcome.session`). Ce qui attendait part une fois, après ce que l'autre a envoyé, et ce qui était arrivé ne repart pas. L'hôte s'en souvient pour les huit derniers onglets qui ont envoyé quelque chose : un onglet absent plus longtemps peut répéter ce qu'il avait en vol, sans rien perdre.
+- **Une page rechargée est entendue tout de suite.** Elle numérotait ses états depuis 1 alors que l'hôte gardait les numéros de l'ancienne page : chaque état était ignoré et accusé, et `set_state` rendait `Ok`. Le `Welcome` dit où en sont les numéros, et le premier message de la page ne complète plus celui que l'ancienne avait laissé à moitié envoyé, ce qui en faisait un seul de deux. Les paquets changent de forme : `Hello.resume` devient `Option<Resume { epoch, device, session }>` et `Welcome` devient `{ device, epoch, session, up_next, up_seen, state, down_first }`. `PROTOCOL` vaut 2. Une page d'un autre protocole est refusée même si son hello ne se lit plus, au lieu de se reconnecter sans fin.
+- **`Host::forget` n'a jamais tué un jeton.** Sa documentation disait que le jeton cessait de marcher : c'était faux, et Punchline comme le modèle comptent sur le contraire. Le téléphone qui le remontre arrive en appareil neuf, sauf si la salle est fermée (`Host::close`). Son numéro n'est pas redonné pendant ce lancement ; il peut l'être après un redémarrage, puisque `Host::known` ne l'a plus.
+- **Une identité est écrite avant que son `Welcome` parte.** La salle les enregistrait une fois par seconde : un appareil accueilli juste avant un plantage était inconnu du lancement suivant, et son numéro partait à un autre. Cela couvre aussi un processus tué à l'instant d'après, pas une coupure de courant : le fichier n'est pas synchronisé sur le disque.
+- **Un lien qui a reçu son dernier mot n'écoute plus rien.** Un hello sur un lien refusé ou remplacé refaisait toute l'entrée : il reprenait l'appareil au lien courant, ou créait un fantôme qui gardait une place sans jamais de `Left`. Aucun appareil ne quitte plus par un lien qui se ferme tout seul : le jeu n'entend rien.
+- **La mort de la salle arrête le processus.** Après une panique du jeu ou une attente système en échec, HTTP répondait encore et les téléphones réessayaient sans fin. `salon_host::run` écrit la cause et sort avec le code 101 (`ROOM_DIED`), ce qui ferme toutes les connexions.
+- **Se réveiller abandonne une tentative trop vieille.** `Client::wake` laissait courir son budget de 20 s, au-delà des 10 s de C3. Il abandonne maintenant une tentative plus vieille que `Timing::silent`, et le retour du réseau abandonne toute tentative. Une page lit son temps par `SleepClock`, pour que le sommeil d'un iPhone ne cache pas le silence.
+- **`certify` juge les notes écrites hors de leur scénario.** Elles disparaissaient quand le couple scénario et item n'était pas un contrôle. Elles rejoignent maintenant leur item, ou la santé du contrôleur si aucun contrôle de cet item n'a été choisi. C'est pourquoi `console.error` et `advance` sans `advance.progress` font échouer le passage : une vérification qui n'a pas pu finir ne vaut pas une réussite.
+- **`soiree check` et `soiree certify` finissent par un résumé en clair.** Ce qu'un humain doit juger (`?` dans le rapport du harnais) ne fait plus échouer la commande : T2, C7 et C9 quand la page dit quelque chose, C4 et C5 quand le jeton et l'appareil ont été retrouvés. Cette décision vit dans le noyau prouvé (`passes_run`). Une vérification qui n'a pas pu finir (`~`) fait toujours échouer, avec le statut « pas pu vérifier ». Le harnais échoue maintenant si un retour donne une autre place, si un téléphone reste sur un écran vide après un redémarrage de l'hôte, ou si le stockage rétabli ne rend pas sa place.
+- **Une tentative WebRTC a la même fenêtre absolue de 15 s côté page et côté hôte.** La page la détruisait après 3 s, pendant une négociation encore viable. Les erreurs natives déclenchent le repli WebSocket immédiatement. Un résultat SDP tardif ne remplace jamais ce repli, et la progression ne prolonge pas la fenêtre. Le délai de connexion C1 de 30 s et les budgets de rendu et de latence P1 et P2 ne changent pas.
+- **Le budget d'image se juge à 1 ms près.** Une image sautée à 60 Hz dure 33,33 ms et Chrome la rapporte à 33,3 ou 33,4 ms : le budget de 33 ms échouait sur l'image qu'il nomme. Ce 1 ms est la résolution de la mesure, pas une marge, et une vraie image lente échoue toujours.
+- **Un jeu n'a plus de CI à chaque commit.** Le workflow du modèle tournait sur macOS à chaque push, sur des dépôts privés qui partagent environ 190 minutes macOS par mois, à 6 à 13 minutes le passage.
 
-## v0.3.1 — Non publié
+### Réseau et salon
 
-Le projet Xcode déclare les fichiers produits par sa phase de compilation Rust :
-les liaisons Swift, leur en-tête, leur module et l’archive native. Xcode attend
-ainsi leur génération avant de compiler Swift, y compris sur un checkout neuf.
-La CI vérifie explicitement ce cas sans liaisons prégénérées.
+- `salon_web::audio` ajoute des effets TV bornés, identifiés et périssables, débloqués par un geste réel, avec coupure, volume et libération du graphe. Ses régressions rendent le vrai signal et éprouvent les navigateurs. L'activation et la qualité de la sortie physique restent à contrôler sur les appareils.
+- `Game::remote`, `Game::on_app` et `Game::feedback` relaient les télécommandes natives : la porte ne répondait que par la page du téléphone et jetait les entrées, donc aucun jeu ne pouvait choisir `Remote::Pad`. Le pilote tient les apps par joueur et applique le contrat au même endroit : `seq`, silence, débit, table bornée.
+- `SALON_PUBLIC_URL` dit où les téléphones joignent l'hôte, sans réseau ou derrière un VPN complet. `join_url` y prend sa base, validée à la frontière, et WebRTC annonce son hôte quand c'est une adresse IP.
+- La page retient un échec de WebRTC dans son stockage de session : là où l'UDP est bloqué, chaque chargement ne repaie plus les 15 s. WebRTC est retenté après dix minutes, quand le navigateur annonce `online`, ou dès qu'un lien s'ouvre. Une offre restée sans réponse n'est pas un échec, et là où WebRTC a déjà marché un seul échec ne survit pas au rechargement. La page écoute aussi `resume` : `visibilitychange` ne suit plus toujours un dégel.
+- Un nom trop long pour un paquet laissait le téléphone sur `Connecting` sans erreur, aucun hello ne partant. Le client le coupe comme l'hôte, et chaque message de contrôle, au plus grand, tient dans le plus petit paquet.
+- Le serveur borne les connexions avant de créer leurs threads : deux connexions par appareil configuré, 32 places HTTP et 32 réservées au loopback, au moins 128 au total. Il applique une échéance absolue aux lectures HTTP et WebSocket et borne les écritures. La fermeture d'un lecteur arrête aussi son writer, même si un destinataire conserve sa file. Les événements et états de jeu ne changent pas de format.
+- Sous macOS, la salle attend ses échéances avec une minuterie kqueue critique, et les messages réseau ou la fin du dernier émetteur la réveillent immédiatement. La file reste bornée et FIFO. Aucun réglage global, thread de minuterie ou spin permanent : les erreurs natives restent explicites et les budgets des jeux ne changent pas. Les autres systèmes utilisent leur attente de canal native.
+- Les secrets de l'hôte ne passent plus par `/dev/urandom`, dont l'ouverture faisait échouer le démarrage sous Windows : ils viennent de `rand_core`, déjà dans le graphe. Rien de cela n'a été exécuté sous Windows.
 
-Les tests du harnais navigateur tournent dans un job indépendant des
-compilations Rust/iPhone. Leurs fichiers s’exécutent l’un après l’autre pour
-que des fixtures navigateur indépendantes ne se disputent pas le runner.
-Le contrôle de navigation conserve l’historique des requêtes : la fermeture
-d’une connexion au délai ne signifie pas que sa ressource n’a pas été demandée.
-Les délais et les assertions de navigation restent inchangés.
+### Certification
 
-Sous macOS, la salle attend ses échéances avec une minuterie kqueue critique,
-et les messages réseau ou la fin du dernier émetteur la réveillent immédiatement.
-La file reste bornée et FIFO. Aucun réglage global, thread de minuterie ou spin
-permanent : les erreurs natives restent explicites et les budgets des jeux
-ne changent pas. Les autres systèmes utilisent leur attente de canal native.
+- `rtc` perturbe le vrai transport UDP puis renégocie son DataChannel avec la même identité. Il accepte qu'un effet se termine en revenant à sa valeur ou en cessant de bouger : il supposait un saut qui retombe, et échouait toujours sur un compteur comme celui du modèle.
+- Le nouveau contrôle R4 observe la rétention DOM, JS et WASM et le RSS de Chromium et du GPU ; l'endurance R2 conserve aussi ces mesures. Les contrôles négatifs éprouvent les détecteurs. Le refus de stockage inclut IndexedDB, et `cert.json.storage` peut identifier la sauvegarde à corrompre.
+- La certification complète exerce `capacity` au maximum déclaré, `text` sur un corpus déterministe et `progression` jusqu'à une fin réelle puis une reprise. Les commandes UI, texte et progression ont chacune leur salle. Les champs de 16 px sont contrôlés même avec une TV canvas, dont la géométrie exige un oracle réel.
+- La cadence garde le reçu d'une mesure déjà terminée si Node est retardé, sans nouvel échantillon ni acceptation d'un arrêt réel du rendu. L'endurance garde ses séries brutes, un temps monotone, cinq minutes de chauffe effective et aucun thread supplémentaire conservé.
+- Le harnais mesure la part occupée du processeur avant de lancer quoi que ce soit et après avoir tout arrêté, garde les deux dans le rapport et prévient dans le résumé à partir de la moitié des cœurs : une compilation à côté faisait de faux échecs sans un mot. Le verdict ne change pas, et une mesure illisible reste inconnue, jamais une machine au repos.
+- L'identité d'un passage ne s'invalide plus pour ce qui n'est pas une source : bruit de la machine, notes que Git ne suit pas, dossier de données ignoré. Ils sont nommés dans la provenance, tout fichier suivi par Git reste une entrée, et rien n'est présumé hors de Git. Une vraie source changée pendant un passage le fait toujours échouer, et l'échec nomme les fichiers. Un `Cargo.lock` périmé faisait échouer le premier passage : un passage ordinaire le rafraîchit d'abord, comme Cargo ; un passage verrouillé le refuse toujours et ne réécrit rien.
+- `[[bindings]]` relie à ses tests C6, E5, T1, D1, D3, D4 ou D5, qui dépendent des règles de chaque jeu. La validation est stricte : contrôle inconnu ou répété, liste vide, exigence reliée deux fois ou hors des sept sont refusés, et un minimum commun garde ses contrôles. Relier une exigence conditionnelle la rend applicable ; rien ne la rend non applicable. Une liaison ne compte que par l'observation de son test. Le modèle relie E5 et D1, les deux que ses tests portent vraiment.
+- Le contrôleur conserve les pannes TCP de Toxiproxy, mais borne sa connexion amont par un connecteur possédé : deux secondes pour joindre la vraie adresse LAN, sans nouvelle tentative ni repli. Un SYN bloqué ne retient plus la commande de coupure jusqu'au délai du système. Le connecteur borne ses ressources et les libère à l'arrêt ; les erreurs d'administration restent des pannes d'infrastructure.
+- `certify` signale le pare-feu quand l'adresse du réseau ne répond pas. Les tests du harnais navigateur tournent dans un job indépendant des compilations Rust et iPhone, leurs fichiers l'un après l'autre. Le contrôle de navigation conserve l'historique des requêtes : la fermeture d'une connexion au délai ne signifie pas que sa ressource n'a pas été demandée. Ses délais et ses assertions ne changent pas.
 
-### Passer à cette version
+### Outil
 
-Aucun changement de code de jeu. `soiree upgrade`, puis `soiree check` et
-`soiree certify`. Aucun `cargo xtask ios` préalable n’est nécessaire au build
-Xcode de l’app iPhone.
+- `soiree contracts --migrate` disparaît : tous les jeux ont `verification.toml`.
+- `soiree check .` lit les documents du commun contre le code : versions, commandes et options, chemins, scénarios, clés de `cert.json` et items. Le catalogue renvoie à `verification.toml`, `CONTRAT.md` dit ce que salon permet vraiment, et seuls les derniers résultats restent dans `certification/` ; les campagnes passées sont dans l'historique git.
+- `soiree check` marche sans Node, sauf si `cert.json` déclare `ui.checks[].success`, et il le dit alors clairement. Le harnais l'exige toujours.
+- `soiree doctor` vérifie l'éditeur de liens, que rustup n'installe pas, et GitHub CLI, qui reste facultatif.
+- Le `.gitignore` du modèle ignore les rapports que `soiree check` réécrit : ils entraient dans le premier commit d'un ami avec des chemins locaux. Les rapports de `soiree certify` restent suivis, avec le code. Le modèle ne provoque plus de fausses erreurs `{{nom}}` dans la sortie de Cargo.
+- Sous Windows, `soiree certify` s'arrête avant `npm ci` et dit qu'il n'y est pas encore disponible, sans le faux titre `✗ À corriger : 23 point(s)` : le harnais dépend de `lsof`, de `ps` et des groupes de processus POSIX. L'identité d'un passage trouve `node.exe`, `Path` et `USERPROFILE`, et Toxiproxy n'appelle plus `which`. Rien de cela n'a été exécuté sous Windows.
+- Un test `should_panic` se lit : libtest écrit `test nom - should panic ... ok`, un nom que l'analyseur ne reconnaissait pas, ce qui transformait toute la cible en erreur d'infrastructure.
+
+### Recherche mesurable
+
+`recherche/` rend mesurable la méthode du manifeste : une fiche par sous-système, des citations vérifiables, chaque leçon reliée à un test ou à un trou. La fiche pilote, `recherche/reconnexion.toml`, a lu 28 sources et relevé 13 trous dans salon, dont trois graves.
+
+- `soiree recherche plan` dit ce que le diff ajoute, le sous-système, le niveau, la fiche, ce qui manque et les étapes à suivre. Il n'empêche rien.
+- `soiree recherche verifie` confronte à l'amont chaque commit et chaque citation des fiches. Un lien mort fait échouer la fiche ; une panne de réseau a son propre code et ne conclut rien.
+- `soiree recherche dette` liste les sous-systèmes de niveau 3 sans fiche et les trous ouverts. `soiree check .` juge les fiches hors ligne, et la dette ne bloque qu'à l'étiquette.
+
+La dette de niveau 3 restante, ligne par ligne :
+
+- `fiabilite`, `transport-webrtc`, `telecommande` : pas encore de fiche. La méthode a d'abord été éprouvée sur la reconnexion, le sujet le plus risqué pour une soirée. Ces trois fiches sont à écrire pour une version suivante.
+- T12, moyen : le chaos joue maintenant rechargements, jumeaux et redémarrages. Il reste au harnais à employer `slow_close` et `reset_peer`, sur un vrai transport.
+- T9, faible : `wake` coupe un lien encore valide après 1,5 s de silence. Rien n'est perdu, et le coût visible pour un joueur reste à juger sur de vrais téléphones (`REPETITION.md`).
+- T11, faible : le rattrapage ne se distingue pas du direct. Rien ne montre que cela gêne un jeu, et les jeux peuvent horodater leurs événements.
+
+### Nuit, mutations, tests
+
+- `nuit.yml` lance chaque nuit, sur des machines Linux gratuites, ou à la main, jamais sur un push : les mutations de `salon-core`, dont le rapport n'a pas de seuil, et un fuzzing borné dont le corpus se garde d'une nuit à l'autre. `salon/fuzz/` attaque les paquets et une session hostile : un lien hostile doit laisser connecté un téléphone honnête, et lui devoir exactement ce qui lui était dû.
+- Une campagne réelle sur `salon-core` laissait 141 mutants vivants sur 433 : accusés, renvois, renumérotation et échéances n'avaient aucun test pour les voir manquer. La campagne suivante en laisse 11 sur 453. Les nouveaux tests (`client_edges.rs`, `host_edges.rs`, `stream_edges.rs`, `types_edges.rs`) forgent des paquets avec une copie du format, et `found_bugs.rs` garde chaque bug reproduit en les lisant.
+- Le chaos joue rechargements, onglets jumeaux, « Jouer ici », pages mortes en silence, redémarrages de l'hôte et paquets retenus : retirer seul le correctif d'un des trous T1, T2, T3 ou T6 le fait rougir en moins de 3 000 cas. `NOTE_CRITICAL` a son test : le retirer de la minuterie le fait échouer. Un serveur réel dans un processus fils prouve la mort de la salle.
+
+### L'app iPhone
+
+Le projet Xcode déclare les fichiers produits par sa phase de compilation Rust : les liaisons Swift, leur en-tête, leur module et l'archive native. Xcode attend ainsi leur génération avant de compiler Swift, y compris sur un checkout neuf, et la CI le vérifie sans liaisons prégénérées. Aucun `cargo xtask ios` préalable n'est nécessaire.
 
 ## v0.3.0 — 2026-10-28
 
