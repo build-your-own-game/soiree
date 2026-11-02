@@ -286,6 +286,11 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         let Some(current) = self.links.get_mut(&link) else {
             return;
         };
+        // Told no, or replaced: a late copy of a hello must not bring it back
+        // (socket.io 46213a6).
+        if current.closing {
+            return;
+        }
         if bytes.len() > MAX_INBOUND {
             self.drop_link(link, Why::Closed);
             return;
@@ -656,8 +661,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             }
         }
         for link in finished {
-            self.links.remove(&link);
-            self.outbox.push_back(Output::Close { link });
+            self.drop_link(link, Why::Closed);
         }
     }
 

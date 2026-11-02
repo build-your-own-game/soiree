@@ -759,3 +759,120 @@ fn a_transport_budget_cannot_postpone_an_open_connections_handshake() {
         Some(ClientOutput::Disconnect)
     ));
 }
+
+/// The first packet a client with this configuration sends: its hello.
+fn hello_of(config: salon_core::ClientConfig, now: Ms) -> Vec<u8> {
+    use salon_core::{Client, ClientOutput};
+    let mut client: Client<Up, Down> = Client::new(now, config);
+    loop {
+        match client.poll(now).expect("a hello") {
+            ClientOutput::Connect => client.opened(now, Caps::DATAGRAM),
+            ClientOutput::Transmit(bytes) => return bytes,
+            _ => {}
+        }
+    }
+}
+
+/// C5: a late copy of a hello, on the link that was just replaced, must not
+/// take the device back from the link that replaced it.
+#[test]
+fn a_late_hello_on_a_replaced_link_changes_nothing() {
+    let mut net = Net::new(29, Faults::default());
+    let first = net.add_phone(phone_config(33, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, first);
+    let old = net.phones[first].link.expect("connected");
+    let second = net.add_phone(phone_config(33, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, second);
+    let hello = hello_of(phone_config(33, Kind::Phone), net.now);
+    net.host.received(net.now, old, &hello);
+    net.run(30_000);
+    assert_eq!(net.phones[first].client.status(), Status::Replaced);
+    assert_eq!(net.phones[second].client.status(), Status::Connected);
+    assert!(
+        net.host
+            .device(device)
+            .is_some_and(|info| info.presence == Presence::Present)
+    );
+    assert_eq!(
+        net.count(|event| matches!(event, DeviceEvent::Left { .. })),
+        0
+    );
+}
+
+/// C5, found by chance: two tabs at once on a bad network, with their hellos
+/// repeated and delayed. One of them plays, whatever the order of arrival;
+/// they used to evict each other for good in 7 % of the runs.
+#[test]
+fn two_tabs_opened_together_leave_one_playing() {
+    for seed in 0..200 {
+        let mut net = Net::new(
+            seed,
+            Faults {
+                loss: 20,
+                duplicate: 10,
+                jitter: 80,
+            },
+        );
+        let first = net.add_phone(phone_config(34, Kind::Phone), Caps::DATAGRAM);
+        let second = net.add_phone(phone_config(34, Kind::Phone), Caps::DATAGRAM);
+        net.run(15_000);
+        let statuses = [
+            net.phones[first].client.status(),
+            net.phones[second].client.status(),
+        ];
+        assert!(
+            statuses.contains(&Status::Connected),
+            "seed {seed}: {statuses:?}"
+        );
+    }
+}
+
+/// E3: once a link was told no, it has nothing more to say. A copy of its
+/// hello must not make a device of it: the device would hold a seat for ever
+/// on a link about to close, with no `Left`.
+#[test]
+fn a_hello_after_a_refusal_makes_no_device() {
+    let mut net = Net::new(30, Faults::default());
+    let now = net.now;
+    let link = salon_core::LinkId(900);
+    net.host.opened(now, link, Caps::DATAGRAM);
+    let mut stale = phone_config(35, Kind::Phone);
+    stale.game += 1;
+    net.host.received(now, link, &hello_of(stale, now));
+    net.host
+        .received(now, link, &hello_of(phone_config(35, Kind::Phone), now));
+    net.run(5_000);
+    assert_eq!(net.host.devices().count(), 0);
+    assert_eq!(net.happened, Vec::new());
+}
+
+/// A place that the first device of a full room gives back must go to the
+/// next one: a copy of a hello on the refused link does not take it.
+#[test]
+fn a_late_hello_on_a_link_refused_for_a_full_room_takes_no_seat() {
+    let mut net = Net::new(31, Faults::default());
+    let max = salon_core::Limits::default().max_devices;
+    for token in 0..max {
+        net.add_phone(
+            phone_config(u8::try_from(token + 40).unwrap(), Kind::Phone),
+            Caps::DATAGRAM,
+        );
+    }
+    net.run(3_000);
+    let now = net.now;
+    let refused = salon_core::LinkId(900);
+    let hello = hello_of(phone_config(200, Kind::Phone), now);
+    net.host.opened(now, refused, Caps::DATAGRAM);
+    net.host.received(now, refused, &hello);
+    net.pump_host();
+    net.cut(0);
+    net.phones[0].frozen = true;
+    net.host.received(net.now, refused, &hello);
+    net.run(3_000);
+    assert_eq!(
+        net.count(|event| matches!(event, DeviceEvent::Arrived { .. })),
+        max
+    );
+    let next = net.add_phone(phone_config(201, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, next);
+}
