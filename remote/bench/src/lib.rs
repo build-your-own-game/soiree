@@ -16,6 +16,7 @@
 )]
 
 pub mod host;
+pub mod salon;
 pub mod shell;
 
 use std::time::{Duration, Instant};

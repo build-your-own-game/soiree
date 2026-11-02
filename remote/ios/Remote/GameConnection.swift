@@ -137,6 +137,8 @@ final class GameConnection {
         guard socket === self.socket, !closed else { return }
         self.socket = nil
         opened = false
+        // A silent socket does not know yet.
+        socket.cancel(with: .goingAway, reason: nil)
         session.disconnected()
         pad?.releaseAll()
         status = .reconnecting
@@ -150,8 +152,28 @@ final class GameConnection {
 
     /// Each screen refresh: what is due goes out.
     private func tick() {
-        session.tick(now: ProcessInfo.processInfo.systemUptime)
+        let now = ProcessInfo.processInfo.systemUptime
+        session.tick(now: now)
         flush()
+        guard let socket, opened else { return }
+        switch session.watch(now: now) {
+        case .quiet: break
+        case .ping: ping(socket)
+        case .lost: lost(socket)
+        }
+    }
+
+    private func ping(_ socket: URLSessionWebSocketTask) {
+        socket.sendPing { [weak self] error in
+            Task { @MainActor in
+                guard let self, socket === self.socket else { return }
+                if error == nil {
+                    self.session.pong()
+                } else {
+                    self.lost(socket)
+                }
+            }
+        }
     }
 
     /// Only with a socket to take them: the session keeps what waits.

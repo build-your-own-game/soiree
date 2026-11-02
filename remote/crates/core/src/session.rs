@@ -26,6 +26,9 @@ use crate::{Insets, Size};
 const MIN_INTERVAL: f64 = 1.0 / 60.0;
 /// The slowest: an unchanged state is sent again this often.
 const HEARTBEAT: f64 = 0.25;
+/// How often the app asks a game that says nothing whether it is still there,
+/// in seconds. The answer is due before the next question.
+const PING_EVERY: f64 = 2.0;
 /// How fast drawing steps that waited go out, a second. Salon takes 240
 /// frames a second from an app, and states may take 60 of them.
 const BACKLOG_RATE: f64 = 180.0;
@@ -41,6 +44,17 @@ pub enum Event {
     Refused(String),
     /// A frame that could not be read: kept out, nothing changes.
     Unreadable,
+}
+
+/// What the link's watchdog wants from the app. TCP says nothing about a
+/// host that froze or vanished, and `URLSession` never pings by itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Watch {
+    Quiet,
+    /// Send a WebSocket ping, and call [`Session::pong`] on its answer.
+    Ping,
+    /// The last ping went unanswered: drop this socket.
+    Lost,
 }
 
 /// Where the socket stands.
@@ -70,6 +84,8 @@ pub struct Session {
     backlog: VecDeque<Vec<u8>>,
     /// How many of them may go now, and when that was reckoned.
     allowance: (f64, f64),
+    /// When the last ping left, and whether it was answered.
+    probe: Option<(f64, bool)>,
 }
 
 impl Session {
@@ -86,6 +102,7 @@ impl Session {
             link: Link::Up,
             backlog: VecDeque::new(),
             allowance: (0.0, 0.0),
+            probe: None,
         }
     }
 
@@ -100,6 +117,7 @@ impl Session {
             self.link = Link::Greeted;
         }
         self.last_sent = None;
+        self.probe = None;
     }
 
     /// The socket is gone. What had not left stays for the next one, if it
@@ -107,6 +125,7 @@ impl Session {
     pub fn disconnected(&mut self) {
         self.link = Link::Down;
         self.last_sent = None;
+        self.probe = None;
         let unsent = std::mem::take(&mut self.outbox);
         let steps = unsent
             .into_iter()
@@ -231,6 +250,35 @@ impl Session {
                 ..state.clone()
             })));
             self.last_sent = Some((now, state));
+        }
+    }
+
+    /// Call each screen refresh, with an open socket. A gap of two periods
+    /// means the app did not run: it starts over rather than blame the host.
+    pub fn watch(&mut self, now: f64) -> Watch {
+        let Some((sent, answered)) = self.probe else {
+            self.probe = Some((now, true));
+            return Watch::Quiet;
+        };
+        let elapsed = now - sent;
+        if elapsed < PING_EVERY {
+            Watch::Quiet
+        } else if elapsed >= 2.0 * PING_EVERY {
+            self.probe = Some((now, true));
+            Watch::Quiet
+        } else if answered {
+            self.probe = Some((now, false));
+            Watch::Ping
+        } else {
+            self.probe = None;
+            Watch::Lost
+        }
+    }
+
+    /// The game answered the last ping.
+    pub fn pong(&mut self) {
+        if let Some((_, answered)) = &mut self.probe {
+            *answered = true;
         }
     }
 
@@ -462,6 +510,66 @@ mod tests {
             steps.last(),
             Some(PhoneMessage::Draw(DrawEvent::End { .. }))
         ));
+    }
+
+    /// `watch` at each refresh from `from` to `to`, answering pings if told
+    /// to: what it asked for, with when.
+    fn watched(session: &mut Session, from: f64, to: f64, answer: bool) -> Vec<(f64, Watch)> {
+        let mut asked = Vec::new();
+        let mut now = from;
+        while now < to {
+            let watch = session.watch(now);
+            if watch != Watch::Quiet {
+                asked.push((now, watch));
+            }
+            if answer {
+                session.pong();
+            }
+            now += 0.1;
+        }
+        asked
+    }
+
+    #[test]
+    fn a_game_that_answers_is_asked_every_2_seconds_and_kept() {
+        let mut session = session();
+        session.connected();
+        let asked = watched(&mut session, 0.0, 10.0, true);
+        assert_eq!(asked.len(), 4, "{asked:?}");
+        assert!(asked.iter().all(|(_, watch)| *watch == Watch::Ping));
+    }
+
+    #[test]
+    fn a_game_that_stops_answering_is_lost_within_4_seconds() {
+        let mut session = session();
+        session.connected();
+        watched(&mut session, 0.0, 2.05, true);
+        let asked = watched(&mut session, 2.1, 10.0, false);
+        let lost = asked.iter().find(|(_, watch)| *watch == Watch::Lost);
+        assert!(lost.is_some_and(|(at, _)| *at < 2.1 + 4.0), "{asked:?}");
+    }
+
+    #[test]
+    fn an_app_that_slept_does_not_blame_the_host() {
+        let mut session = session();
+        session.connected();
+        assert_eq!(session.watch(0.0), Watch::Quiet);
+        assert_eq!(session.watch(2.0), Watch::Ping);
+        assert_eq!(session.watch(30.0), Watch::Quiet, "no answer, but no time");
+        assert_eq!(session.watch(32.0), Watch::Ping);
+        session.pong();
+        assert_eq!(session.watch(34.0), Watch::Ping);
+    }
+
+    #[test]
+    fn a_new_socket_starts_a_new_watch() {
+        let mut session = session();
+        session.connected();
+        session.watch(0.0);
+        session.watch(2.0);
+        session.disconnected();
+        session.connected();
+        assert_eq!(session.watch(3.9), Watch::Quiet);
     }
 
     #[test]

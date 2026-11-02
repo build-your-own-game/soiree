@@ -38,6 +38,7 @@ Des frames WebSocket binaires, un message par frame, encodés par le crate `remo
 4. Les traits d'une toile arrivent dans l'ordre, en `PhoneMessage::Draw(DrawEvent)`. Le WebSocket les livre tous. Après une coupure, ce qui a été tracé entre-temps part sur le socket suivant, derrière `Hello` et ton `Show`, à 180 trames par seconde au plus. Seule exception : une trame déjà partie quand le lien meurt, que rien ne peut signaler.
 5. `GameMessage::Feedback(Feedback)` fait vibrer le téléphone (`Haptic::Success`, `Warning`…) et peut teinter son fond, par exemple « premier au buzzer ».
 6. Si la connexion tombe, l'app se reconnecte seule et renvoie le même `Hello`. Réponds-y `Show`, même inchangé : c'est lui qui dit à l'app que tu l'as reconnue.
+7. L'app envoie un Ping WebSocket toutes les 2 s, et lâche un socket dont le Ping reste sans Pong jusqu'au suivant. Continue de lire le socket : c'est en lisant que `tungstenite` et les autres bibliothèques répondent. Salon le fait pour toi.
 
 ## Décrire la télécommande : trois niveaux
 

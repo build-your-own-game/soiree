@@ -6,10 +6,15 @@ use std::time::Duration;
 
 use remote_bench::eventually;
 use remote_bench::host::FakeHost;
+use remote_bench::salon::Salon;
 use remote_bench::shell::Shell;
 use remote_protocol::{DrawEvent, PhoneMessage, Remote, presets};
 
 const SOON: Duration = Duration::from_secs(5);
+/// A ping every 2 s, its answer due before the next one, and some margin.
+const FROZEN: Duration = Duration::from_secs(6);
+/// Long enough for the backed-off try, and a try stuck on a frozen host.
+const BACK: Duration = Duration::from_secs(15);
 
 #[test]
 fn the_shell_says_hello_and_plays_the_pad_it_is_shown() {
@@ -95,4 +100,64 @@ fn a_stroke_cut_by_the_host_reaches_the_next_socket_behind_hello() {
     let link = host.messages(second);
     assert!(link.first().is_some_and(is_hello), "{link:?}");
     assert!(link.iter().any(is_end), "{link:?}");
+}
+
+#[test]
+fn a_frozen_host_is_seen_within_seconds_and_found_again() {
+    let host = FakeHost::start(Some(Remote::Pad(presets::buzzer())));
+    let mut shell = joined(&host, "/play");
+    host.with(|state| state.frozen = true);
+    assert!(
+        eventually(FROZEN, || shell.ask("status") == "reconnecting"),
+        "the app still believes in a frozen host"
+    );
+    host.with(|state| state.frozen = false);
+    assert!(
+        eventually(BACK, || shell.ask("status") == "connected"
+            && host.with(|state| state.links) == 2),
+        "the app never came back"
+    );
+}
+
+/// `tungstenite` answers a ping only from `read`: salon's door must keep
+/// reading, or every quiet page would drop every few seconds.
+#[test]
+fn a_real_salon_answers_the_pings_of_a_quiet_page() {
+    let salon = Salon::start("page");
+    let mut shell = Shell::launch();
+    shell.ask(&format!("join {}", salon.page()));
+    assert!(eventually(SOON, || shell.ask("content") != "waiting"));
+    assert!(eventually(SOON, || salon.heard("arrived") == 1));
+    std::thread::sleep(Duration::from_secs(9));
+    assert_eq!(shell.ask("status"), "connected");
+    assert_eq!(salon.heard("left"), 0, "a healthy link was dropped");
+    assert_eq!(salon.heard("back"), 0, "a healthy link was dropped");
+}
+
+#[test]
+fn a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there() {
+    let salon = Salon::start("draw");
+    let mut shell = Shell::launch();
+    shell.ask(&format!("join {}", salon.page()));
+    assert!(eventually(SOON, || shell.ask("content") == "pad"));
+    let (x, y) = shell.point("canvas");
+    shell.ask(&format!("down 1 {x} {y}"));
+    assert!(eventually(SOON, || salon.heard("begin") == 1));
+    std::thread::sleep(Duration::from_millis(200));
+    salon.freeze();
+    assert!(
+        eventually(FROZEN, || shell.ask("status") == "reconnecting"),
+        "the app still believes in a frozen salon"
+    );
+    shell.ask("up 1");
+    std::thread::sleep(Duration::from_millis(200));
+    salon.thaw();
+    assert!(
+        eventually(BACK, || shell.ask("status") == "connected"),
+        "the app never came back"
+    );
+    assert!(
+        eventually(SOON, || salon.heard("end") == 1),
+        "salon never heard the stroke end"
+    );
 }

@@ -8,7 +8,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use remote_core::controls::{self, Gate};
 use remote_core::draw::{self, Canvas};
 use remote_core::remote::{Motion as CoreMotion, Remote as CoreRemote};
-use remote_core::session::{self, Event};
+use remote_core::session::{self, Event, Watch};
 use remote_core::{
     Haptic as CoreHaptic, Insets as CoreInsets, Orientation, Point as CorePoint, Rect as CoreRect,
     Size as CoreSize,
@@ -228,6 +228,16 @@ pub enum GameEvent {
     Unreadable,
 }
 
+/// What the link's watchdog wants from the app.
+#[derive(uniffi::Enum)]
+pub enum LinkWatch {
+    Quiet,
+    /// Send a WebSocket ping, and call `pong` on its answer.
+    Ping,
+    /// The last ping went unanswered: drop this socket.
+    Lost,
+}
+
 /// Where to connect for a scanned text or an opened link.
 #[derive(uniffi::Record)]
 pub struct JoinTarget {
@@ -309,6 +319,20 @@ impl Session {
     /// `now`: seconds since boot.
     pub fn tick(&self, now: f64) {
         self.lock().tick(now);
+    }
+
+    /// Each screen refresh, with an open socket. `now`: seconds since boot.
+    pub fn watch(&self, now: f64) -> LinkWatch {
+        match self.lock().watch(now) {
+            Watch::Quiet => LinkWatch::Quiet,
+            Watch::Ping => LinkWatch::Ping,
+            Watch::Lost => LinkWatch::Lost,
+        }
+    }
+
+    /// The game answered the last ping.
+    pub fn pong(&self) {
+        self.lock().pong();
     }
 
     /// The frames to send, in order.

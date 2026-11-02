@@ -363,7 +363,8 @@ citation = "its silence means a phone gone"
 enonce = "L'hôte surveille le silence du téléphone ; le téléphone, lui, ne surveille pas celui de l'hôte."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_game_that_stops_answering_is_lost_within_4_seconds", "remote/bench/tests/shell.rs::a_frozen_host_is_seen_within_seconds_and_found_again", "remote/bench/tests/shell.rs::a_real_salon_answers_the_pings_of_a_quiet_page", "remote/bench/tests/shell.rs::a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there"]
 trou = "T2"
 
 [[lecon]]
@@ -374,7 +375,8 @@ citation = "A Ping frame may serve either as a keepalive"
 enonce = "Le WebSocket a sa propre preuve de vie : un Ping sans Pong dit que le lien est mort quand TCP se tait."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_game_that_stops_answering_is_lost_within_4_seconds", "remote/bench/tests/shell.rs::a_frozen_host_is_seen_within_seconds_and_found_again", "remote/bench/tests/shell.rs::a_real_salon_answers_the_pings_of_a_quiet_page", "remote/bench/tests/shell.rs::a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there"]
 trou = "T2"
 
 [[lecon]]
@@ -385,7 +387,8 @@ citation = "Sends a ping frame from the client side"
 enonce = "URLSessionWebSocketTask ne pingue pas seul : c'est à l'app d'appeler sendPing et de borner l'attente du pong."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_game_that_stops_answering_is_lost_within_4_seconds", "remote/bench/tests/shell.rs::a_frozen_host_is_seen_within_seconds_and_found_again", "remote/bench/tests/shell.rs::a_real_salon_answers_the_pings_of_a_quiet_page", "remote/bench/tests/shell.rs::a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there"]
 trou = "T2"
 
 [[lecon]]
@@ -396,7 +399,8 @@ citation = "Stops all data from getting through, and closes the connection after
 enonce = "Un banc doit jouer le trou noir, lien ouvert et rien ne passe : c'est le cas où un client sans chien de garde reste content."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_game_that_stops_answering_is_lost_within_4_seconds", "remote/bench/tests/shell.rs::a_frozen_host_is_seen_within_seconds_and_found_again", "remote/bench/tests/shell.rs::a_real_salon_answers_the_pings_of_a_quiet_page", "remote/bench/tests/shell.rs::a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there"]
 trou = "T2"
 
 [[lecon]]
@@ -846,7 +850,7 @@ lieux = [
 cas = "Aucun sendPing, aucune échéance : seule une erreur de receive dit que le lien est mort. Sur un pad, l'hôte n'envoie rien tant que rien ne change, et sur une page l'app se tait aussi. Hôte figé 25 s : l'app affiche le pad, sans mot, sans reconnexion, et ne saurait pas distinguer ce silence d'une partie calme. Le joueur appuie dans le vide."
 preuve = "sonde H2 : SIGSTOP de l'hôte 25 s, aucune erreur ni reconnexion, 98 états périmés livrés au dégel. Avec sendPing toutes les 2 s et coupure sans pong, seule variante, reconnexion moins de 4 s après le gel et retour dès le dégel."
 verifie = "l'app sur simulateur, hôte figé au niveau du processus : le noyau accuse encore réception"
-suppose = "Le temps avant une erreur TCP quand l'hôte disparaît vraiment (couvercle fermé, borne éteinte) : non mesuré, pfctl demande les droits root. Le réglage de 2 s sur un Wi-Fi réel. tungstenite répond au ping à la lecture : à revérifier contre salon, seul l'hôte de sonde a été essayé."
+suppose = "Le réglage de 2 s sur un Wi-Fi réel : un trou de plus de 2 s coupe un lien vivant, ce qui coûte un Left et un Back. Le Pong de salon est revérifié par le banc, en boucle locale, page muette et processus figé."
 
 [[trou]]
 id = "T3"
