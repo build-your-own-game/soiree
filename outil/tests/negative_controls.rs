@@ -180,6 +180,45 @@ mod checks {
         assert!(passed, "{shown}");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_hollow_reason_or_an_empty_command_fails_the_real_check() {
+        let (parent, dir) = game();
+        let path = controlled_cargo(&parent);
+        let cert = dir.join("cert.json");
+        let original: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&cert).unwrap()).unwrap();
+        let check = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut config = original.clone();
+            edit(&mut config);
+            std::fs::write(&cert, serde_json::to_string(&config).unwrap()).unwrap();
+            let output = command(&dir)
+                .env("PATH", &path)
+                .args(["check", "--fast"])
+                .output()
+                .unwrap();
+            (
+                output.status.success(),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+            )
+        };
+        let (passed, shown) = check(&|config| {
+            config["ui"]["not_applicable"]["async"] = serde_json::json!("x");
+        });
+        assert!(!passed, "{shown}");
+        assert!(shown.contains("async"), "{shown}");
+        let (passed, shown) = check(&|config| {
+            config["progression"]["reason"] = serde_json::json!("x");
+        });
+        assert!(!passed, "{shown}");
+        assert!(shown.contains("progression"), "{shown}");
+        let (passed, shown) = check(&|config| {
+            config["text"]["checks"][0] = serde_json::json!({"name":"vide","command":["true"]});
+        });
+        assert!(!passed, "{shown}");
+        assert!(shown.contains("n'observe rien"), "{shown}");
+    }
+
     #[test]
     fn public_certify_preserves_a_failed_observers_exit_code() {
         let (parent, dir) = game();

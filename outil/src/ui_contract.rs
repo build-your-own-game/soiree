@@ -101,6 +101,48 @@ pub fn validate(config: &Value) -> Result<(), String> {
             return Err(format!(
                 "ui : {category} doit être exercé ou explicitement non applicable"
             ));
+        } else if !reason.is_some_and(crate::util::real_reason) {
+            return Err(format!(
+                "ui.not_applicable.{category} : {}",
+                crate::util::REASON_RULE
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Every command a game declares must be able to see something. Without
+/// `{url}` it never met the host; without `success` nothing says what it
+/// printed: `["true"]` would answer U1, T2 and D2. With `{url}` alone, its exit
+/// code is all there is, and the harness says so in the report of the run.
+pub fn validate_commands(config: &Value) -> Result<(), String> {
+    let lists = [
+        ("ui.checks", config.pointer("/ui/checks")),
+        ("text.checks", config.pointer("/text/checks")),
+        ("progression.checks", config.pointer("/progression/checks")),
+    ];
+    let listed = lists.into_iter().flat_map(|(place, checks)| {
+        checks
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .map(move |check| (place, check))
+    });
+    let layout = config
+        .get("layout")
+        .filter(|layout| layout.is_object())
+        .map(|layout| ("layout", layout));
+    for (place, check) in listed.chain(layout) {
+        let reaches_the_host = check["command"].as_array().is_some_and(|command| {
+            command
+                .iter()
+                .any(|a| a.as_str().is_some_and(|a| a.contains("{url}")))
+        });
+        if !reaches_the_host && check.get("success").is_none() {
+            return Err(format!(
+                "{place} « {} » : ni {{url}} ni success, cette commande n'observe rien du jeu",
+                check["name"].as_str().unwrap_or_default()
+            ));
         }
     }
     Ok(())
@@ -167,15 +209,50 @@ mod tests {
 
     #[test]
     fn each_scope_is_exercised_or_explicitly_excluded() {
-        let mut config = json!({"ui":{"not_applicable":{"editing":"no input","effects":"no effects","lifecycle":"page lifetime","async":"no tasks"}}});
+        let mut config = json!({"ui":{"not_applicable":{"editing":"no input field here","effects":"no sound or vibration","lifecycle":"owned by the page","async":"no long running task"}}});
         assert!(validate(&config).is_ok());
         config["ui"]["not_applicable"]["editing"] = json!("");
         assert!(validate(&config).is_err());
         config["ui"]["scenarios"] = json!([{"name":"edit","screen":"phone","covers":["editing"],"steps":[{"assert":"document.activeElement"}]}]);
         assert!(validate(&config).is_ok());
-        config["ui"]["not_applicable"]["editing"] = json!("no fields");
+        config["ui"]["not_applicable"]["editing"] = json!("no input field here");
         assert!(validate(&config).is_err());
         assert!(validate(&json!({})).is_err());
+    }
+
+    #[test]
+    fn a_command_that_observes_nothing_is_refused_wherever_it_is_declared() {
+        let empty = json!({"name": "check", "command": ["true"], "covers": CATEGORIES});
+        for config in [
+            json!({"ui": {"checks": [empty]}}),
+            json!({"text": {"checks": [empty]}}),
+            json!({"progression": {"kind": "finite", "checks": [empty]}}),
+            json!({"layout": empty}),
+        ] {
+            let error = validate_commands(&config).unwrap_err();
+            assert!(error.contains("n'observe rien"), "{config} : {error}");
+        }
+        for fine in [
+            json!({"name": "host", "command": ["node", "check.mjs", "{url}"]}),
+            json!({"name": "proof", "command": ["cargo", "test"], "success": "1 passed"}),
+        ] {
+            assert_eq!(
+                validate_commands(&json!({"text": {"checks": [fine]}})),
+                Ok(())
+            );
+        }
+        assert_eq!(validate_commands(&json!({"layout": false})), Ok(()));
+    }
+
+    #[test]
+    fn a_reason_that_says_nothing_excuses_nothing() {
+        let mut config = json!({"ui":{"not_applicable":{"editing":"Aucun champ de saisie.","effects":"Aucun son ni vibration.","lifecycle":"Page sans ressource.","async":"Aucune tâche longue."}}});
+        assert!(validate(&config).is_ok());
+        for hollow in ["x", "n/a", "todo", "pas prévu", "aucunchampdesaisie"] {
+            config["ui"]["not_applicable"]["editing"] = json!(hollow);
+            let error = validate(&config).unwrap_err();
+            assert!(error.contains("editing"), "{hollow} : {error}");
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
+import { validateUi, runUiScenario, runUiCommand, assertObserves, commandNote } from "./ui.mjs";
 
 const exempt = { editing: "no fields", effects: "pure static view", lifecycle: "page lifetime", async: "no background operations" };
 test("UI coverage cannot disappear silently or contradict itself", () => {
@@ -70,4 +70,12 @@ test("a stopped page cannot hide an assertion failure behind observer cleanup", 
     },
   };
   await assert.rejects(runUiScenario({ page }, { name: "stopped cleanup", steps: [{ assert: "false" }] }), /assertion fausse/);
+});
+
+test("a command without {url} or success observes nothing, and exit 0 alone stays a stated limit", () => {
+  assert.throws(() => assertObserves({ name: "complaisante", command: ["true"] }), /n'observe rien/);
+  assertObserves({ name: "hôte", command: ["node", "check.mjs", "{url}"] });
+  assertObserves({ name: "preuve", command: ["cargo", "test"], success: "1 passed" });
+  assert.match(commandNote({ name: "hôte", command: ["true", "{url}"] }), /^hôte \(limite : .*code de sortie/);
+  assert.equal(commandNote({ name: "preuve", command: ["cargo", "test"], success: "1 passed" }), "preuve");
 });

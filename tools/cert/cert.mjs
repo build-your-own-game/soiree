@@ -40,7 +40,7 @@ import { cleanupAll, runWithCleanup } from "./cleanup.mjs";
 import { browserResources, resourceFailures, resourceCycle } from "./resources.mjs";
 import { AdvanceCycle, advanceOnce } from "./progression.mjs";
 import { refusalMessage, phoneFieldSizes, fieldSizeFailures, seatAfterReturn } from "./presentation.mjs";
-import { validateUi, runUiScenario, runUiCommand } from "./ui.mjs";
+import { validateUi, runUiScenario, runUiCommand, assertObserves, commandNote } from "./ui.mjs";
 import { measureLoad, loadSummary, loadWarning } from "./load.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -412,6 +412,7 @@ let probeSequence = 0;
 /** Command checks own a fresh game, so a full ordinary room cannot consume
  * their seats and one check cannot leave state in the following check. */
 async function isolatedCheck(check) {
+  assertObserves(check);
   const probe = new Host(await freePort(), join(outDir, "checks", String(++probeSequence)));
   probeHosts.add(probe);
   return runWithCleanup(async () => {
@@ -853,7 +854,7 @@ const scenarios = {
     for (const check of config.progression.checks) {
       const output = await isolatedCheck(check);
       if (output) log(`    ${output.split("\n").join("\n    ")}`);
-      ok("D2", check.name);
+      ok("D2", commandNote(check));
     }
   },
   async text() {
@@ -863,7 +864,7 @@ const scenarios = {
     for (const check of config.text.checks) {
       const output = await isolatedCheck(check);
       if (output) log(`    ${output.split("\n").join("\n    ")}`);
-      ok("T2", check.name);
+      ok("T2", commandNote(check));
     }
   },
   async ui() {
@@ -871,7 +872,7 @@ const scenarios = {
     for (const check of config.ui.checks ?? []) {
       const output = await isolatedCheck(check);
       if (output) log(`    ${output.split("\n").join("\n    ")}`);
-      ok("U1", `${check.name} : ${check.covers.join(", ")}`);
+      ok("U1", `${commandNote(check)} : ${check.covers.join(", ")}`);
     }
     for (const scenario of config.ui.scenarios ?? []) {
       for (const engine of ["webkit", "chromium"]) {
@@ -1100,7 +1101,7 @@ const scenarios = {
       const check = { name: "zone sûre du rendu canvas", ...config.layout };
       const output = await isolatedCheck(check);
       if (output) log(`    ${output.split("\n").join("\n    ")}`);
-      ok("T3", check.name);
+      ok("T3", commandNote(check));
     }
     if (config.layout === false) skip("T3", config.layout_reason ?? "désactivé dans cert.json");
     const SIZES = [[1920, 1080], [1280, 720], [3840, 2160], [1280, 1024], [2560, 1080], [900, 1200]];

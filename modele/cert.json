@@ -101,7 +101,8 @@
           "tools/text-check.mjs",
           "{url}"
         ],
-        "timeout_ms": 120000
+        "timeout_ms": 120000,
+        "success": "chromium: no free-text entry[\\s\\S]*webkit: no free-text entry"
       }
     ]
   },

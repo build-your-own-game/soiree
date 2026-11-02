@@ -509,7 +509,7 @@ mod commands {
         let cert = dir.join("cert.json");
         let mut config: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&cert).unwrap()).unwrap();
-        config["ui"] = serde_json::json!({"not_applicable":{"editing":"fixture","effects":"fixture","lifecycle":"fixture","async":"fixture"}});
+        config["ui"] = serde_json::json!({"not_applicable":{"editing":"cette fixture n'en a pas","effects":"cette fixture n'en a pas","lifecycle":"cette fixture n'en a pas","async":"cette fixture n'en a pas"}});
         std::fs::write(cert, serde_json::to_string(&config).unwrap()).unwrap();
         let bin = parent.join("bin");
         std::fs::create_dir(&bin).unwrap();

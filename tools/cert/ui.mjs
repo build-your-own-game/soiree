@@ -83,6 +83,19 @@ export function validateUi(ui) {
   }
 }
 
+/** A command must be able to see something: without `{url}` it never met the
+ * host, and without `success` nothing says what it printed. */
+export function assertObserves(check) {
+  if (check.success === undefined && !check.command.some((argument) => argument.includes("{url}"))) {
+    throw new Error(`« ${check.name} » : ni {url} ni success, cette commande n'observe rien du jeu`);
+  }
+}
+
+/** With `{url}` alone, exit 0 is the whole evidence: the report says so. */
+export function commandNote(check) {
+  return check.success === undefined ? `${check.name} (limite : seul son code de sortie l'atteste, déclare success)` : check.name;
+}
+
 /** Run actual game regression suites against the host, keeping the outcome
  * and terminating their entire process group, including on timeout. */
 export async function runUiCommand(check, { cwd, url, tmp }) {

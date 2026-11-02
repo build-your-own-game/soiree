@@ -196,6 +196,10 @@ une expiration fait échouer U1 même si la commande a imprimé un succès.
 `success` peut exiger une expression régulière dans la sortie combinée,
 par exemple `"success":"test result: ok\\. 1 passed"` pour un test Rust
 nommé : un filtre qui ne sélectionne plus aucun test ne donne pas de vert.
+Une commande de `ui`, `text`, `progression` ou `layout` sans `{url}` ni
+`success` n'observe rien du jeu : `soiree check` et le harnais la refusent.
+Avec `{url}` seul, le code de sortie est toute la preuve : déclare `success`,
+sinon le rapport du passage note cette limite à côté de l'item.
 
 Une catégorie absente du jeu se justifie par exemple avec
 `"not_applicable":{"editing":"aucun champ éditable"}`. Pour les catégories

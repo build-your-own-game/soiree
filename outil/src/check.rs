@@ -500,6 +500,7 @@ fn check_cert_json(dir: &Path, folder: Folder, report: &mut Report) {
             }
             if folder == Folder::Game || config.get("ui").is_some() {
                 match crate::ui_contract::validate(&config)
+                    .and_then(|()| crate::ui_contract::validate_commands(&config))
                     .and_then(|()| crate::ui_contract::validate_patterns(dir, &config))
                 {
                     Ok(()) => report.ok(

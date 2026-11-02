@@ -205,7 +205,7 @@ fn catalogue_decisions(contract: &Contract, plan: &mut Plan) {
     }
     for decision in &contract.catalogue_decisions {
         if !seen.insert(decision.id.clone())
-            || decision.reason.trim().is_empty()
+            || !crate::util::real_reason(&decision.reason)
             || !known_catalogue.contains(&decision.id)
             || !["adopted", "not-applicable", "unreviewed"].contains(&decision.status.as_str())
         {
@@ -480,7 +480,7 @@ fn game_requirements(bound: &BTreeMap<&str, (&Binding, Vec<String>)>, plan: &mut
 
 fn continuous_reason(config: &Value, plan: &mut Plan) -> Option<String> {
     config.get("progression").and_then(|value| match serde_json::from_value::<Progression>(value.clone()) {
-        Ok(Progression::Continuous { reason }) if !reason.trim().is_empty()
+        Ok(Progression::Continuous { reason }) if crate::util::real_reason(&reason)
             && ["start", "advance"].iter().all(|key| config.get(key).is_none_or(|value| value.is_null() || value == false)) => Some(reason),
         Ok(Progression::Finite { checks }) => {
             if checks.is_empty() || checks.iter().any(|check| {
@@ -492,7 +492,7 @@ fn continuous_reason(config: &Value, plan: &mut Plan) -> Option<String> {
             None
         },
         Ok(Progression::Continuous { .. }) => {
-            plan.diagnostics.push("cert.json.progression : continuous exige une raison et aucune commande start/advance".to_owned());
+            plan.diagnostics.push(format!("cert.json.progression : continuous exige aucune commande start/advance ; {}", crate::util::REASON_RULE));
             None
         }
         Err(error) => {
@@ -507,7 +507,7 @@ fn display_scope(config: &Value, plan: &mut Plan) -> Option<Display> {
         match serde_json::from_value::<Display>(value.clone()) {
             Ok(display)
                 if display.role != DisplayRole::Desktop
-                    || (!display.reason.trim().is_empty()
+                    || (crate::util::real_reason(&display.reason)
                         && ["phone", "socket", "start", "advance"].iter().all(|key| {
                             config.get(key).is_none_or(|value| value.is_null() || value == false)
                         })) =>
@@ -515,9 +515,10 @@ fn display_scope(config: &Value, plan: &mut Plan) -> Option<Display> {
                 Some(display)
             }
             Ok(_) => {
-                plan.diagnostics.push(
-                    "cert.json.display : desktop exige une raison et un éditeur solo sans phone, socket, start ou advance".to_owned(),
-                );
+                plan.diagnostics.push(format!(
+                    "cert.json.display : desktop exige un éditeur solo sans phone, socket, start ou advance ; {}",
+                    crate::util::REASON_RULE
+                ));
                 None
             }
             Err(error) => {
@@ -910,6 +911,37 @@ mod tests {
                 "{id}"
             );
             assert_eq!(diagnostics, Vec::<String>::new());
+        }
+    }
+
+    #[test]
+    fn a_reason_that_says_nothing_excludes_nothing() {
+        for bad in [
+            serde_json::json!({"progression": {"kind": "continuous", "reason": "x"}}),
+            serde_json::json!({"progression": {"kind": "continuous", "reason": "pas de fin"}}),
+            serde_json::json!({"phone": null, "display": {"role": "desktop", "reason": "n/a"}}),
+        ] {
+            let mut plan = empty_plan(vec![]);
+            harness_controls(&bad, &mut plan);
+            assert!(!plan.diagnostics.is_empty(), "{bad}");
+            for id in ["D2", "T3"] {
+                assert!(
+                    !matches!(
+                        obligation(&plan, id).applicability,
+                        Applicability::NotApplicable(_)
+                    ),
+                    "{bad} {id}"
+                );
+            }
+        }
+        for (reason, valid) in [("Pas de saut.", true), ("x", false), ("", false)] {
+            let contract: Contract = toml::from_str(&format!(
+                "schema = 1\n[[catalogue_decisions]]\nid = \"PHY-01\"\nstatus = \"not-applicable\"\nreason = \"{reason}\"\n"
+            ))
+            .unwrap();
+            let mut plan = empty_plan(vec![]);
+            catalogue_decisions(&contract, &mut plan);
+            assert_eq!(plan.diagnostics.is_empty(), valid, "{reason}");
         }
     }
 

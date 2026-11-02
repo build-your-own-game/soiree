@@ -95,7 +95,8 @@ name = "same_inputs_give_the_same_states"
 autre champ est refusé. Un contrôle n’a pas besoin d’une garantie `J` s’il est
 cité par une liaison. Plusieurs liaisons et garanties peuvent citer le même
 contrôle, qui ne s’exécute qu’une fois. La vue du jeu liste ses liaisons :
-`soiree contracts --write-view` l’actualise.
+`soiree contracts --write-view` l’actualise. Le rapport Markdown écrit les
+hypothèses à côté du résultat d’une liaison ou d’une garantie du jeu.
 
 La validation est stricte et fait échouer `soiree contracts` et `soiree check` :
 un contrôle inconnu ou répété, une liste vide, une exigence reliée deux fois,
@@ -132,7 +133,8 @@ reason = "Le jeu classe des réponses ; il ne simule ni corps ni collisions."
 ```
 
 Les statuts admis sont `adopted`, `not-applicable` et `unreviewed`, avec une
-raison non vide. `adopted` exige un engagement actif qui cite cet item ;
+raison d’au moins deux mots et 12 caractères, comme toute raison déclarée
+(`display`, `progression`, `ui.not_applicable`, `raison_niveau`). `adopted` exige un engagement actif qui cite cet item ;
 `not-applicable` ne peut pas contredire un engagement qui l’adopte. Les sources
 extérieures, l’analyse et les limites de l’adaptation se détaillent dans
 `LEARNINGS.md` ; `origins` attend des identifiants du catalogue, pas des URL.
