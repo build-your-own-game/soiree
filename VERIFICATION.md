@@ -144,9 +144,8 @@ politique et de la configuration. Par exemple, un éditeur solo déclaré
 (`"phone": null` et `display.role = "desktop"`, avec sa raison) écarte les
 contrôles propres au téléphone et au réseau. Retirer `socket` ou `phone` de
 `cert.json` sans cette déclaration n’écarte rien et fait échouer le passage.
-L’absence de progression
-observable pour la terminaison d’une partie peut laisser l’obligation
-**inconnue**. Un test absent, un manque de temps ou une justification rédigée
+Sans `advance`, une progression `finite` laisse l’obligation D2 **inconnue**,
+même si ses contrôles réussissent, et le passage échoue. Un test absent, un manque de temps ou une justification rédigée
 par l’agent ne transforment jamais un inconnu en non-applicable.
 La machine peut vérifier la cohérence d’une déclaration ; elle ne démontre pas
 que le jeu a déclaré toutes ses capacités ni tous ses risques.
@@ -170,10 +169,11 @@ Le runner demande à Cargo ses exécutables de test, puis à libtest sa liste et
 ses résultats. Il ne recherche pas de `fn` dans le texte. Une cible est exécutée
 une fois par configuration, même si plusieurs engagements citent ses tests.
 Le passage complet conserve aussi les échecs de tests non référencés.
-Un harness personnalisé demande un adaptateur explicite. Les processus ont
-des délais : 15 minutes pour une compilation et une cible, 30 secondes pour
-l’inventaire et la découverte ; dépasser le délai donne une erreur
-d’infrastructure, aucune réussite implicite.
+Un harness personnalisé demande un adaptateur explicite. Les processus de ce
+runner ont des délais : 15 minutes pour une compilation et une cible, 30 secondes
+pour l’inventaire et la découverte ; dépasser le délai donne une erreur
+d’infrastructure, aucune réussite implicite. Les commandes lancées hors de ce
+runner (fmt, Clippy, doctests, contrat web) n’ont pas de délai.
 
 Le contrôle `cargo:suite` juge ce qui a tourné dans tout le workspace. Si rien
 n’a tourné, ou si une crate a des tests et n’en a exécuté aucun, il reste
