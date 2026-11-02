@@ -473,11 +473,11 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         let now = self.advance(now);
         let timing = self.config.timing;
         let stuck = match &self.link {
-            Link::Open(open) if open.welcomed => {
+            Link::Open(open) => {
                 let order = Order::of(open.caps);
                 order.stuck(now, &mut self.up, &mut self.out_state, &timing)
             }
-            Link::Idle { .. } | Link::Connecting { .. } | Link::Open(_) => false,
+            Link::Idle { .. } | Link::Connecting { .. } => false,
         };
         match &self.link {
             Link::Idle { retry_at: Some(at) } if *at <= now => {
@@ -594,7 +594,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             }
             open.last_sent = Some(now);
             open.ack_due = false;
-            if closing || (!has_data && open.bye == 0) {
+            if closing {
                 break;
             }
         }

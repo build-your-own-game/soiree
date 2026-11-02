@@ -777,9 +777,6 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                 }
                 link.last_sent = Some(now);
                 link.ack_due = false;
-                if !has_data && link.controls.is_empty() {
-                    break;
-                }
             }
             if link.closing && link.controls.is_empty() {
                 let close_at = *link.close_at.get_or_insert(now.plus(FINAL_GRACE));
