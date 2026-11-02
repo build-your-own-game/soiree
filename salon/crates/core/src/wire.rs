@@ -270,12 +270,19 @@ mod framing_tests {
             Control::Closing,
         ];
         for control in controls {
-            let bytes = encode_within(largest(control.clone()), Caps::MIN_PACKET)
-                .expect("a control message fits");
-            assert_eq!(
-                decode(&bytes).and_then(|packet| packet.control),
-                Some(control)
-            );
+            let with_state = largest(control.clone());
+            let without_state = Packet {
+                state: Vec::new(),
+                ..with_state.clone()
+            };
+            for packet in [with_state, without_state] {
+                let bytes =
+                    encode_within(packet, Caps::MIN_PACKET).expect("a control message fits");
+                assert_eq!(
+                    decode(&bytes).and_then(|packet| packet.control),
+                    Some(control.clone())
+                );
+            }
         }
     }
 }
