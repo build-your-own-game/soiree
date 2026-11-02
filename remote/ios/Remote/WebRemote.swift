@@ -161,6 +161,15 @@ struct WebRemote: UIViewRepresentable {
             failed(webView, error)
         }
 
+        /// The page's process died. WebKit reloads by itself only once in
+        /// 30 s, and its motion and sockets belong to a page that is gone. A
+        /// new load rather than `reload()`: a dead view may have no URL left.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            stop()
+            Orientation.allow(.landscape)
+            loadAgain(webView)
+        }
+
         private func failed(_ webView: WKWebView, _ error: Error) {
             let error = error as NSError
             let replaced = error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled

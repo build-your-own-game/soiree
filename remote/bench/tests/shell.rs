@@ -2,7 +2,7 @@
 //! app, and judged by what the game received.
 
 #![cfg(target_os = "macos")]
-use std::net::TcpListener;
+use std::net::{TcpListener, UdpSocket};
 use std::time::Duration;
 
 use remote_bench::eventually;
@@ -232,4 +232,50 @@ fn a_game_that_never_answered_is_not_called_a_lost_connection() {
         shell.ask("notice")
     );
     assert_eq!(shell.ask("status"), "reconnecting");
+}
+
+fn post(shell: &mut Shell, message: &str) {
+    let script = format!("window.webkit.messageHandlers.telecommande.postMessage({message}); 1");
+    assert_eq!(shell.ask(&format!("eval {script}")), "1");
+}
+
+#[test]
+fn a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free() {
+    let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+    udp.set_read_timeout(Some(SOON)).unwrap();
+    let port = udp.local_addr().unwrap().port();
+    let host = page_game(PAGE);
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+    for id in 1..=8 {
+        post(
+            &mut shell,
+            &format!("{{datagram: {{op: 'open', id: {id}, port: {port}}}}}"),
+        );
+    }
+    for death in 2..=4 {
+        shell.ask("kill-page");
+        assert!(
+            host.wait(LOADED, |state| state.requests.len() >= death),
+            "death {}: the page stayed dead, {:?}",
+            death - 1,
+            host.with(|state| state.requests.clone())
+        );
+        assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+        assert!(eventually(SOON, || shell.ask("page-failing") == "false"));
+    }
+    post(
+        &mut shell,
+        &format!("{{datagram: {{op: 'open', id: 9, port: {port}}}}}"),
+    );
+    post(
+        &mut shell,
+        "{datagram: {op: 'send', id: 9, data: [1, 2, 3]}}",
+    );
+    let mut received = [0; 8];
+    let got = udp.recv(&mut received);
+    assert!(
+        matches!(got, Ok(3)),
+        "the dead page's eight sockets are still taken: {got:?}"
+    );
 }

@@ -411,7 +411,8 @@ citation = "Reload webView on webViewWebContentProcessDidTerminate"
 enonce = "Un pont WKWebView mûr traite lui-même la mort du processus de la page, sans compter sur WebKit."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -422,7 +423,8 @@ citation = "also call bridge.reset() on webViewWebContentProcessDidTerminate"
 enonce = "Après la mort de la page, l'état du pont appartient à une page disparue : capteurs et sockets doivent repartir de zéro."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -433,7 +435,8 @@ citation = "This doesn't solve the root issue where sometimes refreshing the Web
 enonce = "Recharger ne suffit pas toujours : Cordova laisse choisir entre rafraîchir et repartir de la page de départ."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -444,7 +447,8 @@ citation = "static constexpr unsigned maximumWebProcessRelaunchAttempts = 1;"
 enonce = "Sans délégué, WebKit ne recharge qu'une fois par fenêtre de 30 s : la mort suivante laisse la vue vide, sans rien dire."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -455,7 +459,8 @@ citation = "the process for the specified web view terminates for any reason"
 enonce = "Apple donne le point d'entrée : mémoire, plantage ou arrière-plan passent tous par ce rappel."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -466,7 +471,8 @@ citation = "app displays white blank screen and no way to control by user"
 enonce = "Le symptôme vu par les joueurs : écran vide au retour du premier plan, rien à toucher, cause invisible pendant des mois."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -489,7 +495,8 @@ citation = "Add callback for webViewWebContentProcessDidTerminate"
 enonce = "Le rappel de mort du processus est remonté à l'application : c'est elle qui sait quoi montrer au joueur."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_whose_process_keeps_dying_comes_back_with_its_sockets_free"]
 trou = "T4"
 
 [[lecon]]
@@ -879,7 +886,7 @@ lieux = [
 cas = "Aucun webViewWebContentProcessDidTerminate. WebKit recharge seul une fois par fenêtre de 30 s : une page lourde qui replante reste vide, status connected, sans notice. Bridge garde motion et sockets d'une page morte, donc une page rechargée trouve ses 8 sockets pris."
 preuve = "sonde H7 : kill du processus WebContent dans le simulateur. Une fois : rechargé. Deux fois de suite : plus aucun chargement en 17 s, capture vide. Avec webView.reload() dans le rappel, seule variante, 3 morts donnent 3 chargements."
 verifie = "l'app sur simulateur ; la constante et le chemin de code de WebKit au commit figé"
-suppose = "Ce que fait iOS à un WASM lourd sur un vrai iPhone, et si la mort en arrière-plan suit ce chemin. Le nettoyage du pont n'a pas été exécuté, seulement lu."
+suppose = "Ce que fait iOS à un WASM lourd sur un vrai iPhone, et si la mort en arrière-plan suit ce chemin. Le banc tue le processus par le crochet de test de WebKit, pas par la mémoire : ce crochet ne recharge jamais seul, ce qui rend le test plus dur que la sonde."
 
 [[trou]]
 id = "T5"

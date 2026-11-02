@@ -131,6 +131,10 @@ final class Bench {
             return "ok"
         case "eval":
             return await evaluate(rest)
+        case "kill-page":
+            // WebKit's own test hook: the shell cannot reach this process.
+            webView?.perform(NSSelectorFromString("_killWebContentProcess"))
+            return "ok"
         default:
             return "unknown: \(line)"
         }
