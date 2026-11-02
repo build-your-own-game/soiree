@@ -116,7 +116,8 @@
 //!   own and get [`ClientOutput::Reset`]: they forget what the old run said
 //!   and wait for the new one. With [`Host::known`] saved and given back in
 //!   [`HostConfig::known`], devices come back as themselves; identities never
-//!   go back to an old number (C7). Since the game of the new run never heard
+//!   go back to an old number (C7), and `salon-host` saves a new one before
+//!   its welcome leaves. Since the game of the new run never heard
 //!   of them, each one's first connection is a [`DeviceEvent::Arrived`],
 //!   under its old [`DeviceId`]. What a device sent and the old run did not
 //!   acknowledge goes to the new one, after that arrival and with the phase

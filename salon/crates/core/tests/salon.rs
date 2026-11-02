@@ -1459,3 +1459,44 @@ fn drift_is_not_sleep() {
         );
     }
 }
+
+/// `Host::forget` drops a device, not a door: its token no longer names
+/// anybody. Games count on that for a phone that never played, which comes
+/// back as a new one.
+#[test]
+fn a_forgotten_device_comes_back_as_a_new_one() {
+    let mut net = Net::new(45, Faults::default());
+    let phone = net.add_phone(phone_config(52, Kind::Phone), Caps::DATAGRAM);
+    let old = joined(&mut net, phone);
+    net.phones[phone].frozen = true;
+    net.run(7_000);
+    net.host.forget(old);
+    net.phones[phone].frozen = false;
+    assert!(net.run_until(20_000, |net| net.phones[phone].resets == 1
+        && net.phones[phone].client.status() == Status::Connected));
+    assert!(device_of(&net, phone).0 > old.0);
+    assert!(net.host.device(old).is_none());
+}
+
+/// The authority refuses a return by closing the room: `forget` then keeps
+/// the player out, and the room can be left closed for as long as it likes.
+#[test]
+fn a_closed_room_keeps_a_forgotten_device_out() {
+    let mut net = Net::new(46, Faults::default());
+    let phone = net.add_phone(phone_config(53, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.host.close();
+    net.host.forget(device);
+    net.run(1_000);
+    assert_eq!(
+        net.phones[phone].client.status(),
+        Status::Refused(Refusal::Removed)
+    );
+    net.phones[phone].client.resume();
+    net.run(5_000);
+    assert_eq!(
+        net.phones[phone].client.status(),
+        Status::Refused(Refusal::Closed)
+    );
+    assert_eq!(net.host.devices().count(), 0);
+}

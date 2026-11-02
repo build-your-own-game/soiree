@@ -28,7 +28,8 @@ use inbox::{ReceiveError, Receiver};
 pub const INBOX: usize = 4096;
 /// Packets waiting for one transport, at most.
 pub const OUTBOX: usize = 256;
-/// Identities are saved at most this often.
+/// What changes in identities, names and kinds, is saved at least this
+/// often. A new identity does not wait.
 const SAVE_EVERY: u64 = 1_000;
 
 pub enum Net {
@@ -149,6 +150,7 @@ pub fn run<G: Game>(
     let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
     store.save_epoch();
     let mut next_save = clock.now().plus(SAVE_EVERY);
+    let mut saved_identities = driver.host().identities();
     loop {
         let soon = Clock::instant();
         let soon = soon.checked_add(MAX_WAIT).unwrap_or(soon);
@@ -169,7 +171,15 @@ pub fn run<G: Game>(
             Err(ReceiveError::Wait(error)) => return Ended::Wait(error),
         }
         let now = clock.now();
-        for effect in driver.step(now, inputs) {
+        let effects = driver.step(now, inputs);
+        // A number must not leave before it is on disk: after a crash, it
+        // would go to another device (`Timing` does not bound a crash).
+        let identities = driver.host().identities();
+        if identities != saved_identities {
+            saved_identities = identities;
+            store.save(driver.host().known());
+        }
+        for effect in effects {
             match effect {
                 Effect::Transmit { link, bytes } => {
                     if let Some(outlet) = outlets.get(&link) {
@@ -294,6 +304,65 @@ mod tests {
             limits: Limits::default(),
             known: Vec::new(),
         }
+    }
+
+    /// C7: a device that got its number survives a crash at the next
+    /// instant. Saved a second later, its number went to another device.
+    #[test]
+    fn an_identity_is_saved_before_its_welcome_leaves() {
+        use salon_core::{Client, ClientConfig, ClientOutput, Kind, Token};
+
+        let dir = std::env::temp_dir().join(format!("salon-room-saved-{}", std::process::id()));
+        let _: io::Result<()> = std::fs::remove_dir_all(&dir);
+        let now = Ms(0);
+        let mut phone: Client<(), ()> = Client::new(
+            now,
+            ClientConfig {
+                game: 1,
+                kind: Kind::Phone,
+                token: Token([3; 16]),
+                name: None,
+                tv_key: None,
+                seed: 1,
+                timing: Timing::default(),
+                limits: Limits::default(),
+            },
+        );
+        assert_eq!(phone.poll(now), Some(ClientOutput::Connect));
+        phone.opened(now, Caps::STREAM);
+        let Some(ClientOutput::Transmit(hello)) = phone.poll(now) else {
+            panic!("a hello");
+        };
+
+        let clock = Clock::start();
+        let (net, inbox) = inbox::channel::<Net>(16).unwrap();
+        let store = Store::open(Some(&dir), 1, [0; 16]);
+        let game = Steps {
+            start: clock,
+            done: 0,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let room = thread::spawn(move || {
+            let tick = Duration::from_secs(1);
+            run(&inbox, game, config(), tick, store, clock, None)
+        });
+        let (outbox, packets) = std::sync::mpsc::sync_channel(16);
+        let link = LinkId(1);
+        net.send(Net::Opened {
+            link,
+            caps: Caps::STREAM,
+            outlet: Outlet::Ws(outbox),
+        })
+        .unwrap();
+        net.send(Net::Received { link, bytes: hello }).unwrap();
+        let welcome = packets.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(welcome, WsOut::Packet(_)));
+        // What a new run would read, as soon as the phone can know its number.
+        let known = Store::open(Some(&dir), 1, [0; 16]).known();
+        drop(net);
+        room.join().unwrap();
+        let _: io::Result<()> = std::fs::remove_dir_all(&dir);
+        assert_eq!(known.len(), 1, "welcomed, and not on disk");
     }
 
     /// The other half, the process that ends, is `tests/room_death.rs`.

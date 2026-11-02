@@ -404,8 +404,10 @@ citation = "allow to deny a reconnection during onReconnect()"
 enonce = "L'autorité doit pouvoir refuser un retour : un joueur retiré ne revient pas par son jeton."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_closed_room_keeps_a_forgotten_device_out", "salon/crates/core/tests/salon.rs::a_forgotten_device_comes_back_as_a_new_one"]
 trou = "T13"
+note = "L'autorité refuse par Host::close, pas par forget : Punchline et le modèle comptent sur le retour d'un appareil oublié, en appareil neuf, dans une salle ouverte. T13 a donc corrigé la doc de forget, pas le code."
 
 [[lecon]]
 id = "reconnexion-07"
@@ -759,7 +761,8 @@ citation = "Forcibly kills the process"
 enonce = "Un arrêt brutal arrive entre deux écritures : ce qui n'est pas écrit n'a jamais existé."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/room.rs::an_identity_is_saved_before_its_welcome_leaves", "C7"]
 trou = "T10"
 
 [[lecon]]

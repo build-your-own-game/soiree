@@ -819,6 +819,12 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         self.phase
     }
 
+    /// How many identities were given so far: when it moves, [`Host::known`]
+    /// has something to save.
+    pub fn identities(&self) -> u32 {
+        self.next_device
+    }
+
     /// Unknown devices may no longer join. Known ones always come back.
     pub fn close(&mut self) {
         self.open = false;
@@ -829,8 +835,12 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         self.open = true;
     }
 
-    /// Removes a device for good. A remote one is told, and its token stops
-    /// working.
+    /// Removes a device for good. If connected, it is told
+    /// ([`Refusal::Removed`]). Its token names nobody any more: the phone
+    /// that shows it again is a stranger, and arrives as a new device, unless
+    /// the room is closed ([`Host::close`]). Its number is not given again in
+    /// this run; after a restart it can be, since [`Host::known`] no longer
+    /// has it.
     pub fn forget(&mut self, device: DeviceId) {
         let Some(gone) = self.devices.remove(&device) else {
             return;
