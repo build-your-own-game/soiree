@@ -1,5 +1,5 @@
 //! Existing controllers adapted to structured observations and one evaluator.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::{
@@ -263,21 +263,9 @@ fn execution_for<'a>(
 }
 
 fn observe_suite(control: &Control, result: &cargo::RunReport, input: Option<&str>) -> Observation {
-    let mut state = if result.suites.is_empty() {
-        Outcome::InfrastructureError
-    } else {
-        Outcome::Passed
-    };
-    for suite in &result.suites {
-        let next = outcome(suite.outcome);
-        if next == Outcome::InfrastructureError
-            || (next == Outcome::Failed && state != Outcome::InfrastructureError)
-        {
-            state = next;
-        }
-    }
-    let detail = format!("{:?}", result.suites);
-    if state != Outcome::Passed {
+    let (state, summary) = suite_outcome(&result.suites);
+    let detail = format!("{summary}\n{:?}", result.suites);
+    if state != Outcome::Passed && state != Outcome::ReviewRequired {
         eprintln!("{detail}");
     }
     observe(
@@ -287,6 +275,83 @@ fn observe_suite(control: &Control, result: &cargo::RunReport, input: Option<&st
         detail,
         vec!["Cargo/libtest".to_owned()],
     )
+}
+
+/// What the whole workspace ran, in one line first. A crate without any test
+/// is ordinary, and a target without one more so. A crate that has tests and
+/// ran none is not: `#[ignore]` on every test is how a red one goes quiet. One
+/// ignored test among others keeps the run going, counted and left to a human.
+fn suite_outcome(suites: &[cargo::SuiteExecution]) -> (Outcome, String) {
+    let sum = |field: fn(&cargo::SuiteExecution) -> usize| {
+        suites
+            .iter()
+            .map(field)
+            .fold(0_usize, usize::saturating_add)
+    };
+    let (discovered, executed) = (sum(|s| s.discovered), sum(|s| s.executed));
+    let ignored: Vec<&str> = suites
+        .iter()
+        .flat_map(|s| s.ignored.iter().map(String::as_str))
+        .collect();
+    let named = |wanted: cargo::TestOutcome| {
+        suites
+            .iter()
+            .filter(|s| s.outcome == wanted)
+            .map(|s| format!("{} {}", s.package, s.target))
+            .collect::<Vec<_>>()
+    };
+    let broken = named(cargo::TestOutcome::InfrastructureError);
+    let failed = named(cargo::TestOutcome::Failed);
+    let silent = silent_packages(suites);
+    let tally = format!("{executed} exécuté, {} ignoré", ignored.len());
+    if suites.is_empty() {
+        (
+            Outcome::InfrastructureError,
+            "Cargo n'a rendu aucune suite".to_owned(),
+        )
+    } else if !broken.is_empty() {
+        (
+            Outcome::InfrastructureError,
+            format!("suite non conclue : {}", broken.join(", ")),
+        )
+    } else if !failed.is_empty() {
+        (
+            Outcome::Failed,
+            format!("en échec : {} ; {tally}", failed.join(", ")),
+        )
+    } else if discovered == 0 {
+        (
+            Outcome::NotRun,
+            "aucun test découvert dans le workspace : rien n'a tourné".to_owned(),
+        )
+    } else if !silent.is_empty() {
+        (
+            Outcome::NotRun,
+            format!("rien n'a tourné dans {} ; {tally}", silent.join(", ")),
+        )
+    } else if !ignored.is_empty() {
+        (
+            Outcome::ReviewRequired,
+            format!("{tally} : {}", ignored.join(", ")),
+        )
+    } else {
+        (Outcome::Passed, format!("{executed} exécuté"))
+    }
+}
+
+/// Packages with tests of which none ran, each with how many it skipped.
+fn silent_packages(suites: &[cargo::SuiteExecution]) -> Vec<String> {
+    let mut packages: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    for suite in suites {
+        let (discovered, executed) = packages.entry(&suite.package).or_default();
+        *discovered = discovered.saturating_add(suite.discovered);
+        *executed = executed.saturating_add(suite.executed);
+    }
+    packages
+        .into_iter()
+        .filter(|(_, (discovered, executed))| *discovered > 0 && *executed == 0)
+        .map(|(package, (discovered, _))| format!("{package} ({discovered} ignoré)"))
+        .collect()
 }
 
 fn finish(

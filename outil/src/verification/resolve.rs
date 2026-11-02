@@ -253,7 +253,7 @@ fn common_controls(plan: &mut Plan, capabilities: FoundationCapabilities) {
         ),
         (
             "cargo:suite",
-            "La suite native ne contient aucun test en échec",
+            "La suite native a tourné, sans test en échec ; un test ignoré reste à juger",
         ),
         (
             "command:doctests",

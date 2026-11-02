@@ -142,6 +142,53 @@ process.exit(mode === 'abort' ? 2 : 0);
             .unwrap();
         }
 
+        /// A library with these tests, and whatever else a case adds.
+        fn tests(&self, tests: &str) {
+            std::fs::write(
+                self.game.join("src/lib.rs"),
+                format!("#[cfg(test)]\nmod tests {{\n{tests}\n}}\n"),
+            )
+            .unwrap();
+        }
+
+        /// A second crate of the workspace, with these tests.
+        fn member(&self, tests: &str) {
+            let member = self.game.join("other");
+            std::fs::create_dir_all(member.join("src")).unwrap();
+            std::fs::write(
+                member.join("Cargo.toml"),
+                "[package]\nname='other-fixture'\nversion='0.1.0'\nedition='2024'\n",
+            )
+            .unwrap();
+            std::fs::write(
+                member.join("src/lib.rs"),
+                format!("#[cfg(test)]\nmod tests {{\n{tests}\n}}\n"),
+            )
+            .unwrap();
+            let manifest = self.game.join("Cargo.toml");
+            let text = std::fs::read_to_string(&manifest).unwrap();
+            std::fs::write(
+                manifest,
+                text.replace("[workspace]", "[workspace]\nmembers = ['other']"),
+            )
+            .unwrap();
+        }
+
+        /// The real command, with what it printed and what it reported.
+        fn check(&self) -> (Output, Value) {
+            let output = Command::new(env!("CARGO_BIN_EXE_soiree"))
+                .current_dir(&self.game)
+                .env("CARGO_NET_OFFLINE", "true")
+                .arg("check")
+                .output()
+                .unwrap();
+            let report = std::fs::read_to_string(self.game.join("certification/check.json"))
+                .unwrap_or_else(|error| {
+                    panic!("{error}: {}", String::from_utf8_lossy(&output.stderr))
+                });
+            (output, serde_json::from_str(&report).unwrap())
+        }
+
         fn check_report(&self) -> Value {
             let output = Command::new(env!("CARGO_BIN_EXE_soiree"))
                 .current_dir(&self.game)
@@ -319,6 +366,78 @@ process.exit(mode === 'abort' ? 2 : 0);
                 "{body} {declared}"
             );
         }
+    }
+
+    const REAL: &str = "#[test]\nfn real() {}\n";
+    const IGNORED: &str = "#[test]\n#[ignore = \"plus tard\"]\nfn red() { panic!(); }\n";
+
+    #[test]
+    fn a_suite_where_nothing_ran_cannot_pass_the_real_command() {
+        for (tests, why) in [
+            (IGNORED, "1 ignoré"),
+            ("", "aucun test découvert"),
+            ("#[test]\n#[ignore]\nfn a() {}\n#[test]\n#[ignore]\nfn b() {}\n", "2 ignoré"),
+        ] {
+            let fixture = Fixture::new("completed");
+            fixture.tests(tests);
+            let (output, report) = fixture.check();
+            assert!(!output.status.success(), "{tests}");
+            assert_eq!(
+                observation(&report, "cargo:suite")["outcome"],
+                "not-run",
+                "{tests}"
+            );
+            assert_eq!(
+                obligation(&report, "cargo:suite")["assessment"],
+                "pending",
+                "{tests}"
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(stdout.contains("Pas pu vérifier"), "{stdout}");
+            assert!(stdout.contains(why), "{why} : {stdout}");
+        }
+    }
+
+    #[test]
+    fn a_crate_whose_tests_are_all_ignored_is_not_saved_by_its_neighbour() {
+        let fixture = Fixture::new("completed");
+        fixture.tests(REAL);
+        fixture.member(IGNORED);
+        let (output, report) = fixture.check();
+        assert!(!output.status.success());
+        assert_eq!(observation(&report, "cargo:suite")["outcome"], "not-run");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("other-fixture"), "{stdout}");
+    }
+
+    #[test]
+    fn one_ignored_test_is_counted_and_left_to_a_human() {
+        let fixture = Fixture::new("completed");
+        fixture.tests(&format!("{REAL}{IGNORED}"));
+        let (output, report) = fixture.check();
+        assert_eq!(
+            observation(&report, "cargo:suite")["outcome"],
+            "review-required"
+        );
+        assert_eq!(
+            obligation(&report, "cargo:suite")["assessment"],
+            "review-required"
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("À juger par un humain"), "{stdout}");
+        assert!(stdout.contains("1 exécuté, 1 ignoré"), "{stdout}");
+        assert!(stdout.contains("tests::red"), "{stdout}");
+        assert!(stdout.contains("plus tard"), "{stdout}");
+    }
+
+    #[test]
+    fn a_crate_without_tests_beside_a_real_suite_is_no_hole() {
+        let fixture = Fixture::new("completed");
+        fixture.tests(REAL);
+        fixture.member("");
+        let (_, report) = fixture.check();
+        assert_eq!(observation(&report, "cargo:suite")["outcome"], "passed");
+        assert_eq!(obligation(&report, "cargo:suite")["assessment"], "satisfied");
     }
 
     #[test]

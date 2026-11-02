@@ -92,6 +92,8 @@ pub struct SuiteExecution {
     pub detail: String,
     pub discovered: usize,
     pub executed: usize,
+    /// The tests this suite skipped, each with the reason libtest gives.
+    pub ignored: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -148,6 +150,7 @@ impl Config {
             detail: String::new(),
             discovered: 0,
             executed: 0,
+            ignored: Vec::new(),
         }
     }
 }
@@ -957,6 +960,7 @@ fn completed_suite(
         .values()
         .filter(|outcome| matches!(outcome, TestOutcome::Passed | TestOutcome::Failed))
         .count();
+    suite.ignored = ignored_tests(&output.stdout, &tests);
     suite.outcome = if !output.status.success()
         || tests
             .values()
@@ -984,17 +988,32 @@ fn completed_suite(
     SuiteReport { suite, tests }
 }
 
+/// `test name ... status`, with the test's own name: `test name - should
+/// panic ... ok` is a test called `name`.
+fn result_line(line: &str) -> Option<(&str, &str)> {
+    let (name, status) = line.strip_prefix("test ")?.rsplit_once(" ... ")?;
+    Some((name.strip_suffix(" - should panic").unwrap_or(name), status))
+}
+
+/// `test name ... ignored, the reason`, in order.
+fn ignored_tests(output: &[u8], tests: &BTreeMap<String, TestOutcome>) -> Vec<String> {
+    String::from_utf8_lossy(output)
+        .lines()
+        .filter_map(result_line)
+        .filter(|(name, _)| tests.get(*name) == Some(&TestOutcome::Ignored))
+        .map(|(name, status)| match status.split_once(", ") {
+            Some((_, reason)) => format!("{name} ({reason})"),
+            None => name.to_owned(),
+        })
+        .collect()
+}
+
 fn parse_results(output: &[u8], discovered: &BTreeSet<String>) -> BTreeMap<String, TestOutcome> {
     let mut tests = BTreeMap::new();
     for line in String::from_utf8_lossy(output).lines() {
-        let Some((name, status)) = line
-            .strip_prefix("test ")
-            .and_then(|line| line.rsplit_once(" ... "))
-        else {
+        let Some((name, status)) = result_line(line) else {
             continue;
         };
-        // `test name - should panic ... ok`: the test's name is only `name`.
-        let name = name.strip_suffix(" - should panic").unwrap_or(name);
         if !discovered.contains(name) {
             continue;
         }
