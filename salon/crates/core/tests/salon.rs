@@ -2043,3 +2043,29 @@ fn what_waits_for_a_device_is_bounded_in_bytes() {
     assert_eq!(net.host.send(device, &big()), Ok(()));
     assert_eq!(net.host.send(device, &big()), Err(SendError::Full));
 }
+
+/// T12. `Timing` is public, and a game can give it the wrong way round: it is
+/// put right when it is given, not found out by a panic on the room's thread.
+#[test]
+fn a_timing_the_wrong_way_round_does_not_stop_the_room() {
+    let timing = Timing {
+        resend_min: 2_000,
+        resend_max: 1_000,
+        ..Timing::default()
+    };
+    let mut net = Net::new(1, Faults::default());
+    let config = HostConfig {
+        timing,
+        ..host_config(1, Vec::new())
+    };
+    net.host = Host::new(Ms(1_000), config);
+    let config = ClientConfig {
+        timing,
+        ..phone_config(1, Kind::Phone)
+    };
+    let phone = net.add_phone(config, Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.host.send(device, &Down::Note(1)).unwrap();
+    net.run(3_000);
+    assert_eq!(net.phones[phone].events, vec![Down::Note(1)]);
+}

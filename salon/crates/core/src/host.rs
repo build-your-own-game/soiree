@@ -273,6 +273,7 @@ pub struct Host<Up, Down> {
 impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
     pub fn new(now: Ms, mut config: HostConfig) -> Self {
         config.limits = config.limits.bounded();
+        config.timing = config.timing.bounded();
         let mut devices = BTreeMap::new();
         let mut tokens = BTreeMap::new();
         let mut next_device = 1;

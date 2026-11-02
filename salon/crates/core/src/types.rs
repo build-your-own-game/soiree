@@ -270,6 +270,18 @@ pub struct Timing {
     pub healthy: u64,
 }
 
+impl Timing {
+    /// What salon can hold to: a longest wait below the shortest is the
+    /// shortest, and `clamp` would have panicked on the room's thread.
+    #[must_use]
+    pub(crate) fn bounded(self) -> Timing {
+        Timing {
+            resend_max: self.resend_max.max(self.resend_min),
+            ..self
+        }
+    }
+}
+
 impl Default for Timing {
     fn default() -> Self {
         Timing {
