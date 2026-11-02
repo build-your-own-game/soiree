@@ -107,6 +107,10 @@ impl Assembly {
 
 /// Most fragments one message may have; with the smallest packets, 64 KiB.
 const MAX_FRAGMENTS: u16 = 1024;
+/// The longest message salon can carry: past [`MAX_FRAGMENTS`] on a link of
+/// the smallest fragments the shells use, no receiver would take it.
+pub(crate) const LARGEST_MESSAGE: usize =
+    (MAX_FRAGMENTS as usize) * (Caps::DATAGRAM.max_packet - PACKET_OVERHEAD - PART_OVERHEAD);
 /// Numbers a receiver keeps from the next one it expects: the bits of
 /// [`Ack::ahead`]. A sender does not go past them, so a whole queue of small
 /// events still fits: 64 of them in a burst, as many as

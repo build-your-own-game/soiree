@@ -148,6 +148,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             .as_deref()
             .and_then(Name::new)
             .map(|name| String::from(name.as_str()));
+        config.limits = config.limits.bounded();
         let rng = config.seed ^ 0x9e37_79b9_7f4a_7c15;
         Client {
             config,

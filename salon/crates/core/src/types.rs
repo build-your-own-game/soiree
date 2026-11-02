@@ -8,6 +8,8 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::stream::LARGEST_MESSAGE;
+
 /// Milliseconds on a monotonic clock whose origin the shell chooses (the
 /// start of the process, say). Time only enters salon through the calls, as
 /// a `Ms`: never `Instant`, which panics in WASM and has no zero.
@@ -288,9 +290,12 @@ impl Default for Timing {
 /// Every bound salon enforces. What has none is in `salon/README.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
-    /// Largest encoded message (event or state) a device may send.
+    /// Largest encoded message (event or state) a device may send. Past
+    /// 970,752 bytes, 1,024 fragments of [`Caps::DATAGRAM`], it is cut down to
+    /// that when salon is given it: no receiver would take more.
     pub max_up: usize,
-    /// Largest encoded message the host may send to one device.
+    /// Largest encoded message the host may send to one device, cut down in
+    /// the same way.
     pub max_down: usize,
     /// Events waiting for an acknowledgement, in each direction, per device.
     pub max_pending: usize,
@@ -305,6 +310,18 @@ pub struct Limits {
     /// later: a flood slows down its sender, nobody else.
     pub events_per_s: u64,
     pub events_burst: u64,
+}
+
+impl Limits {
+    /// What salon can hold to.
+    #[must_use]
+    pub(crate) fn bounded(self) -> Limits {
+        Limits {
+            max_up: self.max_up.min(LARGEST_MESSAGE),
+            max_down: self.max_down.min(LARGEST_MESSAGE),
+            ..self
+        }
+    }
 }
 
 impl Default for Limits {

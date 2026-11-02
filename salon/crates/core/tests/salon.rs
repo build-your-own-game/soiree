@@ -14,8 +14,11 @@
 mod framing;
 mod net;
 
-use net::{Down, Faults, Narrow, Net, Up, phone_config};
-use salon_core::{Caps, DeviceEvent, DeviceId, Kind, Ms, Presence, Refusal, Status, Timing, Why};
+use net::{Down, Faults, Narrow, Net, Up, host_config, phone_config};
+use salon_core::{
+    Caps, ClientConfig, ClientSendError, DeviceEvent, DeviceId, Host, HostConfig, Kind, Limits, Ms,
+    Presence, Refusal, SendError, Status, Timing, Why,
+};
 
 fn device_of(net: &Net, phone: usize) -> DeviceId {
     net.phones[phone].client.device().expect("welcomed")
@@ -1920,4 +1923,45 @@ fn a_big_state_refreshed_often_still_arrives() {
             "the latest arrives"
         );
     }
+}
+
+/// A room whose host has these limits, and a phone that keeps its own.
+fn limited(limits: Limits, phone_limits: Limits) -> (Net, usize, DeviceId) {
+    let mut net = Net::new(1, Faults::default());
+    let config = HostConfig {
+        limits,
+        ..host_config(1, Vec::new())
+    };
+    net.host = Host::new(Ms(1_000), config);
+    let config = ClientConfig {
+        limits: phone_limits,
+        ..phone_config(1, Kind::Phone)
+    };
+    let phone = net.add_phone(config, Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    (net, phone, device)
+}
+
+/// T8. Past 1,024 fragments no receiver takes a message: a limit that says
+/// more is cut down when it is given, and `send` says so at once, instead of
+/// blocking every event that follows.
+#[test]
+fn a_limit_past_what_fragments_carry_is_cut_down() {
+    let limits = Limits {
+        max_down: 2 * 1024 * 1024,
+        max_up: 2 * 1024 * 1024,
+        ..Limits::default()
+    };
+    let (mut net, phone, device) = limited(limits, limits);
+    assert_eq!(
+        net.host.send(device, &Down::View(1, vec![0; 1_100_000])),
+        Err(SendError::TooBig)
+    );
+    assert_eq!(
+        net.phones[phone].client.send(&Up::Blob(vec![0; 1_100_000])),
+        Err(ClientSendError::TooBig)
+    );
+    net.host.send(device, &Down::Note(2)).unwrap();
+    net.run(1_000);
+    assert_eq!(net.phones[phone].events, vec![Down::Note(2)]);
 }
