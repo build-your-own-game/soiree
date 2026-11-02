@@ -14,15 +14,53 @@
 //! A message bigger than one packet is cut into fragments, sized for the
 //! current link when it is sent.
 
-use alloc::collections::VecDeque;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::types::Ms;
 use crate::wire::{EventPart, PACKET_OVERHEAD, PART_OVERHEAD, StatePart};
 
-/// Fragments of one message being put back together.
-type Slots = Vec<Option<Vec<u8>>>;
+/// One message being put back together. It costs what arrived, never what the
+/// sender announced: `count` stays a number until fragments fill it, and each
+/// fragment is one step, however many there are.
+struct Assembly {
+    count: u16,
+    parts: BTreeMap<u16, Vec<u8>>,
+    size: usize,
+}
+
+impl Assembly {
+    fn new(count: u16) -> Assembly {
+        Assembly {
+            count,
+            parts: BTreeMap::new(),
+            size: 0,
+        }
+    }
+
+    /// Keeps a fragment, in the place of a copy of it. Says whether it is new.
+    fn put(&mut self, index: u16, data: Vec<u8>) -> bool {
+        self.size = self.size.saturating_add(data.len());
+        let copy = self.parts.insert(index, data);
+        if let Some(copy) = &copy {
+            self.size = self.size.saturating_sub(copy.len());
+        }
+        copy.is_none()
+    }
+
+    fn is_complete(&self) -> bool {
+        self.parts.len() == usize::from(self.count)
+    }
+
+    fn into_message(self) -> Vec<u8> {
+        let mut message = Vec::with_capacity(self.size);
+        for part in self.parts.into_values() {
+            message.extend_from_slice(&part);
+        }
+        message
+    }
+}
 
 /// Most fragments one message may have; with the smallest packets, 64 KiB.
 const MAX_FRAGMENTS: u16 = 1024;
@@ -217,7 +255,7 @@ pub(crate) struct Arrived {
 /// Events received, delivered once each and in order.
 pub(crate) struct InEvents {
     next: u32,
-    partial: Option<(u16, Slots)>,
+    partial: Option<Assembly>,
 }
 
 /// What a batch of fragments gave.
@@ -282,21 +320,19 @@ impl InEvents {
                 received.garbage = received.garbage.saturating_add(1);
                 continue;
             }
-            let fresh = !matches!(&self.partial, Some((count, _)) if *count == part.count);
-            if fresh {
-                self.partial = Some((part.count, vec![None; usize::from(part.count)]));
-            }
-            let Some((_, slots)) = &mut self.partial else {
+            let same = self.partial.as_ref().map(|partial| partial.count) == Some(part.count);
+            let partial = if same {
+                self.partial.as_mut()
+            } else {
+                Some(self.partial.insert(Assembly::new(part.count)))
+            };
+            let Some(partial) = partial else {
                 continue;
             };
-            if let Some(slot) = slots.get_mut(usize::from(part.index)) {
-                if slot.is_none() {
-                    received.progressed = true;
-                }
-                *slot = Some(part.data);
+            if partial.put(part.index, part.data) {
+                received.progressed = true;
             }
-            let size: usize = slots.iter().flatten().map(Vec::len).sum();
-            if size > max {
+            if partial.size > max {
                 // Bigger than allowed: drop it whole, and move past it so the
                 // sender's queue empties instead of resending it forever.
                 received.garbage = received.garbage.saturating_add(1);
@@ -304,21 +340,18 @@ impl InEvents {
                 self.next = self.next.saturating_add(1);
                 continue;
             }
-            if slots.iter().all(Option::is_some) {
+            if partial.is_complete() {
                 if !allow() {
                     // Over budget: keep the fragments, acknowledge nothing.
                     return received;
                 }
-                let data = slots
-                    .iter_mut()
-                    .flat_map(|slot| slot.take().unwrap_or_default())
-                    .collect();
-                received.events.push(Arrived {
-                    data,
-                    phase: part.phase,
-                    at: part.at,
-                });
-                self.partial = None;
+                if let Some(whole) = self.partial.take() {
+                    received.events.push(Arrived {
+                        data: whole.into_message(),
+                        phase: part.phase,
+                        at: part.at,
+                    });
+                }
                 self.next = self.next.saturating_add(1);
                 received.progressed = true;
             }
@@ -440,7 +473,7 @@ impl OutState {
 /// The latest state received, put back together.
 pub(crate) struct InState {
     applied: u32,
-    building: Option<(u32, u16, Slots)>,
+    building: Option<(u32, Assembly)>,
 }
 
 impl InState {
@@ -478,38 +511,36 @@ impl InState {
                 garbage = garbage.saturating_add(1);
                 continue;
             }
-            let same = matches!(&self.building, Some((seq, count, _)) if *seq == part.seq && *count == part.count);
+            let same = self
+                .building
+                .as_ref()
+                .map(|(seq, partial)| (*seq, partial.count))
+                == Some((part.seq, part.count));
             if !same {
                 let newer = self
                     .building
                     .as_ref()
-                    .is_none_or(|(seq, _, _)| part.seq >= *seq);
+                    .is_none_or(|(seq, _)| part.seq >= *seq);
                 if !newer {
                     continue;
                 }
-                self.building = Some((part.seq, part.count, vec![None; usize::from(part.count)]));
+                self.building = Some((part.seq, Assembly::new(part.count)));
             }
-            let Some((seq, _, slots)) = &mut self.building else {
+            let Some((seq, partial)) = &mut self.building else {
                 continue;
             };
             let seq = *seq;
-            if let Some(slot) = slots.get_mut(usize::from(part.index)) {
-                *slot = Some(part.data);
-            }
-            let size: usize = slots.iter().flatten().map(Vec::len).sum();
-            if size > max {
+            partial.put(part.index, part.data);
+            if partial.size > max {
                 garbage = garbage.saturating_add(1);
                 self.building = None;
                 continue;
             }
-            if slots.iter().all(Option::is_some) {
-                let data = slots
-                    .iter_mut()
-                    .flat_map(|slot| slot.take().unwrap_or_default())
-                    .collect();
+            if partial.is_complete()
+                && let Some((_, whole)) = self.building.take()
+            {
                 self.applied = seq;
-                self.building = None;
-                done = Some(data);
+                done = Some(whole.into_message());
             }
         }
         (done, garbage)

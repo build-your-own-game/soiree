@@ -100,7 +100,7 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         signals: signal_inbox,
         outgoing,
         outlet,
-        net: net.clone(),
+        net: rtc::ToRoom::new(net.clone()),
     };
     thread::spawn(move || rtc::run(&rtcs));
     let handler = game.http();

@@ -226,7 +226,8 @@ impl Caps {
     }
 
     pub(crate) fn packet(self) -> usize {
-        self.max_packet.clamp(Caps::MIN_PACKET, 64 * 1024)
+        self.max_packet
+            .clamp(Caps::MIN_PACKET, crate::wire::MAX_PACKET)
     }
 }
 

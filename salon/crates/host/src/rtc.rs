@@ -8,7 +8,8 @@
 //! input (`str0m/src/lib.rs`, "single-mutation invariant"): [`drive`] does
 //! that after each one.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
@@ -22,6 +23,7 @@ use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
 use crate::clock::Clock;
+use crate::room::inbox::{Refused, Sender};
 use crate::room::{Net, Outlet, RtcOut};
 
 /// A page that has not opened its channel by then is dropped: str0m has no
@@ -79,6 +81,52 @@ struct Entry {
     local: bool,
 }
 
+/// The way to the room from the one thread that serves every page: it never
+/// waits there, or a full inbox would stop every page's packets and handshakes.
+/// A packet that does not fit is lost, like on any network, and salon sends it
+/// again. What the room must hear waits here, in order, and a packet that
+/// comes behind it is lost too: nothing overtakes the opening of its link.
+pub struct ToRoom {
+    net: Sender<Net>,
+    waiting: RefCell<VecDeque<Net>>,
+}
+
+impl ToRoom {
+    pub fn new(net: Sender<Net>) -> ToRoom {
+        ToRoom {
+            net,
+            waiting: RefCell::new(VecDeque::new()),
+        }
+    }
+
+    fn packet(&self, link: LinkId, bytes: Vec<u8>) {
+        if self.flush() {
+            // Full: this packet is lost, and salon sends it again.
+            let _: Result<(), Refused<Net>> = self.net.try_send(Net::Received { link, bytes });
+        }
+    }
+
+    fn tell(&self, net: Net) {
+        self.waiting.borrow_mut().push_back(net);
+        self.flush();
+    }
+
+    /// Hands over what waits. Says whether nothing waits any more.
+    fn flush(&self) -> bool {
+        let mut waiting = self.waiting.borrow_mut();
+        while let Some(net) = waiting.pop_front() {
+            match self.net.try_send(net) {
+                Ok(()) | Err(Refused::Gone) => {}
+                Err(Refused::Full(net)) => {
+                    waiting.push_front(net);
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
 pub struct Rtcs {
     pub socket: UdpSocket,
     /// The network address announced to pages (with its loopback twin).
@@ -86,7 +134,7 @@ pub struct Rtcs {
     pub signals: Receiver<Signal>,
     pub outgoing: Receiver<RtcOut>,
     pub outlet: SyncSender<RtcOut>,
-    pub net: crate::room::inbox::Sender<Net>,
+    pub net: ToRoom,
 }
 
 pub fn run(rtcs: &Rtcs) {
@@ -97,6 +145,7 @@ pub fn run(rtcs: &Rtcs) {
     let mut entries: BTreeMap<LinkId, Entry> = BTreeMap::new();
     let mut buffer = vec![0_u8; 2048];
     loop {
+        rtcs.net.flush();
         loop {
             match rtcs.signals.try_recv() {
                 Ok(Signal { link, rtc }) => {
@@ -152,7 +201,7 @@ pub fn run(rtcs: &Rtcs) {
                 eprintln!("salon: WebRTC link {} dropped (stalled: {stalled})", link.0);
             }
             if !keep && entry.channel.is_some() {
-                let _: std::io::Result<()> = rtcs.net.send(Net::Closed { link });
+                rtcs.net.tell(Net::Closed { link });
             }
             keep
         });
@@ -234,13 +283,10 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
                         },
                         outlet: Outlet::Rtc(rtcs.outlet.clone()),
                     };
-                    let _: std::io::Result<()> = rtcs.net.send(opened);
+                    rtcs.net.tell(opened);
                 }
                 Event::ChannelData(data) if Some(data.id) == entry.channel => {
-                    let _: std::io::Result<()> = rtcs.net.send(Net::Received {
-                        link,
-                        bytes: data.data,
-                    });
+                    rtcs.net.packet(link, data.data);
                 }
                 Event::ChannelClose(id) if Some(id) == entry.channel => entry.rtc.disconnect(),
                 Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
@@ -253,5 +299,46 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::room::inbox::channel;
+
+    fn opened(link: LinkId) -> Net {
+        let (outlet, _) = sync_channel(1);
+        Net::Opened {
+            link,
+            caps: Caps::DATAGRAM,
+            outlet: Outlet::Rtc(outlet),
+        }
+    }
+
+    /// The thread of every page does not wait for a full inbox, and what the
+    /// room must hear still gets there, before the packets that follow it.
+    #[test]
+    fn a_full_inbox_stops_nothing_and_loses_only_packets() {
+        let (net, inbox) = channel(1).unwrap();
+        let door = ToRoom::new(net);
+        let (first, second) = (LinkId(1), LinkId(2));
+        door.packet(first, vec![1]);
+        // Lost, not waited for: this call would never come back otherwise.
+        door.packet(first, vec![2]);
+        door.tell(opened(second));
+        door.tell(Net::Closed { link: first });
+        door.packet(second, vec![3]);
+        let read = || inbox.recv_timeout(Duration::ZERO).unwrap();
+        assert!(matches!(read(), Net::Received { bytes, .. } if bytes == [1]));
+        assert!(!door.flush(), "one of the two fits");
+        assert!(matches!(read(), Net::Opened { link, .. } if link == second));
+        assert!(door.flush());
+        assert!(matches!(read(), Net::Closed { link } if link == first));
+        door.packet(second, vec![4]);
+        assert!(matches!(read(), Net::Received { bytes, .. } if bytes == [4]));
     }
 }

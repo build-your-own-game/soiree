@@ -130,9 +130,11 @@
 //!   ([`DeviceInfo::garbage`]) and ignored (E1). A packet over 64 KiB closes
 //!   that link only (E2). Packets past [`Limits::packets_per_s`] are dropped
 //!   unread, and events past [`Limits::events_per_s`] wait unacknowledged:
-//!   a flood slows down its sender and nobody else (E3). Without the token,
-//!   nobody takes another's place; without the key, nobody becomes the TV
-//!   (E4).
+//!   a flood slows down its sender and nobody else (E3). A packet costs what
+//!   it carries, never what it announces: a message being put back together
+//!   takes room for the fragments that came, and a packet with more parts
+//!   than a sender can fit is garbage. Without the token, nobody takes
+//!   another's place; without the key, nobody becomes the TV (E4).
 //! - **Nothing grows without bound**: every queue has a limit ([`Limits`]),
 //!   and reaching it is an error returned to the caller
 //!   ([`SendError::Full`]), never a silent drop.

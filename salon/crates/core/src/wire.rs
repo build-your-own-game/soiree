@@ -19,6 +19,12 @@ pub const PROTOCOL: u16 = 2;
 pub(crate) const PACKET_OVERHEAD: usize = 64;
 pub(crate) const PART_OVERHEAD: usize = 40;
 
+/// Largest packet on any link. A bigger one closes its link.
+pub(crate) const MAX_PACKET: usize = 64 * 1024;
+/// Parts a packet can hold: what a sender spends on each one bounds them, and
+/// a packet with more was not cut by salon.
+const MAX_PARTS: usize = (MAX_PACKET - PACKET_OVERHEAD) / PART_OVERHEAD;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Packet {
     /// The host's epoch as the sender knows it (0 before the first welcome).
@@ -160,7 +166,9 @@ pub(crate) fn encode(packet: &Packet) -> Option<Vec<u8>> {
 }
 
 pub(crate) fn decode(bytes: &[u8]) -> Option<Packet> {
-    crate::codec::decode(bytes).ok()
+    let packet: Packet = crate::codec::decode(bytes).ok()?;
+    let parts = packet.events.len().saturating_add(packet.state.len());
+    (parts <= MAX_PARTS).then_some(packet)
 }
 
 /// Encodes `packet`, dropping its last fragments until it fits `max`. The

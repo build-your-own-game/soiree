@@ -12,11 +12,8 @@ use crate::types::{
     Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Refusal, Timing, Token, TvKey,
     Why,
 };
-use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
+use crate::wire::{self, Ack, Control, Hello, MAX_PACKET, PROTOCOL, Packet, Resume, Welcome};
 
-/// Largest packet read from any link; a bigger one closes that link (and
-/// only that one).
-const MAX_INBOUND: usize = 64 * 1024;
 /// Packets one link may send in one flush, to drain a large message.
 const BURST: usize = 32;
 /// A final message (refused, replaced, closing) goes this many times: one
@@ -332,7 +329,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         if current.closing {
             return;
         }
-        if bytes.len() > MAX_INBOUND {
+        // A bigger packet closes its link, and only that one.
+        if bytes.len() > MAX_PACKET {
             self.drop_link(link, Why::Closed);
             return;
         }

@@ -23,6 +23,15 @@ pub(crate) struct Receiver<T> {
     failure: std::cell::Cell<Option<io::Error>>,
 }
 
+/// Why [`Sender::try_send`] did not take a value.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Refused<T> {
+    /// No room now: the value comes back.
+    Full(T),
+    /// The receiver is gone: nobody will ever read it.
+    Gone,
+}
+
 #[derive(Debug)]
 pub(crate) enum ReceiveError {
     Timeout,
@@ -83,15 +92,18 @@ impl<T> Sender<T> {
         self.notify()
     }
 
-    pub(crate) fn try_send(&self, value: T) -> io::Result<()> {
+    /// Never waits. A notification failure is logged and changes nothing: the
+    /// value is in the queue, and the room's timer bounds how long it stays.
+    pub(crate) fn try_send(&self, value: T) -> Result<(), Refused<T>> {
         let Some(queue) = &self.queue else {
-            return Err(io::Error::from(io::ErrorKind::BrokenPipe));
+            return Err(Refused::Gone);
         };
         queue.try_send(value).map_err(|error| match error {
-            mpsc::TrySendError::Full(_) => io::Error::from(io::ErrorKind::WouldBlock),
-            mpsc::TrySendError::Disconnected(_) => io::Error::from(io::ErrorKind::BrokenPipe),
+            mpsc::TrySendError::Full(value) => Refused::Full(value),
+            mpsc::TrySendError::Disconnected(_) => Refused::Gone,
         })?;
-        self.notify()
+        let _: io::Result<()> = self.notify();
+        Ok(())
     }
 
     #[cfg_attr(
@@ -194,10 +206,7 @@ mod tests {
         let (sender, receiver) = channel(2).unwrap();
         sender.try_send(1).unwrap();
         sender.try_send(2).unwrap();
-        assert_eq!(
-            sender.try_send(3).unwrap_err().kind(),
-            io::ErrorKind::WouldBlock
-        );
+        assert_eq!(sender.try_send(3), Err(Refused::Full(3)));
         let other = sender.clone();
         drop(sender);
         drop(other);
@@ -207,6 +216,9 @@ mod tests {
             receiver.recv_timeout(Duration::ZERO),
             Err(ReceiveError::Disconnected)
         ));
+        let (sender, receiver) = channel(1).unwrap();
+        drop(receiver);
+        assert_eq!(sender.try_send(1), Err(Refused::Gone));
     }
 
     #[test]
