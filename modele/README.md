@@ -35,7 +35,11 @@ pendant l'itération : il ne contrôle que le statique et laisse le reste non at
 La CI `.github/workflows/soiree.yml` est liée à la version `{{version}}` du
 commun. Elle vérifie les dépendances publiées avec
 `soiree check --locked --published`, puis exerce `ui` et la récupération
-après panique. `soiree upgrade --dry-run` montre le passage à la version de
+après panique. Elle ne part pas à chaque commit : une pull request la lance, et
+tu la lances à la main quand une version compte (`gh workflow run soiree.yml`,
+ou l'onglet Actions de GitHub, « Run workflow »). Un dépôt privé partage environ
+190 minutes macOS par mois, et un passage en prend 6 à 13.
+`soiree upgrade --dry-run` montre le passage à la version de
 l’outil installé ; `soiree upgrade` l’applique après vérification de son
 étiquette publiée. Adapter ensuite le code signalé par les contrôles.
 
