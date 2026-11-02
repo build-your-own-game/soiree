@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import vm from 'node:vm';
 import { launchBrowser } from './browser.mjs';
 import { absoluteDeadlineMs, forgetTab, iceSilenceMs, resumeMs } from './rtc-negotiation.mjs';
-import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment, observeRtc, welcomeDevice } from './udp.mjs';
+import { UdpProxy, receivedRtcSince, withRtcRelay, relayOffer, rewrittenJsonFulfillment, observeRtc, welcomeDevice } from './udp.mjs';
 import { FixtureFailure } from './performance.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
 
@@ -230,4 +230,15 @@ test('a negotiation case starts with a new tab\'s memory, under the same identit
       } finally { await tab.context.close(); }
     }
   } finally { await browser.close(); server.close(); }
+});
+
+test('a cut offer is reported and never ends the run', async () => {
+  const reset = new Error('read ECONNRESET');
+  const aborted = [];
+  const relay = { errors: [] };
+  await relayOffer(relay, { fetch: async () => { throw reset; }, abort: async () => { aborted.push(true); } });
+  assert.deepEqual(relay.errors, ['offre : read ECONNRESET']);
+  assert.equal(aborted.length, 1);
+  await relayOffer(relay, { fetch: async () => ({ ok: () => false, status: () => 503 }), abort: async () => { throw new Error('page closed'); } });
+  assert.deepEqual(relay.errors.slice(1), ['offre : SDP HTTP 503', 'offre : page closed']);
 });

@@ -125,6 +125,20 @@ export class UdpProxy {
 }
 
 /** Route registration and removal share the relay's owned lifetime. */
+/** Sends a page's offer through the relay. Playwright leaves a handler's
+ * rejection unhandled, which would end the whole run: a failure stays the
+ * scenario's to report, and the page sees its offer fail. */
+export async function relayOffer(relay, request) {
+  try {
+    const response = await request.fetch();
+    if (!response.ok()) throw new Error(`SDP HTTP ${response.status()}`);
+    await request.fulfill(rewrittenJsonFulfillment(response, relay.rewrite(await response.json())));
+  } catch (error) {
+    relay.errors.push(`offre : ${error.message}`);
+    await request.abort().catch(abortError => relay.errors.push(`offre : ${abortError.message}`));
+  }
+}
+
 export async function withRtcRelay(relay, page, route, work, restore, onFailure) {
   return runWithCleanup(async()=>{
     await page.addInitScript(observeRtc);

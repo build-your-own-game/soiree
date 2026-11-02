@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { launchBrowser, sleep, silenceReaction, NavigationFailure, phoneTransport, preflightPhoneUpstream } from "./browser.mjs";
 import { measureFrames, frameFailures, measureProbe, renderSettled, performAction, positiveBudget, panicMatches, stopTasks, injectedPanicRemainder, gestureKeys, FixtureFailure, FixtureGuard, scenarioFailureItem, networkAddressPresent } from "./performance.mjs";
 import { Toxiproxy } from "./toxiproxy.mjs";
-import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment } from "./udp.mjs";
+import { UdpProxy, receivedRtcSince, withRtcRelay, relayOffer } from "./udp.mjs";
 import { verifyRtcNegotiation } from "./rtc-negotiation.mjs";
 import { capacityActivityFailures, ordinaryPhones } from "./capacity.mjs";
 import { killOwnedGroup } from "./processes.mjs";
@@ -1452,11 +1452,7 @@ const scenarios = {
     const relay = await UdpProxy.open(transport.upstream, host.port);
     const originalDevice = phone.tab.device;
     const sockets = phone.tab.sockets;
-    const route = async request => {
-      const response = await request.fetch();
-      if (!response.ok()) throw new FixtureFailure(`SDP HTTP ${response.status()}`);
-      await request.fulfill(rewrittenJsonFulfillment(response, relay.rewrite(await response.json())));
-    };
+    const route = request => relayOffer(relay, request);
     const trace = () => phone.tab.evaluate("globalThis.__certRtc");
     const waitUdp = async since => {
       const until = Date.now() + 15000;
