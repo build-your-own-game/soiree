@@ -75,9 +75,11 @@ Heure, geste, appareil, photo de l'écran, ce que dit le terminal. **F8 sur la T
 
 ## Relancer
 
+`<port-du-jeu>` est celui de l'adresse de la TV : 8090 pour Punchline, 2567 pour Sidequest, 8080 pour Tier list.
+
 - **Téléphone coincé :** note KO, recharge sa page ; il doit retrouver sa place. Sinon, rescanne le QR.
 - **Le jeu tombe :** Ctrl+C, puis la commande du soir. Les téléphones reviennent seuls, la partie repart de zéro et chacun redonne son prénom.
-- **La page ne s'ouvre pas :** même Wi-Fi ? Pare-feu autorisé ? QR faux : préfixe la commande par `SALON_PUBLIC_URL=http://<adresse-du-mac>:8090`.
-- **Port pris :** `lsof -nP -iTCP:8090 -sTCP:LISTEN` donne le processus, puis `kill <numéro>`.
+- **La page ne s'ouvre pas :** même Wi-Fi ? Pare-feu autorisé ? QR faux : préfixe la commande par `SALON_PUBLIC_URL=http://<adresse-du-mac>:<port-du-jeu>`.
+- **Port pris :** `lsof -nP -iTCP:<port-du-jeu> -sTCP:LISTEN` donne le processus, puis `kill <numéro>`.
 - **Reprendre :** sans changement de code, repars du point KO. Après une correction, nouvelle fenêtre du pare-feu : repasse le KO, S1, S3, S7, et toute la liste si `soiree/` a changé.
 - **Même échec deux fois :** arrête de relancer ce point, il faut une correction.
