@@ -38,6 +38,12 @@ pub enum Net {
         caps: Caps,
         outlet: Outlet,
     },
+    /// An iPhone app's connection: it says who it is by [`Net::App`].
+    AppOpened {
+        link: LinkId,
+        outlet: Outlet,
+    },
+    App(Input),
     Received {
         link: LinkId,
         bytes: Vec<u8>,
@@ -64,7 +70,7 @@ pub enum RtcOut {
 }
 
 impl Outlet {
-    fn send(&self, link: LinkId, bytes: Vec<u8>) {
+    pub(crate) fn send(&self, link: LinkId, bytes: Vec<u8>) {
         // Full means the transport is behind: this packet is lost, like on
         // any network, and salon sends what matters again.
         let _: bool = match self {
@@ -133,9 +139,13 @@ pub fn run<G: Game>(
     tick: Duration,
     mut store: Store,
     clock: Clock,
+    app_page: Option<String>,
 ) -> Ended {
     let tick = u64::try_from(tick.as_millis()).unwrap_or(100).max(1);
     let mut driver = Driver::new(clock.now(), config, tick, game);
+    if let Some(page) = app_page {
+        driver = driver.with_app_page(page);
+    }
     let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
     store.save_epoch();
     let mut next_save = clock.now().plus(SAVE_EVERY);
@@ -207,6 +217,13 @@ fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: 
             outlets.insert(link, outlet);
             inputs.push(Input::Opened { link, caps });
         }
+        Net::AppOpened { link, outlet } => {
+            if logging() {
+                eprintln!("salon: link {} opened (iPhone app)", link.0);
+            }
+            outlets.insert(link, outlet);
+        }
+        Net::App(input) => inputs.push(input),
         Net::Received { link, bytes } => inputs.push(Input::Received { link, bytes }),
         Net::Closed { link } => {
             if logging() {
@@ -291,7 +308,8 @@ mod tests {
             seen: Arc::new(Mutex::new(Vec::new())),
         };
         let store = Store::open(None, 1, [0; 16]);
-        let ended = run(&inbox, game, config(), Duration::from_secs(1), store, clock);
+        let tick = Duration::from_secs(1);
+        let ended = run(&inbox, game, config(), tick, store, clock, None);
         drop(net);
         assert!(matches!(ended, Ended::Wait(_)), "{ended:?}");
         assert_eq!(cause(Ok(ended)), "its wait failed: kevent broke");
@@ -345,7 +363,8 @@ mod tests {
         let (net, inbox) = inbox::channel(16).unwrap();
         let store = Store::open(None, 1, [0; 16]);
         let room = thread::spawn(move || {
-            run(&inbox, game, config(), Duration::from_secs(1), store, clock)
+            let tick = Duration::from_secs(1);
+            run(&inbox, game, config(), tick, store, clock, None)
         });
         thread::sleep(Duration::from_secs(3));
         drop(net);

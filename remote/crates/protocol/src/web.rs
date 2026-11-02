@@ -108,7 +108,7 @@ struct Datagram {
 }
 
 /// Exactly sixteen bytes, represented by 32 hexadecimal digits in JSON.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct PlayerId([u8; 16]);
 

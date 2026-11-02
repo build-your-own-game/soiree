@@ -2,6 +2,9 @@
 //! The caller owns time and transports; the driver only sees ordered inputs.
 
 use crate::Game;
+use crate::apps::Apps;
+use remote_protocol::web::PlayerId;
+use remote_protocol::{DrawEvent, InputState};
 use salon_core::{Caps, Host, HostConfig, LinkId, Ms, Output};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,8 +20,23 @@ pub enum Input {
         link: LinkId,
         bytes: Vec<u8>,
     },
+    /// A link ended, whether it carried a device or an iPhone app.
     Closed {
         link: LinkId,
+    },
+    /// An iPhone app of the right version said who it is, on `link`.
+    AppHello {
+        link: LinkId,
+        player: PlayerId,
+        name: String,
+    },
+    AppInput {
+        link: LinkId,
+        state: InputState,
+    },
+    AppDraw {
+        link: LinkId,
+        event: DrawEvent,
     },
 }
 
@@ -35,10 +53,12 @@ pub struct Driver<G: Game> {
     next_tick: Ms,
     now: Ms,
     last_tick: Option<Ms>,
+    apps: Apps,
 }
 
 impl<G: Game> Driver<G> {
     pub fn new(now: Ms, config: HostConfig, tick_ms: u64, mut game: G) -> Self {
+        let apps = Apps::new(config.timing, config.limits);
         let mut host = Host::new(now, config);
         game.start(now, &mut host);
         Self {
@@ -48,7 +68,15 @@ impl<G: Game> Driver<G> {
             next_tick: now,
             now,
             last_tick: None,
+            apps,
         }
+    }
+
+    /// The page an iPhone app shows unless [`Game::remote`] chooses.
+    #[must_use]
+    pub fn with_app_page(mut self, page: String) -> Self {
+        self.apps.set_page(page);
+        self
     }
 
     pub fn now(&self) -> Ms {
@@ -85,12 +113,27 @@ impl<G: Game> Driver<G> {
             return Vec::new();
         }
         self.now = now;
+        let mut effects = Vec::new();
+        let mut from_apps = Vec::new();
         for input in inputs {
             match input {
                 Input::Diagnostic { report } => self.game.diagnostic(now, &report),
                 Input::Opened { link, caps } => self.host.opened(now, link, caps),
                 Input::Received { link, bytes } => self.host.received(now, link, &bytes),
-                Input::Closed { link } => self.host.closed(now, link),
+                Input::Closed { link } => {
+                    self.host.closed(now, link);
+                    self.apps.closed(link, &mut from_apps);
+                }
+                Input::AppHello { link, player, name } => {
+                    let (events, out) = (&mut from_apps, &mut effects);
+                    self.apps.hello(now, link, player, &name, events, out);
+                }
+                Input::AppInput { link, state } => {
+                    self.apps.input(now, link, state, &mut from_apps);
+                }
+                Input::AppDraw { link, event } => {
+                    self.apps.draw(now, link, event, &mut from_apps);
+                }
             }
         }
         if self.last_tick != Some(now)
@@ -110,7 +153,10 @@ impl<G: Game> Driver<G> {
                 self.next_tick = self.next_tick.plus(self.tick.saturating_mul(slots));
             }
         }
-        let mut effects = Vec::new();
+        self.apps.expire(now, &mut from_apps, &mut effects);
+        for event in from_apps {
+            self.game.on_app(now, event, &mut self.host);
+        }
         while let Some(output) = self.host.poll(now) {
             match output {
                 Output::Transmit { link, bytes } => effects.push(Effect::Transmit { link, bytes }),
@@ -118,6 +164,11 @@ impl<G: Game> Driver<G> {
                 Output::Device(event) => self.game.on(now, event, &mut self.host),
             }
         }
+        // After the game has had its say on everything of this step.
+        let game = &self.game;
+        self.apps
+            .show(now, |player| game.remote(player), &mut effects);
+        self.apps.feedback(self.game.feedback(), &mut effects);
         effects
     }
 }
@@ -125,7 +176,221 @@ impl<G: Game> Driver<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AppEvent;
+    use remote_protocol::{Feedback, GameMessage, Haptic, Remote, decode, presets};
     use salon_core::{DeviceEvent, Epoch, Limits, Timing, TvKey};
+
+    fn config() -> HostConfig {
+        HostConfig {
+            game: 1,
+            epoch: Epoch(1),
+            tv_key: TvKey([0; 16]),
+            timing: Timing::default(),
+            limits: Limits {
+                max_devices: 2,
+                ..Limits::default()
+            },
+            known: Vec::new(),
+        }
+    }
+
+    const PAGE: &str = "/play";
+    const ADA: PlayerId = PlayerId::new([1; 16]);
+    const BOB: PlayerId = PlayerId::new([2; 16]);
+    const EVE: PlayerId = PlayerId::new([3; 16]);
+
+    /// A game that shows `pad`, and keeps all it hears from the apps.
+    #[derive(Default)]
+    struct Remotes {
+        pad: bool,
+        heard: Vec<AppEvent>,
+        feedback: Vec<(PlayerId, Feedback)>,
+    }
+
+    impl Game for Remotes {
+        type Up = ();
+        type Down = ();
+        fn on(&mut self, _: Ms, _: DeviceEvent<()>, _: &mut Host<(), ()>) {}
+        fn remote(&self, _: PlayerId) -> Option<Remote> {
+            self.pad.then(|| Remote::Pad(presets::pad()))
+        }
+        fn on_app(&mut self, _: Ms, event: AppEvent, _: &mut Host<(), ()>) {
+            self.heard.push(event);
+        }
+        fn feedback(&mut self) -> Vec<(PlayerId, Feedback)> {
+            std::mem::take(&mut self.feedback)
+        }
+    }
+
+    fn on_the_page() -> Driver<Remotes> {
+        Driver::new(Ms(0), config(), 10, Remotes::default()).with_app_page(PAGE.to_owned())
+    }
+
+    fn on_a_pad() -> Driver<Remotes> {
+        let mut driver = on_the_page();
+        driver.game_mut().pad = true;
+        driver
+    }
+
+    fn hello(link: u64, player: PlayerId) -> Input {
+        Input::AppHello {
+            link: LinkId(link),
+            player,
+            name: "Ada".to_owned(),
+        }
+    }
+
+    fn input(link: u64) -> Input {
+        Input::AppInput {
+            link: LinkId(link),
+            state: InputState::default(),
+        }
+    }
+
+    /// What `link` is told in these effects.
+    fn told(effects: &[Effect], link: u64) -> Vec<GameMessage> {
+        effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Transmit { link: to, bytes } if *to == LinkId(link) => {
+                    Some(decode(bytes).unwrap())
+                }
+                Effect::Transmit { .. } | Effect::Close { .. } => None,
+            })
+            .collect()
+    }
+
+    fn closes(effects: &[Effect], link: u64) -> bool {
+        effects.contains(&Effect::Close { link: LinkId(link) })
+    }
+
+    #[test]
+    fn a_remote_is_sent_when_it_changes_and_only_then() {
+        let pad = GameMessage::Show(Remote::Pad(presets::pad()));
+        let page = GameMessage::Show(Remote::Web {
+            url: PAGE.to_owned(),
+        });
+        let mut driver = on_a_pad();
+        assert_eq!(
+            told(&driver.step(Ms(1), [hello(1, ADA)]), 1),
+            vec![pad.clone()]
+        );
+        assert_eq!(told(&driver.step(Ms(2), []), 1), []);
+        driver.game_mut().pad = false;
+        assert_eq!(told(&driver.step(Ms(3), []), 1), [page]);
+        assert_eq!(told(&driver.step(Ms(4), []), 1), []);
+        driver.game_mut().pad = true;
+        assert_eq!(told(&driver.step(Ms(5), []), 1), [pad]);
+    }
+
+    /// A phone that vanishes says nothing: a pad's heartbeat is what tells.
+    #[test]
+    fn a_silent_pad_has_left() {
+        let absent = Timing::default().absent;
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        let _: Vec<Effect> = driver.step(Ms(absent), [input(1)]);
+        let effects = driver.step(Ms(absent + absent - 1), []);
+        assert!(!closes(&effects, 1));
+        assert!(closes(&driver.step(Ms(absent + absent), []), 1));
+        assert_eq!(
+            driver.game().heard.last(),
+            Some(&AppEvent::Left { player: ADA })
+        );
+        // Its socket closes afterwards: this is not a second departure.
+        let lefts = driver.game().heard.len();
+        let _: Vec<Effect> = driver.step(Ms(2 * absent + 1), [Input::Closed { link: LinkId(1) }]);
+        assert_eq!(driver.game().heard.len(), lefts);
+    }
+
+    /// The app's page may stay quiet: it sends nothing here.
+    #[test]
+    fn a_quiet_page_stays() {
+        let mut driver = on_the_page();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        assert!(!closes(&driver.step(Ms(600_000), []), 1));
+        assert_eq!(driver.game().heard.len(), 1);
+    }
+
+    /// Going from the page to a pad gives the app time to answer.
+    #[test]
+    fn a_pad_is_not_silent_before_it_is_shown() {
+        let mut driver = on_the_page();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA)]);
+        driver.game_mut().pad = true;
+        assert!(!closes(&driver.step(Ms(600_000), []), 1));
+        assert!(!closes(&driver.step(Ms(600_001), []), 1));
+    }
+
+    #[test]
+    fn the_table_does_not_grow_with_what_strangers_claim_to_be() {
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA), hello(2, BOB)]);
+        let effects = driver.step(Ms(2), [hello(3, EVE)]);
+        assert!(matches!(
+            told(&effects, 3).as_slice(),
+            [GameMessage::Refuse { .. }]
+        ));
+        assert!(closes(&effects, 3));
+        // A player who is away gives up the place, and is new when back.
+        let _: Vec<Effect> = driver.step(Ms(3), [Input::Closed { link: LinkId(1) }]);
+        let effects = driver.step(Ms(4), [hello(4, EVE)]);
+        assert!(!closes(&effects, 4));
+        let _: Vec<Effect> = driver.step(Ms(5), [Input::Closed { link: LinkId(2) }]);
+        let _: Vec<Effect> = driver.step(Ms(6), [hello(5, ADA)]);
+        assert!(matches!(
+            driver.game().heard.last(),
+            Some(AppEvent::Arrived { player, .. }) if *player == ADA
+        ));
+    }
+
+    #[test]
+    fn a_flood_of_frames_is_dropped_unread() {
+        let burst = usize::try_from(Limits::default().packets_burst).unwrap();
+        let mut driver = on_a_pad();
+        let flood = std::iter::once(hello(1, ADA)).chain(std::iter::repeat_n(input(1), burst * 2));
+        let _: Vec<Effect> = driver.step(Ms(1), flood);
+        let heard = &driver.game().heard;
+        // The hello is the first frame of the burst.
+        assert_eq!(heard.len(), burst);
+    }
+
+    #[test]
+    fn a_connection_that_changes_player_leaves_the_first() {
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA), hello(1, BOB)]);
+        let heard = &driver.game().heard;
+        assert!(heard.contains(&AppEvent::Left { player: ADA }));
+        assert!(matches!(
+            heard.last(),
+            Some(AppEvent::Arrived { player, .. }) if *player == BOB
+        ));
+    }
+
+    #[test]
+    fn a_frame_from_an_unknown_link_is_nobodys() {
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [input(9)]);
+        assert_eq!(driver.game().heard, []);
+    }
+
+    #[test]
+    fn a_vibration_goes_to_its_player_and_is_lost_when_away() {
+        let buzz = Feedback {
+            haptic: Some(Haptic::Press),
+            color: None,
+        };
+        let mut driver = on_a_pad();
+        let _: Vec<Effect> = driver.step(Ms(1), [hello(1, ADA), hello(2, BOB)]);
+        driver.game_mut().feedback = vec![(BOB, buzz)];
+        let effects = driver.step(Ms(2), []);
+        assert_eq!(told(&effects, 1), []);
+        assert_eq!(told(&effects, 2), [GameMessage::Feedback(buzz)]);
+        driver.game_mut().feedback = vec![(BOB, buzz), (EVE, buzz)];
+        let effects = driver.step(Ms(3), [Input::Closed { link: LinkId(2) }]);
+        assert_eq!(effects, []);
+    }
+
     #[derive(Default)]
     struct Ticks(Vec<Ms>);
     impl Game for Ticks {
@@ -138,15 +403,7 @@ mod tests {
     }
     #[test]
     fn late_wakes_skip_missed_periodic_slots_without_double_ticking() {
-        let config = HostConfig {
-            game: 1,
-            epoch: Epoch(1),
-            tv_key: TvKey([0; 16]),
-            timing: Timing::default(),
-            limits: Limits::default(),
-            known: Vec::new(),
-        };
-        let mut driver = Driver::new(Ms(0), config, 17, Ticks::default());
+        let mut driver = Driver::new(Ms(0), config(), 17, Ticks::default());
         let _: Vec<Effect> = driver.step(Ms(0), []);
         let _: Vec<Effect> = driver.step(Ms(1000), []);
         assert_eq!(driver.next_deadline(), Ms(1003));

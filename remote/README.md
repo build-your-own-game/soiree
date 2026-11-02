@@ -1,6 +1,6 @@
 # Télécommande
 
-L'app iPhone qui sert de manette à tous les jeux de la soirée : plein écran, vibrations, plusieurs doigts à la fois, gyroscope, ce que le navigateur ne permet pas. Le joueur scanne le QR de la TV. Avec salon, l'app affiche la page téléphone du jeu et lui ajoute ces capacités ; les télécommandes natives du protocole ne sont pas encore reliées à salon (voir `CONTRAT.md`).
+L'app iPhone qui sert de manette à tous les jeux de la soirée : plein écran, vibrations, plusieurs doigts à la fois, gyroscope, ce que le navigateur ne permet pas. Le joueur scanne le QR de la TV. Avec salon, l'app affiche par défaut la page téléphone du jeu et lui ajoute ces capacités ; un jeu peut aussi choisir une télécommande native et recevoir ses entrées, sans toucher à un socket (voir `CONTRAT.md`).
 
 Pour brancher un jeu : `CONTRAT.md`.
 

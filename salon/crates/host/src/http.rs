@@ -53,7 +53,8 @@ struct Shared {
     net: room::inbox::Sender<Net>,
     links: AtomicU64,
     handler: Option<HttpHandler>,
-    app_page: Option<String>,
+    /// `/remote` is served: the game has a page for the iPhone app.
+    app_door: bool,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -105,9 +106,11 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let handler = game.http();
     let tick = options.tick;
     let clock = Clock::start();
+    let app_door = options.app_page.is_some();
+    let app_page = options.app_page;
     let room = thread::Builder::new()
         .name("salon-room".into())
-        .spawn(move || room::run(&inbox, game, config, tick, store, clock))
+        .spawn(move || room::run(&inbox, game, config, tick, store, clock, app_page))
         .map_err(|error| format!("cannot start the room: {error}"))?;
     thread::Builder::new()
         .name("salon-watch".into())
@@ -134,7 +137,7 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         net,
         links: AtomicU64::new(1),
         handler,
-        app_page: options.app_page,
+        app_door,
     });
     println!("{}", options.ready);
     println!("  TV (this computer): http://localhost:{port}");
@@ -307,11 +310,8 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
     let head = read_head(&mut reader)?;
     let link = || LinkId(shared.links.fetch_add(1, Ordering::Relaxed));
 
-    let app_page = shared
-        .app_page
-        .as_deref()
-        .filter(|_| head.path == remote_protocol::PATH);
-    if (head.path == route::SOCKET || app_page.is_some())
+    let app = shared.app_door && head.path == remote_protocol::PATH;
+    if (head.path == route::SOCKET || app)
         && let Some(key) = head.header("sec-websocket-key")
     {
         // The client waits for our answer before sending frames, so the
@@ -323,9 +323,10 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
              Sec-WebSocket-Accept: {accept}\r\n\r\n"
         );
         DeadlineWriter::new(&mut stream, READ_TIMEOUT).write_all(answer.as_bytes())?;
-        match app_page {
-            Some(page) => crate::app::run(stream, page),
-            None => crate::ws::run(stream, link(), &shared.net),
+        if app {
+            crate::app::run(stream, link(), &shared.net);
+        } else {
+            crate::ws::run(stream, link(), &shared.net);
         }
         return Ok(());
     }

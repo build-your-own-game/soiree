@@ -81,6 +81,7 @@ Règles :
 - **Un `Arrived` appelle un `show`** : sans état, l'écran du téléphone reste vide.
 - **`host.set_phase(n)`** à chaque changement de manche ou de question : chaque événement porte la phase vue par l'appareil, et le jeu refuse ce qui est périmé.
 - **Les manettes** : `host.add_local(now, Kind::Gamepad, …)`, puis `local_state`, `local_unplugged` et `local_plugged`.
+- **La télécommande native de l'app iPhone** : `Game::remote`, voir plus bas.
 - **Les requêtes HTTP du jeu** (télécharger des résultats) : `Game::http`. Les actions de l'organisateur passent par la TV, en événements : seule la TV a la clé, et seule une connexion de l'ordinateur lui-même peut être la TV.
 
 ### Si la salle meurt
@@ -103,6 +104,45 @@ let svg = salon_web::qr(&code)?;                 // dans la page TV : un <svg> d
 - `SALON_PUBLIC_URL` dit alors l'adresse vraie, pour tous les jeux et sans une ligne de code : `SALON_PUBLIC_URL=http://192.168.1.5:8090`, ou `https://soiree.example`. Elle remplace le schéma, l'hôte et le port ; `join_url` y ajoute le chemin. Vide ou blanche, elle est ignorée. Elle doit commencer par `http://` ou `https://`, sans requête ni fragment : sinon elle est ignorée, avec un message sur la sortie d'erreur.
 - Si son hôte est une adresse IP, c'est aussi celle que WebRTC annonce. Un nom ne peut pas l'être : WebRTC garde l'adresse réseau et les téléphones qui ne l'atteignent pas passent par WebSocket.
 - Le QR de la TV suffit aussi à l'app iPhone, qui en déduit `/remote` (`remote/CONTRAT.md`).
+
+### La télécommande native
+
+Par défaut, l'app iPhone affiche la page `options.app_page`, qui parle à salon comme un téléphone. Un jeu peut lui préférer une télécommande dessinée par l'app (`remote/CONTRAT.md` : les presets et les compositions), sans `Up`, sans page et sans socket. `options.app_page` reste nécessaire : c'est lui qui ouvre `/remote`, et chaque jeu garde sa page pour les joueurs sans app.
+
+```rust
+use salon_host::remote::web::PlayerId;
+use salon_host::remote::{Feedback, Haptic, Remote, presets};
+use salon_host::AppEvent;
+
+impl salon_host::Game for Partie {
+    /* … */
+
+    /// Ce que l'app de ce joueur affiche maintenant. `None` : la page téléphone.
+    fn remote(&self, player: PlayerId) -> Option<Remote> {
+        self.buzzers.contains(&player).then(|| Remote::Pad(presets::buzzer()))
+    }
+
+    fn on_app(&mut self, now: Ms, event: AppEvent, host: &mut Host<Up, Down>) {
+        match event {
+            AppEvent::Arrived { player, name } => { /* un nouveau joueur */ }
+            AppEvent::Left { player } => { /* absent : pause, place gardée… */ }
+            AppEvent::Back { player } => { /* revenu : son `remote` est déjà renvoyé */ }
+            AppEvent::Input { player, state } => { /* la dernière entrée tenue */ }
+            AppEvent::Draw { player, event } => { /* un pas du dessin */ }
+        }
+    }
+
+    /// Les vibrations à envoyer, prises après chaque pas.
+    fn feedback(&mut self) -> Vec<(PlayerId, Feedback)> {
+        std::mem::take(&mut self.vibrations)
+    }
+}
+```
+
+- **`remote` se calcule depuis l'état du jeu.** Salon le demande après chaque pas, envoie ce qui change et le renvoie après une reconnexion : il n'y a pas de message à envoyer, ni d'oubli possible. Garde-le peu coûteux.
+- **Tout est indexé par `PlayerId`**, le même à chaque reconnexion, et dans tous les jeux. Ce n'est pas un `DeviceId` : la page ouverte dans l'app en est un, une télécommande native non. Pour en faire un appareil comme les autres : `host.add_local` sur `Arrived`.
+- **Salon garde les règles du contrat :** un `seq` plus ancien n'arrive pas au jeu, et les tracés arrivent tous et dans l'ordre. Un pad qui se tait pendant `Timing::absent` a quitté : `Left`, comme pour une connexion fermée. Une page peut se taire aussi longtemps qu'elle veut. Une deuxième connexion du même joueur prend la place de la première, sans `Left`. Au-delà de `Limits::packets_per_s`, les messages sont jetés sans être lus, comme ceux d'un appareil. La salle retient `Limits::max_devices` joueurs ; un inconnu prend la place d'un absent, ou reçoit `Refuse`.
+- **Une vibration pour un joueur absent est perdue :** elle arriverait trop tard.
 
 ### La page
 

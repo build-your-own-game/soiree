@@ -3,7 +3,7 @@
 Lis et applique `../MANIFESTE.md`. Ce dossier n'est pas un jeu : c'est l'app iPhone qui sert de télécommande à tous les jeux. Les leçons tirées des manettes existantes sont dans `LEARNINGS.md` : relis-le avant de toucher à la sensation d'une manette.
 
 - `CONTRAT.md` : comment un jeu se branche sur la télécommande. À tenir à jour avec `crates/protocol`.
-- `crates/protocol` (`remote-protocol`) : le contrat en code, utilisé aussi par les jeux. Messages du WebSocket `/remote`, `InputState`, `DrawEvent`, la description d'une télécommande (`Layout`, `Remote::Web`) et les sept presets, écrits comme des compositions ordinaires.
+- `crates/protocol` (`remote-protocol`) : le contrat en code, utilisé par `salon_host`, qui le réexporte aux jeux (`salon_host::remote`), et par les pages. Messages du WebSocket `/remote`, `InputState`, `DrawEvent`, la description d'une télécommande (`Layout`, `Remote::Web`) et les sept presets, écrits comme des compositions ordinaires.
 - `crates/core` (`remote-core`) : le cerveau, pur Rust, sans IO, testé en natif.
   - `controls` : le moteur de toucher, qui place une `Layout` sur un écran et applique les règles de sensation.
   - `remote` : une télécommande pad (contrôles, plus volant, pointeur ou toile si la `Layout` les demande).

@@ -14,7 +14,8 @@
 //! - **WebSocket** at `/salon/ws`, when WebRTC fails, and for the TV;
 //! - **the iPhone app** at `/remote` (`remote/CONTRAT.md`), when the game
 //!   sets [`Options::app_page`]: the app is sent to the phone page, which
-//!   then talks through salon like any phone;
+//!   then talks through salon like any phone, or shows the native remote the
+//!   game chose ([`Game::remote`]), whose inputs reach [`Game::on_app`];
 //! - **the TV key** at `GET /salon/tv`, given only to a page of this very
 //!   computer (loopback address, local `Host`, no foreign `Origin`, no proxy
 //!   header): only the TV can become the TV;
@@ -38,6 +39,7 @@
 mod address;
 mod admission;
 mod app;
+mod apps;
 mod clock;
 pub mod driver;
 mod http;
@@ -53,7 +55,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use address::{PUBLIC_URL, join_url, lan_address};
+pub use apps::AppEvent;
 pub use clock::Clock;
+/// The iPhone app's contract, for [`Game::remote`]: presets, layouts, what
+/// comes back. A game needs no dependency of its own to use it.
+pub use remote_protocol as remote;
+use remote_protocol::web::PlayerId;
+use remote_protocol::{Feedback, Remote};
 use salon_core::{DeviceEvent, Host, Limits, Ms, Qr, Timing};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -89,6 +97,30 @@ pub trait Game: Send + 'static {
     /// When the game needs [`Game::tick`] at the latest (a countdown's end).
     fn next_deadline(&self) -> Option<Ms> {
         None
+    }
+
+    /// What the iPhone app of `player` shows now. `None`, the default: the
+    /// phone page ([`Options::app_page`], without which no app can join).
+    ///
+    /// Salon asks after every step and sends a change by itself, and sends
+    /// the answer again after a reconnection, so there is nothing to do but
+    /// compute it from the game's state. It runs often: keep it cheap.
+    fn remote(&self, player: PlayerId) -> Option<Remote> {
+        let _: PlayerId = player;
+        None
+    }
+
+    /// An iPhone app arrived, left, came back, or sent its state or a drawing
+    /// step: only a [`Remote::Pad`] sends those. No socket here, and no `seq`
+    /// to compare.
+    fn on_app(&mut self, now: Ms, event: AppEvent, host: &mut Host<Self::Up, Self::Down>) {
+        let _: (Ms, AppEvent, &mut Host<Self::Up, Self::Down>) = (now, event, host);
+    }
+
+    /// What to make phones feel or see now (first on the buzzer): salon takes
+    /// it after every step.
+    fn feedback(&mut self) -> Vec<(PlayerId, Feedback)> {
+        Vec::new()
     }
 
     /// A request the game answers itself, on an HTTP thread (results to

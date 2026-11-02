@@ -75,7 +75,6 @@ impl Drop for Permit {
 pub struct DeadlineReader {
     stream: TcpStream,
     deadline: Instant,
-    write_deadline: Instant,
 }
 
 fn deadline(budget: Duration) -> Instant {
@@ -88,16 +87,11 @@ impl DeadlineReader {
         Self {
             stream,
             deadline: deadline(budget),
-            write_deadline: deadline(budget),
         }
     }
 
     pub fn renew(&mut self, budget: Duration) {
         self.deadline = deadline(budget);
-    }
-
-    pub fn renew_write(&mut self, budget: Duration) {
-        self.write_deadline = deadline(budget);
     }
 }
 
@@ -141,22 +135,6 @@ impl Write for DeadlineWriter<'_> {
         }
         self.stream.set_write_timeout(Some(remaining))?;
         self.stream.write(buffer)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.stream.flush()
-    }
-}
-
-// The remote app uses one duplex WebSocket without a separate writer thread.
-// Its read deadline stays independent from each outgoing frame's deadline.
-impl Write for DeadlineReader {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        DeadlineWriter {
-            stream: &mut self.stream,
-            deadline: self.write_deadline,
-        }
-        .write(buffer)
     }
 
     fn flush(&mut self) -> io::Result<()> {

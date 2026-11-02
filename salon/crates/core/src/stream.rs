@@ -582,7 +582,7 @@ impl Peer {
 }
 
 /// A token bucket: `allow` says whether one more fits the budget.
-pub(crate) struct Bucket {
+pub struct Bucket {
     /// Thousandths of a token.
     milli: u64,
     refilled: Ms,

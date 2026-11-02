@@ -161,6 +161,7 @@ mod wire;
 
 pub use client::{Client, ClientConfig, ClientOutput, SendError as ClientSendError, Status};
 pub use host::{DeviceEvent, DeviceInfo, Host, HostConfig, Known, Output, SendError};
+pub use stream::Bucket;
 pub use types::{
     Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Qr, Refusal, Timing, Token,
     TvKey, Why,

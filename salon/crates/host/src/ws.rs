@@ -30,9 +30,9 @@ const MAX_FRAME: usize = 64 * 1024;
 
 /// The socket as tungstenite's reader sees it: reads its own handle, writes
 /// (pongs, the closing handshake) through the shared lock.
-struct Reading {
-    read: DeadlineReader,
-    write: Arc<Mutex<TcpStream>>,
+pub(crate) struct Reading {
+    pub(crate) read: DeadlineReader,
+    pub(crate) write: Arc<Mutex<TcpStream>>,
 }
 
 impl Read for Reading {
@@ -143,7 +143,7 @@ pub fn run(stream: TcpStream, link: LinkId, net: &crate::room::inbox::Sender<Net
 
 /// Writes what the room sends, one whole frame at a time, until it says
 /// close or forgets the link.
-fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>, stopped: &AtomicBool) {
+pub(crate) fn send(outgoing: &Receiver<WsOut>, write: &Mutex<TcpStream>, stopped: &AtomicBool) {
     while !stopped.load(Ordering::Relaxed) {
         let out = match outgoing.recv_timeout(Duration::from_millis(100)) {
             Ok(out) => out,
