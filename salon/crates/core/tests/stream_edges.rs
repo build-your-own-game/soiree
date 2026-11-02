@@ -35,13 +35,21 @@ fn message(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn joined(limits: Limits) -> (Room, DeviceId) {
+    joined_as(Timing::default(), limits)
+}
+
+fn joined_with(timing: Timing) -> (Room, DeviceId) {
+    joined_as(timing, Limits::default())
+}
+
+fn joined_as(timing: Timing, limits: Limits) -> (Room, DeviceId) {
     let mut room = Room::new(
         Ms(0),
         HostConfig {
             game: 7,
             epoch: Epoch(EPOCH),
             tv_key: TvKey([9; 16]),
-            timing: Timing::default(),
+            timing,
             limits,
             known: Vec::new(),
         },
@@ -60,11 +68,15 @@ fn joined(limits: Limits) -> (Room, DeviceId) {
         ..Packet::default()
     };
     room.received(Ms(0), LINK, &encode(&hello));
-    let (events, _) = drain(&mut room, Ms(0));
-    match events.as_slice() {
-        [DeviceEvent::Arrived { device, .. }] => (room, *device),
-        other => panic!("{other:?}"),
+    let mut device = None;
+    for _ in 0..1_000 {
+        match room.poll(Ms(0)) {
+            Some(Output::Device(DeviceEvent::Arrived { device: id, .. })) => device = Some(id),
+            Some(_) => {}
+            None => break,
+        }
     }
+    (room, device.expect("a device arrived"))
 }
 
 fn drain(room: &mut Room, now: Ms) -> (Vec<DeviceEvent<Vec<u8>>>, Vec<Packet>) {
@@ -1448,4 +1460,37 @@ fn states_shown_faster_than_they_are_acknowledged_keep_a_stream_alive() {
         room.received(Ms(now), LinkId(2), &late);
         assert!(!closes(&mut room, LinkId(2), now), "at {now}");
     }
+}
+
+/// A wait of nothing would have `poll` answer at the same instant for ever, and
+/// a shell that calls it until `None` would never leave its loop: the same
+/// hang whichever field says it.
+#[test]
+fn a_timing_of_nothing_lets_each_poll_end() {
+    let ends = |timing: Timing| {
+        let (mut room, device) = joined_with(timing);
+        room.send(device, &vec![1]).unwrap();
+        let mut polls = 0;
+        while polls < 1_000 && room.poll(Ms(10)).is_some() {
+            polls += 1;
+        }
+        let measured = Packet {
+            epoch: EPOCH,
+            sent: 10,
+            echo: Some(Echo { sent: 10, held: 0 }),
+            ..Packet::default()
+        };
+        room.received(Ms(10), LINK, &encode(&measured));
+        (0..1_000).any(|_| room.poll(Ms(10)).is_none())
+    };
+    let nothing = Timing {
+        heartbeat: 0,
+        ..Timing::default()
+    };
+    assert!(ends(nothing), "heartbeat");
+    let nothing = Timing {
+        resend_min: 0,
+        ..Timing::default()
+    };
+    assert!(ends(nothing), "resend_min");
 }

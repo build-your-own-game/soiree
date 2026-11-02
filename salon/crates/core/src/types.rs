@@ -272,11 +272,15 @@ pub struct Timing {
 
 impl Timing {
     /// What salon can hold to: a longest wait below the shortest is the
-    /// shortest, and `clamp` would have panicked on the room's thread.
+    /// shortest, and `clamp` would have panicked on the room's thread. A wait
+    /// of nothing is a millisecond: `poll` would never run out of what is due.
     #[must_use]
     pub(crate) fn bounded(self) -> Timing {
+        let resend_min = self.resend_min.max(1);
         Timing {
-            resend_max: self.resend_max.max(self.resend_min),
+            heartbeat: self.heartbeat.max(1),
+            resend_min,
+            resend_max: self.resend_max.max(resend_min),
             ..self
         }
     }
