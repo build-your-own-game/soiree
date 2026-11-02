@@ -9,6 +9,7 @@ mod controle;
 mod dette;
 pub mod fiche;
 mod plan;
+mod verifie;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -23,7 +24,7 @@ use fiche::{Fiche, Perimetre, Registre, Sources};
 const FOLDER: &str = "recherche";
 const REGISTRY: &str = "sous-systemes.toml";
 const SOURCES: &str = "sources.toml";
-const COMMANDS: &str = "plan ou dette";
+const COMMANDS: &str = "plan, verifie ou dette";
 
 /// One `recherche/<sous_systeme>.toml`, as read.
 pub struct Sheet {
@@ -101,6 +102,7 @@ pub fn run(args: &[String]) -> Result<ExitCode> {
     };
     match command.as_str() {
         "plan" => plan::run(rest),
+        "verifie" => verifie::run(&crate::one_dir(rest)?),
         "dette" => dette::run(&crate::one_dir(rest)?),
         other => Err(format!("recherche : {other} ; attendu {COMMANDS}")),
     }

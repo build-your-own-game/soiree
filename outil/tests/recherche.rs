@@ -246,6 +246,64 @@ mod commands {
         assert!(text(&plan).contains("--git-diff"), "{}", text(&plan));
     }
 
+    /// A folder where `gh` is signed in and answers with this script.
+    #[cfg(unix)]
+    fn stub_network(dir: &Path, gh: &str, curl: &str) -> std::ffi::OsString {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        for (name, body) in [("gh", gh), ("curl", curl)] {
+            let script = bin.join(name);
+            std::fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = std::iter::once(bin)
+            .chain(std::env::split_paths(
+                &std::env::var_os("PATH").unwrap_or_default(),
+            ))
+            .collect::<Vec<_>>();
+        std::env::join_paths(path).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verifie_tells_an_outage_from_a_wrong_sheet() {
+        let dir = tagged();
+        git(
+            &dir,
+            &["remote", "add", "origin", "https://github.com/o/soiree.git"],
+        );
+        let run = |path: &std::ffi::OsString| {
+            soiree(&dir)
+                .env("PATH", path)
+                .args(["recherche", "verifie"])
+                .output()
+                .unwrap()
+        };
+
+        let offline = stub_network(
+            &dir,
+            "[ \"$1\" = auth ] && exit 0\necho 'error connecting to api.github.com' >&2\nexit 1",
+            "echo 'curl: (6) Could not resolve host' >&2\nexit 6",
+        );
+        let outage = run(&offline);
+        let shown = text(&outage);
+        assert_eq!(outage.status.code(), Some(2), "{shown}");
+        assert!(shown.contains("panne"), "{shown}");
+        assert!(shown.contains("0 échec(s), 1 panne(s)"), "{shown}");
+
+        std::fs::remove_dir_all(dir.join("bin")).unwrap();
+        let dead = stub_network(
+            &dir,
+            "[ \"$1\" = auth ] && exit 0\necho 'gh: Not Found (HTTP 404)' >&2\nexit 1",
+            "printf 'perdu\\n404'",
+        );
+        let failed = run(&dead);
+        let shown = text(&failed);
+        assert_eq!(failed.status.code(), Some(1), "{shown}");
+        assert!(shown.contains("n'existe pas chez"), "{shown}");
+    }
+
     /// A game whose `cargo` answers only what `soiree check --fast` asks.
     #[cfg(unix)]
     fn game() -> (PathBuf, std::ffi::OsString) {

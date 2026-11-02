@@ -49,6 +49,8 @@ const HELP: &str = "soiree : l'outil de la soirée
   soiree recherche plan [--depuis REF] [--git-diff] [dossier]
                                      ce que le diff ajoute : sous-système, niveau, fiche,
                                      ce qui manque, et les étapes à suivre ; n'empêche rien
+  soiree recherche verifie [dossier] chaque commit et chaque citation des fiches, en amont ;
+                                     réseau requis ; une panne n'est pas un échec
   soiree recherche dette [dossier]   sous-systèmes de niveau 3 sans fiche, trous ouverts ;
                                      informe, et ne bloque qu'à l'étiquette du commun
   soiree host-setup [dossier] [--author P | --all] [--force] [--dry-run] [--source URL]

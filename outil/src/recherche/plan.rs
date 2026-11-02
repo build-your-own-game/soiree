@@ -225,7 +225,10 @@ fn fresh(file: &Changed, read: fn(&str) -> Option<String>) -> BTreeSet<String> {
 
 fn additions(file: &Changed) -> Vec<Found> {
     let mut found = Vec::new();
-    if !file.path.ends_with(".rs") {
+    let rust = Path::new(&file.path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rs"));
+    if !rust {
         return found;
     }
     let mut push = |kind: Nouveau, names: BTreeSet<String>| {
@@ -521,6 +524,8 @@ mod tests {
     use super::super::fiche::{self, Perimetre, Registre};
     use super::*;
 
+    const NONE: Vec<String> = Vec::new();
+
     const DIFF: &str =
         "diff --git a/salon/crates/core/src/client.rs b/salon/crates/core/src/client.rs
 index 111..222 100644
@@ -672,11 +677,14 @@ diff --git a/salon/crates/core/src/wire.rs b/salon/crates/core/src/wire.rs
             ids(&found(Nouveau::Fichier, "salon/crates/core/src/wire.rs")),
             ["reconnexion", "fiabilite"]
         );
-        assert!(ids(&found(Nouveau::Fichier, "outil/src/main.rs")).is_empty());
-        assert!(ids(&found(Nouveau::Fichier, "crates/screen/src/a.rs")).is_empty());
+        assert_eq!(ids(&found(Nouveau::Fichier, "outil/src/main.rs")), NONE);
+        assert_eq!(
+            ids(&found(Nouveau::Fichier, "crates/screen/src/a.rs")),
+            NONE
+        );
         let dependency = found(Nouveau::Dependance, "salon/crates/crypto/Cargo.toml");
         assert_eq!(ids(&dependency), ["transport-webrtc"]);
-        assert!(ids(&found(Nouveau::Dependance, "salon/Cargo.toml")).is_empty());
+        assert_eq!(ids(&found(Nouveau::Dependance, "salon/Cargo.toml")), NONE);
         let game = folder(Perimetre::Jeu);
         let item = found(Nouveau::Fichier, "crates/screen/src/a.rs");
         assert_eq!(owners(&item, &game).len(), 1);
@@ -706,8 +714,8 @@ diff --git a/salon/crates/core/src/wire.rs b/salon/crates/core/src/wire.rs
         assert!(text.contains("pas de recherche à faire"), "{text}");
         assert!(!text.contains("1. **Déclencheur.**"), "{text}");
         let doc = found(Nouveau::Fichier, "README.md");
-        let test = found(Nouveau::Fichier, "salon/crates/core/tests/a.rs");
-        let text = render(Path::new("."), "v0.0.0", &[doc, test], &commun);
+        let unit = found(Nouveau::Fichier, "salon/crates/core/tests/a.rs");
+        let text = render(Path::new("."), "v0.0.0", &[doc, unit], &commun);
         assert!(!text.contains("hors de tout sous-système"), "{text}");
         let new = found(Nouveau::Fichier, "salon/crates/nouveau/src/lib.rs");
         let text = render(Path::new("."), "v0.0.0", &[new], &commun);
