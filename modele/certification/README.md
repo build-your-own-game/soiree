@@ -8,6 +8,11 @@ Les fichiers produits sont des observations datées liées à leurs entrées :
 - `harness-observations.json` / `harness-observations.md` : observations brutes ;
 - `harness-performance.json` : mesures du passage navigateur.
 
+Git ignore `check-fast.*` et `check.*` : `soiree check` les réécrit à chaque
+passage, sur cette machine, et aucune commande ne relit ceux d’un autre passage.
+La CI les refait et les joint à son passage. Les rapports de `soiree certify` se
+committent avec le code.
+
 Les anciens `rapport.json`, `rapport.md` et `performance.json`, lorsqu’ils
 existent, restent des pièces historiques. Ils ne sont pas réétiquetés comme
 preuves du code présent. Les passages séparés ne sont pas fusionnés en une

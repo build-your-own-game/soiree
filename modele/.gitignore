@@ -3,4 +3,11 @@
 # Écrit par `soiree check` : les documents du commun, à la version de soiree.toml.
 /.soiree
 
+# Réécrits à chaque `soiree check` : la CI les refait et les joint à son passage.
+# Les rapports de `soiree certify` restent suivis, avec le code.
+/certification/check.json
+/certification/check.md
+/certification/check-fast.json
+/certification/check-fast.md
+
 /data
