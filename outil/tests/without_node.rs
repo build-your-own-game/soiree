@@ -125,7 +125,7 @@ mod without_node {
         let output = check_fast(&dir, &tools(&parent));
         assert!(!output.status.success());
         assert!(
-            text(&output).contains("cert.json : node"),
+            text(&output).contains("cert.json : ui.checks[].success : Node est introuvable"),
             "{}",
             text(&output)
         );

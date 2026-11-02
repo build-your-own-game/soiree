@@ -1,9 +1,9 @@
 //! The declarations that make browser coverage travel with each game.
+use std::io::ErrorKind;
 use std::path::Path;
+use std::process::Command;
 
 use serde_json::Value;
-
-use crate::util;
 
 pub const CATEGORIES: [&str; 4] = ["editing", "effects", "lifecycle", "async"];
 
@@ -109,6 +109,10 @@ pub fn validate(config: &Value) -> Result<(), String> {
 /// Compile declaration patterns with the same JavaScript grammar as the observer.
 /// Patterns are data in a JSON argument; the executed script is always fixed.
 pub fn validate_patterns(dir: &Path, config: &Value) -> Result<(), String> {
+    compile_patterns("node", dir, config)
+}
+
+fn compile_patterns(node: &str, dir: &Path, config: &Value) -> Result<(), String> {
     const SCRIPT: &str = r"
 const patterns = JSON.parse(process.argv[1]);
 for (const pattern of patterns) {
@@ -136,7 +140,17 @@ for (const pattern of patterns) {
         return Ok(());
     }
     let patterns = serde_json::to_string(&patterns).map_err(|error| error.to_string())?;
-    let output = util::run(dir, "node", &["-e", SCRIPT, "--", &patterns])?;
+    let output = Command::new(node)
+        .args(["-e", SCRIPT, "--", &patterns])
+        .current_dir(dir)
+        .output()
+        .map_err(|error| {
+            if error.kind() == ErrorKind::NotFound && dir.is_dir() {
+                "ui.checks[].success : Node est introuvable, et ces expressions se relisent avec sa grammaire. Installe-le : soiree doctor dit comment.".to_owned()
+            } else {
+                format!("ui.checks[].success : node : {error}")
+            }
+        })?;
     if output.status.success() {
         return Ok(());
     }
@@ -218,6 +232,23 @@ mod tests {
                 "valid JS pattern rejected: {pattern}"
             );
         }
+    }
+
+    #[test]
+    fn a_missing_node_is_named_and_says_what_to_do() {
+        let config = json!({"ui":{"checks":[{"name":"regex","command":["node","check.mjs"],"success":"ok"}]}});
+        let here = std::env::temp_dir();
+        let error = compile_patterns("soiree-sans-node-ici", &here, &config).unwrap_err();
+        assert!(error.contains("Node est introuvable"), "{error}");
+        assert!(error.contains("soiree doctor"), "{error}");
+    }
+
+    #[test]
+    fn a_missing_folder_is_not_mistaken_for_a_missing_node() {
+        let config = json!({"ui":{"checks":[{"name":"regex","command":["node","check.mjs"],"success":"ok"}]}});
+        let missing = std::env::temp_dir().join("soiree-dossier-absent");
+        let error = compile_patterns("node", &missing, &config).unwrap_err();
+        assert!(!error.contains("introuvable"), "{error}");
     }
 
     #[test]
