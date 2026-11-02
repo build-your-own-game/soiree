@@ -942,6 +942,47 @@ fn small_fragments_weigh_what_they_carry() {
     assert_eq!(leaving(&mut room, Ms(11)), 10);
 }
 
+/// A round trip of 50 ms: what leaves now has 100 ms before its timer, well
+/// under the next heartbeat.
+fn measured(room: &mut Room, now: u64) {
+    let echoed = Packet {
+        epoch: EPOCH,
+        sent: now,
+        echo: Some(Echo {
+            sent: now - 50,
+            held: 0,
+        }),
+        ..Packet::default()
+    };
+    room.received(Ms(now), LINK, &encode(&echoed));
+    drain(room, Ms(now));
+}
+
+/// A shut window does not hide the timers: the first one to run out is what
+/// frees it, and the room must be up by then.
+#[test]
+fn the_next_deadline_is_the_first_timer_even_with_a_shut_window() {
+    let (mut room, device) = joined(Limits::default());
+    measured(&mut room, 60);
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(60)), 12);
+    assert_eq!(room.next_deadline(), Some(Ms(160)));
+}
+
+/// Room that opens is a reason to wake up at once, and what has not left yet
+/// is none while the window stays shut.
+#[test]
+fn the_next_deadline_follows_the_window_for_what_has_not_left() {
+    let (mut room, device) = joined(Limits::default());
+    measured(&mut room, 60);
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(60)), 12);
+    room.send(device, &vec![2; 60_000]).unwrap();
+    assert_eq!(room.next_deadline(), Some(Ms(160)), "the window is shut");
+    room.received(Ms(61), LINK, &fragments_below(12, 64, 61));
+    assert_eq!(room.next_deadline(), Some(Ms(61)), "the acks opened it");
+}
+
 /// A fragment known lost has left what is on its way, and nothing else may
 /// free the window: on a stream, what follows it waits for it to arrive, and
 /// no timer would ever open it.
