@@ -699,7 +699,8 @@ citation = "Re-enable the idle timer when streaming has ended"
 enonce = "Écran toujours allumé pendant la partie, et rendu au système à chaque sortie."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::the_screen_may_sleep_again_once_the_game_is_left"]
 trou = "T15"
 
 [[lecon]]
@@ -710,7 +711,8 @@ citation = "should be sure to reset it to"
 enonce = "Apple demande de remettre le réglage dès que le besoin cesse."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::the_screen_may_sleep_again_once_the_game_is_left"]
 trou = "T15"
 
 [[lecon]]

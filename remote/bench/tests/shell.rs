@@ -556,3 +556,15 @@ fn a_page_on_a_local_network_address_has_no_microphone_api() {
     assert_eq!(shell.ask("eval String(window.isSecureContext)"), "true");
     assert_eq!(shell.ask("eval typeof navigator.mediaDevices"), "object");
 }
+
+#[test]
+fn the_screen_may_sleep_again_once_the_game_is_left() {
+    let host = page_game(PAGE);
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(SOON, || shell.ask("idle") == "true"));
+    shell.ask("leave");
+    assert!(
+        eventually(SOON, || shell.ask("idle") == "false"),
+        "the phone will never sleep on the join screen"
+    );
+}

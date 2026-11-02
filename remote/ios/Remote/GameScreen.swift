@@ -47,7 +47,10 @@ struct GameScreen: View {
             UIApplication.shared.isIdleTimerDisabled = true
             connection.start()
         }
-        .onDisappear { connection.stop() }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            connection.stop()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { connection.pad?.releaseAll() }
         }
