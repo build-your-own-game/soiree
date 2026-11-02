@@ -724,7 +724,8 @@ citation = "is a command line interface for automating iOS Simulators and Device
 enonce = "La coquille iOS se pilote par une machine : gestes, rotation, processus. Rien chez nous ne le fait."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::the_shell_says_hello_and_plays_the_pad_it_is_shown"]
 trou = "T18"
 
 [[lecon]]

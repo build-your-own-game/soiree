@@ -9,8 +9,12 @@ struct GameScreen: View {
     @Environment(\.scenePhase) private var scenePhase
 
     init(target: JoinTarget, onLeave: @escaping () -> Void) {
+        self.init(connection: GameConnection(target: target), onLeave: onLeave)
+    }
+
+    init(connection: GameConnection, onLeave: @escaping () -> Void) {
         self.onLeave = onLeave
-        _connection = State(initialValue: GameConnection(target: target))
+        _connection = State(initialValue: connection)
     }
 
     var body: some View {

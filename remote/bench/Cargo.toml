@@ -1,0 +1,39 @@
+[package]
+name = "remote-bench"
+description = "Runs the real Swift shell on an iOS simulator, against a fake game and a real salon."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+remote-protocol = { path = "../crates/protocol" }
+serde_json = "1"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+
+# Not a member of the remote's workspace: `soiree check remote` must not need a
+# simulator, and salon stays out of the remote's lock. `cargo test` here runs it.
+# `salon-door` is built only by the tests that need a real salon.
+[workspace]
+members = [".", "salon-door"]
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+todo = "deny"
+wildcard_enum_match_arm = "deny"
+fn_params_excessive_bools = "deny"
+let_underscore_untyped = "deny"
+unused_result_ok = "deny"

@@ -45,6 +45,7 @@ jobs:
             remote/target/release
             remote/target/wasm32-unknown-unknown
             remote/target/aarch64-apple-ios-sim
+            remote/bench/target/debug
             ${{ runner.temp }}/soiree-model-target/debug
             ${{ runner.temp }}/soiree-model-target/release
             ${{ runner.temp }}/soiree-model-target/wasm32-unknown-unknown
@@ -99,6 +100,13 @@ jobs:
           xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check the shared crates and real Swift ABI
         run: soiree check --locked salon remote .
+      - name: Run the Swift shell on a simulator
+        working-directory: remote/bench
+        run: |
+          set -euo pipefail
+          cargo fmt --package remote-bench --package salon-door --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked
       - name: Prepare browsers for the SDK integration checks
         working-directory: tools/cert
         run: |

@@ -1,0 +1,15 @@
+[package]
+name = "salon-door"
+description = "A real salon with a real /remote door, in a process a test can freeze."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+remote-protocol = { path = "../../crates/protocol" }
+salon-core = { path = "../../../salon/crates/core" }
+salon-host = { path = "../../../salon/crates/host" }
+
+[lints]
+workspace = true

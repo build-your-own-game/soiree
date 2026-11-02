@@ -17,6 +17,7 @@ Lis et applique `../MANIFESTE.md`. Ce dossier n'est pas un jeu : c'est l'app iPh
 - `crates/demo` (`remote-demo`) : un faux jeu pour tout essayer sans vrai jeu, avec une page libre en JavaScript (`/free`).
 - `crates/demo-page` (`remote-demo-page`) : la page libre du faux jeu écrite en Rust (`/rust/`), construite par `cargo xtask page`.
 - `xtask` : `cargo xtask ios` compile le cœur pour iOS et génère les liaisons Swift dans `ios/Generated` (ignoré par git) ; `cargo xtask page` construit la page Rust du faux jeu.
+- `bench/` : le banc de la coquille, hors du workspace. `cargo test`, dans ce dossier, compile les vraies sources de `ios/Remote` avec `bench/app/BenchApp.swift` à la place de `RemoteApp.swift`, les lance sur un simulateur et les joue contre un faux jeu qui coupe, gèle ou se tait, et contre un vrai salon (`bench/salon-door`). Sans macOS, Xcode et un simulateur iPhone, il échoue : rien n'y est sauté. `soiree check remote` ne le lance pas, la CI si.
 - `ios/` : la coquille Swift 6 (SwiftUI). Elle ne décide rien : elle tient le WebSocket, transmet les doigts et les capteurs à Rust, dessine ce que Rust dit et joue les vibrations. La page libre tourne dans WebKit : l'app n'y injecte qu'une donnée (`window.telecommande`), reçoit les messages de la page et lui répond par des événements.
 
 ## Commandes
@@ -29,6 +30,7 @@ cargo clippy -p remote-ffi --target aarch64-apple-ios -- -D warnings
 cargo test
 cargo xtask web-contract # vraies liaisons Swift + scripts exécutés dans JavaScriptCore (macOS)
 cargo xtask web-contract-browser # mêmes scripts et vrai SDK WASM dans WebKit et Chromium
+(cd bench && cargo test)   # la coquille Swift sur un simulateur, contre un faux jeu et un vrai salon
 soiree check .           # tout ce que le manifeste permet de vérifier par machine (../outil/)
 cargo xtask ios          # facultatif : construit séparément les bibliothèques et les liaisons iOS
 open ios/Remote.xcodeproj
