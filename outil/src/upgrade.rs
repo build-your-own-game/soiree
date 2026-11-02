@@ -9,7 +9,6 @@ use toml_edit::{DocumentMut, Item};
 struct Plan {
     files: Vec<(PathBuf, String)>,
     repositories: BTreeSet<String>,
-    packages: BTreeSet<String>,
 }
 
 pub fn run(args: &[String]) -> Result<ExitCode> {
@@ -35,7 +34,7 @@ pub fn run(args: &[String]) -> Result<ExitCode> {
     for (path, _) in &plan.files {
         println!("  {}", util::shown(path, &dir));
     }
-    println!("  .soiree/ ; cargo update des seules dépendances communes ; soiree check");
+    println!("  .soiree/ ; Cargo.lock pour les seules dépendances communes ; soiree check");
     if dry_run {
         return Ok(ExitCode::SUCCESS);
     }
@@ -58,13 +57,11 @@ pub fn run(args: &[String]) -> Result<ExitCode> {
         util::write(path, contents)?;
     }
     embedded::write_docs(&dir)?;
-    if !plan.packages.is_empty() {
-        let mut args = vec!["update".to_owned()];
-        for package in plan.packages {
-            args.extend(["--package".into(), package]);
-        }
-        let refs: Vec<_> = args.iter().map(String::as_str).collect();
-        let output = util::run(&dir, "cargo", &refs)?;
+    if !plan.repositories.is_empty() {
+        // Not `--package`: a lock written under the host's `[patch]` records the
+        // common crates without a source, so Cargo cannot name them. What the
+        // new tag no longer matches resolves anew; all else stays locked.
+        let output = util::run(&dir, "cargo", &["update", "--workspace"])?;
         if !output.status.success() {
             return Err(format!(
                 "cargo update : {}",
@@ -103,8 +100,7 @@ fn plan(dir: &Path) -> Result<Plan> {
         .insert("version", toml_edit::value(VERSION));
     let mut cargo = document(&dir.join("Cargo.toml"))?;
     let mut repositories = BTreeSet::new();
-    let mut packages = BTreeSet::new();
-    dependencies(cargo.as_item_mut(), &mut repositories, &mut packages);
+    dependencies(cargo.as_item_mut(), &mut repositories);
     let mut members = Vec::new();
     if cargo.contains_key("workspace") {
         for path in workspace_manifests(dir)? {
@@ -115,7 +111,7 @@ fn plan(dir: &Path) -> Result<Plan> {
             let mut member: DocumentMut = original
                 .parse()
                 .map_err(|error| format!("{} : {error}", path.display()))?;
-            dependencies(member.as_item_mut(), &mut repositories, &mut packages);
+            dependencies(member.as_item_mut(), &mut repositories);
             let updated = member.to_string();
             if updated != original {
                 members.push((path, updated));
@@ -173,7 +169,6 @@ fn plan(dir: &Path) -> Result<Plan> {
     Ok(Plan {
         files,
         repositories,
-        packages,
     })
 }
 
@@ -258,11 +253,7 @@ fn merge_key(target: &mut dyn toml_edit::TableLike, key: &str, expected: &Item) 
     }
 }
 
-fn dependencies(
-    item: &mut Item,
-    repositories: &mut BTreeSet<String>,
-    packages: &mut BTreeSet<String>,
-) {
+fn dependencies(item: &mut Item, repositories: &mut BTreeSet<String>) {
     let Some(table) = item.as_table_like_mut() else {
         return;
     };
@@ -281,7 +272,6 @@ fn dependencies(
                             spec.get("git").and_then(Item::as_str).map(str::to_owned)
                     {
                         repositories.insert(repository);
-                        packages.insert(name);
                         spec.remove("rev");
                         spec.remove("branch");
                         spec.insert("tag", toml_edit::value(format!("v{VERSION}")));
@@ -289,7 +279,7 @@ fn dependencies(
                 }
             }
         } else {
-            dependencies(child, repositories, packages);
+            dependencies(child, repositories);
         }
     }
 }

@@ -472,6 +472,70 @@ mod checks {
         );
     }
 
+    /// The host's `[patch]` makes Cargo write the common crates without a
+    /// `source`, and such a lock gets committed: without that patch Cargo can
+    /// no longer name them, so a friend's `cargo update --package salon-core`
+    /// fails. Hence a folder that no host's `.cargo/config.toml` covers: under
+    /// one, Cargo finds the name again and this test would prove nothing.
+    #[test]
+    fn public_upgrade_gives_back_the_sources_a_patched_lock_lost() {
+        let parent = fresh();
+        let target = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let repository = shared_repository(&parent, "published", Some(&target));
+        let outside = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("soiree-patched-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let dir = outside.join("game");
+        success(
+            &Command::new("cp")
+                .arg("-R")
+                .arg(workspace_upgrade_game(&repository, &repository))
+                .arg(&dir)
+                .output()
+                .unwrap(),
+        );
+        success(
+            &Command::new("cargo")
+                .current_dir(&dir)
+                .arg("generate-lockfile")
+                .output()
+                .unwrap(),
+        );
+        let lock = dir.join("Cargo.lock");
+        let locked = std::fs::read_to_string(&lock).unwrap();
+        let common = locked.matches("source = \"git+file://").count();
+        assert_eq!(common, 5, "{locked}");
+        let patched: String = locked
+            .lines()
+            .filter(|line| !line.starts_with("source = \"git+file://"))
+            .flat_map(|line| [line, "\n"])
+            .collect();
+        std::fs::write(&lock, patched).unwrap();
+        success(&command(&dir).arg("upgrade").output().unwrap());
+        let locked = std::fs::read_to_string(&lock).unwrap();
+        assert_eq!(
+            locked.matches(&format!("?tag={target}#")).count(),
+            common,
+            "{locked}"
+        );
+        std::fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn the_upgrade_rehearsal_keeps_its_contract() {
+        success(
+            &Command::new("python3")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../tools/rehearse-upgrade.test.py"
+                ))
+                .output()
+                .unwrap(),
+        );
+    }
+
     #[test]
     fn public_upgrade_checks_a_members_missing_tag_before_any_file_changes() {
         let parent = fresh();
