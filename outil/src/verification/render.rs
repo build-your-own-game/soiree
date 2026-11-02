@@ -111,7 +111,8 @@ pub fn save(dir: &Path, report: &VerificationReport, stem: &str) -> Result<()> {
         }
     );
     for o in &evaluation.obligations {
-        let _: std::fmt::Result = writeln!(text, "| {} | {} |", o.id, label(o.assessment));
+        let _: std::fmt::Result =
+            writeln!(text, "| {} | {}{} |", o.id, label(o.assessment), assumed(o));
     }
     for d in &evaluation.diagnostics {
         let _: std::fmt::Result = writeln!(text, "\n- {}", cell(d));
@@ -127,6 +128,16 @@ pub fn save(dir: &Path, report: &VerificationReport, stem: &str) -> Result<()> {
         "\nCatalogue : {reviewed} décisions explicites ; les autres items restent à examiner. Une justification ne constitue pas une preuve.\n"
     );
     util::write(&out.join(format!("{stem}.md")), &text)
+}
+
+/// A game's own control proves what it tests, under what its author assumed:
+/// « satisfait » alone would claim the whole requirement.
+fn assumed(o: &AssessedObligation) -> String {
+    let declared = o.controls.iter().any(|(id, _)| id.starts_with("game:"));
+    if !declared || o.assumptions.is_empty() {
+        return String::new();
+    }
+    format!(", sous hypothèses : {}", cell(&o.assumptions.join(" ; ")))
 }
 
 /// What a run means for whoever reads it: what to fix, what a person has to

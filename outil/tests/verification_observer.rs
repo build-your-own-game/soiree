@@ -366,6 +366,10 @@ process.exit(mode === 'abort' ? 2 : 0);
                 assessment,
                 "{body} {declared}"
             );
+            let view =
+                std::fs::read_to_string(fixture.game.join("certification/check.md")).unwrap();
+            let line = view.lines().find(|l| l.starts_with("| D1 |")).unwrap();
+            assert!(line.contains("Liaison déclarée par le jeu"), "{line}");
         }
     }
 
