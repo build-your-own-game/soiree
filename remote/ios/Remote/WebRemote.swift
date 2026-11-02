@@ -15,9 +15,11 @@ struct WebRemote: UIViewRepresentable {
     /// The player's identity and first name, for the page.
     let player: Data
     let name: String
+    /// The page failed to come, or came.
+    let onTrouble: (Bool) -> Void
 
     func makeCoordinator() -> Bridge {
-        Bridge(host: url.host() ?? "")
+        Bridge(page: url, onTrouble: onTrouble)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -46,11 +48,9 @@ struct WebRemote: UIViewRepresentable {
         return web
     }
 
-    func updateUIView(_ web: WKWebView, context: Context) {
-        if web.url != url, !web.isLoading {
-            web.load(URLRequest(url: url))
-        }
-    }
+    /// A new page is a new web view (`GameScreen`): nothing to do here. The
+    /// retries are the bridge's, and a page may have moved on from `url`.
+    func updateUIView(_ web: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ web: WKWebView, coordinator: Bridge) {
         coordinator.stop()
@@ -62,18 +62,27 @@ struct WebRemote: UIViewRepresentable {
     @MainActor
     final class Bridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
         static let name = webHandlerName()
+        /// `WebKitErrorFrameLoadInterruptedByPolicyChange`: the app refused it.
+        private static let frameLoadInterrupted = 102
 
         weak var web: WKWebView?
-        /// The game's host: datagrams go there, and only its pages get the
+        /// The page the game asked for.
+        private let page: URL
+        /// Its host: datagrams go there, and only its pages get the
         /// microphone and camera.
         private let host: String
+        private let onTrouble: (Bool) -> Void
+        private var retry: Task<Void, Never>?
+        private var retries = 0
         private let haptics = Haptics()
         private var engine: CHHapticEngine?
         private var motion: MotionReader?
         private var sockets: [UInt32: NWConnection] = [:]
 
-        init(host: String) {
-            self.host = host
+        init(page: URL, onTrouble: @escaping (Bool) -> Void) {
+            self.page = page
+            host = page.host() ?? ""
+            self.onTrouble = onTrouble
         }
 
         /// The only script the app adds: data, before the page's own
@@ -134,10 +143,48 @@ struct WebRemote: UIViewRepresentable {
         /// A turn during the load reached the page before it listened: say
         /// it again once loaded.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            retries = 0
+            onTrouble(false)
             orientationChanged()
         }
 
+        /// The page never came: nothing else would try again, and the socket
+        /// is fine, so nothing else would say so.
+        func webView(
+            _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
+        ) {
+            failed(webView, error)
+        }
+
+        /// It started to come, and stopped.
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            failed(webView, error)
+        }
+
+        private func failed(_ webView: WKWebView, _ error: Error) {
+            let error = error as NSError
+            let replaced = error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
+            let refused = error.domain == WKErrorDomain && error.code == Self.frameLoadInterrupted
+            if !replaced, !refused {
+                loadAgain(webView)
+            }
+        }
+
+        /// Back-off as the socket's: 1 s, doubling up to 5 s.
+        private func loadAgain(_ webView: WKWebView) {
+            onTrouble(true)
+            let delay = min(pow(2, Double(retries)), 5)
+            retries += 1
+            retry?.cancel()
+            retry = Task { [weak self, weak webView] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, let webView, !Task.isCancelled else { return }
+                webView.load(URLRequest(url: self.page))
+            }
+        }
+
         func stop() {
+            retry?.cancel()
             motion?.stop()
             motion = nil
             for socket in sockets.values {

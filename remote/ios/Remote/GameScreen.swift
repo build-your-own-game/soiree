@@ -26,6 +26,8 @@ struct GameScreen: View {
             content
             if connection.status == .reconnecting {
                 Notice(text: "Connexion perdue, on réessaie…")
+            } else if connection.pageFailing {
+                Notice(text: "La page du jeu ne répond pas, on réessaie…")
             }
             if case let .refused(reason) = connection.status {
                 Refused(reason: reason, onLeave: onLeave)
@@ -63,7 +65,9 @@ struct GameScreen: View {
             }
         case let .web(url):
             // A new page is a new web view: nothing carries over from the last.
-            WebRemote(url: url, player: GameConnection.player, name: GameConnection.name)
+            WebRemote(url: url, player: GameConnection.player, name: GameConnection.name) { failing in
+                connection.page(failing: failing)
+            }
                 .id(url)
                 .ignoresSafeArea()
         }

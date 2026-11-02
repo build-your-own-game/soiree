@@ -95,6 +95,8 @@ final class Bench {
             case .pad: "pad"
             case let .web(url): "web \(url.absoluteString)"
             }
+        case "page-failing":
+            return String(connection?.pageFailing ?? false)
         case "control":
             let id = UInt8(numbers.first ?? 0)
             let found = connection?.pad?.layout?.controls.first { $0.id == id }

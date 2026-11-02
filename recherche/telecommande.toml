@@ -477,7 +477,8 @@ citation = '@"didFailProvisionalNavigation": @YES,'
 enonce = "Un échec de chargement est un événement à traiter : la vue ne réessaie pas et ne dit rien d'elle-même."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_that_fails_to_load_is_tried_again_with_a_word_for_the_player"]
 trou = "T3"
 
 [[lecon]]

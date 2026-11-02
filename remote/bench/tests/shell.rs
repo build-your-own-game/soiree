@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use remote_bench::eventually;
-use remote_bench::host::FakeHost;
+use remote_bench::host::{FakeHost, Page};
 use remote_bench::salon::Salon;
 use remote_bench::shell::Shell;
 use remote_protocol::{DrawEvent, PhoneMessage, Remote, presets};
@@ -15,6 +15,8 @@ const SOON: Duration = Duration::from_secs(5);
 const FROZEN: Duration = Duration::from_secs(6);
 /// Long enough for the backed-off try, and a try stuck on a frozen host.
 const BACK: Duration = Duration::from_secs(15);
+/// A retry after 1 s, then 2 s, and the load itself.
+const LOADED: Duration = Duration::from_secs(10);
 
 #[test]
 fn the_shell_says_hello_and_plays_the_pad_it_is_shown() {
@@ -42,6 +44,21 @@ fn the_shell_says_hello_and_plays_the_pad_it_is_shown() {
         Some(PhoneMessage::Hello { .. })
     ));
     assert_eq!(shell.ask("status"), "connected");
+}
+
+const PAGE: &str = "<!doctype html><title>page</title><body>page</body>";
+
+/// A game that shows its page at `/play`.
+fn page_game(html: &str) -> FakeHost {
+    let host = FakeHost::start(Some(Remote::Web {
+        url: "/play".to_owned(),
+    }));
+    host.with(|state| {
+        state
+            .routes
+            .insert("/play".to_owned(), Page::Html(html.to_owned()));
+    });
+    host
 }
 
 /// A player on the game `host` shows at `path`, with its screen up.
@@ -159,5 +176,26 @@ fn a_frozen_salon_is_seen_and_a_stroke_it_cut_still_ends_there() {
     assert!(
         eventually(SOON, || salon.heard("end") == 1),
         "salon never heard the stroke end"
+    );
+}
+
+#[test]
+fn a_page_that_fails_to_load_is_tried_again_with_a_word_for_the_player() {
+    let host = page_game(PAGE);
+    // WebKit itself tries four times in a few milliseconds.
+    host.with(|state| state.broken_pages = 6);
+    let mut shell = joined(&host, "/play");
+    assert!(
+        eventually(SOON, || shell.ask("page-failing") == "true"),
+        "nothing tells the player"
+    );
+    assert!(
+        eventually(LOADED, || shell.ask("eval document.title") == "page"),
+        "the page never came: {}",
+        shell.ask("eval document.title")
+    );
+    assert!(
+        eventually(SOON, || shell.ask("page-failing") == "false"),
+        "the word outlives the trouble"
     );
 }

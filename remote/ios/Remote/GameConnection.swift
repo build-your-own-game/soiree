@@ -29,6 +29,8 @@ final class GameConnection {
     private(set) var pad: RemoteModel?
     /// The game's tint, from its last feedback.
     private(set) var tint: Color?
+    /// The game's page failed to come, and the web view is trying again.
+    private(set) var pageFailing = false
 
     let target: JoinTarget
     @ObservationIgnored let session: Session
@@ -69,6 +71,12 @@ final class GameConnection {
         socket = nil
         sockets?.invalidateAndCancel()
         sockets = nil
+    }
+
+    func page(failing: Bool) {
+        if pageFailing != failing {
+            pageFailing = failing
+        }
     }
 
     private func connect() {
