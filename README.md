@@ -14,7 +14,11 @@ Les contrats de vérification, leur portée et leurs limites sont décrits dans 
 
 Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance dans un terminal.
 
-1. **Installer Rust**, avec rustup : suis https://rustup.rs. Ferme puis rouvre le terminal.
+Compte environ 7 minutes de machine jusqu'au premier `soiree check` réussi, puis 1 min 30 pour lancer le jeu, et 5 Go de disque : c'est la mesure d'un essai à froid du 2 novembre 2026 sur un Mac Apple M5 de 16 Go, hors temps humain. Un mot de passe de l'ordinateur se tape soi-même dans le terminal, jamais dans une conversation.
+
+Sous Windows, ce parcours n'a pas encore été essayé, et `soiree certify` n'y est pas encore disponible : le harnais dépend de `lsof`, de `ps` et des groupes de processus POSIX. Parles-en à l'hôte avant d'installer quoi que ce soit.
+
+1. **Installer Rust**, avec rustup : suis https://rustup.rs. Il faut d'abord un éditeur de liens, que rustup n'installe pas : sur Mac, lance `xcode-select --install` et valide la fenêtre qui s'ouvre ; sur Linux, installe le paquet `build-essential` ou son équivalent. Ferme ensuite puis rouvre le terminal. Un agent de code sans terminal interactif lance l'installateur avec `sh -s -- -y`, puis `. "$HOME/.cargo/env"`.
 2. **Installer l'outil `soiree`**, à la version de la soirée :
    ```sh
    cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree
@@ -24,7 +28,7 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    ```sh
    soiree doctor
    ```
-   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il ne reste aucune erreur. Le WebKit du harnais se vérifie seulement après le premier `soiree certify`.
+   Il dit ce qui manque (l'éditeur de liens, la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il ne reste aucune erreur. Les lignes marquées `–` ne bloquent pas : GitHub CLI y figure, et le WebKit du harnais se vérifie seulement après le premier `soiree certify`. Node sert à `soiree certify` ; `soiree check` s'en passe, sauf si `cert.json` déclare `ui.checks[].success`.
 4. **Créer le jeu**, dans le dossier où tu ranges tes projets :
    ```sh
    soiree new mon-jeu
@@ -32,8 +36,8 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    ```
    Le nom : des minuscules, des chiffres et des tirets, comme `course-de-canards`.
 5. **Vérifier le jeu, créer son dépôt dans l'organisation et pousser.**
-   Le premier contrôle crée aussi `Cargo.lock`, nécessaire à la CI.
-   Avec [GitHub CLI](https://cli.github.com) :
+   Le premier contrôle compile tout : c'est l'essentiel de la durée annoncée plus haut, et il n'affiche presque rien pendant ce temps. Un agent de code ne lui impose pas de délai court. Il crée aussi `Cargo.lock`, nécessaire à la CI. Il a réussi quand son résumé commence par `✓ Aucun problème trouvé` ; ce qui reste « hors de ce passage » relève de `soiree certify` et de la soirée. S'il dit `✗ À corriger` ou `⚠ Le passage n’a pas abouti`, la cause est juste en dessous, et le détail dans `certification/check.md`.
+   Avec [GitHub CLI](https://cli.github.com), après avoir accepté l'invitation de l'organisation et lancé une fois `gh auth login` (toi-même : il ouvre le navigateur) :
    ```sh
    soiree check
    git init -b main
@@ -41,10 +45,16 @@ Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance
    git commit -m "Le jeu de départ"
    gh repo create build-your-own-game/mon-jeu --private --source . --push
    ```
-   Sans `gh` : crée le dépôt `mon-jeu` sur https://github.com/organizations/build-your-own-game/repositories/new, puis suis les commandes que GitHub affiche pour « push an existing repository ».
-6. **Lire `AGENTS.md`**, à la racine du jeu. Si tu travailles avec un agent de code, demande-lui de le lire et de le suivre : c'est lui qui décrit la suite.
+   Sans `gh` : crée le dépôt `mon-jeu` sur https://github.com/organizations/build-your-own-game/repositories/new, puis suis les commandes que GitHub affiche pour « push an existing repository ». Git demandera alors un jeton GitHub, pas ton mot de passe : `gh` évite ce détour.
+   Si `git commit` refuse parce qu'il ne connaît pas ton identité, renseigne `git config --global user.name` et `git config --global user.email`, puis relance-le. S'il dit l'avoir devinée, renseigne-les aussi, puis lance `git commit --amend --reset-author`.
+6. **Lancer le jeu de départ**, en remplaçant `mon-jeu` :
+   ```sh
+   cargo run --release -p mon-jeu-host
+   ```
+   Le jeu est prêt à `Game ready`. Ouvre l'adresse de la ligne `TV (this computer)`, puis la même suivie de `/play?seat=1` : `Tap` fait monter le compteur de la TV. Si macOS demande d'accepter les connexions entrantes, autorise-les, sinon les téléphones n'atteindront pas le jeu. Ctrl+C arrête le jeu.
+7. **Lire `AGENTS.md`**, à la racine du jeu. Si tu travailles avec un agent de code, demande-lui de le lire et de le suivre : c'est lui qui décrit la suite.
 
-C'est fini quand `soiree check` passe dans le dossier du jeu.
+C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème trouvé` dans le dossier du jeu, que le dépôt est poussé et que le jeu de départ répond dans le navigateur.
 
 ## Les commandes
 
