@@ -586,7 +586,8 @@ citation = "Only memorize lonpgoll fallback if primary transport never establish
 enonce = "Ne retenir le repli que si le transport principal n'a jamais marché ici : un échec après un succès est passager."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/web/src/rtc_memory.rs::a_failure_after_a_success_does_not_stick_at_the_next_load"]
 trou = "T7"
 
 [[lecon]]

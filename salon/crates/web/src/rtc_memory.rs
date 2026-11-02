@@ -24,22 +24,31 @@ const REMEMBERED_MS: u64 = 10 * 60 * 1_000;
 pub(crate) struct RtcMemory {
     failures: u32,
     at: u64,
+    /// A WebRTC link opened in this tab: failing later may be passing, like
+    /// the host restarting.
+    #[serde(default)]
+    worked: bool,
 }
 
 impl RtcMemory {
-    /// What a new page starts from. One remembered failure is enough here:
-    /// the second chance a page gives WebRTC is for a glitch during a game,
-    /// and the wait of a page that is loading is the one players see.
+    /// What a new page starts from. One remembered failure is enough here,
+    /// unless WebRTC worked in this tab: the second chance a page gives
+    /// WebRTC is for a glitch during a game, and the wait of a page that is
+    /// loading is the one players see.
     pub(crate) fn loaded(stored: Option<&str>, now: u64) -> RtcMemory {
         let memory: RtcMemory = stored
             .and_then(|text| serde_json::from_str(text).ok())
             .unwrap_or_default();
         if memory.failures == 0 || memory.is_old(now) {
-            return RtcMemory::default();
+            return memory.forgotten();
         }
         RtcMemory {
-            failures: memory.failures.max(FAILURES),
-            at: memory.at,
+            failures: if memory.worked {
+                memory.failures
+            } else {
+                memory.failures.max(FAILURES)
+            },
+            ..memory
         }
     }
 
@@ -47,6 +56,23 @@ impl RtcMemory {
         RtcMemory {
             failures: self.failures.saturating_add(1),
             at: now,
+            ..self
+        }
+    }
+
+    /// A WebRTC link opened: its failures no longer say anything.
+    pub(crate) fn opened(self) -> RtcMemory {
+        RtcMemory {
+            worked: true,
+            ..self.forgotten()
+        }
+    }
+
+    /// The failures no longer say anything; that it worked here still does.
+    pub(crate) fn forgotten(self) -> RtcMemory {
+        RtcMemory {
+            worked: self.worked,
+            ..RtcMemory::default()
         }
     }
 
@@ -73,6 +99,43 @@ mod tests {
             memory = memory.failed(SAVED);
         }
         serde_json::to_string(&memory).unwrap()
+    }
+
+    /// Phoenix b2eeccf: once WebRTC worked in this tab, a failure may just be
+    /// the host restarting. A reload tries again, and it takes two failures
+    /// in a row to give up, as during a game.
+    #[test]
+    fn a_failure_after_a_success_does_not_stick_at_the_next_load() {
+        let worked = RtcMemory::default().opened().failed(SAVED);
+        let text = serde_json::to_string(&worked).unwrap();
+        let now = SAVED + 1_000;
+        assert!(RtcMemory::loaded(Some(&text), now).use_rtc(now));
+        let text = serde_json::to_string(&worked.failed(SAVED)).unwrap();
+        assert!(!RtcMemory::loaded(Some(&text), now).use_rtc(now));
+    }
+
+    /// What is learned about this tab outlives the failures forgotten, on
+    /// this page and on the next.
+    #[test]
+    fn having_worked_is_not_forgotten() {
+        let worked = RtcMemory::default().opened().failed(SAVED).failed(SAVED);
+        let forgotten = worked.forgotten().failed(SAVED);
+        let text = serde_json::to_string(&forgotten).unwrap();
+        let now = SAVED + 1_000;
+        assert!(RtcMemory::loaded(Some(&text), now).use_rtc(now));
+        let old = SAVED + REMEMBERED_MS;
+        let reloaded = RtcMemory::loaded(Some(&text), old).failed(old);
+        assert!(!reloaded.failed(old).use_rtc(old + 1));
+        let text = serde_json::to_string(&reloaded).unwrap();
+        assert!(RtcMemory::loaded(Some(&text), old).use_rtc(old));
+    }
+
+    /// A memory saved before this field: WebRTC is not known to have worked.
+    #[test]
+    fn an_older_memory_still_reads() {
+        let now = SAVED + 1_000;
+        let text = format!(r#"{{"failures":1,"at":{SAVED}}}"#);
+        assert!(!RtcMemory::loaded(Some(&text), now).use_rtc(now));
     }
 
     #[test]
@@ -121,7 +184,7 @@ mod tests {
     fn a_forgotten_memory_tries_webrtc_at_once() {
         let stuck = RtcMemory::default().failed(SAVED).failed(SAVED);
         assert!(!stuck.use_rtc(SAVED));
-        let forgotten = RtcMemory::default();
+        let forgotten = stuck.forgotten();
         assert!(forgotten.use_rtc(SAVED));
         let text = serde_json::to_string(&forgotten).unwrap();
         assert!(RtcMemory::loaded(Some(&text), SAVED).use_rtc(SAVED));

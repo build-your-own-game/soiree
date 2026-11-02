@@ -11,11 +11,13 @@
 //!   within [`RTC_PATIENCE_MS`], **WebSocket** (`/salon/ws`) takes over, for
 //!   good after two failures in a row. The tab remembers the failure, so that
 //!   a reload does not wait again: for ten minutes, or until the browser says
-//!   it is `online` again, or until a WebRTC link opens;
+//!   it is `online` again, or until a WebRTC link opens. An offer nobody
+//!   answers is no failure, and where WebRTC worked one failure does not
+//!   outlive the page: a host restarting says nothing of WebRTC;
 //! - **the clock** (`performance.now()`, and `Date.now()` to count the sleep
 //!   that one may not, [`SleepClock`]) and the timers salon asks for;
-//! - **waking up**: `visibilitychange` and `pageshow` tell salon to check the
-//!   link at once, since iOS freezes pages in the background, and `online`
+//! - **waking up**: `visibilitychange`, `pageshow` and `resume` tell salon to
+//!   check the link at once, since iOS freezes pages in the background, and `online`
 //!   also drops an attempt started while there was no network;
 //! - **the TV key**, fetched from `/salon/tv`, which only this computer gets.
 //!
@@ -410,6 +412,15 @@ impl<Up: Serialize + 'static, Down: DeserializeOwned + 'static> Connection<Up, D
                 "visibilitychange",
                 move |_| wake(&weak, Client::wake),
             );
+            // A page that thaws: `visibilitychange` no longer always follows
+            // (Phoenix, Chrome 149).
+            let weak = Rc::downgrade(&self.shared);
+            let _: Result<(), JsValue> =
+                self.shared
+                    .wake
+                    .listen::<web_sys::Event>(&document, "resume", move |_| {
+                        wake(&weak, Client::wake);
+                    });
         }
     }
 
@@ -484,7 +495,7 @@ fn forget_rtc_failures<Up, Down>(weak: &Weak<Shared<Up, Down>>) {
     if let Some(shared) = weak.upgrade()
         && let Ok(mut inner) = shared.inner.try_borrow_mut()
     {
-        inner.rtc_memory = RtcMemory::default();
+        inner.rtc_memory = inner.rtc_memory.forgotten();
         save_rtc_memory(inner.rtc_memory);
     }
 }
@@ -759,10 +770,19 @@ fn websocket<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     })
 }
 
+/// What a move to WebSocket says of WebRTC.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Blame {
+    WebRtc,
+    /// Nothing: the host did not answer.
+    Nobody,
+}
+
 /// Switches the current attempt from WebRTC to WebSocket.
 fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     weak: &Weak<Shared<Up, Down>>,
     generation: u32,
+    blame: Blame,
 ) {
     let Some(shared) = weak.upgrade() else {
         return;
@@ -780,8 +800,10 @@ fn fall_back<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         if inner.generation != generation || opened {
             return;
         }
-        inner.rtc_memory = inner.rtc_memory.failed(wall_ms());
-        save_rtc_memory(inner.rtc_memory);
+        if blame == Blame::WebRtc {
+            inner.rtc_memory = inner.rtc_memory.failed(wall_ms());
+            save_rtc_memory(inner.rtc_memory);
+        }
         if let Some(old) = inner.transport.take() {
             old.close();
         }
@@ -818,9 +840,10 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             if let Some(Transport::Rtc { open, .. }) = inner.transport.as_mut() {
                 *open = true;
             }
-            if inner.rtc_memory != RtcMemory::default() {
-                inner.rtc_memory = RtcMemory::default();
-                save_rtc_memory(inner.rtc_memory);
+            let opened = inner.rtc_memory.opened();
+            if inner.rtc_memory != opened {
+                inner.rtc_memory = opened;
+                save_rtc_memory(opened);
             }
             if let Some(client) = inner.client.as_mut() {
                 client.opened(now, Caps::DATAGRAM);
@@ -858,7 +881,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let connecting = pc.clone();
     let failed = Listener::new(move |_| {
         if connecting.connection_state() == RtcPeerConnectionState::Failed {
-            fall_back(&weak, generation);
+            fall_back(&weak, generation, Blame::WebRtc);
         }
     });
     pc.set_onconnectionstatechange(Some(failed.as_ref().unchecked_ref()));
@@ -871,7 +894,9 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
         .saturating_sub(now().since(started));
     let remaining = i32::try_from(remaining).unwrap_or(0);
     let closures = vec![opened, message, closed, failed];
-    let Ok(patience) = ui::Timer::after(remaining, move || fall_back(&weak, generation)) else {
+    let Ok(patience) = ui::Timer::after(remaining, move || {
+        fall_back(&weak, generation, Blame::WebRtc)
+    }) else {
         Transport::Rtc {
             pc,
             channel,
@@ -885,9 +910,11 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let weak = Rc::downgrade(shared);
     let offering = pc.clone();
     spawn_local(async move {
-        if negotiate(&offering).await.is_none() {
-            fall_back(&weak, generation);
-        }
+        match negotiate(&offering).await {
+            Negotiation::Done => {}
+            Negotiation::Failed => fall_back(&weak, generation, Blame::WebRtc),
+            Negotiation::NoHost => fall_back(&weak, generation, Blame::Nobody),
+        };
     });
     Some(Transport::Rtc {
         pc,
@@ -898,8 +925,30 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     })
 }
 
+/// How a negotiation ended, before the DataChannel opens.
+enum Negotiation {
+    Done,
+    Failed,
+    /// Nobody answered the offer: a host restarting says nothing of WebRTC.
+    NoHost,
+}
+
 /// Posts the offer to the host and applies its answer.
-async fn negotiate(pc: &RtcPeerConnection) -> Option<()> {
+async fn negotiate(pc: &RtcPeerConnection) -> Negotiation {
+    let Some(body) = offer(pc).await else {
+        return Negotiation::Failed;
+    };
+    let Some(response) = fetch(route::OFFER, Some(&body)).await else {
+        return Negotiation::NoHost;
+    };
+    match answer(pc, response).await {
+        Some(()) => Negotiation::Done,
+        None => Negotiation::Failed,
+    }
+}
+
+/// Makes the local offer and says it as the host reads it.
+async fn offer(pc: &RtcPeerConnection) -> Option<String> {
     let offer = JsFuture::from(pc.create_offer()).await.ok()?;
     let sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))
         .ok()?
@@ -909,8 +958,11 @@ async fn negotiate(pc: &RtcPeerConnection) -> Option<()> {
     JsFuture::from(pc.set_local_description(&local))
         .await
         .ok()?;
-    let body = serde_json::to_string(&serde_json::json!({ "type": "offer", "sdp": sdp })).ok()?;
-    let answer = fetch_text(route::OFFER, Some(&body)).await?;
+    serde_json::to_string(&serde_json::json!({ "type": "offer", "sdp": sdp })).ok()
+}
+
+async fn answer(pc: &RtcPeerConnection, response: web_sys::Response) -> Option<()> {
+    let answer = text_of(response).await?;
     let answer: serde_json::Value = serde_json::from_str(&answer).ok()?;
     let remote = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
     remote.set_sdp(answer.get("sdp")?.as_str()?);
@@ -920,8 +972,8 @@ async fn negotiate(pc: &RtcPeerConnection) -> Option<()> {
     Some(())
 }
 
-/// GET (or POST `body`) and the text of a successful answer.
-async fn fetch_text(url: &str, body: Option<&str>) -> Option<String> {
+/// GET (or POST `body`): the response, if anybody gave one.
+async fn fetch(url: &str, body: Option<&str>) -> Option<web_sys::Response> {
     let window = web_sys::window()?;
     let init = RequestInit::new();
     if let Some(body) = body {
@@ -931,7 +983,11 @@ async fn fetch_text(url: &str, body: Option<&str>) -> Option<String> {
     let response = JsFuture::from(window.fetch_with_str_and_init(url, &init))
         .await
         .ok()?;
-    let response: web_sys::Response = response.dyn_into().ok()?;
+    response.dyn_into().ok()
+}
+
+/// The text of a successful response.
+async fn text_of(response: web_sys::Response) -> Option<String> {
     if !response.ok() {
         return None;
     }
@@ -939,6 +995,11 @@ async fn fetch_text(url: &str, body: Option<&str>) -> Option<String> {
         .await
         .ok()?
         .as_string()
+}
+
+/// GET (or POST `body`) and the text of a successful answer.
+async fn fetch_text(url: &str, body: Option<&str>) -> Option<String> {
+    text_of(fetch(url, body).await?).await
 }
 
 const SVG: &str = "http://www.w3.org/2000/svg";
