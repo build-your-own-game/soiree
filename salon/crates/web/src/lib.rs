@@ -895,7 +895,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
     let remaining = i32::try_from(remaining).unwrap_or(0);
     let closures = vec![opened, message, closed, failed];
     let Ok(patience) = ui::Timer::after(remaining, move || {
-        fall_back(&weak, generation, Blame::WebRtc)
+        fall_back(&weak, generation, Blame::WebRtc);
     }) else {
         Transport::Rtc {
             pc,
@@ -914,7 +914,7 @@ fn rtc<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
             Negotiation::Done => {}
             Negotiation::Failed => fall_back(&weak, generation, Blame::WebRtc),
             Negotiation::NoHost => fall_back(&weak, generation, Blame::Nobody),
-        };
+        }
     });
     Some(Transport::Rtc {
         pc,
