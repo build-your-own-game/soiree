@@ -89,6 +89,15 @@ Une page restée ouverte pendant la mise à jour est refusée (`Refusal::Version
 
 ### Change de sens
 
+- Le lien le plus récent gagne : un hello resté coincé sur une tentative abandonnée, ou celui de la page d'avant un rechargement, remplaçait le lien vivant. Il perd désormais, quel que soit l'ordre d'arrivée.
+- L'époque est tirée au sort à chaque départ. Comptée depuis `salon.json`, elle retombait à 1 quand le fichier manquait, et la page perdait ses envois sans erreur.
+- Une connexion `/remote` est un seul joueur, avec son budget. Une deuxième identité sur un lien n'est pas lue.
+- Une absente évincée revient en `AppEvent::Back`, tant qu'elle est parmi les 256 dernières à avoir perdu sa place.
+- `AppEvent::Input` et `AppEvent::Draw` n'arrivent que pendant un `Remote::Pad`. Ceux qui croisent un changement de télécommande sont jetés, et -128 devient -127.
+- Une app refusée voit sa connexion fermée.
+- Un paquet coûte ce qu'il transporte : au plus 1 636 parts par paquet.
+- Les identités n'ont pas de plafond : voir `salon/README.md`, « Les limites ». « Nothing grows without bound » était faux.
+
 - **`Happening::Reset` n'annule plus que ce que l'hôte a dit.** Avant, la file de la page était vidée : une réponse envoyée pendant un redémarrage rendait `Ok`, puis disparaissait sans un mot. Elle part maintenant vers la nouvelle partie, après l'arrivée de l'appareil et avec la phase de son envoi. Un événement en vol quand l'hôte est mort peut atteindre les deux lancements, une fois chacun.
 - **« Jouer ici » (`connection.resume()`) rend ce qui attendait dans l'onglet.** Deux onglets montrent un seul jeton, et chacun gardait ses compteurs : après la reprise, l'onglet numérotait sous ce que l'autre avait envoyé, et l'hôte ignorait ses événements en les accusant. L'hôte numérote maintenant chaque client qui prend l'appareil (`Welcome.session`). Ce qui attendait part une fois, après ce que l'autre a envoyé, et ce qui était arrivé ne repart pas. L'hôte s'en souvient pour les huit derniers onglets qui ont envoyé quelque chose : un onglet absent plus longtemps peut répéter ce qu'il avait en vol, sans rien perdre.
 - **Une page rechargée est entendue tout de suite.** Elle numérotait ses états depuis 1 alors que l'hôte gardait les numéros de l'ancienne page : chaque état était ignoré et accusé, et `set_state` rendait `Ok`. Le `Welcome` dit où en sont les numéros, et le premier message de la page ne complète plus celui que l'ancienne avait laissé à moitié envoyé, ce qui en faisait un seul de deux. Les paquets changent de forme : `Hello.resume` devient `Option<Resume { epoch, device, session }>` et `Welcome` devient `{ device, epoch, session, up_next, up_seen, state, down_first }`. `PROTOCOL` vaut 2. Une page d'un autre protocole est refusée même si son hello ne se lit plus, au lieu de se reconnecter sans fin.
