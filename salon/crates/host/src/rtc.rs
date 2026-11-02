@@ -23,7 +23,9 @@ use salon_crypto::DtlsCert;
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
 use str0m::net::{Protocol, Receive};
-use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
+use str0m::{
+    Candidate, DATAGRAM_MTU_WARN, Event, IceConnectionState, Input, Output, Rtc, RtcConfig,
+};
 
 use crate::clock::Clock;
 use crate::room::inbox::{Refused, Sender};
@@ -41,6 +43,12 @@ const POLL: Duration = Duration::from_millis(1);
 /// fault, so it may well panic again at once, and this keeps that from eating
 /// a core. Short enough that a page's next offer finds the thread back.
 const RESTART: Duration = Duration::from_millis(100);
+/// str0m's datagram size, sized so that the largest packet `Caps::DATAGRAM`
+/// allows leaves in one datagram: str0m takes 48 octets of DTLS and 40 of SCTP
+/// off it, and its default of 1 150 cut every packet over 1 062 in two. What
+/// leaves is 1 165 octets, 1 193 with IP and UDP: under the 1 280 that IPv6
+/// promises any path.
+const MTU: usize = Caps::DATAGRAM.max_packet.saturating_add(48 + 40);
 
 pub struct Signal {
     pub link: LinkId,
@@ -83,6 +91,7 @@ pub fn answer(
     let mut rtc = RtcConfig::new()
         .set_ice_lite(true)
         .set_dtls_cert(cert.clone())
+        .set_mtu(MTU..=DATAGRAM_MTU_WARN)
         .build(Clock::instant());
     for candidate in candidates(reached, announced) {
         let candidate = Candidate::host(candidate, "udp").map_err(|error| error.to_string())?;
@@ -656,6 +665,26 @@ mod tests {
             .filter(|line| line.starts_with("a=candidate:"))
             .filter_map(|line| line.split_whitespace().nth(4).map(str::to_owned))
             .collect()
+    }
+
+    /// T4: `Caps::DATAGRAM` promises one network frame, since losing a
+    /// fragment loses the message on a channel that does not retransmit. The
+    /// largest packet it allows went out in two.
+    #[test]
+    fn the_largest_datagram_packet_is_one_datagram() {
+        let mut pair = Pair::opened();
+        pair.exchange();
+        pair.down.clear();
+        let packet = vec![7; Caps::DATAGRAM.max_packet];
+        let id = pair.host_channel.unwrap();
+        let mut channel = pair.host.channel(id).unwrap();
+        assert!(channel.write(true, &packet).unwrap());
+        pair.exchange();
+        assert_eq!(pair.down.len(), 1, "{:?}", pair.down);
+        assert_eq!(pair.heard, [packet]);
+        // Under what a Wi-Fi carries, and what IPv6 promises any path, with
+        // the 28 octets of IP and UDP.
+        assert!(pair.down[0] + 28 <= 1280, "{:?}", pair.down);
     }
 
     /// T3: a phone has just reached this address, the one the host would have

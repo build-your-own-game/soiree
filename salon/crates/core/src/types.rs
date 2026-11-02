@@ -203,7 +203,7 @@ pub struct Caps {
 impl Caps {
     /// A WebRTC DataChannel without retransmission, or UDP: stay under one
     /// network frame, since losing one fragment loses the whole message
-    /// (Quake 3 `FRAGMENT_SIZE`, str0m MTU 1150).
+    /// (Quake 3 `FRAGMENT_SIZE`). salon-host sizes str0m's MTU for this.
     pub const DATAGRAM: Caps = Caps {
         max_packet: 1100,
         local: false,
