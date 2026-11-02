@@ -356,13 +356,21 @@ fn verify_sheet(
 
 fn commit_exists(depot: &Depot, sha: &Commit, net: &Cached<'_>) -> Result<Verdict, Outage> {
     Ok(match net.api(&format!("repos/{depot}/commits/{sha}"))? {
-        Fetched::Body(body) if names_commit(&body, sha) => Verdict::Held,
-        // A captive portal also answers 2xx: this says nothing of the commit.
-        Fetched::Body(_) => {
-            return Err(Outage::Refused(format!(
-                "la réponse pour le commit {sha} n'est pas ce commit"
-            )));
-        }
+        Fetched::Body(body) => match commit_named(&body) {
+            Some(named) if named == sha.to_string() => Verdict::Held,
+            Some(named) => {
+                return Err(Outage::Refused(format!(
+                    "la réponse pour le commit {sha} nomme {named}"
+                )));
+            }
+            // A captive portal also answers 2xx. Nothing that follows on this
+            // network can be believed, in either direction.
+            None => {
+                return Err(Outage::Network(format!(
+                    "la réponse pour le commit {sha} n'est pas celle de GitHub"
+                )));
+            }
+        },
         Fetched::Missing if net.here(sha) => Verdict::Broken(format!(
             "le commit {sha} n'existe pas chez {depot} ; il est dans ce clone : publie-le, ou cite un commit publié"
         )),
@@ -370,9 +378,10 @@ fn commit_exists(depot: &Depot, sha: &Commit, net: &Cached<'_>) -> Result<Verdic
     })
 }
 
-fn names_commit(body: &[u8], sha: &Commit) -> bool {
-    serde_json::from_slice::<Json>(body)
-        .is_ok_and(|commit| field(&commit, "/sha") == sha.to_string())
+/// The `sha` of a GitHub API answer, or nothing if it is not one.
+fn commit_named(body: &[u8]) -> Option<String> {
+    let answer = serde_json::from_slice::<Json>(body).ok()?;
+    answer.get("sha")?.as_str().map(str::to_owned)
 }
 
 fn reference_holds(reference: &Reference, net: &Cached<'_>) -> Result<Verdict, Outage> {
@@ -870,11 +879,15 @@ mod tests {
 
     #[test]
     fn a_2xx_that_is_not_the_commit_concludes_nothing() {
-        for body in ["<html>Connectez-vous</html>", "{}", &commit(SHA_B)] {
+        for (body, expected) in [
+            ("<html>Connectez-vous</html>", "panne, arrêt"),
+            ("{}", "panne, arrêt"),
+            (&commit(SHA_B), "panne, non conclu"),
+        ] {
             let net = base().with(&format!("repos/o/soiree/commits/{SHA}"), body);
             let (code, lines) = outcome(&sheet(REPOSITORY, ""), &net);
             assert_eq!(code, OUTAGE_CODE, "{body} : {lines:?}");
-            assert!(lines[0].contains("panne, non conclu"), "{lines:?}");
+            assert!(lines[0].contains(expected), "{lines:?}");
         }
     }
 

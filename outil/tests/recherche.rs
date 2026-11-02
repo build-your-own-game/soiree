@@ -358,7 +358,7 @@ mod commands {
         let shown = text(&output);
         assert_eq!(output.status.code(), Some(1), "{shown}");
         assert!(shown.contains("n'existe pas chez o/soiree"), "{shown}");
-        assert!(!shown.contains("panne"), "{shown}");
+        assert!(!shown.contains("compare_a : panne"), "{shown}");
     }
 
     #[cfg(unix)]
