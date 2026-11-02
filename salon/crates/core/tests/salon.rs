@@ -1188,12 +1188,10 @@ fn a_half_sent_event_of_the_old_page_is_not_mixed_with_the_new_ones() {
     assert!(matches!(heard.as_slice(), [DeviceEvent::Event { event, .. }] if *event == new));
 }
 
-/// C8: a page left open through an upgrade of salon speaks the old protocol,
-/// so its hello no longer reads. It is still told to reload, instead of
-/// reconnecting for ever.
-#[test]
-fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
-    use salon_core::{Client, ClientOutput, Host, LinkId, Output, Token};
+/// A packet with a hello as the last protocol wrote it, which this one does
+/// not read: its `resume` had two fields.
+fn hello_that_does_not_read(protocol: u16) -> Vec<u8> {
+    use salon_core::Token;
     use serde::Serialize;
 
     #[derive(Serialize)]
@@ -1213,7 +1211,7 @@ fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
     let packet = (
         (1_u32, 0_u64, None::<(u64, u32)>),
         Some(OldControl::Hello(OldHello {
-            protocol: 1,
+            protocol,
             game: net::GAME,
             kind: Kind::Phone,
             token: Token([40; 16]),
@@ -1224,7 +1222,17 @@ fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
         (None::<(u32, u32)>, None::<u32>, None::<u32>),
         (Vec::<u8>::new(), Vec::<u8>::new()),
     );
-    let bytes = postcard::to_allocvec(&packet).unwrap();
+    postcard::to_allocvec(&packet).expect("a packet encodes")
+}
+
+/// C8: a page left open through an upgrade of salon speaks the old protocol,
+/// so its hello no longer reads. It is still told to reload, instead of
+/// reconnecting for ever.
+#[test]
+fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
+    use salon_core::{Client, ClientOutput, Host, LinkId, Output, PROTOCOL};
+
+    let bytes = hello_that_does_not_read(PROTOCOL - 1);
     let now = Ms(1_000);
     let mut host: Host<Up, Down> = Host::new(now, net::host_config(1, Vec::new()));
     let link = LinkId(1);
@@ -1240,6 +1248,25 @@ fn a_page_of_another_protocol_is_told_so_even_when_its_hello_does_not_read() {
         }
     }
     assert_eq!(page.status(), Status::Refused(Refusal::Version));
+}
+
+/// E1: only another number is another version. Broken bytes of this very
+/// protocol are garbage, and telling their sender to reload would be a lie.
+#[test]
+fn a_broken_hello_of_this_protocol_is_garbage_and_not_another_version() {
+    use salon_core::{Host, LinkId, Output, PROTOCOL};
+
+    let bytes = hello_that_does_not_read(PROTOCOL);
+    let now = Ms(1_000);
+    let mut host: Host<Up, Down> = Host::new(now, net::host_config(1, Vec::new()));
+    let link = LinkId(1);
+    host.opened(now, link, Caps::DATAGRAM);
+    host.received(now, link, &bytes);
+    let mut told = Vec::new();
+    while let Some(output) = host.poll(now) {
+        told.push(output);
+    }
+    assert_eq!(told, Vec::<Output<Up>>::new());
 }
 
 /// Two tabs of one player, joined, the second one in the first one's place.
@@ -1351,23 +1378,69 @@ fn play_here_is_heard_and_says_what_this_tab_holds() {
     assert_eq!(states_from(&net, device).last(), Some(&Up::Pad(8, 8)));
 }
 
-/// A tab away for more takeovers than the host remembers cannot be told what
-/// arrived: it may repeat what was in flight, but it loses nothing.
-#[test]
-fn a_tab_away_for_many_takeovers_loses_nothing() {
+/// What the game hears from a tab whose event arrived, but not its
+/// acknowledgement, then from `tabs` tabs that take over in turn and send
+/// `each` events, and from the first tab again when it comes back.
+fn heard_around_a_tab_away(tabs: u32, each: u32) -> Vec<Up> {
     let mut net = Net::new(39, Faults::default());
-    let (first, _, device) = twins(&mut net, 45);
-    net.phones[first].client.send(&Up::Answer(100)).unwrap();
-    for n in 0..12 {
+    let first = net.add_phone(phone_config(45, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, first);
+    net.run(300);
+    let room = "room for an event";
+    net.phones[first].client.send(&Up::Answer(100)).expect(room);
+    assert!(net.run_until(100, |net| net.events_from(device).len() == 1));
+    net.phones[first].frozen = true;
+    for tab in 0..tabs {
         let other = net.add_phone(phone_config(45, Kind::Phone), Caps::DATAGRAM);
         joined(&mut net, other);
-        net.phones[other].client.send(&Up::Answer(n)).unwrap();
+        for n in 0..each {
+            let event = Up::Answer(tab.saturating_mul(10).saturating_add(n));
+            net.phones[other].client.send(&event).expect(room);
+        }
         net.run(100);
     }
-    net.phones[first].client.resume();
-    net.run(2_000);
-    let want: Vec<Up> = (0..12).chain([100]).map(Up::Answer).collect();
-    assert_eq!(net.events_from(device), want);
+    net.phones[first].frozen = false;
+    assert!(net.run_until(20_000, |net| {
+        net.phones[first].connects >= 2 && net.phones[first].client.status() == Status::Connected
+    }));
+    net.run(1_000);
+    net.events_from(device)
+}
+
+/// C5: the host remembers where the last eight tabs that sent something
+/// stopped. The tab that comes back counts among them, as does the one it
+/// replaces. Past eight, the tab may repeat what it had in flight.
+#[test]
+fn the_host_remembers_exactly_the_last_eight_tabs_that_sent_something() {
+    let answers = |tabs: u32, numbers: Vec<u32>| {
+        let sent = (0..tabs).map(|tab| Up::Answer(tab * 10));
+        std::iter::once(Up::Answer(100))
+            .chain(sent)
+            .chain(numbers.into_iter().map(Up::Answer))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(heard_around_a_tab_away(7, 1), answers(7, Vec::new()));
+    assert_eq!(heard_around_a_tab_away(8, 1), answers(8, vec![100]));
+}
+
+/// A session that delivered nothing does not push out one that did: a tab
+/// that only looked leaves no trace.
+#[test]
+fn tabs_that_send_nothing_do_not_count_among_the_eight() {
+    assert_eq!(heard_around_a_tab_away(12, 0), vec![Up::Answer(100)]);
+}
+
+/// A tab away for more takeovers than the host remembers cannot be told what
+/// arrived: it repeats what was in flight, and it loses nothing.
+#[test]
+fn a_tab_away_for_many_takeovers_loses_nothing() {
+    let heard = heard_around_a_tab_away(12, 1);
+    let want: Vec<Up> = std::iter::once(100)
+        .chain((0..12).map(|tab| tab * 10))
+        .chain([100])
+        .map(Up::Answer)
+        .collect();
+    assert_eq!(heard, want);
 }
 
 /// What the player did while the host restarted is not void: `send` said

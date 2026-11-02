@@ -350,6 +350,7 @@ impl Room {
             .find_map(|page| self.net.phones[page.phone].client.device())
     }
 
+    #[expect(clippy::too_many_lines, reason = "one short arm for each trouble")]
     fn apply(&mut self, trouble: Trouble) {
         match trouble {
             Trouble::Send(seat, which, size) => {
