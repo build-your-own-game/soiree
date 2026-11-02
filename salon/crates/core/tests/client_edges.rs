@@ -910,3 +910,47 @@ fn a_page_gives_up_on_a_stream_that_proves_nothing() {
         }
     }
 }
+
+/// What leaves a page follows what comes back, like what leaves the host: ten
+/// packets at once, however big the message, and not one more before an ack.
+#[test]
+fn a_big_message_leaves_a_page_by_the_window() {
+    let limits = Limits {
+        max_up: 64 * 1024,
+        ..Limits::default()
+    };
+    let mut phone: Client<Vec<u8>, u32> = Client::new(
+        Ms(0),
+        ClientConfig {
+            limits,
+            ..config(1, Timing::default())
+        },
+    );
+    std::iter::from_fn(|| phone.poll(Ms(0))).for_each(drop);
+    phone.opened(Ms(0), Caps::DATAGRAM);
+    std::iter::from_fn(|| phone.poll(Ms(0))).for_each(drop);
+    let room = Packet {
+        control: Some(Control::Welcome(wire::Welcome {
+            device: salon_core::DeviceId(4),
+            epoch: 1,
+            session: 0,
+            up_next: 0,
+            up_seen: 0,
+            state: 0,
+            down_first: 0,
+            max_up: 64 * 1024,
+            max_down: 64 * 1024,
+        })),
+        ..from_host(1, 0)
+    };
+    phone.received(Ms(0), &encode(&room));
+    std::iter::from_fn(|| phone.poll(Ms(0))).for_each(drop);
+    phone.send(&vec![7; 60_000]).unwrap();
+    let packets = |phone: &mut Client<Vec<u8>, u32>, now: Ms| {
+        std::iter::from_fn(|| phone.poll(now))
+            .filter(|output| matches!(output, ClientOutput::Transmit(_)))
+            .count()
+    };
+    assert_eq!(packets(&mut phone, Ms(1)), 12);
+    assert_eq!(packets(&mut phone, Ms(2)), 0);
+}

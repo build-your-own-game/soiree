@@ -112,3 +112,13 @@ fn a_backlog_ends_under_the_floor() {
         assert!(!backlog.behind(over, Ms(patience + burst)));
     }
 }
+
+/// 60 Hz, 1,000 bytes, 50 ms of round trip: 3 KiB on their way for ever is a
+/// healthy link, not one that is behind.
+#[test]
+fn a_healthy_link_holds_a_few_packets_and_is_not_behind() {
+    let mut backlog = Backlog::default();
+    for now in 0..1_000 {
+        assert!(!backlog.behind(3 * 1024, Ms(now * 16)));
+    }
+}

@@ -1459,6 +1459,25 @@ fn a_minute_of_the_same_ack(room: &mut Room, link: LinkId) -> bool {
     })
 }
 
+/// All of it arrived, says the other side, and it never comes to be delivered:
+/// nothing is on its way any more, and it is owed all the same.
+#[test]
+fn what_arrived_and_is_never_delivered_is_given_up_on_too() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 1);
+    let whole = Ack {
+        ahead: 1,
+        ..Ack::default()
+    };
+    let gone = (0..60_u64).find(|step| {
+        let now = 20 + step * 500;
+        room.received(Ms(now), LinkId(2), &saying(whole, now));
+        closes(&mut room, LinkId(2), now)
+    });
+    assert_eq!(gone.map(|step| 20 + step * 500), Some(20 + PATIENCE));
+}
+
 /// Nothing waits, so nothing has to move: an idle stream is left alone.
 #[test]
 fn a_stream_with_nothing_to_say_is_left_alone() {
