@@ -246,6 +246,31 @@ mod framing_tests {
         assert!(decode(&bytes).is_none());
     }
 
+    /// `tools/cert/text.mjs` reads these bytes by hand in the browser, to see
+    /// an event leave a page. Whoever changes this form changes that reader.
+    #[test]
+    fn an_ack_reads_as_the_harness_reads_it() {
+        let packet = Packet {
+            epoch: 1,
+            sent: 2,
+            ack: Some(Ack {
+                events: 5,
+                state: 0,
+                ahead: 1,
+                event_parts: Some(Parts {
+                    seq: 5,
+                    count: 3,
+                    first: 1,
+                    more: 1,
+                }),
+                state_parts: None,
+            }),
+            ..Packet::default()
+        };
+        let bytes = [1, 2, 0, 0, 1, 5, 0, 1, 1, 5, 3, 1, 1, 0, 0, 0, 0, 0];
+        assert_eq!(encode(&packet).unwrap(), bytes);
+    }
+
     const LARGEST_PARTS: Parts = Parts {
         seq: u32::MAX,
         count: u16::MAX,

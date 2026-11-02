@@ -22,6 +22,9 @@ test('font reflow preserves letters and actual word separation', () => {
   assert.equal(wrappedTextMatches('a 🎉', 'a\n🎉'), true);
 });
 
+// The same bytes as `an_ack_reads_as_the_harness_reads_it` in salon's wire.rs.
+const ACK_WITH_PARTS = [1,2,0,0,1,5,0,1,1,5,3,1,1,0,0,0,0,0];
+
 test('event observation separates state/heartbeat from events and preserves decode failures', () => {
   const context = vm.createContext({});
   vm.runInContext(`globalThis.window=globalThis;globalThis.sent=[];globalThis.WebSocket=class {send(bytes){sent.push(bytes)}};(${observeTextEvents.toString()})();`, context);
@@ -30,8 +33,10 @@ test('event observation separates state/heartbeat from events and preserves deco
   // One actual event, with the remainder a single Chat("A") fragment.
   assert.equal(JSON.parse(send([1,0,0,0,0,0,0,1,0,0,1,0,0,3,3,1,65,0])).parts, 1);
   assert.equal(JSON.parse(send([1,0,0,0,0,0,0,0,0])).parts, 1);
+  // An ack with its fragments: what lies past it still reads as no event.
+  assert.deepEqual(JSON.parse(send(ACK_WITH_PARTS)), { parts: 1, errors: [] });
   assert.ok(JSON.parse(send([1,0,0,1])).errors.length > 0, 'unknown control cannot prove no event was sent');
-  assert.equal(vm.runInContext('sent.length', context), 4, 'observer changed transport delivery');
+  assert.equal(vm.runInContext('sent.length', context), 5, 'observer changed transport delivery');
 });
 
 test('native literal/bounds oracles reject markup, clipping and missing leaves in both engines', async () => {

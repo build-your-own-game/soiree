@@ -73,7 +73,8 @@ export function observeTextEvents() {
       number(); number(); // epoch, sender time
       option(() => { number(); number(); }); // echo
       option(() => { throw new Error('control packet after observation baseline'); });
-      option(() => { number(); number(); }); // ack
+      const parts = () => { number(); number(); number(); number(); }; // seq, count, first, more
+      option(() => { number(); number(); number(); option(parts); option(parts); }); // ack: salon's wire.rs pins this reading
       option(number); option(number); // phase, holding
       window.__certTextEvents.parts += number(); // event fragment vector
     } catch (error) { window.__certTextEvents.errors.push(String(error)); }
