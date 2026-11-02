@@ -138,8 +138,8 @@ impl OutEvents {
         }
     }
 
-    /// Keeps what waits but numbers it from `next` (the first welcome says
-    /// where the host starts).
+    /// Keeps what waits but numbers it from `next` (a welcome says where the
+    /// host stands).
     pub fn renumber(&mut self, next: u32) {
         let mut seq = next;
         for event in &mut self.queue {
@@ -147,12 +147,6 @@ impl OutEvents {
             seq = seq.saturating_add(1);
         }
         self.next = seq;
-    }
-
-    /// Forgets everything and numbers from `next` (the host restarted).
-    pub fn restart(&mut self, next: u32) {
-        self.queue.clear();
-        self.next = next;
     }
 
     /// When something waiting goes again, if anything waits.

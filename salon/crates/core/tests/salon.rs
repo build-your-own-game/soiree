@@ -1259,3 +1259,76 @@ fn a_tab_away_for_many_takeovers_loses_nothing() {
     let want: Vec<Up> = (0..8).chain([100]).map(Up::Answer).collect();
     assert_eq!(net.events_from(device), want);
 }
+
+/// What the player did while the host restarted is not void: `send` said
+/// `Ok`, and the crate promises delivery across reconnections. The new run
+/// hears of the device first.
+#[test]
+fn what_waits_goes_to_the_host_that_restarted() {
+    let mut net = Net::new(40, Faults::default());
+    let phone = net.add_phone(phone_config(46, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.run(500);
+    let known = net.host.known();
+    net.restart_host(2, known);
+    let before = net.happened.len();
+    net.phones[phone].client.send(&Up::Answer(7)).unwrap();
+    assert!(net.run_until(15_000, |net| net.phones[phone].resets == 1
+        && net.phones[phone].client.status() == Status::Connected));
+    net.run(1_000);
+    assert_eq!(net.events_from(device), vec![Up::Answer(7)]);
+    assert!(matches!(
+        net.happened[before..].first(),
+        Some((_, DeviceEvent::Arrived { device: d, .. })) if *d == device
+    ));
+    // The numbers restarted with the host, and go on from there.
+    net.phones[phone].client.send(&Up::Answer(8)).unwrap();
+    net.run(500);
+    assert_eq!(
+        net.events_from(device),
+        vec![Up::Answer(7), Up::Answer(8)]
+    );
+}
+
+/// The same when the host remembers nothing: a new device, for the game to
+/// judge.
+#[test]
+fn what_waits_goes_to_a_host_without_memory_under_the_new_identity() {
+    let mut net = Net::new(41, Faults::default());
+    let phone = net.add_phone(phone_config(47, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, phone);
+    net.run(500);
+    net.restart_host(2, Vec::new());
+    net.phones[phone].client.send(&Up::Answer(7)).unwrap();
+    assert!(net.run_until(15_000, |net| net.phones[phone].resets == 1
+        && net.phones[phone].client.status() == Status::Connected));
+    net.run(1_000);
+    let device = device_of(&net, phone);
+    assert_eq!(net.events_from(device), vec![Up::Answer(7)]);
+}
+
+/// An event in flight when the host died may have reached it: it goes again,
+/// since the new run knows nothing of it. Each run hears it once.
+#[test]
+fn an_event_in_flight_when_the_host_dies_reaches_each_run_once() {
+    let mut net = Net::new(42, Faults::default());
+    let phone = net.add_phone(phone_config(48, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.run(500);
+    net.phones[phone].client.send(&Up::Answer(1)).unwrap();
+    assert!(net.run_until(100, |net| net.events_from(device).len() == 1));
+    // Its acknowledgement never comes back.
+    net.phones[phone].frozen = true;
+    let known = net.host.known();
+    net.restart_host(2, known);
+    net.run(50);
+    net.phones[phone].frozen = false;
+    assert!(net.run_until(15_000, |net| net.phones[phone].resets == 1
+        && net.phones[phone].client.status() == Status::Connected));
+    net.run(1_000);
+    assert_eq!(
+        net.events_from(device),
+        vec![Up::Answer(1), Up::Answer(1)],
+        "once per run"
+    );
+}

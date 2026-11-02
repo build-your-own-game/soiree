@@ -64,7 +64,8 @@ pub enum ClientOutput<Down> {
     Disconnect,
     Status(Status),
     /// The host restarted or forgot this device: whatever it said before is
-    /// void. Wait for its new state.
+    /// void. Wait for its new state. What this device sent and the host did
+    /// not acknowledge still goes.
     Reset,
     /// An event from the host, once and in order.
     Event(Down),
@@ -390,10 +391,12 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 self.down.skip_to(welcome.down_first);
             }
             Some(_) => {
-                // The host restarted or forgot us: what it said is void, and
-                // what we had for it is meaningless now.
+                // The host restarted or forgot us: what it said is void and
+                // its numbers mean nothing here. What the player did is not
+                // void: it goes, and its phase lets the game judge it
+                // (socket.io 8adcfbf, Figma).
                 self.outbox.push_back(ClientOutput::Reset);
-                self.up.restart(welcome.up_next);
+                self.up.renumber(welcome.up_next);
                 self.out_state.rebase(welcome.state);
                 self.down.restart(welcome.down_first);
                 self.in_state.restart();
@@ -562,6 +565,9 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
 
     /// An event for the host: delivered once, in order, even across
     /// reconnections. Kept while disconnected, up to [`Limits::max_pending`].
+    /// A restart of the host does not void it: the new run gets what the old
+    /// one did not acknowledge, so an event in flight when the host died can
+    /// reach both runs, once each.
     pub fn send(&mut self, event: &Up) -> Result<(), SendError> {
         let data = self.encode(event)?;
         let at = self.peer.their_time(self.now);

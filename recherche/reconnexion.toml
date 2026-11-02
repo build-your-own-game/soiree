@@ -483,7 +483,8 @@ citation = "message, so that it gets buffered and sent upon reconnection."
 enonce = "Ce qui est envoyé pendant une coupure est gardé et part à la reconnexion, quelle que soit l'issue de la reprise."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::what_waits_goes_to_the_host_that_restarted", "salon/crates/core/tests/salon.rs::what_waits_goes_to_a_host_without_memory_under_the_new_identity", "C7"]
 trou = "T6"
 
 [[lecon]]
@@ -817,7 +818,8 @@ citation = "reapplies any offline edits on top of this latest state"
 enonce = "Après une reconnexion à un état neuf, le travail fait hors ligne est réappliqué, pas jeté."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::what_waits_goes_to_the_host_that_restarted", "salon/crates/core/tests/salon.rs::an_event_in_flight_when_the_host_dies_reaches_each_run_once"]
 trou = "T6"
 
 [[lecon]]

@@ -114,7 +114,11 @@
 //!   [`HostConfig::known`], devices come back as themselves; identities never
 //!   go back to an old number (C7). Since the game of the new run never heard
 //!   of them, each one's first connection is a [`DeviceEvent::Arrived`],
-//!   under its old [`DeviceId`]. [`Host::shutdown`] tells every device first.
+//!   under its old [`DeviceId`]. What a device sent and the old run did not
+//!   acknowledge goes to the new one, after that arrival and with the phase
+//!   it was sent in: a game judges it like any late event. An event in flight
+//!   when the host died can so reach both runs, once each.
+//!   [`Host::shutdown`] tells every device first.
 //! - **Hostile or broken input** never reaches the game: unreadable bytes,
 //!   cut packets, nonsense fragments, wrong types are counted
 //!   ([`DeviceInfo::garbage`]) and ignored (E1). A packet over 64 KiB closes
