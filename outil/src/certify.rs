@@ -9,7 +9,21 @@ use sha2::{Digest, Sha256};
 
 use crate::util::{self, Result};
 
+/// Why the harness cannot run here, if it cannot: nothing was tried, so there
+/// is nothing to report on the game. `doctor` says the same.
+pub const WINDOWS: &str = "soiree certify n'est pas encore disponible sous Windows : le harnais dépend de lsof, de ps et des groupes de processus POSIX.";
+
+fn unavailable(windows: bool) -> Option<&'static str> {
+    windows.then_some(WINDOWS)
+}
+
 pub fn run(dir: &Path, harness: Option<&Path>, extra: &[String]) -> ExitCode {
+    // Before `npm ci` and before any scenario: every scenario failing would
+    // read as that many faults of the game.
+    if let Some(reason) = unavailable(cfg!(windows)) {
+        eprintln!("{reason} Rien n'a été lancé : ce n'est pas un défaut du jeu.");
+        return ExitCode::FAILURE;
+    }
     let harness = match crate::harness::locate(harness) {
         Ok(harness) => harness,
         Err(error) => {
@@ -143,6 +157,14 @@ pub fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_is_turned_away_before_anything_runs() {
+        assert_eq!(unavailable(false), None);
+        let reason = unavailable(true).unwrap();
+        assert!(reason.contains("pas encore disponible sous Windows"));
+        assert!(!reason.contains("À corriger"));
+    }
 
     #[test]
     fn seed_and_captures_are_read_from_the_harness() {

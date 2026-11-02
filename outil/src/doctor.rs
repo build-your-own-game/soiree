@@ -78,9 +78,10 @@ pub fn run(dir: &Path) -> ExitCode {
     harness_dependencies(&mut report);
     webkit(&mut report);
     if cfg!(windows) {
-        report.warn(
-            "soiree certify n'est pas encore disponible sous Windows : le harnais dépend de lsof, de ps et des groupes de processus POSIX. Node, Chrome, Toxiproxy et WebKit ne servent qu'à lui.",
-        );
+        report.warn(format!(
+            "{} Node, Chrome, Toxiproxy et WebKit ne servent qu'à lui.",
+            crate::certify::WINDOWS
+        ));
     }
     report.finish()
 }
