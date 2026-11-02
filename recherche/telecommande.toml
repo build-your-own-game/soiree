@@ -685,7 +685,8 @@ citation = "every getUserMedia leads to new permission"
 enonce = "Le besoin d'éviter la double question est réel ; il se règle pour une page choisie par l'app, pas pour toute adresse lue dans un QR."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_page_gets_the_microphone_only_by_asking_the_player"]
 trou = "T14"
 
 [[lecon]]
@@ -1030,7 +1031,7 @@ lieux = [
 cas = "L'hôte de confiance est celui du QR, et join accepte toute adresse http ou https. Le scanner rejoint au premier code lu, sans confirmation, et la caméra est déjà accordée pour scanner. Une page servie par cet hôte reçoit grant sans que le joueur voie rien."
 preuve = "sonde H12, micro accordé à l'app : getUserMedia réussit sans alerte, capture décidée grant. Avec prompt, seule variante : WebKit demande « Autoriser 127.0.0.1 à utiliser votre micro ? »."
 verifie = "la décision dans l'app sur simulateur, en contexte sécurisé"
-suppose = "Le chemin complet avec une vraie caméra et un QR public ; le simulateur n'a pas de scanner. Le lien telecommande:// passe, lui, par une question d'iOS."
+suppose = "Le chemin complet avec une vraie caméra et un QR public ; le simulateur n'a pas de scanner. Le lien telecommande:// passe, lui, par une question d'iOS. Le scanner rejoint toujours au premier code lu, sans confirmation : le correctif retire ce que ce code obtenait sans un mot, pas la jonction elle-même. Le banc voit la question rester sans réponse, pas son texte."
 
 [[trou]]
 id = "T15"

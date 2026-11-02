@@ -504,3 +504,20 @@ fn a_page_stays_on_its_origin_and_takes_the_identity_nowhere_else() {
         .contains("next")));
     assert_eq!(shell.ask("eval typeof window.telecommande"), "object");
 }
+
+#[test]
+fn a_page_gets_the_microphone_only_by_asking_the_player() {
+    let host = page_game(PAGE);
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+    shell.ask(
+        "eval window.mic = 'waiting'; navigator.mediaDevices.getUserMedia({audio: true})\
+         .then(() => { window.mic = 'granted' }, e => { window.mic = e.name }); 1",
+    );
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(
+        shell.ask("eval window.mic"),
+        "waiting",
+        "WebKit's question should be up, unanswered"
+    );
+}

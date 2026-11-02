@@ -68,8 +68,7 @@ struct WebRemote: UIViewRepresentable {
         weak var web: WKWebView?
         /// The page the game asked for.
         private let page: URL
-        /// Its host: datagrams go there, and only its pages get the
-        /// microphone and camera.
+        /// Its host: datagrams go there.
         private let host: String
         private let onTrouble: (Bool) -> Void
         private var retry: Task<Void, Never>?
@@ -155,14 +154,15 @@ struct WebRemote: UIViewRepresentable {
             }
         }
 
-        /// The page's own origin gets the microphone and camera without a
-        /// second question: iOS already asks the player once for the app.
+        /// WebKit asks the player. Granting it here spared a second question,
+        /// and gave a microphone to any page behind any QR code, without a word:
+        /// iOS's answer was for the app, and for the scanner's camera.
         func webView(
             _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
             initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
             decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
         ) {
-            decisionHandler(origin.host == host ? .grant : .prompt)
+            decisionHandler(mayCall(frame) ? .prompt : .deny)
         }
 
         /// A turn during the load reached the page before it listened: say

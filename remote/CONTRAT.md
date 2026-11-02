@@ -90,7 +90,7 @@ Ajoute `remote-web = { git = "https://github.com/build-your-own-game/soiree", ta
 | Capteurs, sans demande de permission | `let _m = motion(\|s\| …)` : à chaque image, `gravity` et `acceleration` en g, `rotation` en radians par seconde, `attitude` en quaternion `[x, y, z, w]`, `time` en secondes, dans les axes de l'appareil (x à droite de l'écran tenu en portrait, y vers son haut, z vers toi). S'arrête quand `_m` est libéré. |
 | Orientation | `set_orientation(Allowed::Portrait)`, `Landscape` (par défaut), `Any` ; `on_orientation(\|o\| …)` |
 | UDP vers ton hôte | `let mut d = Datagram::open(port)` ; `d.send(&octets)` ; `d.on_message(\|octets\| …)`. Des datagrammes peuvent se perdre ou se doubler : envoie des états complets. Fermé quand `d` est libéré. |
-| Micro et caméra | Les API web habituelles (`getUserMedia`, via `web-sys`). iOS demande la permission une fois pour l'app, puis plus rien pour les pages de ton hôte. |
+| Micro et caméra | Les API web habituelles (`getUserMedia`, via `web-sys`). iOS demande la permission une fois pour l'app, puis WebKit la demande pour ta page. |
 
 `crates/demo-page` est une page complète qui s'en sert.
 
