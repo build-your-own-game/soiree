@@ -40,6 +40,8 @@ Dans `games/punchline` : `SALON_LOG=1 cargo run --release -p punch-host -- --no-
 
 **T9, à trancher ici.** Sur l'iPhone Safari, bon Wi-Fi, en pleine manche : regarde une notification ou passe 3 s dans une autre app, puis reviens, trois fois. `wake` coupe alors un lien encore valide dès 1,5 s de silence. Rien n'est perdu, mais une reconnexion a lieu (`recherche/reconnexion.toml`, T9). Note si le joueur la voit, et si ça gêne.
 
+**Le transport sur ce Wi-Fi, à trancher ici.** Une fois, le Wi-Fi de la soirée sans internet (box débranchée de sa ligne, ou routeur dédié), l'iPhone Safari avec ses données cellulaires actives. Recharge sa page, chronomètre, et lis dans le terminal ce que dit `SALON_LOG=1`. Refais-le données cellulaires coupées. WebRTC d'un côté et WebSocket de l'autre veut dire que Safari ne part pas par le Wi-Fi quand le cellulaire est là : chaque iPhone paiera alors 3 s à chaque connexion (`recherche/transport-webrtc.toml`, T9, jamais mesuré sur un iPhone). Dans les deux cas, note aussi le temps d'ouverture : l'hôte annonce `127.0.0.1` à côté de son adresse, et un canal bien plus long que les 90 ms du 27/10 ferait soupçonner ce candidat.
+
 ## Ensuite, Sidequest
 
 Ctrl+C, puis `cd games/sidequest && SALON_LOG=1 cargo run --release -p sidequest-host -- --no-build`, TV sur `http://localhost:2567`, **Play** ou Entrée, puis → et ←.

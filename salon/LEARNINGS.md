@@ -474,6 +474,15 @@ chiffré et sa renégociation, en plus des simulations du protocole applicatif.
   cette interaction. Le passage final réel observe 7/7 cas par moteur, avec
   fermeture absolue entre 14 999,6 et 15 000,5 ms et aucune panne de cleanup.
 
+## Le transport WebRTC, éprouvé puis corrigé — 02/11/2026
+
+Tout vient de `../recherche/transport-webrtc.toml`, qui garde les sondes, les références et ce qui reste supposé.
+
+- **Une dépendance peut paniquer, et un fil partagé la rend mortelle.** dimpl 0.7.6 fait `assert_eq!` sur une entrée réseau (dimpl #189). Le fil unique de WebRTC tombait pour toute la soirée, sans un mot. Chaque appel à str0m est gardé par lien, un lien qui a paniqué n'est plus jamais touché, et le fil repart si une panique lui échappe. Cela exige le déroulement de pile : aucun profil de salon, du modèle ni des jeux n'écrit `panic = "abort"`.
+- **`failed` arrive trop tard pour décider d'un repli.** Le navigateur met 15 à 30 s à le dire, alors que la réponse SDP est là en quelques millisecondes et qu'une réponse STUN locale aussi. 3 s de silence d'ICE après la réponse tranchent, et les 15 s restent la borne absolue. Une borne n'est prouvée que si rien d'autre ne la devance : le harnais doit maintenant couper DTLS seul pour atteindre les 15 s.
+- **Une limite en octets sous la taille d'une rafale affame ce qu'elle croit protéger.** La garde de 4 Kio de la sonde réduisait le retard de 6,7 s à 160 ms, et perdait à chaque renvoi les mêmes derniers fragments d'une rafale : un message de 4 000 octets n'arrivait plus, sur un lien sain. Ce qui compte n'est pas un tampon plein, mais un tampon qui le reste. Et une garde qui se tait tout à fait laisse la reprise au minuteur de SCTP, d'où un paquet toutes les 100 ms.
+- **Le socket qui écoute partout ne sait pas qui a été joint, mais la connexion TCP de l'offre le sait.** str0m jette un contrôle ICE qui n'est pas pour un de ses candidats : l'adresse annoncée et la destination dite à str0m doivent venir du même endroit, par lien.
+
 ## Les diagnostics de minuteries sont retirés
 
 L'enquête macOS est close par la minuterie kqueue : les scripts et les deux

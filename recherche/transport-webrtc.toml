@@ -288,7 +288,8 @@ citation = "n'éprouve pas ce que l'autre côté exige"
 enonce = "Deux exemplaires de str0m qui se parlent ne disent rien de ce qu'un navigateur envoie ou refuse : T1 traverse tous les tests du dépôt."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake_faults.rs::dimpl_on_a_doubled_early_encrypted_record", "salon/crates/crypto/tests/handshake_faults.rs::forged_records_do_not_close_a_live_link"]
 trou = "T10"
 
 [[lecon]]
@@ -299,7 +300,8 @@ citation = "(Quake 3 `FRAGMENT_SIZE`, str0m MTU 1150)."
 enonce = "Caps::DATAGRAM promet de tenir sous une trame réseau, parce que perdre un fragment perd le message. La promesse est fausse au-dessus de 1 062 octets."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_largest_datagram_packet_is_one_datagram"]
 trou = "T4"
 
 [[lecon]]
@@ -322,7 +324,8 @@ citation = "assert_eq!(base(\"http://[fe80::1]:8090\"), Some(\"http://[fe80::1]:
 enonce = "Un test fixe qu'une URL publique en IPv6 est valable, alors que l'hôte n'écoute qu'en IPv4."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/address.rs::an_ipv6_address_is_refused_by_name", "salon/crates/host/tests/public_url.rs::an_ipv6_public_url_is_refused_out_loud"]
 trou = "T8"
 
 [[lecon]]
@@ -333,8 +336,10 @@ citation = "An offer that stayed without an answer says nothing of WebRTC"
 enonce = "La mémoire de repli ne doit retenir que ce qui accuse WebRTC ; une réponse HTTP d'échec est une offre sans réponse."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["C1"]
 trou = "T6"
+note = "Fermé par `if !response.ok()` dans negotiate : le cas « refused offer » de tools/cert/rtc-negotiation.mjs, dans `rtc`, recharge la page et exige WebRTC. Rouge avant le correctif sur Chromium, vert sur Chromium 151 et WebKit 27.2."
 
 [[lecon]]
 id = "transport-webrtc-06"
@@ -344,7 +349,8 @@ citation = "inonde l'hôte (des milliers de messages par seconde) ne ralentit pa
 enonce = "E3 ne regarde que les messages d'un lien ouvert. Une offre coûte plus qu'un message, et elle n'en est pas un."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::offers_in_negotiation_are_bounded_and_the_oldest_goes"]
 trou = "T7"
 
 [[lecon]]
@@ -378,7 +384,8 @@ citation = "SCTP framing per outgoing datagram: 12-byte common header"
 enonce = "str0m retire 48 + 40 octets du MTU de 1 150 : la charge SCTP vaut 1 062 octets, pas 1 100."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_largest_datagram_packet_is_one_datagram"]
 trou = "T4"
 
 [[lecon]]
@@ -389,7 +396,8 @@ citation = "a higher limit only adds queueing delay"
 enonce = "Le tampon SCTP de 128 Kio compte tout ce qui n'est pas accusé, même sur un canal non fiable : au-delà de ce que le chemin tient, ce n'est que du retard."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/types_edges.rs::a_backlog_is_what_stays_over_the_floor", "salon/crates/host/src/rtc.rs::what_waits_for_a_slow_page_stops_growing"]
 trou = "T5"
 
 [[lecon]]
@@ -412,7 +420,8 @@ citation = "about 4 times a day across a ~150-node WebRTC SFU fleet."
 enonce = "dimpl 0.7.x panique sur un doublon d'époque 1 arrivé avant le CCS. Ce n'est pas théorique : une flotte de production le voit chaque jour derrière str0m 0.24."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/tests/rtc_faults.rs::a_panic_in_a_dependency_costs_one_link", "salon/crates/host/src/rtc.rs::the_thread_starts_again_and_the_room_hears_what_it_lost", "E1"]
 trou = "T1"
 
 [[lecon]]
@@ -424,7 +433,7 @@ enonce = "Un chiffré arrivé avant ses clés se jette et on compte sur le renvo
 categorie = "accident"
 decision = "garder"
 etat = "trou"
-trou = "T1"
+trou = "T11"
 
 [[lecon]]
 id = "transport-webrtc-14"
@@ -435,7 +444,7 @@ enonce = "dimpl 0.7.6 peut livrer en données applicatives un enregistrement non
 categorie = "physique"
 decision = "garder"
 etat = "trou"
-trou = "T1"
+trou = "T11"
 note = "Non éprouvé dans salon : la fenêtre est celle de la poignée de main et exige d'usurper la source. Sur un Wi-Fi où la page est en http, un attaquant actif a plus simple."
 
 [[lecon]]
@@ -470,7 +479,8 @@ citation = "Correct PR-SCTP retry budgets and whole-message abandonment"
 enonce = "Sur un canal maxRetransmits:0, un fragment perdu abandonne tout le message."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_largest_datagram_packet_is_one_datagram"]
 trou = "T4"
 
 [[lecon]]
@@ -481,9 +491,10 @@ citation = "All Data Channel Establishment Protocol messages MUST be sent using"
 enonce = "sctp-proto force DCEP en ordonné et fiable même sur un canal non fiable : perdre l'ACK ne bloque pas onopen."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake_faults.rs::no_single_lost_or_doubled_datagram_stops_the_handshake"]
 trou = "T10"
-note = "Éprouvé : chaque datagramme perdu un par un, l'ACK compris, ouvre le canal en 1,3 s au pire, sur Chromium et WebKit. Rien dans le dépôt ne le rejoue."
+note = "Éprouvé : chaque datagramme perdu un par un, l'ACK compris, ouvre le canal en 1,3 s au pire, sur Chromium et WebKit. handshake_faults.rs le rejoue sur deux str0m en temps virtuel, sans navigateur."
 
 [[lecon]]
 id = "transport-webrtc-19"
@@ -515,7 +526,8 @@ citation = "Add bindAddress server config option"
 enonce = "Sur une machine à plusieurs interfaces, le choix de l'adresse ne peut pas être laissé à la route par défaut."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_address_an_offer_came_to_is_announced"]
 trou = "T3"
 
 [[lecon]]
@@ -549,7 +561,8 @@ citation = "control buffered latency to ~100ms"
 enonce = "Sur un canal avec pertes, on jette en amont plutôt que de laisser le tampon vieillir : LiveKit vise 100 ms de file, pas une taille fixe."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/types_edges.rs::a_backlog_is_what_stays_over_the_floor", "salon/crates/host/src/rtc.rs::a_burst_goes_out_whole"]
 trou = "T5"
 
 [[lecon]]
@@ -571,7 +584,8 @@ citation = "peerConnectionTimeout: 15_000,"
 enonce = "15 s est un délai de service internet, avec STUN, TURN et un opérateur devant. Sur un réseau local, une réponse STUN revient en millisecondes."
 categorie = "heritage"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["C1", "salon/crates/web/src/rtc_memory.rs::only_a_silent_ice_ends_an_attempt_early"]
 trou = "T2"
 
 [[lecon]]
@@ -593,7 +607,8 @@ citation = "UDPMuxDefault should not listening on unspecified address"
 enonce = "Un socket unique sur 0.0.0.0 ne sait pas par quelle adresse un paquet est arrivé : pion exige un multiplexeur par interface."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::a_link_hears_on_the_address_of_its_offer"]
 trou = "T3"
 
 [[lecon]]
@@ -604,7 +619,8 @@ citation = "Harmonized MTU with fragment size and set default MTU to 1280"
 enonce = "La taille de fragment applicative et le MTU se règlent ensemble, en un seul endroit."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_largest_datagram_packet_is_one_datagram"]
 trou = "T4"
 
 [[lecon]]
@@ -615,7 +631,8 @@ citation = "Fixed DTLS header size in SCTP MTU computation"
 enonce = "L'en-tête DTLS réel compte dans le MTU SCTP : 37 octets étaient faux, 48 sont vrais."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/src/rtc.rs::the_largest_datagram_packet_is_one_datagram"]
 trou = "T4"
 
 [[lecon]]
@@ -717,7 +734,8 @@ citation = "All DCEP messages MUST be sent using ordered delivery and reliable"
 enonce = "L'ouverture du canal ne doit pas hériter de sa non-fiabilité."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake_faults.rs::no_single_lost_or_doubled_datagram_stops_the_handshake"]
 trou = "T10"
 
 [[lecon]]
@@ -739,7 +757,8 @@ citation = "to as the \"Connection Attempt Delay\".  One recommended value for a
 enonce = "Quand un transport peut rester muet, on ne l'attend pas : on démarre l'autre après un court délai, de l'ordre de 250 ms."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["C1", "salon/crates/web/src/rtc_memory.rs::only_a_silent_ice_ends_an_attempt_early"]
 trou = "T2"
 
 [[lecon]]
@@ -784,7 +803,8 @@ citation = "somewhat long (15-30s) so is not testable."
 enonce = "Le navigateur met 15 à 30 s à dire `failed` : cet état ne peut pas borner un repli de quelques secondes."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["C1", "salon/crates/web/src/rtc_memory.rs::only_a_silent_ice_ends_an_attempt_early"]
 trou = "T2"
 
 [[lecon]]
@@ -795,7 +815,8 @@ citation = "Used for testing str0m under simulated network conditions"
 enonce = "str0m teste ses vrais états sous pertes, gigue et débit borné, sans entrées-sorties : salon peut faire de même sans navigateur."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake_faults.rs::no_single_lost_or_doubled_datagram_stops_the_handshake"]
 trou = "T10"
 
 [[lecon]]
@@ -806,7 +827,8 @@ citation = "const UNAUTHENTICATED_INPUT: &[u8] = b\"unauthenticated input\";"
 enonce = "dimpl éprouve sa pile avec des enregistrements forgés, pas seulement perdus : les pannes qui comptent ne sont pas aléatoires."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/crypto/tests/handshake_faults.rs::forged_records_do_not_close_a_live_link", "salon/crates/crypto/tests/handshake_faults.rs::a_client_hello_in_two_fragments_still_opens"]
 trou = "T10"
 
 [[trou]]
@@ -821,7 +843,7 @@ lieux = [
 cas = "dimpl 0.7.6 fait `assert_eq!(seq_current.epoch, 0)` sur un doublon d'époque 1 reçu avant le CCS (engine.rs:381). Le fil qui sert toutes les pages est lancé par `thread::spawn`, sans surveillance : la panique le tue. N'importe quel appareil du Wi-Fi peut le faire, sans jeton : une offre, ICE, puis deux fois le même enregistrement d'époque 1. Tous les téléphones perdent leur canal d'un coup, se taisent environ 6 s, puis passent en WebSocket jusqu'au redémarrage de l'hôte. Chaque offre suivante reçoit 503. E1 promet que l'hôte et les autres joueurs continuent."
 preuve = "Sonde t1 : hôte réel, deux téléphones Chromium 151 ou WebKit 27.2 ouverts, pair attaquant en Rust. `panicked at dimpl-0.7.6/src/dtls12/engine.rs:381`, offre suivante HTTP 503, canaux fermés, WebSocket à 6,4 s, nouveau téléphone en WebSocket. En retirant cette seule assertion (correctif amont 71010a7), l'attaque ne fait plus rien : canaux ouverts, offre 200, nouveau téléphone en WebRTC. Fuzz en mémoire : 88 paniques en 15 208 essais, toutes à cette ligne ; 0 en 10 292 essais une fois l'assertion retirée. Variante `catch_unwind` autour de handle_input et drive : l'assertion panique, seul le lien fautif tombe."
 verifie = "La panique, sa ligne, l'arrêt du fil, l'effet sur Chromium et WebKit, le 503 qui suit, et les deux correctifs, sur une copie de salon par la boucle locale."
-suppose = "Qu'elle arrive sans malveillance chez nous : Chromium 151 et WebKit 27.2 mettent Certificate, CKE, CCS et Finished dans le même datagramme, donc une perte naturelle n'isole pas le Finished, et les 98 pannes unitaires n'ont rien déclenché. La flotte de l'issue 189 la voit par réseau. Les autres défauts de dimpl 0.7.6 (#191, #192, #194 à #197) ne sont pas éprouvés ici."
+suppose = "Qu'elle arrive sans malveillance chez nous : Chromium 151 et WebKit 27.2 mettent Certificate, CKE, CCS et Finished dans le même datagramme, donc une perte naturelle n'isole pas le Finished, et les 98 pannes unitaires n'ont rien déclenché. La flotte de l'issue 189 la voit par réseau. Fermé par l'isolation, pas par une correction de dimpl : la panique reste, un attaquant qui usurpe la source d'une page en poignée de main peut lui coûter son lien (T11). Tout cela suppose le déroulement de pile : aucun profil de salon, du modèle ni des trois jeux n'écrit `panic = \"abort\"`, et l'hôte le dit au lancement si un jeu l'écrit."
 
 [[trou]]
 id = "T2"
@@ -836,7 +858,7 @@ lieux = [
 cas = "UDP perdu, TCP sain : un téléphone neuf attend 15,1 s avant WebSocket, et chaque téléphone paie, parce que la mémoire est par onglet. Ensuite, sur un lien WebSocket sain qui se coupe, la reprise repasse par WebRTC : 15,3 s à la première coupure, parce qu'un seul échec ne suffit pas dans la page, 15,6 s après un événement `online`, 16,1 s une fois la mémoire vieille de 10 min. C2 donne 10 s. Pendant ce temps, le joueur ne joue pas. La réponse SDP est pourtant arrivée aussitôt : seul ICE reste sans réponse, et le navigateur met 15 à 30 s à dire `failed`."
 preuve = "Sonde tudp : relais UDP muet, vrai hôte, Chromium 151 et WebKit 27.2, deux téléphones : 15,1 et 15,2 s à rejoindre ; coupures à 15,3, 15,6 et 16,1 s. Sur la copie, une seule échéance ajoutée (3 s après la réponse appliquée, ICE encore `new` ou `checking`, repli) donne 3,3 s à rejoindre et 3,3 à 4,1 s aux trois coupures sur Chromium, 3,2 s et 3,3 à 3,9 s sur WebKit. Une réponse SDP retardée de 4 s reste en WebRTC (4,2 s), et les pertes de 10, 25 et 40 % ne déclenchent pas plus de replis : 12/12, 12/12 et 9/12 en WebRTC, contre 12/12, 10/12 et 5/12 sans la variante."
 verifie = "Les durées de bout en bout sur Chromium et WebKit, l'échec de C2 pour une coupure de lien, et l'effet de la seule échéance sur les deux moteurs."
-suppose = "Combien de réseaux réels passent TCP et perdent UDP : le pare-feu de macOS coupe les deux (REPETITION.md). T3 et T9 sont d'autres façons d'y arriver. Le seuil de 3 s n'est mesuré que sur 36 essais avec pertes. Correctif plus ambitieux à trancher : lancer WebSocket en parallèle et monter en WebRTC ensuite (RFC 8305)."
+suppose = "Combien de réseaux réels passent TCP et perdent UDP : le pare-feu de macOS coupe les deux (REPETITION.md). T3 et T9 sont d'autres façons d'y arriver. Le seuil de 3 s n'est mesuré que sur 36 essais avec pertes, et jamais sur un iPhone. Une offre dont la réponse tarde reste bornée par les 15 s absolues : ICE n'a rien à dire avant la réponse. Correctif plus ambitieux à trancher : lancer WebSocket en parallèle et monter en WebRTC ensuite (RFC 8305)."
 
 [[trou]]
 id = "T3"
@@ -850,7 +872,7 @@ lieux = [
 cas = "`rtc_address` est calculée une fois, depuis la route par défaut ou SALON_PUBLIC_URL si son hôte est une adresse IP. Un Mac à deux interfaces, un DHCP qui change l'adresse en cours de soirée, ou une URL publique par nom : le téléphone charge la page par une adresse et reçoit un candidat par lequel il ne passe pas. Il paie alors T2 à chaque connexion. Le socket TCP de l'offre connaît pourtant la bonne adresse."
 preuve = "Sonde taddr, sur une copie sans candidat de bouclage pour jouer un téléphone, candidat annoncé 192.0.2.77 : repli à 15,1 s sur Chromium, 15,3 s sur WebKit. En prenant le candidat de `stream.local_addr()` de la connexion de l'offre, seul changement : WebRTC en 276 ms et 413 ms."
 verifie = "La cause et le correctif, par la boucle locale, sur Chromium et WebKit."
-suppose = "Fréquence réelle : aucun Mac à deux interfaces n'a été essayé. Un vrai réseau à deux adresses exige aussi une destination par lien dans `receive`, qui force aujourd'hui `rtcs.address` : la variante ne l'a pas éprouvée, le pare-feu de ce Mac coupant l'adresse réseau."
+suppose = "Fréquence réelle : aucun Mac à deux interfaces n'a été essayé. La destination par lien est prouvée en mémoire, sur les vraies piles, pas sur un vrai réseau à deux adresses : le pare-feu de ce Mac coupe l'adresse réseau. L'adresse de `SALON_PUBLIC_URL` et la route par défaut restent annoncées après celle de l'offre, pour un port redirigé que le socket ne peut pas connaître."
 
 [[trou]]
 id = "T4"
@@ -875,8 +897,8 @@ lieux = [
 ]
 cas = "L'hôte écrit dans le canal sans regarder `buffered_amount` ; str0m garde 128 Kio. Quand un téléphone reçoit moins vite que le jeu n'envoie, les états frais attendent derrière les états périmés. Le canal est non fiable, mais son tampon ne l'est pas : la perte qu'on voulait n'arrive qu'une fois la file pleine. La page a une garde, mais à 64 Kio."
 preuve = "Sonde mtu, lien borné à file finie, 60 Hz : 30 Ko/s et 1 000 octets donnent 6,7 s de retard maximal sans garde, 160 ms en sautant l'écriture au-delà de 4 Kio bufferisés, seul changement. 30 Ko/s et 500 octets : 2,5 s contre 154 ms. 60 Ko/s et 1 000 octets : 1,7 s contre 71 ms."
-verifie = "Le retard sur les vraies piles str0m et sctp-proto, avec un modèle de lien dans la sonde."
-suppose = "Qu'un téléphone tombe à ces débits en soirée, et l'effet côté page, où les messages sont petits. La valeur de la garde : 4 Kio est un choix de sonde ; LiveKit règle la sienne sur 100 ms du débit observé."
+verifie = "Le retard sur les vraies piles str0m et sctp-proto, avec un modèle de lien dans la sonde. La garde de 4 Kio seuls, celle de la sonde, ne tient pas : sur un lien sain elle perd à chaque renvoi les mêmes derniers fragments d'une rafale, un message de 4 000 octets n'arrivait plus, et après une coupure elle laisse tout au minuteur de SCTP (6,8 s au lieu de 4 s pour 3 s de coupure). La garde retenue (`salon_core::transport::Backlog`) ne saute qu'au-delà de 4 Kio tenus 100 ms, et laisse passer un paquet toutes les 100 ms : 333 ms de retard à 30 Ko/s, 101 ms à 60 Ko/s, et une reprise égale ou meilleure que sans garde sur sept durées de coupure."
+suppose = "Qu'un téléphone tombe à ces débits en soirée, et l'effet côté page, où les messages sont petits et où `bufferedAmount` ne compte pas la même chose : rien n'y a été mesuré. Les valeurs : 4 Kio et 100 ms sont des choix de sonde ; LiveKit règle la sienne sur 100 ms du débit observé. Le rattrapage de SCTP après une coupure, lui, reste celui de sctp-proto, jusqu'à 4 s pour 3 s de coupure, en temps virtuel."
 
 [[trou]]
 id = "T6"
@@ -902,7 +924,7 @@ lieux = [
 cas = "Chaque POST /salon/offer crée un Rtc gardé 15 s. Aucun quota : une boucle sur cet ordinateur en fait accepter 1 400 par seconde. Le fil unique parcourt toutes les entrées pour chaque datagramme et à chaque tour. E3 promet qu'un téléphone qui inonde ne ralentit pas les autres."
 preuve = "Sonde tflood, téléphone Chromium ouvert : aller-retour de 0 ms avant, 75 ms de médiane et 85 ms au pire après 12 s de flot, 17 048 offres acceptées, 190 Mo de mémoire pour 10 174 offres. Avec au plus 64 négociations, la plus ancienne évincée, seul changement : 6 ms de médiane, 8 ms au pire."
 verifie = "La dégradation et le correctif, par la boucle locale."
-suppose = "L'effet à 15 téléphones et 60 Hz, non mesuré. Il faut un appareil hostile : aucun chemin normal n'accumule des offres."
+suppose = "L'effet à 15 téléphones et 60 Hz, non mesuré. Il faut un appareil hostile : aucun chemin normal n'accumule des offres. Pendant un tel flot, une page honnête peut voir sa négociation évincée : elle passe alors en WebSocket par T2, et les liens ouverts ne paient rien."
 
 [[trou]]
 id = "T8"
@@ -916,7 +938,7 @@ lieux = [
 cas = "`http://[fe80::1]:8090` passe le test `a_base_keeps_what_phones_need`, et l'hôte annonce un candidat IPv6, mais TCP et UDP sont liés à 0.0.0.0 : le QR mène nulle part, sans message. Un réseau IPv6 seul n'a aucun chemin vers l'hôte."
 preuve = "Sonde taddr avec `SALON_PUBLIC_URL=http://[::1]:port` : candidats [::1] et 127.0.0.1, `curl http://[::1]:port/` refusé, 127.0.0.1 répond 200. Avec le seul écouteur TCP lié à `::`, `[::1]` répond 200 et la page ouvre WebRTC par la boucle en 353 ms."
 verifie = "Le refus et le correctif TCP, sur ce Mac."
-suppose = "Qu'un hôte réel soit en IPv6 seul. L'UDP lié à `::` n'est pas éprouvé : il ferait voir des sources mappées à rtc.rs:231 et exigerait de convertir les destinations."
+suppose = "Qu'un hôte réel soit en IPv6 seul. Fermé par un refus clair, pas par IPv6 : un tel réseau reste sans chemin vers l'hôte. L'UDP lié à `::` n'est pas éprouvé : il ferait voir des sources mappées à rtc.rs:231 et exigerait de convertir les destinations."
 
 [[trou]]
 id = "T9"
@@ -944,7 +966,19 @@ lieux = [
 cas = "handshake.rs fait parler deux str0m sur un réseau parfait. Le harnais rtc retarde la réponse, ment sur le SDP et coupe tout, mais ne perd jamais un seul datagramme de la poignée de main, et le fuzz de salon ne touche ni l'offre ni UDP. Le bon comportement constaté aujourd'hui ne tient qu'aux versions figées, et une montée de str0m ou de dimpl ne serait pas éprouvée. Chromium 151 envoie un ClientHello fragmenté sur deux datagrammes, que rien ne fixe."
 preuve = "Sonde panne : 98 pannes unitaires, chaque datagramme de la poignée de main perdu puis doublé, dans chaque sens, sur Chromium 151 et WebKit 27.2 : canal ouvert à chaque fois, 1,3 s au pire, ni repli ni panique. `cargo test -p salon-crypto` reste vert avec T1 ouvert, et le pair de la sonde rougit à la première attaque : retirer l'assertion le fait passer."
 verifie = "Le contenu des suites et le résultat des 98 pannes à ces versions."
-suppose = "Firefox n'a pas été éprouvé : la version de Playwright installée n'a pas ouvert de canal par le relais, sans que la cause soit établie."
+suppose = "Firefox n'a pas été éprouvé : la version de Playwright installée n'a pas ouvert de canal par le relais, sans que la cause soit établie. La suite garde deux str0m, pas un navigateur : elle refait voir un changement de version, elle ne dit pas ce que Chromium ou WebKit enverront ensuite. Elle n'avait rien à faire rougir sur ces versions, sauf le doublon d'époque 1 : ses cas fixent un comportement sain et un contrôle négatif prouve qu'elle sait échouer."
+
+[[trou]]
+id = "T11"
+titre = "dimpl 0.7.6 reste en place tant que str0m n'a rien publié au-dessus"
+gravite = "moyenne"
+lieux = [
+  "salon/crates/crypto/Cargo.toml:23",
+]
+cas = "T1 est fermé par l'isolation : dimpl 0.7.6 panique toujours, et rien ne corrige #191, où un enregistrement non authentifié mis en file avant le chiffrement peut être livré comme donnée, ni #192 et #194 à #197. Un attaquant du Wi-Fi qui usurpe la source d'une page en poignée de main peut lui coûter son lien, et rien de plus. La dernière version publiée de str0m, 0.24.1, demande dimpl ^0.7.4, et dimpl ne publie pas de 0.7.7 : dimpl 0.9.0 n'entre que par le commit f7bc4a6 de str0m, non publié. Salon ne peut pas forcer une version : str0m-proto 0.7.0 est compilé contre dimpl 0.7, et un `[patch]` dans salon ne s'applique pas aux jeux."
+preuve = "crates.io le 02/11/2026 : str0m 0.24.1 du 03/10, dépendance dimpl ^0.7.4 ; dimpl 0.9.0 du 25/10. CHANGELOG de str0m : « Bump dimpl to 0.9.0 » est sous Unreleased. Essai sur une copie de salon avec str0m f7bc4a6 par `git` et dimpl 0.9.0 : trois erreurs de compilation, toutes dans salon-crypto (`send_application_data` rend usize, `CryptoProvider` veut `sha1_provider`), une dizaine de lignes ; 32 paquets de plus dans Cargo.lock (206 contre 174, dont une seconde pile RustCrypto) ; `cargo test -p salon-crypto -p salon-host` vert, sans toucher salon-host. Le test `dimpl_on_a_doubled_early_encrypted_record` fixe la panique : il rougit le jour où elle disparaît."
+verifie = "Les versions publiées, le coût de compilation et les tests de salon sur la copie."
+suppose = "Que str0m publie bientôt : rien ne le dit. Une dépendance `git` sur 46 commits non publiés, dont des changements cassants de str0m hors du canal de données, n'a pas été éprouvée sur navigateur. Ce choix revient à l'hôte. #192 et #194 à #197 ne sont pas éprouvés ici."
 
 [saturation]
 sources = ["pion-webrtc", "node-datachannel", "adapter"]
