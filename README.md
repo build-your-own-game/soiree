@@ -21,7 +21,7 @@ Sous Windows, ce parcours n'a pas encore été essayé, et `soiree certify` n'y 
 1. **Installer Rust**, avec rustup : suis https://rustup.rs. Il faut d'abord un éditeur de liens, que rustup n'installe pas : sur Mac, lance `xcode-select --install` et valide la fenêtre qui s'ouvre ; sur Linux, installe le paquet `build-essential` ou son équivalent. Ferme ensuite puis rouvre le terminal. Un agent de code sans terminal interactif lance l'installateur avec `sh -s -- -y`, puis `. "$HOME/.cargo/env"`.
 2. **Installer l'outil `soiree`**, à la version de la soirée :
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.4.0 soiree
    ```
    La première installation prend quelques minutes.
 3. **Vérifier l'ordinateur** :
