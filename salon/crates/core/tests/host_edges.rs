@@ -17,7 +17,7 @@ use salon_core::{
     Caps, DeviceEvent, DeviceId, Epoch, Host, HostConfig, Kind, Known, Limits, LinkId, Ms, Name,
     Output, PROTOCOL, Presence, Refusal, SendError, Timing, Token, TvKey, Why,
 };
-use wire::{Ack, Control, Echo, Hello, Packet, decode, encode, event, state};
+use wire::{Ack, Control, Echo, Hello, Packet, Resume, decode, encode, event, state};
 
 const GAME: u32 = 7;
 const EPOCH: u32 = 3;
@@ -610,4 +610,58 @@ fn a_new_link_measures_from_zero() {
     host.opened(Ms(1_300), LinkId(2), Caps::DATAGRAM);
     host.received(Ms(1_300), LinkId(2), &saying(hello(1)));
     assert_eq!(host.device(device).unwrap().rtt, None);
+}
+
+#[test]
+fn identities_count_what_was_given() {
+    let mut host = room();
+    let before = host.identities();
+    join(&mut host, Ms(0), LINK, 1);
+    assert_eq!(host.identities(), before + 1);
+}
+
+/// What a welcome says arrived holds only for the run and the device the hello
+/// named: anything else is a stranger's numbers, and everything goes again.
+#[test]
+fn a_welcome_reports_only_the_session_of_this_device_in_this_run() {
+    let seen = |resume: Resume| {
+        let (mut host, _) = joined();
+        let packet = Packet {
+            events: vec![event(0, postcard::to_allocvec(&5_u32).unwrap())],
+            ..from_device()
+        };
+        host.received(Ms(1), LINK, &encode(&packet));
+        host.closed(Ms(2), LINK);
+        drain(&mut host, Ms(2));
+        host.opened(Ms(3), LinkId(2), Caps::DATAGRAM);
+        let again = Hello {
+            resume: Some(resume),
+            ..hello(1)
+        };
+        host.received(Ms(3), LinkId(2), &saying(again));
+        drain(&mut host, Ms(3))
+            .packets
+            .iter()
+            .find_map(|(_, packet)| match &packet.control {
+                Some(Control::Welcome(welcome)) => Some(welcome.up_seen),
+                _ => None,
+            })
+            .expect("a welcome")
+    };
+    let mine = Resume {
+        epoch: EPOCH,
+        device: DeviceId(1),
+        session: 0,
+    };
+    assert_eq!(seen(mine), 1);
+    let other_run = Resume {
+        epoch: EPOCH + 1,
+        ..mine
+    };
+    assert_eq!(seen(other_run), 0);
+    let other_device = Resume {
+        device: DeviceId(2),
+        ..mine
+    };
+    assert_eq!(seen(other_device), 0);
 }
