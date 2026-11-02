@@ -947,7 +947,7 @@ fn watch_ice<Up: Serialize + 'static, Down: DeserializeOwned + 'static>(
 enum Negotiation {
     Done,
     Failed,
-    /// Nobody answered the offer: a host restarting says nothing of WebRTC.
+    /// Nobody took the offer: a host restarting says nothing of WebRTC.
     NoHost,
 }
 
@@ -960,6 +960,11 @@ async fn negotiate(pc: &RtcPeerConnection, progress: &Cell<Offer>) -> Negotiatio
     let Some(response) = fetch(route::OFFER, Some(&body)).await else {
         return Negotiation::NoHost;
     };
+    // A 503 is the host out of room for signals, a 400 an offer it refused:
+    // neither went anywhere near UDP, and neither says anything of WebRTC.
+    if !response.ok() {
+        return Negotiation::NoHost;
+    }
     progress.set(Offer::Answered);
     match answer(pc, response).await {
         Some(()) => Negotiation::Done,

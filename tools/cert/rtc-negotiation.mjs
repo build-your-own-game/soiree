@@ -17,6 +17,7 @@ const CASES = [
   { name: 'a healthy WebSocket cut under silent UDP', blackhole: true, resume: true, expect: 'ws' },
   { name: 'absolute deadline after ICE progress', delay: 4000, dtlsBlackhole: true, deadline: true, expect: 'ws' },
   { name: 'absolute deadline and late SDP', delay: 16000, deadline: true, late: true, expect: 'ws' },
+  { name: 'refused offer says nothing of WebRTC', refused: true, expect: 'ws' },
   { name: 'deadline registration failure releases attempt', armFailure: true, expect: 'ws' },
 ];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -102,17 +103,18 @@ async function snapshot(page) {
  * emitted before assertions; a failure retains all preceding receipts. The
  * finally path returns the page to WebSocket and waits for every owned route.
  * onCleanupFailure is independent from the primary case error (H1 vs C1). */
-export async function verifyRtcNegotiation({ page, url, upstream, port, expectedDevice, onCase = () => {}, onCleanupFailure = () => {} }) {
+export async function verifyRtcNegotiation({ page, url, upstream, port, expectedDevice, onCase = () => {}, onCleanupFailure = () => {}, only = () => true }) {
   if (!Number.isSafeInteger(expectedDevice) || expectedDevice <= 0) throw new FixtureFailure('RTC negotiation requires a welcomed device identity');
   const reports = [];
   const rtcUrl = new URL(url); rtcUrl.searchParams.delete('salon');
   const wsUrl = new URL(rtcUrl); wsUrl.searchParams.set('salon', 'ws');
   await page.addInitScript(observeRtc);
   await page.addInitScript(installCaseObserver);
-  const receipts = () => ({ cases: reports, remaining: CASES.slice(reports.length).map(row => row.name) });
+  const cases = CASES.filter(only);
+  const receipts = () => ({ cases: reports, remaining: cases.slice(reports.length).map(row => row.name) });
   return runWithCleanup(async () => {
     try {
-      for (const definition of CASES) {
+      for (const definition of cases) {
         const relay = await UdpProxy.open(upstream, port);
         if (definition.blackhole) relay.set({ blackhole: true });
         if (definition.dtlsBlackhole) relay.set({ dropDtls: true });
@@ -123,9 +125,12 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
           controller.signal.addEventListener('abort', abort, { once: true });
           if (controller.signal.aborted) abort();
         });
+        // The host's file of signals is full, as long as this holds.
+        let refusing = Boolean(definition.refused);
         const route = request => {
           const task = (async () => {
             try {
+              if (refusing) { await request.fulfill({ status: 503, contentType: 'text/plain', body: 'busy' }); return; }
               const response = await request.fetch({ timeout: 5000, maxRetries: 0 });
               if (!response.ok()) throw new FixtureFailure(`RTC signaling HTTP ${response.status()}`);
               let answer = relay.rewrite(await response.json());
@@ -209,6 +214,16 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
           }
           if (definition.dtlsBlackhole) assert.ok(events.some(event => ['connected', 'completed'].includes(event.ice)), 'ICE must answer before DTLS stalls, or the silence decides instead');
           if (definition.late) assert.ok(events.some(event => event.kind === 'setRemoteDescription:rejected'), 'late completion was not actually delivered to the closed peer');
+          if (definition.refused) {
+            assert.ok(events.some(event => event.kind === 'offer:response' && event.status === 503), 'the refusal was not delivered');
+            // The host is well again: this tab must not remember a failure of WebRTC.
+            refusing = false;
+            await page.reload({ waitUntil: 'load', timeout: 15000 });
+            const reloaded = Date.now();
+            let again;
+            do { again = await snapshot(page); await sleep(50); } while (Date.now() - reloaded < 5000 && !(again.rtc?.packets ?? []).some(packet => welcomeDevice(packet.bytes) === expectedDevice));
+            assert.ok((again.rtc?.packets ?? []).some(packet => welcomeDevice(packet.bytes) === expectedDevice), 'a refused offer kept the next load away from WebRTC');
+          }
           if (definition.armFailure) {
             assert.ok(events.some(event => event.kind === 'close'), 'unbounded attempt was not released');
             assert.ok(!events.some(event => event.kind === 'createOffer'), 'async negotiation started without a deadline');

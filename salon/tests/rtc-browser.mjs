@@ -1,6 +1,6 @@
 // Exercise WebRTC's negotiation contracts on the real host, in both engines,
 // without a game: what `soiree certify`'s `rtc` scenario runs, on the demo.
-// From the common root: node salon/tests/rtc-browser.mjs
+// From the common root: node salon/tests/rtc-browser.mjs [engines] [case]
 // Prerequisites: Rust/WASM, matching wasm-bindgen, tools/cert npm ci + browsers.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -43,7 +43,8 @@ try {
   browser = await launchBrowser({
     identify: (bytes) => welcomeDevice([...bytes]),
   });
-  for (const engine of (process.argv[2] ?? "webkit,chromium").split(",")) {
+  const [, , engines = "webkit,chromium", wanted = ""] = process.argv;
+  for (const engine of engines.split(",")) {
     const url = `http://127.0.0.1:${port}/play?salon=ws`;
     const tab = await browser.open(url, { engine });
     try {
@@ -52,6 +53,7 @@ try {
       const { cases } = await verifyRtcNegotiation({
         page: tab.page, url, upstream: "127.0.0.1", port, expectedDevice: tab.device,
         onCleanupFailure: (error) => { throw error; },
+        only: ({ name }) => name.includes(wanted),
       });
       for (const { name, elapsed_ms: elapsed, closed_ms: closed, resume_ms: resume } of cases) {
         const measured = [closed && `attempt closed at ${Math.round(closed)} ms`, resume && `back in ${Math.round(resume)} ms`].filter(Boolean);
