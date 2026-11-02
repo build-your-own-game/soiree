@@ -367,6 +367,19 @@ puis une reprise. Trois changements ou un cycle A↔B ne suffisent pas. Un
 compteur ou éditeur sans manches peut déclarer
 `{"kind":"continuous","reason":"…"}` : la raison est obligatoire et
 aucune commande `start`/`advance` ne peut coexister. Cela n'exclut ni P1 ni T2.
+`.soiree/modele/tools/progression-exemple.mjs` donne un contrôle de jeu fini à
+copier dans `tools/` : il joue une vraie partie avec `join`, `start` et
+`advance`, exige un écran de fin, puis une nouvelle partie, et refuse un jeu qui
+ne fait que changer d'écran.
+
+```json
+"progression": {"kind": "finite", "checks": [{
+  "name": "une vraie partie va jusqu'à sa fin, puis une nouvelle reprend",
+  "command": ["node", "tools/progression-check.mjs", "{url}"],
+  "timeout_ms": 90000,
+  "success": "D2 : fin réelle"
+}]}
+```
 
 La zone sûre T3 s'applique par défaut à la TV. Un éditeur solo défilant peut
 expliciter `display: {"role":"desktop","reason":"…"}`, uniquement sans

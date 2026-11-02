@@ -349,7 +349,7 @@ mod checks {
             std::fs::write(directory.join("Cargo.toml"), format!("# owned member {member}\n[package]\nname = \"negative-game-{member}\"\nversion = \"0.1.0\"\nedition.workspace = true\nrust-version.workspace = true\n[lints]\nworkspace = true\n{dependency}")).unwrap();
             std::fs::write(
                 directory.join("src/lib.rs"),
-                "#![no_std]\npub fn ready() {}\n",
+                "#![no_std]\npub fn ready() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn it_is_ready() {\n        super::ready();\n    }\n}\n",
             )
             .unwrap();
         }
@@ -393,6 +393,13 @@ mod checks {
             "metadata discovery changed an unlocked workspace"
         );
         success(&command(&dir).arg("upgrade").output().unwrap());
+        // « Passer à cette version » sends the agent of a game to these files.
+        assert!(dir.join(".soiree/modele/tools/text-check.mjs").is_file());
+        assert!(
+            dir.join(".soiree/modele/tools/progression-exemple.mjs")
+                .is_file()
+        );
+        assert!(dir.join(".soiree/CHANGELOG.md").is_file());
         for name in [
             "Cargo.toml",
             "crates/host/Cargo.toml",

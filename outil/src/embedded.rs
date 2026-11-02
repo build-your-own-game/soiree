@@ -43,6 +43,20 @@ pub const DOCS: &[(&str, &str)] = &[
     ("remote/CONTRAT.md", include_str!("../../remote/CONTRAT.md")),
     // The build script that gives a game its version (salon/README.md).
     ("salon/version.rs", include_str!("../../salon/version.rs")),
+    // What a game copies into its `tools/`: `CHANGELOG.md` and
+    // `CERTIFICATION.md` send it here, and a game has no `modele/`.
+    (
+        "modele/tools/text-check.mjs",
+        include_str!("../../modele/tools/text-check.mjs"),
+    ),
+    (
+        "modele/tools/press-check.mjs",
+        include_str!("../../modele/tools/press-check.mjs"),
+    ),
+    (
+        "modele/tools/progression-exemple.mjs",
+        include_str!("../../modele/tools/progression-exemple.mjs"),
+    ),
 ];
 
 include!(concat!(env!("OUT_DIR"), "/catalogue.rs"));

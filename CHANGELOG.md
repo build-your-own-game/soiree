@@ -16,7 +16,7 @@ Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a 
    soiree upgrade --dry-run
    soiree upgrade
    ```
-   `soiree upgrade` change l'étiquette dans `Cargo.toml` et les crates du jeu, la version dans `soiree.toml`, les règles et `.github/workflows/soiree.yml`, puis lance `soiree check`. Rien d'autre à faire pour la CI : `soiree check` refuse tout autre workflow. Elle ne part plus qu'à la main (`gh workflow run soiree.yml`) ou sur une pull request.
+   `soiree upgrade` change l'étiquette dans `Cargo.toml` et les crates du jeu, la version dans `soiree.toml`, les règles, `.github/workflows/soiree.yml` et `.soiree/`, met à jour les dépendances communes, puis lance `soiree check`. Ce `soiree check` peut encore échouer sur ce que les étapes suivantes corrigent : continue, et l'étape 11 le relance. Il s'arrête avant toute écriture si `soiree.yml` a été modifié à la main : renomme d'abord ta version. Rien d'autre à faire pour cette CI : `soiree check` refuse un `soiree.yml` modifié. Elle ne part plus qu'à la main (`gh workflow run soiree.yml`) ou sur une pull request. `soiree check` ne lit pas les autres fichiers de `.github/workflows/` : si l'un d'eux part à chaque commit, retire ce déclencheur toi-même.
 2. Si `cert.json` déclare `advance`, ajoute `advance.progress`, une expression JavaScript dont la valeur change quand la partie avance. Sans elle, `certify` échoue, alors qu'il ne faisait que le noter :
    ```json
    "advance": { "key": " " }
@@ -24,10 +24,39 @@ Le code d'un jeu de la v0.3.0 compile sans changement : aucune API publique n'a 
    ```
    Remplace `#manche` par ce qui, sur ta TV, change à chaque étape.
 3. Cherche `console.error` et `console.assert` dans les pages du jeu. Pendant un scénario, chacun fait désormais échouer `certify`. Corrige ce qu'ils signalent, ou écris en `console.warn` ce qui n'est pas une erreur.
-4. Dans `cert.json`, déclare ce que la certification exerce maintenant :
-   - `refused: {"selector":"…","text":"…"}`, `text.checks` et, pour un jeu fini, `progression: {"kind":"finite","checks":[…]}`. Les commandes fonctionnent sur un hôte frais via `{url}` ; le modèle fournit les fichiers et les variables d'environnement.
-   - Un éditeur ou un compteur continu, sans `start` ni `advance`, motive `progression.kind="continuous"`. Un éditeur desktop solo peut motiver `display.role="desktop"` ; ses cadres T2 restent requis. Une TV canvas déclare une commande `layout` qui observe ses cadres réels.
-   - Pour une sauvegarde IndexedDB, `"storage": {"kind": "indexeddb", "database": "…", "store": "…", "key": "…"}` (syntaxe JSON, pas TOML).
+4. Dans `cert.json`, déclare ce que la certification exerce maintenant. `soiree upgrade` a écrit les exemples du modèle dans `.soiree/modele/tools/`, et `.soiree/CERTIFICATION.md` décrit chaque clé. Une commande reçoit un hôte frais par `{url}` et le navigateur du harnais par `SOIREE_CERT_BROWSER_MODULE`. Éprouve chacune avec `soiree certify -- --only text,progression`.
+   - `socket` : obligatoire dès que `phone` est déclaré, en général `"socket": "/salon/ws"`. Un jeu sans téléphone écrit `"phone": null`, `"socket": null` et `display` (voir plus bas) : retirer ces clés n'exclut plus aucun item.
+   - `refused` : le sélecteur et le texte exacts de ce que voit le joueur en trop, par exemple `"refused": {"selector": "#status", "text": "La partie est pleine."}`.
+   - `text.checks` : copie l'exemple, puis remplace ses sélecteurs et ses textes par ceux de ton jeu.
+     ```sh
+     mkdir -p tools
+     cp .soiree/modele/tools/text-check.mjs tools/text-check.mjs
+     ```
+     ```json
+     "text": {"checks": [{
+       "name": "chaque source de texte du jeu, cadres réels et négatifs",
+       "command": ["node", "tools/text-check.mjs", "{url}"],
+       "timeout_ms": 120000,
+       "success": "no free-text entry"
+     }]}
+     ```
+     `success` est une expression régulière que la sortie doit contenir : remplace-la par ce que ton script imprime quand il a fini.
+   - Un jeu qui a une fin : copie l'exemple, puis change dans ce fichier `FINISHED`, vraie seulement à l'écran de fin, et `RUNNING_AGAIN`, vraie quand la partie d'après tourne. Si ton jeu ne repart pas par `advance` puis `start`, change aussi `restart`. Le script exige `advance.progress` (étape 2) et lit `join`, `joined`, `start` et `players` dans `cert.json`.
+     ```sh
+     cp .soiree/modele/tools/progression-exemple.mjs tools/progression-check.mjs
+     ```
+     ```json
+     "progression": {"kind": "finite", "checks": [{
+       "name": "une vraie partie va jusqu'à sa fin, puis une nouvelle reprend",
+       "command": ["node", "tools/progression-check.mjs", "{url}"],
+       "timeout_ms": 90000,
+       "success": "D2 : fin réelle"
+     }]}
+     ```
+   - Un jeu sans fin, sans `start` ni `advance`, comme un compteur ou un éditeur, écrit `"progression": {"kind": "continuous", "reason": "Compteur partagé : ni manche, ni départ, ni fin."}`. Un éditeur desktop solo écrit aussi `"display": {"role": "desktop", "reason": "Éditeur solo au clavier et à la souris, sans téléphone."}` ; ses cadres T2 restent requis.
+   - Une TV dessinée sur un canvas déclare `"layout": {"name": "…", "command": ["node", "tools/layout-check.mjs", "{url}"], "timeout_ms": 120000}`, un script à toi qui lit les cadres vraiment dessinés et échoue quand l'un sort de la zone sûre. Une TV en DOM n'a rien à déclarer.
+   - Pour une sauvegarde IndexedDB, `"storage": {"kind": "indexeddb", "database": "…", "store": "…", "key": "…"}`.
+   - Une raison tient maintenant en au moins deux mots et 12 caractères : `reason` de `catalogue_decisions`, `ui.not_applicable`, `progression.reason` et `display.reason`.
 5. Relis comment le jeu reçoit un événement : ce qu'une page a envoyé pendant un redémarrage de l'hôte arrive maintenant à la nouvelle partie, après `DeviceEvent::Arrived` et avec la phase de son envoi. Refuse-le comme tout événement périmé :
    ```rust
    DeviceEvent::Event { device, event, phase, .. } => {

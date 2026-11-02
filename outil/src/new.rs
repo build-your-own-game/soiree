@@ -111,6 +111,12 @@ mod tests {
                 ))
         );
         assert!(dir.join(".soiree/salon/README.md").is_file());
+        for tool in ["text-check", "press-check", "progression-exemple"] {
+            assert!(
+                dir.join(format!(".soiree/modele/tools/{tool}.mjs"))
+                    .is_file()
+            );
+        }
         assert_eq!(
             util::read(&dir.join(".soiree/version")).unwrap().trim(),
             VERSION
