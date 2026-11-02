@@ -33,7 +33,9 @@ const PAST_SESSIONS: usize = 8;
 pub struct HostConfig {
     /// The game's version: a phone with another one is refused.
     pub game: u32,
-    /// Changes at every start of the host (a random number, or a counter).
+    /// Differs from every run a device may remember. A counter kept in a
+    /// file does not: it starts over when the file is lost. `salon-host` draws
+    /// a random number at each start. Not 0, which means "no run yet".
     pub epoch: Epoch,
     pub tv_key: TvKey,
     pub timing: Timing,

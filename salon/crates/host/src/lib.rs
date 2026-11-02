@@ -27,8 +27,9 @@
 //!   so the game is plain sequential code that never locks anything. If it
 //!   dies, the process ends with [`ROOM_DIED`].
 //!
-//! Identities survive a restart: they are saved in the game's data folder,
-//! with the epoch, which only grows.
+//! Identities survive a restart: they are saved in the game's data folder.
+//! The epoch is drawn at each start and saved nowhere, so that a folder lost
+//! or unwritable cannot bring it back.
 //!
 //! The protocol itself, and what it guarantees, is documented in
 //! `salon-core`.
@@ -168,7 +169,7 @@ pub struct Options {
     /// Paths served by one page, besides the files: `("/play", "play.html")`.
     /// `/` serves `index.html` unless listed.
     pub pages: Vec<(String, String)>,
-    /// Where identities and the epoch are kept across restarts. `None`: a
+    /// Where identities and the TV key are kept across restarts. `None`: a
     /// restart forgets every device.
     pub data: Option<PathBuf>,
     /// The game's version (`salon_core::HostConfig::game`).

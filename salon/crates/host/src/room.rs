@@ -148,7 +148,7 @@ pub fn run<G: Game>(
         driver = driver.with_app_page(page);
     }
     let mut outlets: BTreeMap<LinkId, Outlet> = BTreeMap::new();
-    store.save_epoch();
+    store.save_at_start();
     let mut next_save = clock.now().plus(SAVE_EVERY);
     let mut saved_identities = driver.host().identities();
     loop {
@@ -336,7 +336,7 @@ mod tests {
 
         let clock = Clock::start();
         let (net, inbox) = inbox::channel::<Net>(16).unwrap();
-        let store = Store::open(Some(&dir), 1, [0; 16]);
+        let store = Store::open(Some(&dir), [0; 16]).unwrap();
         let game = Steps {
             start: clock,
             done: 0,
@@ -358,7 +358,7 @@ mod tests {
         let welcome = packets.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(matches!(welcome, WsOut::Packet(_)));
         // What a new run would read, as soon as the phone can know its number.
-        let known = Store::open(Some(&dir), 1, [0; 16]).known();
+        let known = Store::open(Some(&dir), [0; 16]).unwrap().known();
         drop(net);
         room.join().unwrap();
         let _: io::Result<()> = std::fs::remove_dir_all(&dir);
@@ -376,7 +376,7 @@ mod tests {
             done: 0,
             seen: Arc::new(Mutex::new(Vec::new())),
         };
-        let store = Store::open(None, 1, [0; 16]);
+        let store = Store::open(None, [0; 16]).unwrap();
         let tick = Duration::from_secs(1);
         let ended = run(&inbox, game, config(), tick, store, clock, None);
         drop(net);
@@ -430,7 +430,7 @@ mod tests {
             seen: Arc::clone(&seen),
         };
         let (net, inbox) = inbox::channel(16).unwrap();
-        let store = Store::open(None, 1, [0; 16]);
+        let store = Store::open(None, [0; 16]).unwrap();
         let room = thread::spawn(move || {
             let tick = Duration::from_secs(1);
             run(&inbox, game, config(), tick, store, clock, None)
