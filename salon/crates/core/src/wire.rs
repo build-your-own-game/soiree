@@ -66,13 +66,6 @@ pub(crate) struct Ack {
     pub state_parts: Option<Parts>,
 }
 
-impl Ack {
-    /// It says more than what is below its numbers.
-    fn says_more(&self) -> bool {
-        self.ahead != 0 || self.event_parts.is_some() || self.state_parts.is_some()
-    }
-}
-
 /// The fragments that arrived of one message not whole yet, so that a resend
 /// carries the others. A window that starts at the first missing fragment
 /// keeps this small and bounded: what lies past it goes again, and is ignored.
@@ -231,15 +224,8 @@ pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
             return Some(bytes);
         }
         if packet.state.pop().is_none() && packet.events.pop().is_none() {
-            // What arrived of a message saves bytes and nothing depends on
-            // it: without it, the sender sends those fragments again.
-            let Some(ack) = packet.ack.as_mut().filter(|ack| ack.says_more()) else {
-                // Headers alone do not fit: nothing sensible to send.
-                return None;
-            };
-            ack.ahead = 0;
-            ack.event_parts = None;
-            ack.state_parts = None;
+            // Headers alone do not fit: nothing sensible to send.
+            return None;
         }
     }
 }
@@ -333,6 +319,34 @@ mod framing_tests {
         }
     }
 
+    /// What does not fit even without its fragments does not leave: no
+    /// shortened ack may take its place, since on a stream an ack that says
+    /// nothing says everything was lost.
+    #[test]
+    fn headers_that_do_not_fit_are_not_cut_down() {
+        let packet = Packet {
+            events: vec![EventPart {
+                seq: 0,
+                index: 0,
+                count: 1,
+                phase: 0,
+                at: None,
+                data: vec![0; 40],
+            }],
+            ..largest(Control::Bye)
+        };
+        let headers = encode(&Packet {
+            events: Vec::new(),
+            state: Vec::new(),
+            ..packet.clone()
+        })
+        .expect("headers encode")
+        .len();
+        assert!(encode_within(packet.clone(), headers - 1).is_none());
+        let fits = encode_within(packet, headers).expect("headers fit");
+        assert_eq!(decode(&fits).map(|packet| packet.events.len()), Some(0));
+    }
+
     /// `encode_within` gives up only on what does not fit without its
     /// fragments, and that would drop a hello or a refusal in silence: a phone
     /// would wait for ever. The largest of each must fit the smallest packet.
@@ -373,6 +387,12 @@ mod framing_tests {
         ];
         for control in controls {
             let with_state = largest(control.clone());
+            // A hello goes alone: nothing is acknowledged before a welcome.
+            let hello = matches!(control, Control::Hello(_));
+            let with_state = Packet {
+                ack: with_state.ack.filter(|_| !hello),
+                ..with_state
+            };
             let without_state = Packet {
                 state: Vec::new(),
                 ..with_state.clone()
