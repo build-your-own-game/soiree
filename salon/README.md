@@ -214,7 +214,7 @@ Le pare-feu de macOS demande d'autoriser chaque nouveau binaire (chaque `cargo b
 cargo test
 ```
 
-`crates/core/tests/` joue chaque garantie sur un faux réseau à graine, qui perd, retarde, double et réordonne les paquets, coupe des liens et gèle des téléphones. Le chaos y ajoute ce qui arrive à une page : rechargement, onglet jumeau, « Jouer ici », mort silencieuse, redémarrage de l'hôte, paquet retenu. `PROPTEST_CASES=5000 cargo test` cherche plus loin. `client_edges.rs`, `host_edges.rs`, `stream_edges.rs` et `types_edges.rs` fixent les bornes d'un côté seul, en lisant et forgeant les paquets avec une copie du format (`crates/core/tests/wire/mod.rs`). `found_bugs.rs` garde chaque bug reproduit, et le répertoire `fuzz/` cherche ce qu'un paquet hostile peut encore faire.
+`crates/core/tests/` joue chaque garantie sur un faux réseau à graine, qui perd, retarde, double et réordonne les paquets, coupe des liens et gèle des téléphones. Le chaos y ajoute ce qui arrive à une page : rechargement, onglet jumeau, « Jouer ici », mort silencieuse, redémarrage de l'hôte, retour du réseau, paquet retenu, hello coincé sur une tentative abandonnée. Comme sur TCP, une fermeture y passe derrière les données de son lien. `PROPTEST_CASES=5000 cargo test` cherche plus loin. `client_edges.rs`, `host_edges.rs`, `stream_edges.rs` et `types_edges.rs` fixent les bornes d'un côté seul, en lisant et forgeant les paquets avec une copie du format (`crates/core/tests/wire/mod.rs`). `stream_cost.rs` compte ce qu'un paquet hostile coûte à la salle, en octets alloués. `found_bugs.rs` garde chaque bug reproduit, et le répertoire `fuzz/` cherche ce qu'un paquet hostile peut encore faire.
 
 ## Journaux et diagnostics
 
