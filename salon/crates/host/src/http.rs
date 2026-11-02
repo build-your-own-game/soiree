@@ -122,7 +122,7 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         .unwrap_or_else(|| Path::new("data"))
         .join("journals");
     let diagnostics = Diagnostics::start(diagnostic_dir, "panics", options.version)
-        .inspect_err(|error| eprintln!("salon: diagnostics unavailable: {error}"))
+        .inspect_err(|error| crate::say(format_args!("salon: diagnostics unavailable: {error}")))
         .ok();
     let shared = Arc::new(Shared {
         diagnostics: Mutex::new(diagnostics),
@@ -138,10 +138,11 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         handler,
         app_door,
     });
-    println!("{}", options.ready);
-    println!("  TV (this computer): http://localhost:{port}");
     // Only the console's echo is lost if stdout is gone.
-    let _: std::io::Result<()> = std::io::stdout().flush();
+    let mut stdout = std::io::stdout();
+    let _: std::io::Result<()> = writeln!(stdout, "{}", options.ready);
+    let _: std::io::Result<()> = writeln!(stdout, "  TV (this computer): http://localhost:{port}");
+    let _: std::io::Result<()> = stdout.flush();
     for stream in listener.incoming().flatten() {
         let Some(permit) = stream
             .peer_addr()
@@ -403,11 +404,11 @@ fn diagnostic(
         match &report {
             salon_core::journal::Diagnostic::Panic(panic) => {
                 if let Ok(json) = serde_json::to_string(panic) {
-                    eprintln!("salon: browser panic recorded: {json}");
+                    crate::say(format_args!("salon: browser panic recorded: {json}"));
                 }
             }
             salon_core::journal::Diagnostic::Marker { page, .. } => {
-                eprintln!("salon: bug marker recorded: {page}");
+                crate::say(format_args!("salon: bug marker recorded: {page}"));
             }
         }
         let _: Result<(), _> = shared.net.try_send(Net::Diagnostic(report));
@@ -441,7 +442,7 @@ fn route(
         ("POST", route::OFFER) => {
             match rtc::answer(&body, shared.rtc_address, &shared.cert).inspect_err(|error| {
                 if std::env::var_os("SALON_LOG").is_some() {
-                    eprintln!("salon: offer refused: {error}");
+                    crate::say(format_args!("salon: offer refused: {error}"));
                 }
             }) {
                 Ok((rtc, answer)) => {

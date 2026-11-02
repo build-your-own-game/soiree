@@ -87,7 +87,7 @@ Règles :
 
 ### Si la salle meurt
 
-Une panique du jeu, dans n'importe laquelle de ses méthodes, ou un échec de l'attente du système arrêtent le fil de la salle, et rien ne peut continuer sans elle. `salon_host::run` ne revient alors pas : il écrit `salon: the room died: …` sur la sortie d'erreur, avec la cause, et termine le processus avec le code `salon_host::ROOM_DIED` (101), ce qui ferme toutes les connexions. Les pages restent sur « Reconnexion… » et reviennent seules quand le jeu est relancé. Le jeu n'a rien à faire, et son `main` ne peut pas perdre ce code. Ce qu'il possède est détruit avant la fin du processus ; un journal se relit jusqu'à son dernier checkpoint.
+Une panique dans une méthode de `Game`, ou une attente du système qui échoue pour de bon, arrêtent le fil de la salle, et rien ne peut continuer sans elle. Le gestionnaire que rend `Game::http` tourne sur un fil HTTP : sa panique ne coûte que sa requête. Un manque passager de mémoire du noyau, ou une sortie d'erreur fermée, ne l'arrêtent pas. `salon_host::run` ne revient alors pas : il écrit `salon: the room died: …` sur la sortie d'erreur, avec la cause, et termine le processus avec le code `salon_host::ROOM_DIED` (101), ce qui ferme toutes les connexions. Les pages restent sur « Reconnexion… » et reviennent seules quand le jeu est relancé. Le jeu n'a rien à faire, et son `main` ne peut pas perdre ce code. Ce qu'il possède est détruit avant la fin du processus ; un journal se relit jusqu'à son dernier checkpoint.
 
 Une panique ne se rattrape pas ici : un état à moitié modifié ne vaut pas une partie qui continue.
 

@@ -119,7 +119,7 @@ impl<T> Sender<T> {
         self.wake.notify().inspect_err(|error| {
             // A timer still bounds the next wait. Never silently claim that
             // an unsuccessful native message notification was immediate.
-            eprintln!("salon: room notification failed: {error}");
+            crate::say(format_args!("salon: room notification failed: {error}"));
         })?;
         Ok(())
     }

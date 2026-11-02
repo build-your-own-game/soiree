@@ -139,7 +139,9 @@ pub struct Rtcs {
 
 pub fn run(rtcs: &Rtcs) {
     if rtcs.socket.set_read_timeout(Some(POLL)).is_err() {
-        eprintln!("salon: cannot set the UDP socket's timeout; WebRTC is off");
+        crate::say(format_args!(
+            "salon: cannot set the UDP socket's timeout; WebRTC is off"
+        ));
         return;
     }
     let mut entries: BTreeMap<LinkId, Entry> = BTreeMap::new();
@@ -198,7 +200,10 @@ pub fn run(rtcs: &Rtcs) {
             let stalled = entry.channel.is_none() && now.duration_since(entry.created) > HANDSHAKE;
             let keep = entry.rtc.is_alive() && !stalled;
             if !keep && std::env::var_os("SALON_LOG").is_some() {
-                eprintln!("salon: WebRTC link {} dropped (stalled: {stalled})", link.0);
+                crate::say(format_args!(
+                    "salon: WebRTC link {} dropped (stalled: {stalled})",
+                    link.0
+                ));
             }
             if !keep && entry.channel.is_some() {
                 rtcs.net.tell(Net::Closed { link });
@@ -214,7 +219,7 @@ fn receive(rtcs: &Rtcs, entries: &mut BTreeMap<LinkId, Entry>, buffer: &mut [u8]
         Ok(read) => read,
         Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => return,
         Err(error) => {
-            eprintln!("salon: UDP: {error}");
+            crate::say(format_args!("salon: UDP: {error}"));
             return;
         }
     };

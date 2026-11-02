@@ -2,6 +2,11 @@
 //! would retry against it for ever. A real game panics in a real server, in a
 //! child process, so that its exit code and its log can be read.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test: its helpers are outside the #[test] functions Clippy recognizes"
+)]
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
@@ -71,40 +76,87 @@ impl Drop for Server {
     }
 }
 
-#[test]
-fn a_dead_room_ends_the_process() {
-    // Free on TCP and on UDP, which salon opens with the same number.
-    let port = loop {
+/// Free on TCP and on UDP, which salon opens with the same number.
+fn free_port() -> u16 {
+    loop {
         let tcp = std::net::TcpListener::bind(("0.0.0.0", 0)).unwrap();
         let port = tcp.local_addr().unwrap().port();
         if std::net::UdpSocket::bind(("0.0.0.0", port)).is_ok() {
-            break port;
+            return port;
         }
-    };
-    let mut server = Server(
-        Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "serve_a_doomed_game", "--ignored", "--nocapture"])
-            .env(PORT, port.to_string())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap(),
-    );
-    // Kept open: a server whose stdout is closed fails on its next `println!`.
+    }
+}
+
+/// Starts the server on `port`, and waits for it.
+fn start(port: u16, logging: Option<&str>) -> (Server, impl Sized) {
+    let mut child = Command::new(std::env::current_exe().unwrap());
+    child
+        .args(["--exact", "serve_a_doomed_game", "--ignored", "--nocapture"])
+        .env(PORT, port.to_string())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(logging) = logging {
+        child.env("SALON_LOG", logging);
+    }
+    let mut server = Server(child.spawn().unwrap());
     let mut stdout = BufReader::new(server.0.stdout.take().unwrap()).lines();
     let ready = stdout
         .by_ref()
         .map_while(Result::ok)
         .any(|line| line.contains("doomed ready"));
     assert!(ready, "the server did not start");
+    (server, stdout)
+}
 
-    // A TV stays connected until the end.
+/// A WebSocket to the server, with a read that gives up after 5 s.
+fn socket(port: u16) -> tungstenite::WebSocket<TcpStream> {
     let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let address = format!("ws://127.0.0.1:{port}{}", route::SOCKET);
-    let (mut tv, _) = tungstenite::client(address.as_str(), stream).unwrap();
+    tungstenite::client(address.as_str(), stream).unwrap().0
+}
+
+/// The peer closed. A read that timed out says nothing of that, and it is an
+/// error too.
+fn is_closed(read: tungstenite::Result<tungstenite::Message>) -> bool {
+    match read {
+        Ok(message) => message.is_close(),
+        Err(tungstenite::Error::Io(error)) => !matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+        Err(_) => true,
+    }
+}
+
+/// `eprintln!` panics when stderr is gone, say behind a pipe nobody reads any
+/// more: on the room's thread, one line of log ended the game.
+#[test]
+fn a_closed_stderr_does_not_end_the_room() {
+    let port = free_port();
+    // Kept open: this test is about stderr.
+    let (mut server, _stdout) = start(port, Some("1"));
+    drop(server.0.stderr.take());
+    for _ in 0..3 {
+        let mut link = socket(port);
+        link.close(None).unwrap();
+        assert!(is_closed(link.read()));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(server.0.try_wait().unwrap(), None, "the room died");
+    socket(port);
+}
+
+#[test]
+fn a_dead_room_ends_the_process() {
+    let port = free_port();
+    // Kept open: a server whose stdout is closed fails on its next `println!`.
+    let (mut server, _stdout) = start(port, None);
+
+    // A TV stays connected until the end.
+    let mut tv = socket(port);
 
     let mut request = TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(
@@ -143,6 +195,6 @@ fn a_dead_room_ends_the_process() {
     );
 
     // The connections are closed: nothing answers any more.
-    assert!(tv.read().is_err() || matches!(tv.read(), Ok(tungstenite::Message::Close(_))));
+    assert!(is_closed(tv.read()));
     assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
 }

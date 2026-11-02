@@ -65,7 +65,9 @@ fn with_public_url<T>(with: impl FnOnce(PublicUrl<'_>) -> Option<T>) -> Option<T
     match PublicUrl::parse(&value) {
         Ok(url) => url.and_then(with),
         Err(why) => {
-            eprintln!("salon: {PUBLIC_URL} ignored ({value:?}): {why}");
+            crate::say(format_args!(
+                "salon: {PUBLIC_URL} ignored ({value:?}): {why}"
+            ));
             None
         }
     }
@@ -89,7 +91,7 @@ pub fn join_url(port: u16, path: &str) -> String {
     }
     let host = lan_address().map_or_else(
         || {
-            eprintln!("salon: no network address found: phones cannot reach http://localhost; set {PUBLIC_URL}");
+            crate::say(format_args!("salon: no network address found: phones cannot reach http://localhost; set {PUBLIC_URL}"));
             "localhost".to_owned()
         },
         |ip| ip.to_string(),

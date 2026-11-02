@@ -129,7 +129,10 @@ impl Store {
         if fs::write(&partial, bytes).is_ok() && fs::rename(&partial, path).is_ok() {
             self.saved = known;
         } else {
-            eprintln!("salon: cannot save identities to {}", path.display());
+            crate::say(format_args!(
+                "salon: cannot save identities to {}",
+                path.display()
+            ));
         }
     }
 }

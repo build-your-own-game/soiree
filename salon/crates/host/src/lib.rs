@@ -51,6 +51,8 @@ pub mod simulation;
 mod store;
 mod ws;
 
+use std::fmt::Arguments;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,6 +68,12 @@ use remote_protocol::{Feedback, Remote};
 use salon_core::{DeviceEvent, Host, Limits, Ms, Qr, Timing};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+
+/// One line of log on stderr. `eprintln!` panics when stderr is gone, and a log
+/// is not worth a game.
+pub(crate) fn say(line: Arguments<'_>) {
+    let _: std::io::Result<()> = writeln!(std::io::stderr(), "{line}");
+}
 
 /// A game, as the room thread runs it. Everything happens on that one
 /// thread, in order.

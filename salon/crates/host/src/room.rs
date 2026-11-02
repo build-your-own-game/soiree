@@ -8,7 +8,7 @@
 
 use std::any::Any;
 use std::collections::BTreeMap;
-use std::io::{self, Write as _};
+use std::io;
 use std::sync::mpsc::SyncSender;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -124,12 +124,10 @@ fn cause(ending: thread::Result<Ended>) -> String {
 /// wrong in their `main`.
 pub fn watch(room: JoinHandle<Ended>) -> ! {
     let cause = cause(room.join());
-    // `eprintln!` panics when stderr is gone, and the process must still end.
-    let _: io::Result<()> = writeln!(
-        io::stderr(),
+    crate::say(format_args!(
         "salon: the room died: {cause}. The server stops with exit code {}.",
         crate::ROOM_DIED
-    );
+    ));
     std::process::exit(crate::ROOM_DIED)
 }
 
@@ -189,7 +187,7 @@ pub fn run<G: Game>(
                 Effect::Close { link } => {
                     if let Some(outlet) = outlets.remove(&link) {
                         if logging() {
-                            eprintln!("salon: link {} closed by host", link.0);
+                            crate::say(format_args!("salon: link {} closed by host", link.0));
                         }
                         outlet.close(link);
                     }
@@ -219,17 +217,17 @@ fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: 
                 } else {
                     "WebSocket"
                 };
-                eprintln!(
+                crate::say(format_args!(
                     "salon: link {} opened ({transport}, {} bytes)",
                     link.0, caps.max_packet
-                );
+                ));
             }
             outlets.insert(link, outlet);
             inputs.push(Input::Opened { link, caps });
         }
         Net::AppOpened { link, outlet } => {
             if logging() {
-                eprintln!("salon: link {} opened (iPhone app)", link.0);
+                crate::say(format_args!("salon: link {} opened (iPhone app)", link.0));
             }
             outlets.insert(link, outlet);
         }
@@ -237,7 +235,7 @@ fn handle(inputs: &mut Vec<Input>, outlets: &mut BTreeMap<LinkId, Outlet>, net: 
         Net::Received { link, bytes } => inputs.push(Input::Received { link, bytes }),
         Net::Closed { link } => {
             if logging() {
-                eprintln!("salon: link {} closed", link.0);
+                crate::say(format_args!("salon: link {} closed", link.0));
             }
             outlets.remove(&link);
             inputs.push(Input::Closed { link });
