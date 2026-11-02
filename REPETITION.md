@@ -38,6 +38,8 @@ Dans `games/punchline` : `SALON_LOG=1 cargo run --release -p punch-host -- --no-
 | ☐ | S6 | Réglages iPhone > Confidentialité et sécurité > Réseau local > coupe Télécommande. Rouvre l'app, scanne, puis réactive. « Connexion au jeu… » sans fin est un échec (le code n'a pas de texte dédié). | texte, capture |
 | ☐ | S10 | Avec de vrais joueurs, jusqu'au bout. | rires, flottements, un mot de chacun |
 
+**T9, à trancher ici.** Sur l'iPhone Safari, bon Wi-Fi, en pleine manche : regarde une notification ou passe 3 s dans une autre app, puis reviens, trois fois. `wake` coupe alors un lien encore valide dès 1,5 s de silence. Rien n'est perdu, mais une reconnexion a lieu (`recherche/reconnexion.toml`, T9). Note si le joueur la voit, et si ça gêne.
+
 ## Ensuite, Sidequest
 
 Ctrl+C, puis `cd games/sidequest && SALON_LOG=1 cargo run --release -p sidequest-host -- --no-build`, TV sur `http://localhost:2567`, **Play** ou Entrée, puis → et ←.
