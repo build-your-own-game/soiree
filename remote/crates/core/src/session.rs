@@ -3,8 +3,8 @@
 //! owns the messages, so it is tested without a network.
 //!
 //! Inputs are state, not events (Sidequest's lessons): one pending state, the
-//! latest wins, sent when it changes but at most 60 times a second, and every
-//! 250 ms anyway so a game that missed one catches up. Drawing steps are
+//! latest wins, sent when it changes but at most 60 times a second on average,
+//! and every 250 ms anyway so a game that missed one catches up. Drawing steps are
 //! events and all go, in order, before the state.
 //!
 //! Between two sockets, the drawing steps wait (`CONTRAT.md` promises them
@@ -22,8 +22,12 @@ use remote_protocol::{
 use crate::remote::Remote;
 use crate::{Insets, Size};
 
-/// The fastest a state goes out, in seconds.
+/// The fastest states go out, on average, in seconds.
 const MIN_INTERVAL: f64 = 1.0 / 60.0;
+/// How early a state may leave. A 60 Hz screen refreshes every 16.6 ms, on a
+/// clock that wobbles: without this, every other refresh misses the interval
+/// by a hair and a state waits 33 ms. The average stays at 60 a second.
+const TOLERANCE: f64 = 0.004;
 /// The slowest: an unchanged state is sent again this often.
 const HEARTBEAT: f64 = 0.25;
 /// How often the app asks a game that says nothing whether it is still there,
@@ -78,6 +82,8 @@ pub struct Session {
     seq: u32,
     /// When the last state went out, and what it was (its `seq` aside).
     last_sent: Option<(f64, InputState)>,
+    /// A changed state may leave from then on.
+    next_state: f64,
     outbox: Vec<Vec<u8>>,
     link: Link,
     /// Drawing steps waiting for a game that can read them, oldest first.
@@ -98,6 +104,7 @@ impl Session {
             remote: None,
             seq: 0,
             last_sent: None,
+            next_state: f64::NEG_INFINITY,
             outbox: Vec::new(),
             link: Link::Up,
             backlog: VecDeque::new(),
@@ -239,8 +246,7 @@ impl Session {
         let due = match &self.last_sent {
             None => true,
             Some((time, last)) => {
-                let elapsed = now - time;
-                (elapsed >= MIN_INTERVAL && *last != state) || elapsed >= HEARTBEAT
+                (now >= self.next_state && *last != state) || now - time >= HEARTBEAT
             }
         };
         if due {
@@ -250,6 +256,7 @@ impl Session {
                 ..state.clone()
             })));
             self.last_sent = Some((now, state));
+            self.next_state = (self.next_state + MIN_INTERVAL).max(now + MIN_INTERVAL - TOLERANCE);
         }
     }
 
@@ -570,6 +577,57 @@ mod tests {
         session.disconnected();
         session.connected();
         assert_eq!(session.watch(3.9), Watch::Quiet);
+    }
+
+    /// A stick moving at every refresh of a `period` screen, whose clock
+    /// wobbles by up to `wobble` seconds, for one second: when states left.
+    fn refreshes(period: f64, wobble: f64) -> Vec<f64> {
+        let mut session = session();
+        show(&mut session, presets::pad());
+        let center = session
+            .remote()
+            .and_then(|r| r.layout().sticks.first().map(|s| s.center))
+            .unwrap_or_default();
+        session.remote_mut().map(|r| r.touch_down(1, center, 0.0));
+        let (mut left, mut frame) = (Vec::new(), 0_u32);
+        loop {
+            frame += 1;
+            // The same irregular walk each time: tests run on fixed time.
+            let shift = wobble * f64::from(frame % 7) / 3.0 - wobble;
+            let now = f64::from(frame) * period + shift;
+            if now > 1.0 {
+                return left;
+            }
+            let x = center.x + 3.0 * f64::from(frame % 8) as f32;
+            session
+                .remote_mut()
+                .map(|r| r.touch_move(1, Point::new(x, center.y), now));
+            session.tick(now);
+            if !session.drain().is_empty() {
+                left.push(now);
+            }
+        }
+    }
+
+    #[test]
+    fn a_60_hz_screen_sends_a_state_at_each_refresh_despite_its_clock() {
+        for (period, wobble) in [(0.0166, 0.0), (1.0 / 60.0, 0.0), (1.0 / 60.0, 0.001)] {
+            let left = refreshes(period, wobble);
+            assert!(left.len() >= 58, "{} states a second", left.len());
+        }
+    }
+
+    #[test]
+    fn a_faster_screen_never_passes_60_states_a_second() {
+        for period in [1.0 / 120.0, 1.0 / 240.0] {
+            let left = refreshes(period, 0.0);
+            assert!((58..=61).contains(&left.len()), "{period}: {}", left.len());
+        }
+        // Between two whole divisions a refresh is skipped: slower, never faster.
+        for period in [1.0 / 90.0, 1.0 / 80.0] {
+            let left = refreshes(period, 0.0);
+            assert!((40..=61).contains(&left.len()), "{period}: {}", left.len());
+        }
     }
 
     #[test]

@@ -34,6 +34,9 @@ use strategies::{damage, game_message, layout, text};
 
 /// Screens and system insets as UIKit reports them: iPhone 17 Pro in
 /// landscape and in portrait, and an iPhone SE without a notch.
+/// How early a state may leave (`session.rs`), and a rounding error's worth.
+const WOBBLE: f64 = 0.004 + 1e-9;
+
 const SCREENS: [(Size, Insets); 3] = [
     (
         Size {
@@ -305,6 +308,8 @@ proptest! {
         let mut last_seq = None;
         // When the last state left, since the last connection or remote.
         let mut last_state: Option<f64> = None;
+        // When the last 61 states left, since the last connection or remote.
+        let mut recent = std::collections::VecDeque::new();
         // The stroke being drawn on the current canvas.
         let mut open = None;
         for step in &steps {
@@ -313,6 +318,7 @@ proptest! {
                     session.connected();
                     prop_assert_eq!(sent(&mut session), [hello.clone()]);
                     last_state = None;
+                    recent.clear();
                 }
                 SessionStep::Show(index) => {
                     let (_, spec) = presets::all()[*index % presets::all().len()].clone();
@@ -325,6 +331,7 @@ proptest! {
                     }
                     prop_assert_eq!(open, None, "a stroke cut by a new remote never ended");
                     last_state = None;
+                    recent.clear();
                 }
                 SessionStep::ShowWeb => {
                     let web = Shown::Web { url: "/free".into() };
@@ -365,11 +372,26 @@ proptest! {
                     if pad && elapsed.is_none_or(|e| e >= 0.25) {
                         prop_assert_eq!(states.len(), 1, "no state after {:?} s", elapsed);
                     }
-                    if elapsed.is_some_and(|e| e < 1.0 / 60.0) {
-                        prop_assert!(states.is_empty(), "two states within 1/60 s");
+                    // Not "never within 1/60 s", as this said: a 60 Hz screen
+                    // refreshes every 16.6 ms, so that rule made every other
+                    // refresh wait 33 ms, 36 states a second in the app (T7 of
+                    // recherche/telecommande.toml). What the contract promises
+                    // is the rate: no gap under 1/60 s less the clock's wobble,
+                    // and no second holding more than 61 states.
+                    if elapsed.is_some_and(|e| e < 1.0 / 60.0 - WOBBLE) {
+                        prop_assert!(states.is_empty(), "two states within {:?} s", elapsed);
                     }
                     if !states.is_empty() {
                         last_state = Some(now);
+                        recent.push_back(now);
+                        if recent.len() > 61 {
+                            let oldest = recent.pop_front().unwrap_or(now);
+                            prop_assert!(
+                                now - oldest >= 1.0 - WOBBLE,
+                                "61 gaps in {} s",
+                                now - oldest
+                            );
+                        }
                     }
                     for message in &messages {
                         if let PhoneMessage::Draw(event) = message {

@@ -555,7 +555,8 @@ citation = "It sends data immediately in the beginning and then starts"
 enonce = "Un frein de débit n'a pas à retarder ce qui arrive après un silence : il ne doit mordre que sur un vrai excès."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_60_hz_screen_sends_a_state_at_each_refresh_despite_its_clock", "remote/crates/core/src/session.rs::a_faster_screen_never_passes_60_states_a_second"]
 trou = "T7"
 
 [[lecon]]
@@ -566,7 +567,8 @@ citation = "two states within 1/60 s"
 enonce = "La propriété fige le défaut : un frein comparé à 1/60 s pile saute une image sur deux dès que l'horloge gigote. La latence entre le toucher et la TV reste non mesurée (LEARNINGS, écart 7)."
 categorie = "accident"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_60_hz_screen_sends_a_state_at_each_refresh_despite_its_clock", "remote/crates/core/src/session.rs::a_faster_screen_never_passes_60_states_a_second"]
 trou = "T7"
 
 [[lecon]]
