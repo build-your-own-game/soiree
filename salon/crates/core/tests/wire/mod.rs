@@ -29,10 +29,19 @@ pub struct Echo {
     pub held: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ack {
     pub events: u32,
     pub state: u32,
+    pub event_parts: Option<Parts>,
+    pub state_parts: Option<Parts>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Parts {
+    pub seq: u32,
+    pub first: u16,
+    pub more: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

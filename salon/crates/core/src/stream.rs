@@ -19,7 +19,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::types::Ms;
-use crate::wire::{EventPart, PACKET_OVERHEAD, PART_OVERHEAD, StatePart};
+use crate::wire::{EventPart, PACKET_OVERHEAD, PART_OVERHEAD, Parts, StatePart};
 
 /// One message being put back together. It costs what arrived, never what the
 /// sender announced: `count` stays a number until fragments fill it, and each
@@ -28,6 +28,8 @@ struct Assembly {
     count: u16,
     parts: BTreeMap<u16, Vec<u8>>,
     size: usize,
+    phase: u32,
+    at: Option<u64>,
 }
 
 impl Assembly {
@@ -36,6 +38,8 @@ impl Assembly {
             count,
             parts: BTreeMap::new(),
             size: 0,
+            phase: 0,
+            at: None,
         }
     }
 
@@ -51,6 +55,26 @@ impl Assembly {
 
     fn is_complete(&self) -> bool {
         self.parts.len() == usize::from(self.count)
+    }
+
+    /// What arrived, for the sender of message `seq`.
+    fn parts(&self, seq: u32) -> Parts {
+        let mut first = 0;
+        for index in self.parts.keys() {
+            if *index != first {
+                break;
+            }
+            first = first.saturating_add(1);
+        }
+        let more = self
+            .parts
+            .range(first.saturating_add(1)..)
+            .map_while(|(index, _)| {
+                let bit = index.saturating_sub(first).saturating_sub(1);
+                u64::from(bit).lt(&u64::from(u64::BITS)).then_some(bit)
+            })
+            .fold(0_u64, |more, bit| more | 1_u64 << bit);
+        Parts { seq, first, more }
     }
 
     fn into_message(self) -> Vec<u8> {
@@ -106,14 +130,95 @@ impl Budget {
     }
 }
 
+/// What the sender knows of one fragment.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Piece {
+    /// It has to leave.
+    Waiting,
+    /// It left then, and nobody said what became of it.
+    Sent(Ms),
+    /// The other side said it has it. It says so of a fragment it keeps: what
+    /// it drops, it drops with the link, and a new link starts [`Pieces`] over.
+    Arrived,
+}
+
+/// One message on its way, in fragments of `cut` bytes.
+#[derive(Default)]
+struct Pieces {
+    cut: usize,
+    each: Vec<Piece>,
+}
+
+impl Pieces {
+    /// Starts over, unless the message is already cut this way.
+    fn cut(&mut self, len: usize, cut: usize) {
+        if self.cut != cut {
+            self.cut = cut;
+            self.each = vec![Piece::Waiting; usize::from(fragment_count(len, cut))];
+        }
+    }
+
+    /// A new link: everything goes again, cut for it.
+    fn forget(&mut self) {
+        self.cut = 0;
+        self.each.clear();
+    }
+
+    /// The next fragment due now, from `from` on.
+    fn due(&self, from: usize, now: Ms, resend: u64) -> Option<usize> {
+        let rest = self.each.get(from..)?;
+        let due = rest.iter().position(|piece| match piece {
+            Piece::Waiting => true,
+            Piece::Sent(at) => now.since(*at) >= resend,
+            Piece::Arrived => false,
+        })?;
+        Some(from.saturating_add(due))
+    }
+
+    fn sent(&mut self, index: usize, now: Ms) {
+        if let Some(piece) = self.each.get_mut(index) {
+            *piece = Piece::Sent(now);
+        }
+    }
+
+    /// When something of it goes again, if anything does. Not cut yet: now.
+    fn due_at(&self, resend: u64) -> Option<Ms> {
+        if self.each.is_empty() {
+            return Some(Ms(0));
+        }
+        self.each
+            .iter()
+            .filter_map(|piece| match piece {
+                Piece::Waiting => Some(Ms(0)),
+                Piece::Sent(at) => Some(at.plus(resend)),
+                Piece::Arrived => None,
+            })
+            .min()
+    }
+
+    fn arrived(&mut self, parts: Parts) {
+        let first = usize::from(parts.first);
+        for (index, piece) in self.each.iter_mut().enumerate() {
+            let past = index.checked_sub(first.saturating_add(1));
+            let said = past.is_some_and(|bit| {
+                u32::try_from(bit)
+                    .ok()
+                    .and_then(|bit| parts.more.checked_shr(bit))
+                    .is_some_and(|more| more & 1 == 1)
+            });
+            if index < first || said {
+                *piece = Piece::Arrived;
+            }
+        }
+    }
+}
+
 struct Outgoing {
     seq: u32,
     data: Vec<u8>,
     phase: u32,
     at: Option<u64>,
-    /// When each fragment last left, for the fragment size of `cut`.
-    sent: Vec<Option<Ms>>,
-    cut: usize,
+    pieces: Pieces,
 }
 
 /// Events to send, kept until acknowledged.
@@ -150,16 +255,21 @@ impl OutEvents {
             data,
             phase,
             at,
-            sent: Vec::new(),
-            cut: 0,
+            pieces: Pieces::default(),
         });
         Ok(seq)
     }
 
-    /// The other side has every event below `next`.
-    pub fn ack(&mut self, next: u32) {
+    /// The other side has every event below `next`, and these `parts` of one
+    /// it is putting back together.
+    pub fn ack(&mut self, next: u32, parts: Option<Parts>) {
         while self.queue.front().is_some_and(|event| event.seq < next) {
             self.queue.pop_front();
+        }
+        if let Some(parts) = parts
+            && let Some(event) = self.queue.iter_mut().find(|event| event.seq == parts.seq)
+        {
+            event.pieces.arrived(parts);
         }
     }
 
@@ -171,8 +281,7 @@ impl OutEvents {
     /// A new link: everything goes again, cut for it.
     pub fn unsend(&mut self) {
         for event in &mut self.queue {
-            event.sent.clear();
-            event.cut = 0;
+            event.pieces.forget();
         }
     }
 
@@ -191,16 +300,7 @@ impl OutEvents {
     pub fn due_at(&self, resend: u64) -> Option<Ms> {
         self.queue
             .iter()
-            .flat_map(|event| {
-                if event.sent.is_empty() {
-                    return vec![Ms(0)];
-                }
-                event
-                    .sent
-                    .iter()
-                    .map(|sent| sent.map_or(Ms(0), |at| at.plus(resend)))
-                    .collect()
-            })
+            .filter_map(|event| event.pieces.due_at(resend))
             .min()
     }
 
@@ -215,21 +315,17 @@ impl OutEvents {
         let cut = fragment_size(packet);
         let mut parts = Vec::new();
         for event in &mut self.queue {
-            if event.cut != cut {
-                event.cut = cut;
-                event.sent = vec![None; usize::from(fragment_count(event.data.len(), cut))];
-            }
+            event.pieces.cut(event.data.len(), cut);
             let count = fragment_count(event.data.len(), cut);
-            for (index, sent) in (0..count).zip(event.sent.iter_mut()) {
-                let due = sent.is_none_or(|at| now.since(at) >= resend);
-                if !due {
-                    continue;
-                }
+            let mut from = 0;
+            while let Some(due) = event.pieces.due(from, now, resend) {
+                from = due.saturating_add(1);
+                let index = u16::try_from(due).unwrap_or(u16::MAX);
                 let data = fragment(&event.data, index, cut);
                 if !budget.take(data.len()) {
                     return parts;
                 }
-                *sent = Some(now);
+                event.pieces.sent(due, now);
                 parts.push(EventPart {
                     seq: event.seq,
                     index,
@@ -277,6 +373,13 @@ impl InEvents {
 
     pub fn next(&self) -> u32 {
         self.next
+    }
+
+    /// What arrived of the event being put back together, if any.
+    pub fn parts(&self) -> Option<Parts> {
+        self.partial
+            .as_ref()
+            .map(|partial| partial.parts(self.next))
     }
 
     /// Another sender takes over the numbering: what it sends under the
@@ -329,6 +432,7 @@ impl InEvents {
             let Some(partial) = partial else {
                 continue;
             };
+            (partial.phase, partial.at) = (part.phase, part.at);
             if partial.put(part.index, part.data) {
                 received.progressed = true;
             }
@@ -340,23 +444,39 @@ impl InEvents {
                 self.next = self.next.saturating_add(1);
                 continue;
             }
-            if partial.is_complete() {
-                if !allow() {
-                    // Over budget: keep the fragments, acknowledge nothing.
-                    return received;
-                }
-                if let Some(whole) = self.partial.take() {
-                    received.events.push(Arrived {
-                        data: whole.into_message(),
-                        phase: part.phase,
-                        at: part.at,
-                    });
-                }
-                self.next = self.next.saturating_add(1);
-                received.progressed = true;
+            if self.deliver(&mut received, &mut allow).is_err() {
+                return received;
             }
         }
+        // What waited for the budget, which the sender no longer resends.
+        let _: Result<(), Full> = self.deliver(&mut received, &mut allow);
         received
+    }
+
+    /// Hands over the event being put back together, if it is whole. Over
+    /// budget it stays here and is not acknowledged: `Full`.
+    fn deliver(
+        &mut self,
+        received: &mut Received,
+        allow: &mut impl FnMut() -> bool,
+    ) -> Result<(), Full> {
+        if !self.partial.as_ref().is_some_and(Assembly::is_complete) {
+            return Ok(());
+        }
+        if !allow() {
+            return Err(Full);
+        }
+        if let Some(whole) = self.partial.take() {
+            let (phase, at) = (whole.phase, whole.at);
+            received.events.push(Arrived {
+                data: whole.into_message(),
+                phase,
+                at,
+            });
+        }
+        self.next = self.next.saturating_add(1);
+        received.progressed = true;
+        Ok(())
     }
 }
 
@@ -368,8 +488,7 @@ pub(crate) struct OutState {
     /// moves it.
     holds: bool,
     acked: bool,
-    sent: Vec<Option<Ms>>,
-    cut: usize,
+    pieces: Pieces,
 }
 
 impl OutState {
@@ -379,8 +498,7 @@ impl OutState {
             data: Vec::new(),
             holds: false,
             acked: true,
-            sent: Vec::new(),
-            cut: 0,
+            pieces: Pieces::default(),
         }
     }
 
@@ -394,13 +512,19 @@ impl OutState {
         self.data = data;
         self.holds = true;
         self.acked = false;
-        self.sent.clear();
-        self.cut = 0;
+        self.pieces.forget();
     }
 
-    pub fn ack(&mut self, seq: u32) {
+    /// The other side applied `seq`, and has these `parts` of one it is
+    /// putting back together.
+    pub fn ack(&mut self, seq: u32, parts: Option<Parts>) {
         if seq >= self.seq {
             self.acked = true;
+        }
+        if let Some(parts) = parts
+            && parts.seq == self.seq
+        {
+            self.pieces.arrived(parts);
         }
     }
 
@@ -409,8 +533,7 @@ impl OutState {
         if self.holds {
             self.acked = false;
         }
-        self.sent.clear();
-        self.cut = 0;
+        self.pieces.forget();
     }
 
     /// Numbers above `applied`, the last number the other side took from
@@ -424,13 +547,7 @@ impl OutState {
         if self.acked {
             return None;
         }
-        if self.sent.is_empty() {
-            return Some(Ms(0));
-        }
-        self.sent
-            .iter()
-            .map(|sent| sent.map_or(Ms(0), |at| at.plus(resend)))
-            .min()
+        self.pieces.due_at(resend)
     }
 
     pub fn take(
@@ -446,19 +563,16 @@ impl OutState {
         }
         let cut = fragment_size(packet);
         let count = fragment_count(self.data.len(), cut);
-        if self.cut != cut {
-            self.cut = cut;
-            self.sent = vec![None; usize::from(count)];
-        }
-        for (index, sent) in (0..count).zip(self.sent.iter_mut()) {
-            if sent.is_some_and(|at| now.since(at) < resend) {
-                continue;
-            }
+        self.pieces.cut(self.data.len(), cut);
+        let mut from = 0;
+        while let Some(due) = self.pieces.due(from, now, resend) {
+            from = due.saturating_add(1);
+            let index = u16::try_from(due).unwrap_or(u16::MAX);
             let data = fragment(&self.data, index, cut);
             if !budget.take(data.len()) {
                 break;
             }
-            *sent = Some(now);
+            self.pieces.sent(due, now);
             parts.push(StatePart {
                 seq: self.seq,
                 index,
@@ -486,6 +600,13 @@ impl InState {
 
     pub fn applied(&self) -> u32 {
         self.applied
+    }
+
+    /// What arrived of the state being put back together, if any.
+    pub fn parts(&self) -> Option<Parts> {
+        self.building
+            .as_ref()
+            .map(|(seq, building)| building.parts(*seq))
     }
 
     pub fn restart(&mut self) {

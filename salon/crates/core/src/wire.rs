@@ -16,7 +16,7 @@ pub const PROTOCOL: u16 = 2;
 
 /// Bytes a packet spends outside its fragments (generous: fields are
 /// varints), and bytes each fragment spends besides its data.
-pub(crate) const PACKET_OVERHEAD: usize = 64;
+pub(crate) const PACKET_OVERHEAD: usize = 112;
 pub(crate) const PART_OVERHEAD: usize = 40;
 
 /// Largest packet on any link. A bigger one closes its link.
@@ -57,6 +57,22 @@ pub(crate) struct Ack {
     pub events: u32,
     /// The latest state applied (0: none yet).
     pub state: u32,
+    /// What arrived of the event being put back together.
+    pub event_parts: Option<Parts>,
+    /// What arrived of the state being put back together.
+    pub state_parts: Option<Parts>,
+}
+
+/// The fragments that arrived of one message not whole yet, so that a resend
+/// carries the others. A window that starts at the first missing fragment
+/// keeps this small and bounded: what lies past it goes again, and is ignored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Parts {
+    pub seq: u32,
+    /// Every fragment below this one arrived, and this one did not.
+    pub first: u16,
+    /// Bit `n` says fragment `first + 1 + n` arrived.
+    pub more: u64,
 }
 
 /// One fragment of one event. Events are numbered per device and per epoch
@@ -184,8 +200,18 @@ pub(crate) fn encode_within(mut packet: Packet, max: usize) -> Option<Vec<u8>> {
             return Some(bytes);
         }
         if packet.state.pop().is_none() && packet.events.pop().is_none() {
-            // Headers alone do not fit: nothing sensible to send.
-            return None;
+            // What arrived of a message saves bytes and nothing depends on
+            // it: without it, the sender sends those fragments again.
+            let Some(ack) = packet
+                .ack
+                .as_mut()
+                .filter(|ack| ack.event_parts.is_some() || ack.state_parts.is_some())
+            else {
+                // Headers alone do not fit: nothing sensible to send.
+                return None;
+            };
+            ack.event_parts = None;
+            ack.state_parts = None;
         }
     }
 }
@@ -206,6 +232,26 @@ mod framing_tests {
         assert!(decode(&bytes).is_none());
     }
 
+    const LARGEST_PARTS: Parts = Parts {
+        seq: u32::MAX,
+        first: u16::MAX,
+        more: u64::MAX,
+    };
+
+    /// A fragment cut for this overhead must fit beside the largest ack: a
+    /// packet that could not hold both would leave without its fragment, every
+    /// time.
+    #[test]
+    fn the_largest_headers_fit_the_overhead() {
+        let headers = Packet {
+            control: None,
+            events: Vec::new(),
+            state: Vec::new(),
+            ..largest(Control::Bye)
+        };
+        assert!(encode(&headers).expect("headers encode").len() <= PACKET_OVERHEAD);
+    }
+
     /// A packet with every optional field at its largest number, around
     /// `control`, and more data than any packet takes.
     fn largest(control: Control) -> Packet {
@@ -221,6 +267,8 @@ mod framing_tests {
             ack: Some(Ack {
                 events: u32::MAX,
                 state: u32::MAX,
+                event_parts: Some(LARGEST_PARTS),
+                state_parts: Some(LARGEST_PARTS),
             }),
             phase: Some(u32::MAX),
             holding: Some(u32::MAX),

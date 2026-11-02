@@ -269,7 +269,9 @@ impl Net {
         let start = now.max(*busy);
         let waiting =
             usize::try_from((start - now) * narrow.rate / 1_000_000).unwrap_or(usize::MAX);
-        if waiting + len > narrow.buffer {
+        // A buffer takes a packet whatever its size once it is empty: a packet
+        // bigger than the buffer is not a packet that can never pass.
+        if waiting > 0 && waiting + len > narrow.buffer {
             if toward == Toward::Phone {
                 self.dropped += len as u64;
             }

@@ -754,6 +754,13 @@ fn heal(room: &mut Room) -> Result<(), TestCaseError> {
                 room.net.phones[phone].statuses
             );
             room.net.run(1_500);
+            // Through a narrow link, the page before this one hears it was
+            // replaced behind all that was queued for it, and until then a
+            // player has nothing to ask of it.
+            if room.net.narrow.is_some() {
+                room.net
+                    .run_until(LONGEST_DRAIN, |net| settled(&room.seats, net));
+            }
             // The host takes 30 events a second: what a burst left waits here.
             let sent: BTreeSet<u32> = room.seats[seat].pages[index].sent.iter().copied().collect();
             for _ in 0..40 {
@@ -766,33 +773,37 @@ fn heal(room: &mut Room) -> Result<(), TestCaseError> {
     }
     room.net.run(3_000);
     // A narrow link takes its time, and only its time: past this, a message
-    // that has not arrived is stuck. No game waits that long, and the slowest
-    // pipe of `narrow()` passes 2 MB in that time.
+    // that has not arrived is stuck. The slowest pipe of `narrow()` passes
+    // 2 MB in that time, more than the longest list of troubles asks of it.
     if room.net.narrow.is_some() {
-        room.net
-            .run_until(LONGEST_DRAIN, |net| drained(&room.notes, &room.seats, net));
+        let mut waited = 0;
+        while waited < LONGEST_DRAIN && !drained(room) {
+            room.net.run(500);
+            waited += 500;
+        }
     }
     Ok(())
 }
 
-/// The longest a room gets to empty its queues through a narrow narrow.
+/// The longest a room gets to empty its queues through a narrow pipe.
 const LONGEST_DRAIN: u64 = 180_000;
 
-/// Each seat has every event the host sent it.
-fn drained(notes: &[Vec<u32>; 3], seats: &[Seat; 3], net: &Net) -> bool {
-    notes.iter().zip(seats).all(|(notes, seat)| {
-        let device = seat
-            .pages
-            .last()
-            .and_then(|page| net.phones[page.phone].client.device());
-        let got: BTreeSet<u32> = net
+/// Each seat has every event the host sent it, and shows the latest state.
+fn drained(room: &Room) -> bool {
+    room.seats.iter().enumerate().all(|(index, seat)| {
+        let last = seat.pages.last().map(|page| &room.net.phones[page.phone]);
+        let device = last.and_then(|phone| phone.client.device());
+        let got: BTreeSet<u32> = room
+            .net
             .phones
             .iter()
             .filter(|phone| phone.client.device() == device)
             .flat_map(|phone| &phone.events)
             .map(noted)
             .collect();
-        notes.iter().all(|id| got.contains(id))
+        let shown = room.shown[index]
+            .is_none_or(|id| last.and_then(|phone| phone.states.last()).map(noted) == Some(id));
+        shown && room.notes[index].iter().all(|id| got.contains(id))
     })
 }
 
@@ -1094,7 +1105,6 @@ proptest! {
     /// The same, on links that carry so much and no more: a message bigger
     /// than what passes between two resends goes through like any other.
     #[test]
-    #[ignore = "T1: a message bigger than the pipe never arrives, and blocks its queue"]
     fn chaos_keeps_every_page_in_its_place_through_a_narrow_pipe(
         seed in any::<u64>(),
         loss in 0..30u64,

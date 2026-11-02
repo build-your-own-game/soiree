@@ -18,7 +18,7 @@ use salon_core::{
     Caps, DeviceEvent, DeviceId, Epoch, Host, HostConfig, Kind, Limits, LinkId, Ms, Output,
     PROTOCOL, Timing, Token, TvKey,
 };
-use wire::{Ack, Control, Echo, EventPart, Hello, Packet, StatePart, decode, encode};
+use wire::{Ack, Control, Echo, EventPart, Hello, Packet, Parts, StatePart, decode, encode};
 
 const EPOCH: u32 = 3;
 const LINK: LinkId = LinkId(1);
@@ -334,6 +334,7 @@ fn events_go_again_until_acknowledged_and_no_longer() {
         ack: Some(Ack {
             events: 1,
             state: 1,
+            ..Ack::default()
         }),
         ..Packet::default()
     };
@@ -356,6 +357,7 @@ fn an_acknowledgement_covers_what_it_names_and_nothing_more() {
         ack: Some(Ack {
             events: 1,
             state: 1,
+            ..Ack::default()
         }),
         ..Packet::default()
     };
@@ -373,6 +375,155 @@ fn an_acknowledgement_covers_what_it_names_and_nothing_more() {
         .map(|p| p.seq)
         .collect();
     assert_eq!(states, vec![2]);
+}
+
+/// Takes these fragments and says what the room answers: the bytes are still
+/// to drain in the helpers above, which keep what they hear to themselves.
+fn answer(room: &mut Room, now: Ms, events: Vec<EventPart>, state: Vec<StatePart>) -> Ack {
+    let packet = Packet {
+        epoch: EPOCH,
+        sent: now.0,
+        events,
+        state,
+        ..Packet::default()
+    };
+    room.received(now, LINK, &encode(&packet));
+    drain(room, now)
+        .1
+        .iter()
+        .find_map(|packet| packet.ack)
+        .expect("an acknowledgement")
+}
+
+/// A message that comes in pieces is acknowledged piece by piece: the first
+/// missing one, then the 64 past it. Nothing past them is said, not even
+/// wrongly: bit 63 is the last one.
+#[test]
+fn an_acknowledgement_names_the_fragments_that_arrived() {
+    let (mut room, _) = joined(Limits::default());
+    let pieces = [0, 1, 3, 66, 67].map(|index| event_part(0, index, 100, &[1]));
+    let ack = answer(&mut room, Ms(1), pieces.to_vec(), Vec::new());
+    let parts = Parts {
+        seq: 0,
+        first: 2,
+        more: 1 | 1 << 63,
+    };
+    assert_eq!(ack.event_parts, Some(parts));
+
+    let (mut room, _) = joined(Limits::default());
+    let pieces = [0, 2].map(|index| state_part(4, index, 3, &[1]));
+    let ack = answer(&mut room, Ms(1), Vec::new(), pieces.to_vec());
+    let parts = Parts {
+        seq: 4,
+        first: 1,
+        more: 1,
+    };
+    assert_eq!((ack.event_parts, ack.state_parts), (None, Some(parts)));
+}
+
+/// The number of a message and of one of its fragments.
+type Fragments = Vec<(u32, u16)>;
+
+/// The fragments of events, then of states, sent to a device.
+fn sent(packets: &[Packet]) -> (Fragments, Fragments) {
+    let events = packets.iter().flat_map(|packet| &packet.events);
+    let states = packets.iter().flat_map(|packet| &packet.state);
+    (
+        events.map(|part| (part.seq, part.index)).collect(),
+        states.map(|part| (part.seq, part.index)).collect(),
+    )
+}
+
+/// A resend carries what is missing and nothing else, so a pipe that passes
+/// the head of each burst ends up passing the tail.
+#[test]
+fn a_resend_carries_only_the_fragments_that_did_not_arrive() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 2_500]).unwrap();
+    room.show(device, &vec![2; 2_500]).unwrap();
+    let (events, states) = sent(&drain(&mut room, Ms(0)).1);
+    assert_eq!(events.len(), 3);
+    assert_eq!(states.len(), 3);
+    let ack = Packet {
+        epoch: EPOCH,
+        sent: 10,
+        ack: Some(Ack {
+            event_parts: Some(Parts {
+                seq: 0,
+                first: 1,
+                more: 1,
+            }),
+            state_parts: Some(Parts {
+                seq: 1,
+                first: 2,
+                more: 0,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    };
+    room.received(Ms(10), LINK, &encode(&ack));
+    assert_eq!(
+        sent(&drain(&mut room, Ms(250)).1),
+        (vec![(0, 1)], vec![(1, 2)])
+    );
+}
+
+/// A fragment said to have arrived of a message the sender has moved past
+/// means nothing, and neither does a fragment that does not exist.
+#[test]
+fn an_acknowledgement_of_other_fragments_changes_nothing() {
+    let (mut room, device) = joined(Limits::default());
+    room.show(device, &vec![2; 2_500]).unwrap();
+    room.show(device, &vec![3; 2_500]).unwrap();
+    let (_, states) = sent(&drain(&mut room, Ms(0)).1);
+    let ack = Packet {
+        epoch: EPOCH,
+        sent: 10,
+        ack: Some(Ack {
+            state_parts: Some(Parts {
+                seq: 1,
+                first: u16::MAX,
+                more: u64::MAX,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    };
+    room.received(Ms(10), LINK, &encode(&ack));
+    assert_eq!(sent(&drain(&mut room, Ms(250)).1).1, states);
+}
+
+/// An event over budget stays here, whole: its sender was told it arrived, and
+/// does not send it again. The next packet lets it out, and it is acknowledged.
+#[test]
+fn an_event_over_budget_goes_with_a_later_packet_of_any_kind() {
+    let limits = Limits {
+        events_per_s: 10,
+        events_burst: 1,
+        ..Limits::default()
+    };
+    let (mut room, _) = joined(limits);
+    let one = message(&[1]);
+    let parts = vec![event_part(0, 0, 1, &one), event_part(1, 0, 1, &one)];
+    let first = answer(&mut room, Ms(1), parts, Vec::new());
+    assert_eq!(first.events, 1);
+    let held = answer(
+        &mut room,
+        Ms(2),
+        vec![event_part(1, 0, 1, &one)],
+        Vec::new(),
+    );
+    assert_eq!(held.events, 1);
+    let parts = Parts {
+        seq: 1,
+        first: 1,
+        more: 0,
+    };
+    assert_eq!(held.event_parts, Some(parts));
+    let later = answer(&mut room, Ms(1_000), Vec::new(), Vec::new());
+    assert_eq!(later.events, 2);
+    assert_eq!(later.event_parts, None);
 }
 
 /// The resend delay is twice the round trip, between its two bounds.

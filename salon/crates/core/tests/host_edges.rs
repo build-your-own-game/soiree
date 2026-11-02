@@ -462,6 +462,7 @@ fn a_welcome_tells_where_both_numberings_are() {
         ack: Some(Ack {
             events: 1,
             state: 0,
+            ..Ack::default()
         }),
         ..from_device()
     };
@@ -503,6 +504,7 @@ fn a_welcome_with_nothing_queued_names_the_next_number() {
         ack: Some(Ack {
             events: 1,
             state: 0,
+            ..Ack::default()
         }),
         ..from_device()
     };
@@ -544,6 +546,7 @@ fn a_new_link_gets_the_latest_state_if_there_is_one() {
         ack: Some(Ack {
             events: 0,
             state: 1,
+            ..Ack::default()
         }),
         ..from_device()
     };

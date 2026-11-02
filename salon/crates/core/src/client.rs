@@ -361,8 +361,8 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         open.last_heard = now;
         self.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
-            self.up.ack(ack.events);
-            self.out_state.ack(ack.state);
+            self.up.ack(ack.events, ack.event_parts);
+            self.out_state.ack(ack.state, ack.state_parts);
         }
         if let Some(phase) = packet.phase {
             self.phase = phase;
@@ -404,13 +404,13 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             Some(known) if known == now_known => {
                 // Same host run, same client: keep the numbering; what the
                 // host already has is acknowledged, the rest goes again.
-                self.up.ack(welcome.up_next);
+                self.up.ack(welcome.up_next, None);
                 self.down.skip_to(welcome.down_first);
             }
             Some(known) if (known.epoch, known.device) == (welcome.epoch, welcome.device) => {
                 // Another tab held the device meanwhile: its numbers came
                 // after ours. What arrived is done, the rest moves above it.
-                self.up.ack(welcome.up_seen);
+                self.up.ack(welcome.up_seen, None);
                 self.up.renumber(welcome.up_next);
                 self.out_state.rebase(welcome.state);
                 self.down.skip_to(welcome.down_first);
@@ -520,6 +520,8 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                 packet.ack = Some(Ack {
                     events: self.down.next(),
                     state: self.in_state.applied(),
+                    event_parts: self.down.parts(),
+                    state_parts: self.in_state.parts(),
                 });
                 packet.holding = self.out_state.holding();
                 packet.events = self.up.take(now, resend, packet_size, &mut budget);

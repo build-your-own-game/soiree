@@ -282,6 +282,7 @@ fn a_packet_of_another_run_is_ignored() {
         ack: Some(Ack {
             events: 0,
             state: 0,
+            ..Ack::default()
         }),
         ..from_host(2, 5)
     };
@@ -564,6 +565,7 @@ fn a_new_link_sends_the_latest_state_if_there_is_one() {
         ack: Some(Ack {
             events: 0,
             state: 1,
+            ..Ack::default()
         }),
         ..from_host(1, 2)
     };
@@ -583,7 +585,11 @@ fn only_the_latest_state_is_acknowledged() {
     assert_eq!(state_seqs(&sent(&drain(&mut phone, Ms(1)))), vec![2]);
     let ack = |state| {
         encode(&Packet {
-            ack: Some(Ack { events: 0, state }),
+            ack: Some(Ack {
+                events: 0,
+                state,
+                ..Ack::default()
+            }),
             ..from_host(1, 2)
         })
     };

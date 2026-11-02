@@ -389,8 +389,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         device.presence = Presence::Present;
         device.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
-            device.down.ack(ack.events);
-            device.out_state.ack(ack.state);
+            device.down.ack(ack.events, ack.event_parts);
+            device.out_state.ack(ack.state, ack.state_parts);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = device
@@ -431,7 +431,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                 Err(_) => device.garbage = device.garbage.saturating_add(1),
             }
         }
-        if had_parts {
+        if had_parts || received.progressed {
             current.ack_due = true;
         }
     }
@@ -713,6 +713,8 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                     packet.ack = Some(Ack {
                         events: device.up.next(),
                         state: device.in_state.applied(),
+                        event_parts: device.up.parts(),
+                        state_parts: device.in_state.parts(),
                     });
                     packet.events = device.down.take(now, resend, packet_size, &mut budget);
                     packet.state = device.out_state.take(now, resend, packet_size, &mut budget);
