@@ -9,7 +9,7 @@ Ne modifie pas le manifeste sans demande explicite de l’hôte.
 ## Chaque changement touche tous les jeux
 
 Chaque jeu dépend d'une étiquette de ce dépôt. Une version figée ici, c'est ce que des amis compilent chez eux, avec un agent qui n'a jamais vu ce dépôt. Donc :
-- Un changement qui casse un jeu existant est une nouvelle version majeure, même petit, et il dit comment s'adapter.
+- Un changement qui casse un jeu existant est une nouvelle version cassante, même petit, et il dit comment s'adapter.
 - Avant d'ajouter quelque chose, demande-toi si un seul jeu en a besoin. Si oui, sa place est peut-être dans ce jeu.
 - Durcir une règle commune fait échouer `soiree check` chez tout le monde. Fais-le exprès, et dis-le dans `CHANGELOG.md`.
 
@@ -119,8 +119,9 @@ listées avec leur cause. Elles ne deviennent pas des garanties par un simple
 changement de sélection ou une justification rédigée. Avant publication,
 l’hôte tranche explicitement les limites acceptables pour cette version.
 
-1. Avec le binaire de ce que tu vas étiqueter : `cargo install --locked --path outil`, depuis la racine de ce dépôt.
-2. Construire l’app iPhone réelle avant `soiree check remote` pour éprouver le
+1. La version de `outil/Cargo.toml` est celle de l'étiquette, et `outil/Cargo.lock` la suit : `--locked` refuse sinon. Les versions citées dans les documents sont la sienne : `soiree check .` refuse tout autre `vX.Y.Z`. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
+2. Avec le binaire de ce que tu vas étiqueter : `cargo install --locked --path outil`, depuis la racine de ce dépôt.
+3. Construire l’app iPhone réelle avant `soiree check remote` pour éprouver le
    livrable et son contrat Swift/Rust/JavaScript (commande dans
    `.github/workflows/guarantees.yml`).
    Lancer `soiree check salon`, `soiree check remote` et `soiree check .` (le
@@ -128,16 +129,14 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
    `cargo clippy --all-targets -- -D warnings`, `cargo test --locked`.
    Exécuter aussi les tests du noyau puis `tools/verify-policy.sh --mutations`
    avec la version de Verus figée dans son README.
-3. Le modèle : `modele/` brut ne se compile pas (`{{version}}`). `RUNNER_TEMP="$(mktemp -d)" SOIREE_HARNESS="$PWD/tools/cert" python3 .github/scripts/model-ci.py`, après `npm ci` dans `tools/cert`, en fait un jeu par `soiree new`, le relie à ce salon-ci et lui fait passer `soiree check`, le refus de `--published` et `soiree certify -- --only ui,panic`.
-4. Chaque jeu du dossier de l'hôte (`games/*`), en deux temps. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
-   - `soiree certify` dans le jeu, avec ce binaire : le `[patch]` de `.cargo/config.toml` le fait compiler contre ce salon-ci, avant toute étiquette. `soiree check` y refuse la version de `soiree.toml` tant que le jeu n'est pas passé à l'étiquette.
-   - Puis, une fois committé, `python3 tools/rehearse-upgrade.py` : sur un clone de chaque jeu, hors du dossier et donc sans `[patch]`, contre un faux amont temporaire qui porte l'étiquette au commit courant, il lance `soiree upgrade --dry-run`, `soiree upgrade` et `soiree check --locked --published`, puis dit PASS ou FAIL. Il s'arrête au premier échec ; `--keep-going` donne tous les verdicts. Il ne prouve rien du `Cargo.lock` que le jeu aura écrit sous le `[patch]`.
-5. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
-6. La version de `outil/Cargo.toml` est celle de l'étiquette.
-7. `soiree recherche dette` : la dette de niveau 3 est soldée, c'est-à-dire aucun sous-système de niveau 3 sans fiche et aucun trou ouvert dans une fiche de niveau 3, ou chaque ligne restante a sa raison écrite dans la section de cette version de `CHANGELOG.md`. C'est le seul endroit où la dette de recherche bloque.
-8. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
+4. Le modèle : `modele/` brut ne se compile pas (`{{version}}`). `RUNNER_TEMP="$(mktemp -d)" SOIREE_HARNESS="$PWD/tools/cert" python3 .github/scripts/model-ci.py`, après `npm ci` dans `tools/cert`, en fait un jeu par `soiree new`, le relie à ce salon-ci et lui fait passer `soiree check`, le refus de `--published` et `soiree certify -- --only ui,panic`.
+5. Dans chaque jeu du dossier de l'hôte (`games/*`), `soiree certify`, avec ce binaire : le `[patch]` de `.cargo/config.toml` le fait compiler contre ce salon-ci, avant toute étiquette. `soiree check` y refuse la version de `soiree.toml` tant que le jeu n'est pas passé à l'étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
+6. Committer : l'étape suivante ne voit que le commit courant.
+7. `python3 tools/rehearse-upgrade.py` : sur un clone de chaque jeu, hors du dossier et donc sans `[patch]`, contre un faux amont temporaire qui porte l'étiquette au commit courant, il lance `soiree upgrade --dry-run`, `soiree upgrade` et `soiree check --locked --published`, puis dit PASS ou FAIL. Il s'arrête au premier échec ; `--keep-going` donne tous les verdicts. Il ne prouve rien du `Cargo.lock` que le jeu aura écrit sous le `[patch]`. Un jeu qui casse se traite comme à l'étape 5.
+8. `soiree recherche dette` : la dette de niveau 3 est soldée, c'est-à-dire aucun sous-système de niveau 3 sans fiche et aucun trou ouvert dans une fiche de niveau 3, ou chaque ligne restante a sa raison écrite dans la section de cette version de `CHANGELOG.md`. C'est le seul endroit où la dette de recherche bloque.
+9. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
 
-Puis : commit, étiquette annotée (`git tag -a vX.Y.Z -m …`), `git push --follow-tags`, qui ne pousse que les étiquettes annotées, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
+Puis : commit de ce que la dette et la relecture ont changé, étiquette annotée (`git tag -a vX.Y.Z -m …`), `git push --follow-tags`, qui ne pousse que les étiquettes annotées, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
 
 ## Le modèle
 
