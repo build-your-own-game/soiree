@@ -779,3 +779,67 @@ fn a_new_link_measures_from_zero() {
     assert_eq!(phone.rtt(), None);
     assert_eq!(phone.host_time(now), None);
 }
+
+/// E5: a game refuses an event stamped with a phase that passed, so a phone
+/// must never stamp one it has seen pass. A late packet says what the host
+/// thought earlier (RFC 9000 section 9.3): it does not take the phase back.
+#[test]
+fn a_late_packet_does_not_take_the_phase_back() {
+    let mut phone = Phone::new(Ms(0), config(1, Timing::default()));
+    drain(&mut phone, Ms(0));
+    phone.opened(Ms(0), Caps::DATAGRAM);
+    drain(&mut phone, Ms(0));
+    phone.received(Ms(0), &welcome(1, 3, 0, 0));
+    drain(&mut phone, Ms(0));
+    let packet = |phase, sent| {
+        encode(&Packet {
+            phase: Some(phase),
+            ..from_host(3, sent)
+        })
+    };
+    phone.received(Ms(10), &packet(2, 200));
+    phone.received(Ms(11), &packet(1, 100));
+    phone.send(&1).unwrap();
+    let stamped = sent(&drain(&mut phone, Ms(12)));
+    let phase = stamped.iter().flat_map(|packet| &packet.events).next();
+    assert_eq!(phase.map(|part| part.phase), Some(2));
+
+    // Two packets of the same millisecond are in no known order: the one read
+    // last counts, as it always did.
+    phone.received(Ms(13), &packet(3, 200));
+    phone.send(&2).unwrap();
+    let stamped = sent(&drain(&mut phone, Ms(14)));
+    let phase = stamped.iter().flat_map(|packet| &packet.events).last();
+    assert_eq!(phase.map(|part| part.phase), Some(3));
+}
+
+/// A new run of the host counts its time from its own start: what a client
+/// heard from the old one does not hide the phase of the new one.
+#[test]
+fn a_new_run_of_the_host_sets_the_phase_whatever_its_clock() {
+    let mut phone = Phone::new(Ms(0), config(1, Timing::default()));
+    drain(&mut phone, Ms(0));
+    phone.opened(Ms(0), Caps::DATAGRAM);
+    drain(&mut phone, Ms(0));
+    phone.received(Ms(0), &welcome(1, 3, 0, 0));
+    drain(&mut phone, Ms(0));
+    let packet = |epoch, phase, sent| {
+        encode(&Packet {
+            phase: Some(phase),
+            ..from_host(epoch, sent)
+        })
+    };
+    phone.received(Ms(10), &packet(3, 2, 9_000));
+    phone.closed(Ms(20));
+    let retry = next_attempt(&mut phone, Ms(20)).expect("an attempt");
+    drain(&mut phone, retry);
+    phone.opened(retry, Caps::DATAGRAM);
+    drain(&mut phone, retry);
+    phone.received(retry, &welcome(1, 5, 0, 0));
+    drain(&mut phone, retry);
+    phone.received(retry.plus(1), &packet(5, 1, 50));
+    phone.send(&1).unwrap();
+    let stamped = sent(&drain(&mut phone, retry.plus(2)));
+    let phase = stamped.iter().flat_map(|packet| &packet.events).next();
+    assert_eq!(phase.map(|part| part.phase), Some(1));
+}

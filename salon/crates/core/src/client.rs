@@ -125,6 +125,8 @@ pub struct Client<Up, Down> {
     /// Where this client stands, once welcomed.
     known: Option<Resume>,
     phase: u32,
+    /// The `sent` of the newest packet read from this run of the host.
+    newest: u64,
     up: OutEvents,
     down: InEvents,
     out_state: OutState,
@@ -156,6 +158,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             status: Status::Connecting,
             known: None,
             phase: 0,
+            newest: 0,
             up: OutEvents::new(0),
             down: InEvents::new(0),
             out_state: OutState::new(),
@@ -370,8 +373,14 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             let learned = learned.with(self.out_state.ack(&ack, heard, order));
             self.window.heard(learned, now, wait);
         }
-        if let Some(phase) = packet.phase {
-            self.phase = phase;
+        // Fragments and acks are safe to read from an old packet. The phase is
+        // not: it would take back what a newer one said, and the next event
+        // would leave stale (E5).
+        if packet.sent >= self.newest {
+            self.newest = packet.sent;
+            if let Some(phase) = packet.phase {
+                self.phase = phase;
+            }
         }
         let max = self.config.limits.max_down;
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
@@ -441,6 +450,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             }
         }
         self.known = Some(now_known);
+        self.newest = 0;
         self.up.unsend();
         self.out_state.unsend();
         self.peer.reset();
