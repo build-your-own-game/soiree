@@ -13,14 +13,29 @@ use crate::util::{self, Result};
 /// is nothing to report on the game. `doctor` says the same.
 pub const WINDOWS: &str = "soiree certify n'est pas encore disponible sous Windows : le harnais dépend de lsof, de ps et des groupes de processus POSIX.";
 
-fn unavailable(windows: bool) -> Option<&'static str> {
-    windows.then_some(WINDOWS)
+#[derive(Clone, Copy)]
+enum Platform {
+    Windows,
+    Other,
+}
+
+const PLATFORM: Platform = if cfg!(windows) {
+    Platform::Windows
+} else {
+    Platform::Other
+};
+
+fn unavailable(platform: Platform) -> Option<&'static str> {
+    match platform {
+        Platform::Windows => Some(WINDOWS),
+        Platform::Other => None,
+    }
 }
 
 pub fn run(dir: &Path, harness: Option<&Path>, extra: &[String]) -> ExitCode {
     // Before `npm ci` and before any scenario: every scenario failing would
     // read as that many faults of the game.
-    if let Some(reason) = unavailable(cfg!(windows)) {
+    if let Some(reason) = unavailable(PLATFORM) {
         eprintln!("{reason} Rien n'a été lancé : ce n'est pas un défaut du jeu.");
         return ExitCode::FAILURE;
     }
@@ -160,8 +175,8 @@ mod tests {
 
     #[test]
     fn windows_is_turned_away_before_anything_runs() {
-        assert_eq!(unavailable(false), None);
-        let reason = unavailable(true).unwrap();
+        assert_eq!(unavailable(Platform::Other), None);
+        let reason = unavailable(Platform::Windows).unwrap();
         assert!(reason.contains("pas encore disponible sous Windows"));
         assert!(!reason.contains("À corriger"));
     }
