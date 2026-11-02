@@ -95,7 +95,6 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
     let (outlet, outgoing) = sync_channel(OUTBOX * 16);
     let rtcs = Rtcs {
         socket: udp,
-        address: rtc_address,
         signals: signal_inbox,
         outgoing,
         outlet,
@@ -429,6 +428,35 @@ fn diagnostic(
     )
 }
 
+/// Answers a page's WebRTC offer, and hands the new link to the WebRTC thread.
+fn offer(stream: &TcpStream, shared: &Shared, body: &[u8], link: LinkId) -> std::io::Result<()> {
+    let reached = stream.local_addr().map_or(shared.rtc_address, |at| {
+        SocketAddr::new(at.ip(), shared.port)
+    });
+    let answered = rtc::answer(body, reached, shared.rtc_address, &shared.cert);
+    match answered.inspect_err(|error| {
+        if std::env::var_os("SALON_LOG").is_some() {
+            crate::say(format_args!("salon: offer refused: {error}"));
+        }
+    }) {
+        Ok((rtc, answer)) => {
+            let signal = Signal { link, rtc, reached };
+            if shared.signals.try_send(signal).is_ok() {
+                respond(stream, 200, "application/json", &answer, Payload::Included)
+            } else {
+                respond(stream, 503, "text/plain", b"busy", Payload::Included)
+            }
+        }
+        Err(error) => respond(
+            stream,
+            400,
+            "text/plain",
+            error.as_bytes(),
+            Payload::Included,
+        ),
+    }
+}
+
 /// Answers a plain HTTP request: an offer, the TV key, the game's own, or a
 /// file.
 fn route(
@@ -442,32 +470,7 @@ fn route(
     let link = || LinkId(shared.links.fetch_add(1, Ordering::Relaxed));
     match (head.method.as_str(), head.path.as_str()) {
         ("POST", route::DIAGNOSTIC) => diagnostic(stream, shared, head, &body),
-        ("POST", route::OFFER) => {
-            match rtc::answer(&body, shared.rtc_address, &shared.cert).inspect_err(|error| {
-                if std::env::var_os("SALON_LOG").is_some() {
-                    crate::say(format_args!("salon: offer refused: {error}"));
-                }
-            }) {
-                Ok((rtc, answer)) => {
-                    if shared
-                        .signals
-                        .try_send(Signal { link: link(), rtc })
-                        .is_ok()
-                    {
-                        respond(stream, 200, "application/json", &answer, Payload::Included)
-                    } else {
-                        respond(stream, 503, "text/plain", b"busy", Payload::Included)
-                    }
-                }
-                Err(error) => respond(
-                    stream,
-                    400,
-                    "text/plain",
-                    error.as_bytes(),
-                    Payload::Included,
-                ),
-            }
-        }
+        ("POST", route::OFFER) => offer(stream, shared, &body, link()),
         ("GET", route::TV_KEY) => {
             if local {
                 respond(

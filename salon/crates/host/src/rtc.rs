@@ -1,8 +1,9 @@
 //! WebRTC links: every page's DataChannel, on one UDP port, driven by str0m
-//! in ICE-lite. The host announces its network address and its loopback one
-//! (a page of this very computer reaches it without the firewall); it learns
-//! each phone's from its first packet (Safari hides its own behind a `.local`
-//! name). The cryptography is salon-crypto's, in Rust only.
+//! in ICE-lite. The host announces the address the page's offer came to, the
+//! one it would give anyway, and its loopback one (a page of this very computer
+//! reaches it without the firewall); it learns each phone's from its first
+//! packet (Safari hides its own behind a `.local` name). The cryptography is
+//! salon-crypto's, in Rust only.
 //!
 //! str0m wants every input followed by draining its outputs before the next
 //! input (`str0m/src/lib.rs`, "single-mutation invariant"): [`drive`] does
@@ -44,6 +45,8 @@ const RESTART: Duration = Duration::from_millis(100);
 pub struct Signal {
     pub link: LinkId,
     pub rtc: Rtc,
+    /// The address the offer came to: see [`Entry::reached`].
+    pub reached: SocketAddr,
 }
 
 /// The loopback address on the same port.
@@ -51,11 +54,28 @@ fn loopback(address: SocketAddr) -> SocketAddr {
     SocketAddr::new(IpAddr::from([127, 0, 0, 1]), address.port())
 }
 
+/// What a page is told to try, without repeats. `reached` first: the phone
+/// has just spoken to this address over TCP, whatever the computer's default
+/// route says, on a Mac with two interfaces, or since DHCP moved it. `announced`
+/// is the guess made at start, or the address `SALON_PUBLIC_URL` names, which
+/// the socket cannot know behind a forwarded port. And the loopback address,
+/// for pages of this very computer. A phone ignores a candidate it cannot reach.
+fn candidates(reached: SocketAddr, announced: SocketAddr) -> Vec<SocketAddr> {
+    let mut addresses = vec![reached];
+    for address in [announced, loopback(reached)] {
+        if !addresses.contains(&address) {
+            addresses.push(address);
+        }
+    }
+    addresses
+}
+
 /// Answers a page's offer (JSON, as `RTCSessionDescription`) with a new
 /// connection in ICE-lite, with the certificate made at start.
 pub fn answer(
     offer: &[u8],
-    address: SocketAddr,
+    reached: SocketAddr,
+    announced: SocketAddr,
     cert: &DtlsCert,
 ) -> Result<(Rtc, Vec<u8>), String> {
     let offer: SdpOffer =
@@ -64,9 +84,7 @@ pub fn answer(
         .set_ice_lite(true)
         .set_dtls_cert(cert.clone())
         .build(Clock::instant());
-    // The network address for phones, and the loopback one for pages of this
-    // very computer: a phone ignores a candidate it cannot reach.
-    for candidate in [address, loopback(address)] {
+    for candidate in candidates(reached, announced) {
         let candidate = Candidate::host(candidate, "udp").map_err(|error| error.to_string())?;
         rtc.add_local_candidate(candidate);
     }
@@ -87,6 +105,10 @@ struct Entry {
     local: bool,
     /// A dependency panicked on this link: its state means nothing any more.
     broken: bool,
+    /// The address the offer came to: the one its packets come to too, since
+    /// str0m drops a check that is not for one of its candidates, and the
+    /// socket listens on every interface without saying which one heard.
+    reached: SocketAddr,
 }
 
 impl Entry {
@@ -166,8 +188,6 @@ impl ToRoom {
 
 pub struct Rtcs {
     pub socket: UdpSocket,
-    /// The network address announced to pages (with its loopback twin).
-    pub address: SocketAddr,
     pub signals: Receiver<Signal>,
     pub outgoing: Receiver<RtcOut>,
     pub outlet: SyncSender<RtcOut>,
@@ -227,9 +247,10 @@ fn run(rtcs: &Rtcs, entries: &mut Entries) {
         rtcs.net.flush();
         loop {
             match rtcs.signals.try_recv() {
-                Ok(Signal { link, rtc }) => {
+                Ok(Signal { link, rtc, reached }) => {
                     let mut entry = Entry {
                         rtc,
+                        reached,
                         channel: None,
                         created: Clock::instant(),
                         timeout: None,
@@ -306,23 +327,35 @@ fn receive(rtcs: &Rtcs, entries: &mut Entries, buffer: &mut [u8]) {
             return;
         }
     };
+    if let Some(contents) = buffer.get(..size) {
+        deliver(rtcs, entries, source, contents);
+    }
+}
+
+/// Where a packet from `source` came to, for a link reached at `reached`. The
+/// socket listens on every interface: a packet from this computer came to the
+/// loopback candidate, and any other to the address the offer came to.
+fn destination(reached: SocketAddr, source: SocketAddr) -> SocketAddr {
+    if source.ip().is_loopback() {
+        loopback(reached)
+    } else {
+        reached
+    }
+}
+
+/// Gives a datagram to the connection it belongs to.
+fn deliver(rtcs: &Rtcs, entries: &mut Entries, source: SocketAddr, contents: &[u8]) {
     // A datagram nobody can read yet belongs to no link, so no link pays for it.
-    let Some(Some(Ok(contents))) = contained(|| buffer.get(..size).map(<&[u8]>::try_into)) else {
+    let Some(Ok(contents)) = contained(|| contents.try_into()) else {
         return;
     };
-    // The socket listens on every interface: a packet from this computer
-    // came to the loopback candidate.
-    let local = source.ip().is_loopback();
-    let input = Input::Receive(
+    let mut input = Input::Receive(
         Clock::instant(),
         Receive {
             proto: Protocol::Udp,
             source,
-            destination: if local {
-                loopback(rtcs.address)
-            } else {
-                rtcs.address
-            },
+            // `accepts` does not read it, and the link is not known yet.
+            destination: source,
             contents,
         },
     );
@@ -333,7 +366,10 @@ fn receive(rtcs: &Rtcs, entries: &mut Entries, buffer: &mut [u8]) {
     let Some((link, entry)) = found else {
         return;
     };
-    entry.local = local;
+    if let Input::Receive(_, receive) = &mut input {
+        receive.destination = destination(entry.reached, source);
+    }
+    entry.local = source.ip().is_loopback();
     let _: Option<()> = entry.guarded(link, |entry| {
         if entry.rtc.handle_input(input).is_ok() {
             drive(rtcs, link, entry);
@@ -431,6 +467,14 @@ mod tests {
     impl Pair {
         /// Offer, answer, ICE, DTLS, SCTP: both ends of the channel are open.
         fn opened() -> Pair {
+            let mut pair = Pair::answered();
+            pair.run_until(|pair| pair.page_channel.is_some() && pair.host_channel.is_some());
+            pair.down.clear();
+            pair
+        }
+
+        /// Offer and answer: ICE has not started.
+        fn answered() -> Pair {
             salon_crypto::provider().install_process_default();
             let now = Clock::instant();
             let mut page: Rtc = RtcConfig::new().build(now);
@@ -446,10 +490,11 @@ mod tests {
             let (offer, pending) = change.apply().unwrap();
             let offer = serde_json::to_vec::<SdpOffer>(&offer).unwrap();
             let cert = salon_crypto::dtls_cert().unwrap();
-            let (host, answer_body) = answer(&offer, HOST.parse().unwrap(), &cert).unwrap();
+            let host_address = HOST.parse().unwrap();
+            let (host, answer_body) = answer(&offer, host_address, host_address, &cert).unwrap();
             let answered: SdpAnswer = serde_json::from_slice(&answer_body).unwrap();
             page.sdp_api().accept_answer(pending, answered).unwrap();
-            let mut pair = Pair {
+            Pair {
                 page,
                 host,
                 now,
@@ -457,10 +502,7 @@ mod tests {
                 host_channel: None,
                 down: Vec::new(),
                 heard: Vec::new(),
-            };
-            pair.run_until(|pair| pair.page_channel.is_some() && pair.host_channel.is_some());
-            pair.down.clear();
-            pair
+            }
         }
 
         /// Drains both ends and delivers everything, once.
@@ -539,7 +581,6 @@ mod tests {
         let (_, signals) = sync_channel(1);
         let rtcs = Rtcs {
             socket: UdpSocket::bind(("127.0.0.1", 0)).unwrap(),
-            address: HOST.parse().unwrap(),
             signals,
             outgoing,
             outlet,
@@ -556,6 +597,7 @@ mod tests {
             timeout: None,
             local: false,
             broken: false,
+            reached: HOST.parse().unwrap(),
         }
     }
 
@@ -591,6 +633,91 @@ mod tests {
         let touched = Cell::new(false);
         assert_eq!(entry.guarded(link, |_| touched.set(true)), None);
         assert!(!touched.get());
+    }
+
+    /// What a page reads in the answer: the address of each candidate.
+    fn announced(reached: &str, guess: &str) -> Vec<String> {
+        let offer = RtcConfig::new().build(Clock::instant());
+        let mut offer = offer;
+        let mut change = offer.sdp_api();
+        change.add_channel_with_config(ChannelConfig {
+            label: "salon".to_owned(),
+            ..ChannelConfig::default()
+        });
+        let (offer, _) = change.apply().unwrap();
+        let offer = serde_json::to_vec::<SdpOffer>(&offer).unwrap();
+        let cert = salon_crypto::dtls_cert().unwrap();
+        let reached = reached.parse().unwrap();
+        let (_, body) = answer(&offer, reached, guess.parse().unwrap(), &cert).unwrap();
+        let answer: SdpAnswer = serde_json::from_slice(&body).unwrap();
+        answer
+            .to_sdp_string()
+            .lines()
+            .filter(|line| line.starts_with("a=candidate:"))
+            .filter_map(|line| line.split_whitespace().nth(4).map(str::to_owned))
+            .collect()
+    }
+
+    /// T3: a phone has just reached this address, the one the host would have
+    /// guessed may lead nowhere, and a page must not pay the window for it.
+    #[test]
+    fn the_address_an_offer_came_to_is_announced() {
+        salon_crypto::provider().install_process_default();
+        assert_eq!(
+            announced("192.168.1.10:8090", "10.0.0.2:8090"),
+            ["192.168.1.10", "10.0.0.2", "127.0.0.1"]
+        );
+        // Nothing twice: the same address, and a page of this very computer.
+        assert_eq!(
+            announced("192.168.1.10:8090", "192.168.1.10:8090"),
+            ["192.168.1.10", "127.0.0.1"]
+        );
+        assert_eq!(
+            announced("127.0.0.1:8090", "192.168.1.10:8090"),
+            ["127.0.0.1", "192.168.1.10"]
+        );
+    }
+
+    /// T3: str0m drops an ICE check that is not for one of its candidates, so
+    /// each link hears on the address of its own offer. A link reached at a
+    /// second address used to be told it heard on the first one, and its
+    /// page waited out the window.
+    #[test]
+    fn a_link_hears_on_the_address_of_its_offer() {
+        let (rtcs, _inbox) = door(4);
+        let mut pair = Pair::answered();
+        let mut wire = VecDeque::new();
+        while wire.is_empty() {
+            pair.now += Duration::from_millis(10);
+            pair.page.handle_input(Input::Timeout(pair.now)).unwrap();
+            pair.drain_page(&mut wire);
+        }
+        let (source, _, check) = wire.pop_front().unwrap();
+        let mut entries = Entries::new();
+        entries.insert(LinkId(1), entry_of(pair));
+        deliver(&rtcs, &mut entries, source, &check);
+        // A check str0m took makes the source a known one: a DTLS packet from
+        // there belongs to this link now.
+        let dtls: &[u8] = &[22, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let probe = Input::Receive(
+            Clock::instant(),
+            Receive {
+                proto: Protocol::Udp,
+                source,
+                destination: HOST.parse().unwrap(),
+                contents: dtls.try_into().unwrap(),
+            },
+        );
+        assert!(entries.get(&LinkId(1)).unwrap().rtc.accepts(&probe));
+    }
+
+    #[test]
+    fn a_packet_from_this_computer_came_to_the_loopback_candidate() {
+        let reached: SocketAddr = HOST.parse().unwrap();
+        let phone: SocketAddr = PAGE.parse().unwrap();
+        assert_eq!(destination(reached, phone), reached);
+        let local: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+        assert_eq!(destination(reached, local), loopback(reached));
     }
 
     fn opened(link: LinkId) -> Net {
