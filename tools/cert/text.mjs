@@ -123,8 +123,30 @@ export async function assertLiteral(page, selector, expected, frame = null) {
   return assertLiteralAt(page, selector, 0, expected, frame);
 }
 
+// The oracle judges text at rest. A view that has just been drawn can be in the
+// first frame of its entrance, at opacity 0 until the next one: this waits for
+// the finite animations of the text and its ancestors, then inspects in the
+// same task. An endless or paused animation has no rest to wait for, and what
+// ends hidden stays hidden: both go to the oracle as they are.
+async function inspectAtRest({ source, restMs, ...literal }) {
+  const until = performance.now() + restMs;
+  for (;;) {
+    const chain = [];
+    for (let node = document.querySelectorAll(literal.selector)[literal.index]; node; node = node.parentElement) chain.push(node);
+    const entering = chain.flatMap(node => node.getAnimations())
+      .filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().endTime !== Infinity);
+    const left = until - performance.now();
+    if (!entering.length || left <= 0) break;
+    await Promise.race([
+      Promise.allSettled(entering.map(animation => animation.finished)),
+      new Promise(resolve => setTimeout(resolve, left)),
+    ]);
+  }
+  return (0, eval)(`(${source})`)(literal);
+}
+
 export async function assertLiteralAt(page, selector, index, expected, frame = null) {
-  const problems = await page.evaluate(inspectLiteral, { selector, expected, frame, index });
+  const problems = await page.evaluate(inspectAtRest, { selector, expected, frame, index, source: inspectLiteral.toString(), restMs: 5000 });
   assert.deepEqual(problems, [], `${selector}: ${problems.join('; ')}`);
 }
 

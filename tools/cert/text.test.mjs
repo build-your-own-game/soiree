@@ -54,3 +54,33 @@ test('native literal/bounds oracles reject markup, clipping and missing leaves i
     }
   } finally { await browser.close(); }
 });
+
+test('a literal is read at rest: an entrance waits, what stays hidden still fails', async () => {
+  const browser = await launchBrowser();
+  const entrance = '@keyframes pop{0%{opacity:0}100%{opacity:1}}.pop{animation:pop .4s ease-out both}';
+  try {
+    for (const engine of ['chromium', 'webkit']) {
+      const tab = await browser.open(null, { engine });
+      try {
+        await tab.page.goto('data:text/html,' + encodeURIComponent(`<style>${entrance}@keyframes gone{to{opacity:0}}.gone{animation:gone .1s forwards}@keyframes sway{to{transform:rotate(2deg)}}.sway{animation:sway 1s infinite}</style><div id="frame"><span id="text"></span></div>`));
+        await tab.page.evaluate(observeTextSafety);
+        const show = (html) => tab.page.evaluate(html => { document.querySelector('#frame').innerHTML = html; }, html);
+        // The ancestor's first frame has opacity 0: the state the product is in
+        // when the view that brought the text has just been drawn.
+        await show('<div class="pop"><span id="text">Arrives</span></div>');
+        await assertLiteral(tab.page, '#text', 'Arrives', '#frame');
+        // A wobble never ends, and is no reason to wait for one.
+        await show('<div class="sway"><span id="text">Sways</span></div>');
+        await assertLiteral(tab.page, '#text', 'Sways', '#frame');
+        for (const [html, why] of [
+          ['<div style="opacity:0"><span id="text">Hidden</span></div>', 'stays at opacity 0'],
+          ['<div class="gone"><span id="text">Hidden</span></div>', 'ends at opacity 0'],
+          ['<div class="pop" style="animation-play-state:paused"><span id="text">Hidden</span></div>', 'never gets past its first frame'],
+        ]) {
+          await show(html);
+          await assert.rejects(assertLiteral(tab.page, '#text', 'Hidden', '#frame'), /not visible/, why);
+        }
+      } finally { await tab.context.close(); }
+    }
+  } finally { await browser.close(); }
+});
