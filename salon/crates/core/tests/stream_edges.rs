@@ -1199,6 +1199,31 @@ fn a_window_that_fell_far_does_not_jump_at_the_first_ack() {
     assert!(out <= 3, "{out} fragments left at once");
 }
 
+/// The floor is two packets, and from there what is heard adds its share of
+/// them: 12 fragments, 940 bytes each, of 2,200 bytes, for a window of 7,840.
+#[test]
+fn a_window_at_its_floor_grows_by_a_share_of_two_packets() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    let now = deaf(&mut room, 16) + 2_000;
+    room.received(Ms(now), LINK, &fragments_below(12, 64, now));
+    assert_eq!(leaving(&mut room, Ms(now)), 9);
+}
+
+/// An ack that brings no news starts nothing over: a link that answers and
+/// carries nothing is asked less and less often too.
+#[test]
+fn an_ack_with_no_news_leaves_the_wait_doubled() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 2_500]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 3);
+    assert!(leaving(&mut room, Ms(250)) > 0);
+    room.received(Ms(251), LINK, &fragments_below(0, 3, 251));
+    assert_eq!(leaving(&mut room, Ms(749)), 0);
+    assert!(leaving(&mut room, Ms(750)) > 0);
+}
+
 /// A window halved down to nothing stays at nothing unless it has a floor:
 /// each ack adds a share of it, and the link stays at two packets for good.
 #[test]

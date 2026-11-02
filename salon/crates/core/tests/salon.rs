@@ -2034,6 +2034,25 @@ fn a_limit_past_what_fragments_carry_is_cut_down() {
     assert_eq!(net.phones[phone].events, vec![Down::Note(2)]);
 }
 
+/// T8, to the byte: 1,024 fragments of 940 bytes, tag, number and length of a
+/// `Down::View` included.
+#[test]
+fn the_largest_message_is_the_last_one_a_receiver_takes() {
+    let limits = Limits {
+        max_down: 2 * 1024 * 1024,
+        ..Limits::default()
+    };
+    let (mut net, phone, device) = limited(limits, limits);
+    assert_eq!(
+        net.host.send(device, &Down::View(1, vec![0; 962_556])),
+        Err(SendError::TooBig)
+    );
+    net.host
+        .send(device, &Down::View(1, vec![0; 962_555]))
+        .unwrap();
+    assert!(net.run_until(30_000, |net| net.phones[phone].events.len() == 1));
+}
+
 /// T9. `salon-web` keeps the default limits, and a host may have others: the
 /// welcome says them. A page that took the default for the truth skipped what
 /// it thought too big, or sent back what the host had to refuse.
