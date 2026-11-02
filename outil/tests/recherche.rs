@@ -121,7 +121,8 @@ mod commands {
                 &lesson[end..]
             )
         };
-        let cases: [(&dyn Fn(&str) -> String, &str); 3] = [
+        type Change<'a> = &'a dyn Fn(&str) -> String;
+        let cases: [(Change<'_>, &str); 3] = [
             (
                 &without_lessons,
                 "0 leçon(s) ; le niveau 3 en demande au moins 9",

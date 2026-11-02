@@ -530,6 +530,42 @@ fn display_scope(config: &Value, plan: &mut Plan) -> Option<Display> {
     })
 }
 
+/// What `cert.json` says of its screens. Only a declared solo editor drops the
+/// items of the phone and the network: taking a key out drops nothing.
+struct Screens {
+    phone: bool,
+    network: bool,
+    solo: bool,
+}
+
+impl Screens {
+    fn of(config: &Value, display: Option<&Display>, plan: &mut Plan) -> Self {
+        let phone = declared(config, "phone");
+        let network = declared(config, "socket");
+        let solo = display.is_some_and(|display| display.role == DisplayRole::Desktop);
+        if phone && !network {
+            plan.diagnostics.push(
+                "cert.json : phone déclaré sans socket ; attendu le chemin du WebSocket de salon, sinon E1 à E4 et C7 ne seraient plus exercés".to_owned(),
+            );
+        }
+        if !phone && !solo && config.get("display").is_none_or(Value::is_null) {
+            plan.diagnostics.push(
+                "cert.json : sans téléphone, attendu display {\"role\":\"desktop\",\"reason\":\"…\"} ; retirer phone n'exclut aucun item".to_owned(),
+            );
+        } else if !phone && !solo {
+            plan.diagnostics.push(
+                "cert.json : sans téléphone, display doit valoir role = desktop, avec sa raison"
+                    .to_owned(),
+            );
+        }
+        Self {
+            phone,
+            network,
+            solo,
+        }
+    }
+}
+
 /// JavaScript's idea of a value: the harness skips a key that reads empty.
 fn declared(config: &Value, key: &str) -> bool {
     config
@@ -552,26 +588,8 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
         plan.diagnostics
             .push("cert.json : phone_upstream attend lan ou loopback".to_owned());
     }
-    let phone = declared(config, "phone");
-    let network = declared(config, "socket");
-    let solo = display
-        .as_ref()
-        .is_some_and(|display| display.role == DisplayRole::Desktop);
-    if phone && !network {
-        plan.diagnostics.push(
-            "cert.json : phone déclaré sans socket ; attendu le chemin du WebSocket de salon, sinon E1 à E4 et C7 ne seraient plus exercés".to_owned(),
-        );
-    }
-    if !phone && !solo && config.get("display").is_none_or(Value::is_null) {
-        plan.diagnostics.push(
-            "cert.json : sans téléphone, attendu display {\"role\":\"desktop\",\"reason\":\"…\"} ; retirer phone n'exclut aucun item".to_owned(),
-        );
-    } else if !phone && !solo {
-        plan.diagnostics.push(
-            "cert.json : sans téléphone, display doit valoir role = desktop, avec sa raison"
-                .to_owned(),
-        );
-    }
+    let screens = Screens::of(config, display.as_ref(), plan);
+    let (phone, network, solo) = (screens.phone, screens.network, screens.solo);
     let mut obligations: BTreeMap<String, Obligation> = BTreeMap::new();
     for &(scenario, items) in HARNESS {
         for &item in items {

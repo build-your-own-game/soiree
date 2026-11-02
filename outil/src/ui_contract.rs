@@ -85,6 +85,14 @@ pub fn validate(config: &Value) -> Result<(), String> {
             }
         }
     }
+    categories_answered(ui, &covered)
+}
+
+/// Each category is exercised, or carries a reason, and never both.
+fn categories_answered(
+    ui: &Value,
+    covered: &std::collections::BTreeSet<&str>,
+) -> Result<(), String> {
     for category in CATEGORIES {
         let reason = ui
             .get("not_applicable")
