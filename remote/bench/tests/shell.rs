@@ -2,6 +2,7 @@
 //! app, and judged by what the game received.
 
 #![cfg(target_os = "macos")]
+use std::net::TcpListener;
 use std::time::Duration;
 
 use remote_bench::eventually;
@@ -198,4 +199,37 @@ fn a_page_that_fails_to_load_is_tried_again_with_a_word_for_the_player() {
         eventually(SOON, || shell.ask("page-failing") == "false"),
         "the word outlives the trouble"
     );
+}
+
+/// An address where nothing listens.
+fn closed_page() -> String {
+    let free = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = free.local_addr().unwrap().port();
+    format!("http://127.0.0.1:{port}/play")
+}
+
+#[test]
+fn a_refused_local_network_names_the_setting_that_lets_it_back() {
+    let mut shell = Shell::launch();
+    shell.ask(&format!("join-denied {}", closed_page()));
+    assert!(
+        eventually(SOON, || shell.ask("notice").contains("Réglages")),
+        "the player reads: {}",
+        shell.ask("notice")
+    );
+    assert_eq!(shell.ask("status"), "denied");
+}
+
+/// The permission cannot be refused on a simulator (S6): this is the real
+/// check, saying no, and the other message.
+#[test]
+fn a_game_that_never_answered_is_not_called_a_lost_connection() {
+    let mut shell = Shell::launch();
+    shell.ask(&format!("join {}", closed_page()));
+    assert!(
+        eventually(SOON, || shell.ask("notice").contains("ne répond pas")),
+        "the player reads: {}",
+        shell.ask("notice")
+    );
+    assert_eq!(shell.ask("status"), "reconnecting");
 }

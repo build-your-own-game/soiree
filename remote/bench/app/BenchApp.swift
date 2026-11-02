@@ -80,12 +80,19 @@ final class Bench {
             guard let target = joinTarget(text: rest) else { return "not a game" }
             connection = GameConnection(target: target)
             return "ok"
+        case "join-denied":
+            guard let target = joinTarget(text: rest) else { return "not a game" }
+            connection = GameConnection(target: target) { _, _ in true }
+            return "ok"
+        case "notice":
+            return connection?.notice ?? "none"
         case "status":
             guard let status = connection?.status else { return "none" }
             return switch status {
             case .connecting: "connecting"
             case .connected: "connected"
             case .reconnecting: "reconnecting"
+            case .localNetworkDenied: "denied"
             case .refused: "refused"
             }
         case "content":

@@ -500,7 +500,8 @@ citation = "Un message clair, pas un écran vide."
 enonce = "Refuser le réseau local doit produire un message qui dit quoi faire."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_refused_local_network_names_the_setting_that_lets_it_back", "remote/bench/tests/shell.rs::a_game_that_never_answered_is_not_called_a_lost_connection", "S6"]
 trou = "T5"
 
 [[lecon]]
@@ -511,7 +512,8 @@ citation = "the current path lists an unsatisfied reason of"
 enonce = "Le refus se lit sur le chemin d'une NWConnection (localNetworkDenied), la première opération peut échouer avant la réponse à l'alerte, et le trafic de WKWebView n'est pas soumis à la permission : refusée, la page resterait joignable alors que /remote ne l'est pas."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_refused_local_network_names_the_setting_that_lets_it_back", "remote/bench/tests/shell.rs::a_game_that_never_answered_is_not_called_a_lost_connection", "S6"]
 trou = "T5"
 
 [[lecon]]
@@ -891,7 +893,7 @@ lieux = [
 cas = "receive attrape l'erreur et ne la lit pas. Tout échec donne « Connexion perdue, on réessaie… », même sans avoir jamais été connecté, à jamais. Les deux notices se superposent et le texte devient illisible. S6 exige un message clair ; REPETITION.md note déjà que le code n'a pas de texte dédié. WKWebView échappe à la permission : refusée, la page marcherait, mais /remote ne dit jamais quelle page ouvrir."
 preuve = "sonde H4 sur port fermé : capture des deux notices superposées, erreur -1004 lue seulement par le journal de sonde. Avec une seule notice et un texte qui nomme Réglages, variante, capture lisible."
 verifie = "la superposition, l'erreur ignorée, l'absence de texte, sur simulateur"
-suppose = "Le refus lui-même : le simulateur n'applique pas cette permission. L'erreur exacte vient de TN3179, à lire sur un vrai iPhone (S6) ; passer par NWConnection et localNetworkDenied est le correctif proposé, non essayé."
+suppose = "Le refus lui-même : le simulateur n'applique pas cette permission. Le banc tient la notice, et la vraie lecture de NWConnection qui répond non ; que iOS réponde bien localNetworkDenied vient de TN3179, et ne se voit que sur un vrai iPhone (S6). La superposition des deux notices est réglée par construction, GameScreen n'en dessine plus qu'une : aucun test ne lit l'écran."
 
 [[trou]]
 id = "T6"

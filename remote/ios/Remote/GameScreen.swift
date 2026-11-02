@@ -24,10 +24,8 @@ struct GameScreen: View {
                     colors: [connection.tint ?? Palette.bodyLight, Palette.body],
                     center: .top, startRadius: 0, endRadius: 700))
             content
-            if connection.status == .reconnecting {
-                Notice(text: "Connexion perdue, on réessaie…")
-            } else if connection.pageFailing {
-                Notice(text: "La page du jeu ne répond pas, on réessaie…")
+            if let notice = connection.notice {
+                Notice(text: notice)
             }
             if case let .refused(reason) = connection.status {
                 Refused(reason: reason, onLeave: onLeave)
@@ -58,7 +56,7 @@ struct GameScreen: View {
     @ViewBuilder private var content: some View {
         switch connection.content {
         case .waiting:
-            Notice(text: "Connexion au jeu…")
+            EmptyView()
         case .pad:
             if let pad = connection.pad {
                 PadScreen(model: pad)
@@ -81,9 +79,11 @@ private struct Notice: View {
         Text(text)
             .font(.system(size: 15, weight: .semibold, design: .rounded))
             .foregroundStyle(.white.opacity(0.8))
+            .multilineTextAlignment(.center)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.black.opacity(0.5), in: Capsule())
+            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
+            .padding(.horizontal, 48)
             .allowsHitTesting(false)
     }
 }

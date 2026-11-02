@@ -12,8 +12,11 @@ final class GameConnection {
     enum Status: Equatable {
         case connecting
         case connected
-        /// Lost; trying again.
+        /// Lost, or never reached; trying again.
         case reconnecting
+        /// Trying again, but the player refused the local network: only they
+        /// can change that.
+        case localNetworkDenied
         case refused(String)
     }
 
@@ -42,9 +45,16 @@ final class GameConnection {
     @ObservationIgnored private var ticker: Ticker?
     @ObservationIgnored private let haptics = Haptics()
     @ObservationIgnored private var closed = false
+    /// The game answered once: failing now is losing it, not missing it.
+    @ObservationIgnored private var reached = false
+    @ObservationIgnored private let localNetworkDenied: @MainActor (String, UInt16) async -> Bool
 
-    init(target: JoinTarget) {
+    init(
+        target: JoinTarget,
+        localNetworkDenied: @escaping @MainActor (String, UInt16) async -> Bool = LocalNetwork.denied
+    ) {
         self.target = target
+        self.localNetworkDenied = localNetworkDenied
         session = Session(
             player: Self.player, name: Self.name, screen: Size(width: 0, height: 0),
             insets: Insets(top: 0, left: 0, bottom: 0, right: 0))
@@ -115,6 +125,7 @@ final class GameConnection {
     private func handle(_ frame: Data) {
         attempt = 0
         status = .connected
+        reached = true
         switch session.receive(frame: frame) {
         case .showPad:
             Orientation.allow(.landscape)
@@ -149,12 +160,26 @@ final class GameConnection {
         socket.cancel(with: .goingAway, reason: nil)
         session.disconnected()
         pad?.releaseAll()
-        status = .reconnecting
+        if status != .localNetworkDenied {
+            status = .reconnecting
+        }
         let delay = min(0.5 * pow(2, Double(attempt)), 5)
         attempt += 1
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             self?.connect()
+        }
+        Task { [weak self] in await self?.askAboutTheLocalNetwork() }
+    }
+
+    /// `URLSession` says only that it failed; `WKWebView` is exempt from the
+    /// permission, so a page would work while `/remote` never can.
+    private func askAboutTheLocalNetwork() async {
+        guard let url = URL(string: target.socket), let host = url.host() else { return }
+        let port = url.port.flatMap(UInt16.init) ?? (url.scheme == "wss" ? 443 : 80)
+        let denied = await localNetworkDenied(host, port)
+        if status == .reconnecting || status == .localNetworkDenied {
+            status = denied ? .localNetworkDenied : .reconnecting
         }
     }
 
@@ -189,6 +214,27 @@ final class GameConnection {
         guard let socket, opened else { return }
         for frame in session.drain() {
             socket.send(.data(frame)) { _ in }
+        }
+    }
+
+    /// What the player reads, if anything: one thing at a time. `Refused`
+    /// has its own screen.
+    var notice: String? {
+        switch status {
+        case .connecting:
+            "Connexion au jeu…"
+        case .reconnecting where reached:
+            "Connexion perdue, on réessaie…"
+        case .reconnecting:
+            "Le jeu ne répond pas, on réessaie…"
+        case .localNetworkDenied:
+            "Réseau local refusé. Autorise Télécommande dans Réglages > Confidentialité et sécurité > Réseau local."
+        case .connected where content == .waiting:
+            "Connexion au jeu…"
+        case .connected:
+            pageFailing ? "La page du jeu ne répond pas, on réessaie…" : nil
+        case .refused:
+            nil
         }
     }
 
