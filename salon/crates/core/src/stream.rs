@@ -228,10 +228,7 @@ impl Order {
     /// How long a fragment waits for news: on a stream, for ever.
     pub fn wait(self, peer: &Peer, window: &Window, timing: &Timing) -> u64 {
         match self {
-            Order::Any => window.wait(
-                peer.resend(timing.resend_min, timing.resend_max),
-                timing.resend_max,
-            ),
+            Order::Any => window.round(peer, timing),
             Order::Kept => u64::MAX,
         }
     }
@@ -314,6 +311,15 @@ impl Window {
             .checked_shl(self.expired)
             .map_or(u64::MAX, |times| resend.saturating_mul(times));
         doubled.min(max.max(resend))
+    }
+
+    /// How long what leaves now takes to say something back, at the longest:
+    /// one loss per round halves it, on a link with a timer or without.
+    pub fn round(&self, peer: &Peer, timing: &Timing) -> u64 {
+        self.wait(
+            peer.resend(timing.resend_min, timing.resend_max),
+            timing.resend_max,
+        )
     }
 
     pub fn heard(&mut self, heard: Heard, now: Ms, wait: u64) {

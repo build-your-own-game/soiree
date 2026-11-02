@@ -1212,3 +1212,60 @@ fn a_window_that_fell_to_its_floor_grows_again() {
     }
     assert!(most > 3, "the window never left its floor: {most}");
 }
+
+/// Enough events on a stream to keep it busy, each a whole fragment.
+fn busy_stream() -> (Room, DeviceId) {
+    let (mut room, device) = on_a_stream();
+    for _ in 0..30 {
+        room.send(device, &vec![1; 15_000]).unwrap();
+    }
+    (room, device)
+}
+
+/// What comes back when the event `events` was dropped and the `after` that
+/// follow it came: an echo of something that left after it proves it.
+fn hole_at(events: u32, after: u32, sent: u64, echoed: u64) -> Vec<u8> {
+    encode(&Packet {
+        epoch: EPOCH,
+        sent,
+        echo: Some(Echo {
+            sent: echoed,
+            held: 0,
+        }),
+        ack: Some(Ack {
+            events,
+            ahead: ((1 << after) - 1) << 1,
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    })
+}
+
+fn all_below(events: u32, sent: u64) -> Vec<u8> {
+    encode(&Packet {
+        epoch: EPOCH,
+        sent,
+        ack: Some(Ack {
+            events,
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    })
+}
+
+/// Each loss halves the window of a stream too, however long it lives. A
+/// stream's fragments wait for ever: that is no reason for its window to take
+/// a single loss in its whole life.
+#[test]
+fn a_stream_halves_its_window_at_each_loss() {
+    let (mut room, _) = busy_stream();
+    assert_eq!(leaving(&mut room, Ms(10)), 3);
+    room.received(Ms(11), LinkId(2), &all_below(3, 11));
+    assert_eq!(leaving(&mut room, Ms(11)), 4);
+    room.received(Ms(12), LinkId(2), &all_below(7, 12));
+    assert_eq!(leaving(&mut room, Ms(12)), 7, "96 KiB");
+    room.received(Ms(1_000), LinkId(2), &hole_at(7, 6, 1_000, 500));
+    assert_eq!(leaving(&mut room, Ms(1_000)), 4, "48 KiB, the lost one first");
+    room.received(Ms(3_000), LinkId(2), &hole_at(14, 2, 3_000, 2_500));
+    assert_eq!(leaving(&mut room, Ms(3_000)), 3, "the floor of two packets");
+}

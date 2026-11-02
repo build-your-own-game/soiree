@@ -412,10 +412,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
             let order = Order::of(current.caps);
-            let wait = device.wait(order, &self.config.timing);
+            let round = device.window.round(&device.peer, &self.config.timing);
             let learned = device.down.ack(&ack, heard, order);
             let learned = learned.with(device.out_state.ack(&ack, heard, order));
-            device.window.heard(learned, now, wait);
+            device.window.heard(learned, now, round);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = device

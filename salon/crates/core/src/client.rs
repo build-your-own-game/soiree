@@ -372,10 +372,10 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
             let order = Order::of(open.caps);
-            let wait = order.wait(&self.peer, &self.window, &self.config.timing);
+            let round = self.window.round(&self.peer, &self.config.timing);
             let learned = self.up.ack(&ack, heard, order);
             let learned = learned.with(self.out_state.ack(&ack, heard, order));
-            self.window.heard(learned, now, wait);
+            self.window.heard(learned, now, round);
         }
         // Fragments and acks are safe to read from an old packet. The phase is
         // not: it would take back what a newer one said, and the next event
