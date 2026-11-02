@@ -191,6 +191,7 @@ sans aucun test, à côté de crates qui en exécutent, ne compte pas comme un t
 | `soiree certify` | Scénarios ordinaires du harnais navigateur | Ces scénarios ont passé ; ce n’est pas un résultat des tests du code ni des appareils réels |
 | `soiree certify -- --only ui,panic` | Scénarios explicitement choisis et santé du contrôleur | Ce périmètre réduit a passé, sans attester les autres scénarios |
 | `soiree certify -- --soak 30` | Scénarios ordinaires et endurance R2 | L’endurance demandée a aussi été observée |
+| `SOIREE_EVENING_MINUTES=60 cargo test an_evening` | Six heures simulées du vrai hôte et des vrais clients, octets comptés | La mémoire vivante de la salle reste plate ; ni le navigateur ni les vrais sockets n’y participent |
 
 Un `--only` vide ou inconnu échoue. Un scénario sélectionné mais sauté,
 partiel ou dépourvu d’observation attendue ne réussit pas simplement parce que

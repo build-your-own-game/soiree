@@ -408,6 +408,9 @@ les mesures CDP ne lui sont pas attribuées.
 pentes utilisent le temps monotone ; les dates restent des repères d'archive.
 La chauffe commence avec l'endurance effective ; un thread supplémentaire
 conservé est refusé. Des scénarios tous sautés ne constituent pas du chaos. Un cycle court `resources` satisfait R4 uniquement, jamais R2.
+Ce que garde la salle se mesure mieux en simulation : `salon_host::simulation::evening`
+compte les octets vivants sur le vrai hôte, sans horloge réelle, et un jeu peut
+y relier une garantie. R2 reste la seule à voir le navigateur et les vrais sockets.
 L'observateur WASM conserve des références faibles aux mémoires réellement
 construites/exportées ; ses contrôles négatifs retiennent volontairement du
 DOM et 48 Mio WASM et doivent échouer aux budgets.

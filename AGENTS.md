@@ -128,7 +128,9 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
    catalogue). Dans `outil/` : `cargo fmt --check`,
    `cargo clippy --all-targets -- -D warnings`, `cargo test --locked`.
    Exécuter aussi les tests du noyau puis `tools/verify-policy.sh --mutations`
-   avec la version de Verus figée dans son README.
+   avec la version de Verus figée dans son README. La soirée simulée en entier,
+   `SOIREE_EVENING_MINUTES=60 cargo test an_evening`, dans `salon/` et dans
+   chaque jeu qui en a une : `cargo test` n'en joue qu'une version courte.
 4. Le modèle : `modele/` brut ne se compile pas (`{{version}}`). `RUNNER_TEMP="$(mktemp -d)" SOIREE_HARNESS="$PWD/tools/cert" python3 .github/scripts/model-ci.py`, après `npm ci` dans `tools/cert`, en fait un jeu par `soiree new`, le relie à ce salon-ci et lui fait passer `soiree check`, le refus de `--published` et `soiree certify -- --only ui,panic`.
 5. Dans chaque jeu du dossier de l'hôte (`games/*`), `soiree certify`, avec ce binaire : le `[patch]` de `.cargo/config.toml` le fait compiler contre ce salon-ci, avant toute étiquette. `soiree check` y refuse la version de `soiree.toml` tant que le jeu n'est pas passé à l'étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
 6. Committer : l'étape suivante ne voit que le commit courant.

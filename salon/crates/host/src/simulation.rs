@@ -7,6 +7,144 @@ use crate::{
 };
 use salon_core::{Caps, Client, ClientConfig, ClientOutput, LinkId, Ms, Status};
 use serde::{Serialize, de::DeserializeOwned};
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
+use std::ops::Range;
+
+const MINUTE_MS: u64 = 60_000;
+/// Laps of an evening: the first ones fill what it needs, the others show a slope.
+const LAPS: u64 = 6;
+/// See [`lap_minutes`].
+const LAP_MINUTES: u64 = 10;
+/// How long a phone a dice froze stays silent, in calls to [`Network::disturb`].
+const FROZEN_TURNS: u64 = 2;
+
+thread_local! {
+    /// On this thread: a simulation has one, and tests run side by side.
+    static LIVE: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The allocator of a test that measures an evening. It only counts:
+///
+/// ```ignore
+/// #[global_allocator]
+/// static COUNTED: salon_host::simulation::Counting = salon_host::simulation::Counting;
+/// ```
+///
+/// Exact and the same on any machine, where a process's memory moves by
+/// megabytes with its allocator and hides what a game keeps.
+pub struct Counting;
+
+#[expect(
+    unsafe_code,
+    reason = "a global allocator is unsafe to write: this one only counts, then calls the system's"
+)]
+// SAFETY: every call goes to the system allocator, unchanged.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        LIVE.with(|live| live.set(live.get().wrapping_add(layout.size())));
+        // SAFETY: the caller's obligations are the system's.
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        LIVE.with(|live| live.set(live.get().wrapping_sub(layout.size())));
+        // SAFETY: the caller's obligations are the system's.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+}
+
+/// Bytes allocated on this thread and not freed yet, under [`Counting`].
+pub fn live_bytes() -> usize {
+    LIVE.with(Cell::get)
+}
+
+/// One moment of an [`evening`].
+#[derive(Clone, Copy, Debug)]
+pub struct Moment {
+    /// Counted from the start of the evening.
+    pub step: u64,
+    /// Which lap of the evening.
+    pub lap: u64,
+    /// The end of a lap: no fault and nothing new, everybody comes back and
+    /// whoever left is forgotten. What is alive after it is what the room
+    /// keeps, not what was in flight.
+    pub calm: bool,
+}
+
+/// How long a lap of an evening lasts, in simulated minutes. Short by default,
+/// to run with every `cargo test`: what a room keeps depends on what happens,
+/// and a lap is enough of it. `SOIREE_EVENING_MINUTES=60` plays the six hours.
+pub fn lap_minutes() -> u64 {
+    std::env::var("SOIREE_EVENING_MINUTES")
+        .ok()
+        .and_then(|minutes| minutes.parse().ok())
+        .unwrap_or(LAP_MINUTES)
+}
+
+/// Plays [`LAPS`] laps on `network`, calling `play` every `step_ms`, and gives
+/// the bytes alive after each. [`flat`] says whether they settled.
+pub fn evening<G: Game>(
+    network: &mut Network<G>,
+    step_ms: u64,
+    calm_minutes: u64,
+    mut play: impl FnMut(&mut Network<G>, Moment),
+) -> Vec<usize>
+where
+    G::Up: Serialize,
+    G::Down: DeserializeOwned,
+{
+    let lap_minutes = lap_minutes().max(calm_minutes.saturating_add(1));
+    let steps_in = |minutes: u64| {
+        minutes
+            .saturating_mul(MINUTE_MS)
+            .checked_div(step_ms)
+            .unwrap_or(0)
+    };
+    let steps = steps_in(lap_minutes);
+    let calm_steps = steps_in(calm_minutes);
+    let mut measured = Vec::new();
+    for lap in 0..LAPS {
+        for step in 0..steps {
+            let moment = Moment {
+                step: lap.saturating_mul(steps).saturating_add(step),
+                lap,
+                calm: step.saturating_add(calm_steps) >= steps,
+            };
+            play(network, moment);
+            network.run(step_ms);
+        }
+        // The simulation's own log of what phones heard, not the game's: a
+        // page keeps its latest screen.
+        for phone in &mut network.phones {
+            phone.statuses = Vec::new();
+            phone.events = Vec::new();
+            phone.states = phone.states.pop().into_iter().collect();
+        }
+        measured.push(live_bytes());
+    }
+    measured
+}
+
+/// The first lap fills what an evening needs. After it, what is alive stays
+/// within `margin` bytes of the end of that lap, whatever the laps between.
+pub fn flat(laps: &[usize], margin: usize) -> Result<(), String> {
+    let (first, later) = laps.split_first().ok_or("no lap was played")?;
+    if later.is_empty() {
+        return Err("one lap says nothing of a slope".to_owned());
+    }
+    if *first == 0 {
+        return Err("nothing was counted: is Counting the global allocator?".to_owned());
+    }
+    let limit = first.saturating_add(margin);
+    match later.iter().max() {
+        Some(worst) if *worst > limit => Err(format!(
+            "{} bytes more than after the first lap, past the {margin} allowed: {laps:?}",
+            worst.saturating_sub(*first)
+        )),
+        Some(_) | None => Ok(()),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Faults {
@@ -98,6 +236,42 @@ where
         if let Some(phone) = self.phones.get_mut(index) {
             phone.frozen = false;
             phone.client.wake(self.now);
+        }
+    }
+    /// The page closes and another opens in its place, with its own identity:
+    /// a private tab, cleared storage, a friend passing the phone on.
+    pub fn replace(&mut self, index: usize, config: ClientConfig) {
+        if let Some(phone) = self.phones.get_mut(index) {
+            if let Some(link) = phone.link.take() {
+                self.pending.push(Input::Closed { link });
+            }
+            phone.frozen = false;
+            phone.client = Client::new(self.now, config);
+        }
+    }
+    /// What a room lives through in a moment, from one throw of dice: one of
+    /// `seats` loses its link, or falls silent, or those that were silent wake
+    /// up. A phone stays frozen for [`FROZEN_TURNS`] at most.
+    pub fn disturb(&mut self, seats: Range<usize>, throw: u64, turn: u64) {
+        let picked = u64::try_from(seats.len())
+            .ok()
+            .and_then(|count| throw.checked_rem(count))
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| seats.start.checked_add(index));
+        let Some(index) = picked else {
+            return;
+        };
+        for frozen in 0..self.phones.len() {
+            if self.phones.get(frozen).is_some_and(|phone| phone.frozen)
+                && turn.is_multiple_of(FROZEN_TURNS)
+            {
+                self.wake(frozen);
+            }
+        }
+        match (throw >> 32) % 3 {
+            0 => self.cut(index),
+            1 => self.freeze(index),
+            _ => {}
         }
     }
     /// Advances directly to the next packet or client/host deadline. State

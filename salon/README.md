@@ -301,6 +301,13 @@ ajoute un appareil, `run` et `run_until` avancent le temps virtuel,
 duplications et gigue. Les tests d'un jeu fournissent sa vraie salle comme
 `Game`, envoient ses vrais `Up` par les clients et comparent son état complet.
 
+`evening(network, step_ms, calm_minutes, play)` joue six tours de cette salle et
+rend les octets vivants après chacun ; `flat` dit s'ils se stabilisent. Chaque
+tour finit par `calm_minutes` sans faute ni nouveauté. Il faut `Counting` en
+`#[global_allocator]`, dans les tests seulement. `replace` ouvre une nouvelle
+page à la place d'un téléphone, `disturb` coupe ou fait taire un téléphone tiré
+au dé. Un tour dure 10 min simulées, 60 avec `SOIREE_EVENING_MINUTES=60`.
+
 ## Valeurs d’interface typées
 
 `salon_web::style` fournit `Color`, `Length`, `Number`, `Time` et `Image`.

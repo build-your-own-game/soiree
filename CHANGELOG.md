@@ -156,6 +156,14 @@ Le flux fiable ne demande aucun changement de code non plus, mais quatre choses 
 - Un paquet en retard ne ramène plus la phase en arrière, ce qui faisait refuser une réponse (E5). Un événement envoyé juste avant `quit` arrive. Un `Timing` à l'envers ne fait plus paniquer la salle, et un `heartbeat` ou un `resend_min` à 0 valent 1 ms : `poll` ne répondait plus jamais `None`.
 - Les paquets changent de forme : `Ack` porte `ahead`, `event_parts` et `state_parts`, et `Welcome` porte `max_up` et `max_down`. `PROTOCOL` reste à 2 : aucune étiquette n'a publié le protocole 2. Un fragment porte 940 octets sur un lien `Caps::DATAGRAM`, contre 996.
 
+### Ce qu'une soirée laisse en mémoire
+
+`salon_host::simulation` compte désormais ce que garde une salle, sans attendre. `evening` joue six tours sur le vrai hôte et les vrais clients, en temps simulé, et rend les octets vivants après chaque tour ; `flat` dit s'ils se stabilisent. Le compteur est `Counting`, l'allocateur à déclarer dans les tests (`#[global_allocator]`). `Network` gagne `replace`, une nouvelle page, et `disturb`, une coupure ou un silence tirés au dé. Un tour dure 10 min simulées dans `cargo test` et 60 avec `SOIREE_EVENING_MINUTES=60` : une fuite dépend de ce qui arrive, pas de la durée.
+
+- Punchline et Sidequest en ont une, et elle y a trouvé le même défaut : un téléphone parti pour de bon restait en mémoire, dans la salle et dans salon, jusqu'à la fin de la soirée. Corrigé dans les deux. Le jeu ne perd rien : ce téléphone, s'il revient, est un nouveau venu, comme après l'oubli d'un inconnu.
+- Sept retraits de code dans salon ont mesuré le test. Les quatre qui faisaient vraiment grandir la mémoire sont vus sur les six heures, grâce à des pages rechargées, de gros messages et un téléphone qui ne perd jamais son lien : une soirée ne voit que ce qu'elle emprunte. Les trois autres ne changent pas la soirée d'un octet : ils gardent des octets plus longtemps sans les accumuler. La version courte de `cargo test` manque les plus petites fuites, d'où les six heures dans la CI de salon et avant une étiquette.
+- `--soak 30` reste en option : c'est la seule endurance avec un vrai navigateur et de vrais sockets. La mémoire du serveur s'y lit moins bien : une mesure en processus bouge de quelques Mio toute seule, là où la soirée simulée compte l'octet.
+
 ### Certification
 
 - Une salle de moins de 8 joueurs se certifie : les parcours ordinaires ouvrent `players.max` téléphones au plus, et `silent` ne demande plus cinq téléphones.

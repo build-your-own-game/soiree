@@ -99,6 +99,8 @@ jobs:
           test ! -e ios/Generated/remote_ffi.swift
           xcodebuild -project ios/Remote.xcodeproj -scheme Remote -sdk iphonesimulator -configuration Debug -derivedDataPath target/ci-xcode ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Check the shared crates and real Swift ABI
+        env:
+          SOIREE_EVENING_MINUTES: "60"
         run: soiree check --locked salon remote .
       - name: Run the Swift shell on a simulator
         working-directory: remote/bench
