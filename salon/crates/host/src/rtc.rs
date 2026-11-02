@@ -12,7 +12,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use salon_core::{Caps, LinkId};
@@ -34,6 +36,10 @@ const HANDSHAKE: Duration =
 /// thread serves every page, so waking a thousand times a second costs little
 /// and keeps outgoing packets from waiting.
 const POLL: Duration = Duration::from_millis(1);
+/// Between two starts of the thread: what panics out of [`run`] is no packet's
+/// fault, so it may well panic again at once, and this keeps that from eating
+/// a core. Short enough that a page's next offer finds the thread back.
+const RESTART: Duration = Duration::from_millis(100);
 
 pub struct Signal {
     pub link: LinkId,
@@ -79,6 +85,37 @@ struct Entry {
     timeout: Option<Instant>,
     /// The page is on this very computer: its packets come from loopback.
     local: bool,
+    /// A dependency panicked on this link: its state means nothing any more.
+    broken: bool,
+}
+
+impl Entry {
+    /// Runs `work` on this link. One page must never cost more than its own
+    /// link, whatever it sends: dimpl 0.7.6 panics on two equal records from a
+    /// peer without a token (`recherche/transport-webrtc.toml`, T1), and
+    /// every page shares this thread. `None` when the link is broken, which
+    /// nothing touches again.
+    fn guarded<T>(&mut self, link: LinkId, work: impl FnOnce(&mut Entry) -> T) -> Option<T> {
+        if self.broken {
+            return None;
+        }
+        let outcome = contained(|| work(self));
+        if outcome.is_none() {
+            self.broken = true;
+            crate::say(format_args!(
+                "salon: WebRTC link {} panicked: it is dropped, the others go on",
+                link.0
+            ));
+        }
+        outcome
+    }
+}
+
+/// `None` if `work` panicked. Needs unwinding: under `panic = "abort"`, which
+/// no profile of salon, of the model or of a game sets, the process would just
+/// stop. The server says so when it starts.
+fn contained<T>(work: impl FnOnce() -> T) -> Option<T> {
+    catch_unwind(AssertUnwindSafe(work)).ok()
 }
 
 /// The way to the room from the one thread that serves every page: it never
@@ -137,14 +174,54 @@ pub struct Rtcs {
     pub net: ToRoom,
 }
 
-pub fn run(rtcs: &Rtcs) {
+type Entries = BTreeMap<LinkId, Entry>;
+
+impl Rtcs {
+    /// Starts the thread that serves every page. What each link does is
+    /// guarded by [`Entry::guarded`]; a panic that still comes out of [`run`]
+    /// costs the links of this start, which the room hears of, and not WebRTC
+    /// itself: the thread starts again, and the pages come back to it.
+    pub fn start(self) -> Result<(), String> {
+        if cfg!(panic = "abort") {
+            crate::say(format_args!(
+                "salon: this build aborts on panic: a peer that makes a dependency panic stops the game"
+            ));
+        }
+        thread::Builder::new()
+            .name("salon-rtc".into())
+            .spawn(move || keep_up(&self, run))
+            .map(drop)
+            .map_err(|error| format!("cannot start WebRTC: {error}"))
+    }
+}
+
+fn keep_up(rtcs: &Rtcs, serving: impl Fn(&Rtcs, &mut Entries)) {
+    loop {
+        let mut entries = Entries::new();
+        if contained(|| serving(rtcs, &mut entries)).is_some() {
+            return;
+        }
+        crate::say(format_args!(
+            "salon: the WebRTC thread panicked: its links are closed, and it starts again"
+        ));
+        for (link, entry) in entries {
+            if entry.channel.is_some() {
+                rtcs.net.tell(Net::Closed { link });
+            }
+            // Nothing can be asked of it, and dropping it is still its code.
+            let _: Option<()> = contained(|| drop(entry));
+        }
+        thread::sleep(RESTART);
+    }
+}
+
+fn run(rtcs: &Rtcs, entries: &mut Entries) {
     if rtcs.socket.set_read_timeout(Some(POLL)).is_err() {
         crate::say(format_args!(
             "salon: cannot set the UDP socket's timeout; WebRTC is off"
         ));
         return;
     }
-    let mut entries: BTreeMap<LinkId, Entry> = BTreeMap::new();
     let mut buffer = vec![0_u8; 2048];
     loop {
         rtcs.net.flush();
@@ -157,8 +234,9 @@ pub fn run(rtcs: &Rtcs) {
                         created: Clock::instant(),
                         timeout: None,
                         local: false,
+                        broken: false,
                     };
-                    drive(rtcs, link, &mut entry);
+                    let _: Option<()> = entry.guarded(link, |entry| drive(rtcs, link, entry));
                     entries.insert(link, entry);
                 }
                 Err(TryRecvError::Empty) => break,
@@ -171,34 +249,39 @@ pub fn run(rtcs: &Rtcs) {
                     if let Some(entry) = entries.get_mut(&link)
                         && let Some(id) = entry.channel
                     {
-                        if let Some(mut channel) = entry.rtc.channel(id) {
-                            // `false`: str0m's buffer is full; the packet is
-                            // lost and salon sends it again.
-                            let _: Result<bool, str0m::RtcError> = channel.write(true, &bytes);
-                        }
-                        drive(rtcs, link, entry);
+                        let _: Option<()> = entry.guarded(link, |entry| {
+                            if let Some(mut channel) = entry.rtc.channel(id) {
+                                // `false`: str0m's buffer is full; the packet is
+                                // lost and salon sends it again.
+                                let _: Result<bool, str0m::RtcError> = channel.write(true, &bytes);
+                            }
+                            drive(rtcs, link, entry);
+                        });
                     }
                 }
                 RtcOut::Close(link) => {
                     if let Some(mut entry) = entries.remove(&link) {
-                        entry.rtc.disconnect();
+                        let _: Option<()> = entry.guarded(link, |entry| entry.rtc.disconnect());
                     }
                 }
             }
         }
-        receive(rtcs, &mut entries, &mut buffer);
+        receive(rtcs, entries, &mut buffer);
         let now = Clock::instant();
-        for (&link, entry) in &mut entries {
+        for (&link, entry) in entries.iter_mut() {
             if entry.timeout.is_some_and(|at| at <= now) {
-                if entry.rtc.handle_input(Input::Timeout(now)).is_err() {
-                    entry.rtc.disconnect();
-                }
-                drive(rtcs, link, entry);
+                let _: Option<()> = entry.guarded(link, |entry| {
+                    if entry.rtc.handle_input(Input::Timeout(now)).is_err() {
+                        entry.rtc.disconnect();
+                    }
+                    drive(rtcs, link, entry);
+                });
             }
         }
         entries.retain(|&link, entry| {
             let stalled = entry.channel.is_none() && now.duration_since(entry.created) > HANDSHAKE;
-            let keep = entry.rtc.is_alive() && !stalled;
+            let alive = entry.guarded(link, |entry| entry.rtc.is_alive());
+            let keep = alive == Some(true) && !stalled;
             if !keep && std::env::var_os("SALON_LOG").is_some() {
                 crate::say(format_args!(
                     "salon: WebRTC link {} dropped (stalled: {stalled})",
@@ -214,7 +297,7 @@ pub fn run(rtcs: &Rtcs) {
 }
 
 /// Reads one datagram, if any, and gives it to the connection it belongs to.
-fn receive(rtcs: &Rtcs, entries: &mut BTreeMap<LinkId, Entry>, buffer: &mut [u8]) {
+fn receive(rtcs: &Rtcs, entries: &mut Entries, buffer: &mut [u8]) {
     let (size, source) = match rtcs.socket.recv_from(buffer) {
         Ok(read) => read,
         Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => return,
@@ -223,7 +306,8 @@ fn receive(rtcs: &Rtcs, entries: &mut BTreeMap<LinkId, Entry>, buffer: &mut [u8]
             return;
         }
     };
-    let Some(Ok(contents)) = buffer.get(..size).map(<&[u8]>::try_into) else {
+    // A datagram nobody can read yet belongs to no link, so no link pays for it.
+    let Some(Some(Ok(contents))) = contained(|| buffer.get(..size).map(<&[u8]>::try_into)) else {
         return;
     };
     // The socket listens on every interface: a packet from this computer
@@ -242,18 +326,21 @@ fn receive(rtcs: &Rtcs, entries: &mut BTreeMap<LinkId, Entry>, buffer: &mut [u8]
             contents,
         },
     );
-    let Some((&link, entry)) = entries
-        .iter_mut()
-        .find(|(_, entry)| entry.rtc.accepts(&input))
-    else {
+    let found = entries.iter_mut().find_map(|(&link, entry)| {
+        (entry.guarded(link, |entry| entry.rtc.accepts(&input)) == Some(true))
+            .then_some((link, entry))
+    });
+    let Some((link, entry)) = found else {
         return;
     };
     entry.local = local;
-    if entry.rtc.handle_input(input).is_ok() {
-        drive(rtcs, link, entry);
-    } else {
-        entry.rtc.disconnect();
-    }
+    let _: Option<()> = entry.guarded(link, |entry| {
+        if entry.rtc.handle_input(input).is_ok() {
+            drive(rtcs, link, entry);
+        } else {
+            entry.rtc.disconnect();
+        }
+    });
 }
 
 /// Drains `entry`'s outputs: packets to send, events for the room, and the
@@ -308,12 +395,203 @@ fn drive(rtcs: &Rtcs, link: LinkId, entry: &mut Entry) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 mod tests {
+    use std::cell::Cell;
+    use std::collections::VecDeque;
     use std::sync::mpsc::sync_channel;
     use std::time::Duration;
 
+    use str0m::change::SdpAnswer;
+    use str0m::channel::{ChannelConfig, Reliability};
+
     use super::*;
-    use crate::room::inbox::channel;
+    use crate::room::inbox::{self, channel};
+
+    const PAGE: &str = "192.0.2.50:5000";
+    const HOST: &str = "192.0.2.10:8090";
+
+    /// A page and the host's end of its link, as [`answer`] makes it, over a
+    /// memory and in virtual time.
+    struct Pair {
+        page: Rtc,
+        host: Rtc,
+        now: Instant,
+        page_channel: Option<ChannelId>,
+        host_channel: Option<ChannelId>,
+        /// The size of each datagram the host sent.
+        down: Vec<usize>,
+        /// What the page read on its channel.
+        heard: Vec<Vec<u8>>,
+    }
+
+    impl Pair {
+        /// Offer, answer, ICE, DTLS, SCTP: both ends of the channel are open.
+        fn opened() -> Pair {
+            salon_crypto::provider().install_process_default();
+            let now = Clock::instant();
+            let mut page: Rtc = RtcConfig::new().build(now);
+            let at: SocketAddr = PAGE.parse().unwrap();
+            page.add_local_candidate(Candidate::host(at, "udp").unwrap());
+            let mut change = page.sdp_api();
+            change.add_channel_with_config(ChannelConfig {
+                label: "salon".to_owned(),
+                ordered: false,
+                reliability: Reliability::MaxRetransmits { retransmits: 0 },
+                ..ChannelConfig::default()
+            });
+            let (offer, pending) = change.apply().unwrap();
+            let offer = serde_json::to_vec::<SdpOffer>(&offer).unwrap();
+            let cert = salon_crypto::dtls_cert().unwrap();
+            let (host, answer_body) = answer(&offer, HOST.parse().unwrap(), &cert).unwrap();
+            let answered: SdpAnswer = serde_json::from_slice(&answer_body).unwrap();
+            page.sdp_api().accept_answer(pending, answered).unwrap();
+            let mut pair = Pair {
+                page,
+                host,
+                now,
+                page_channel: None,
+                host_channel: None,
+                down: Vec::new(),
+                heard: Vec::new(),
+            };
+            pair.run_until(|pair| pair.page_channel.is_some() && pair.host_channel.is_some());
+            pair.down.clear();
+            pair
+        }
+
+        /// Drains both ends and delivers everything, once.
+        fn exchange(&mut self) {
+            let mut wire: VecDeque<(SocketAddr, SocketAddr, Vec<u8>)> = VecDeque::new();
+            loop {
+                self.drain_page(&mut wire);
+                self.drain_host(&mut wire);
+                let Some((source, destination, contents)) = wire.pop_front() else {
+                    return;
+                };
+                let input = Input::Receive(
+                    self.now,
+                    Receive {
+                        proto: Protocol::Udp,
+                        source,
+                        destination,
+                        contents: contents.as_slice().try_into().unwrap(),
+                    },
+                );
+                if destination == HOST.parse().unwrap() {
+                    self.host.handle_input(input).unwrap();
+                } else {
+                    self.page.handle_input(input).unwrap();
+                }
+            }
+        }
+
+        fn drain_page(&mut self, wire: &mut VecDeque<(SocketAddr, SocketAddr, Vec<u8>)>) {
+            loop {
+                match self.page.poll_output().unwrap() {
+                    Output::Timeout(_) => return,
+                    Output::Transmit(sent) => {
+                        wire.push_back((sent.source, sent.destination, sent.contents.to_vec()));
+                    }
+                    Output::Event(Event::ChannelOpen(id, _)) => self.page_channel = Some(id),
+                    Output::Event(Event::ChannelData(data)) => self.heard.push(data.data),
+                    Output::Event(_) => {}
+                }
+            }
+        }
+
+        fn drain_host(&mut self, wire: &mut VecDeque<(SocketAddr, SocketAddr, Vec<u8>)>) {
+            loop {
+                match self.host.poll_output().unwrap() {
+                    Output::Timeout(_) => return,
+                    Output::Transmit(sent) => {
+                        self.down.push(sent.contents.len());
+                        wire.push_back((sent.source, sent.destination, sent.contents.to_vec()));
+                    }
+                    Output::Event(Event::ChannelOpen(id, _)) => self.host_channel = Some(id),
+                    Output::Event(_) => {}
+                }
+            }
+        }
+
+        fn run_until(&mut self, done: impl Fn(&Pair) -> bool) {
+            let end = self.now + Duration::from_secs(30);
+            while self.now < end {
+                self.exchange();
+                if done(self) {
+                    return;
+                }
+                self.now += Duration::from_millis(10);
+                self.host.handle_input(Input::Timeout(self.now)).unwrap();
+                self.page.handle_input(Input::Timeout(self.now)).unwrap();
+            }
+            panic!("not done within 30 virtual seconds");
+        }
+    }
+
+    /// The thread's way to everything, on a port nobody talks to.
+    fn door(room: usize) -> (Rtcs, inbox::Receiver<Net>) {
+        let (net, inbox) = channel(room).unwrap();
+        let (outlet, outgoing) = sync_channel(1);
+        let (_, signals) = sync_channel(1);
+        let rtcs = Rtcs {
+            socket: UdpSocket::bind(("127.0.0.1", 0)).unwrap(),
+            address: HOST.parse().unwrap(),
+            signals,
+            outgoing,
+            outlet,
+            net: ToRoom::new(net),
+        };
+        (rtcs, inbox)
+    }
+
+    fn entry_of(pair: Pair) -> Entry {
+        Entry {
+            rtc: pair.host,
+            channel: pair.host_channel,
+            created: pair.now,
+            timeout: None,
+            local: false,
+            broken: false,
+        }
+    }
+
+    /// What panics out of the loop, past every guard, costs the links of this
+    /// start: the room hears of them, and the thread is there for the next
+    /// offer. Dead, it left every later offer a 503.
+    #[test]
+    fn the_thread_starts_again_and_the_room_hears_what_it_lost() {
+        let (rtcs, inbox) = door(4);
+        let pair = Cell::new(Some(Pair::opened()));
+        let starts = Cell::new(0_u32);
+        keep_up(&rtcs, |_, entries| {
+            starts.set(starts.get() + 1);
+            if let Some(pair) = pair.take() {
+                entries.insert(LinkId(7), entry_of(pair));
+                std::panic::panic_any("outside every guard");
+            }
+        });
+        assert_eq!(starts.get(), 2);
+        let read = inbox.recv_timeout(Duration::ZERO).unwrap();
+        assert!(matches!(read, Net::Closed { link } if link == LinkId(7)));
+    }
+
+    /// A link that panicked is not asked anything again: its state means
+    /// nothing, and a second panic there would prove nothing either.
+    #[test]
+    fn a_broken_link_is_never_touched_again() {
+        let mut entry = entry_of(Pair::opened());
+        let link = LinkId(1);
+        assert_eq!(entry.guarded(link, |_| 1), Some(1));
+        let panicked: Option<u8> = entry.guarded(link, |_| std::panic::panic_any("a dependency"));
+        assert_eq!(panicked, None);
+        let touched = Cell::new(false);
+        assert_eq!(entry.guarded(link, |_| touched.set(true)), None);
+        assert!(!touched.get());
+    }
 
     fn opened(link: LinkId) -> Net {
         let (outlet, _) = sync_channel(1);

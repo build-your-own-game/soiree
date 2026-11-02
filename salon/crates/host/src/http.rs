@@ -101,7 +101,7 @@ pub fn serve<G: Game>(options: Options, game: G) -> Result<(), String> {
         outlet,
         net: rtc::ToRoom::new(net.clone()),
     };
-    thread::spawn(move || rtc::run(&rtcs));
+    rtcs.start()?;
     let handler = game.http();
     let tick = options.tick;
     let clock = Clock::start();
