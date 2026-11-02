@@ -612,6 +612,44 @@ fn a_new_link_measures_from_zero() {
     assert_eq!(host.device(device).unwrap().rtt, None);
 }
 
+/// A link closes by itself only after a final word, and by then it holds no
+/// device: no device ever leaves that way. A hello can no longer bring one
+/// onto a closing link (`found_bugs.rs`), so the game hears nothing, a replaced
+/// device stays where it went, and a forgotten one stays forgotten.
+#[test]
+fn a_link_that_closes_by_itself_takes_no_device_with_it() {
+    let (mut replaced, device) = joined();
+    replaced.opened(Ms(0), LinkId(2), Caps::DATAGRAM);
+    replaced.received(Ms(0), LinkId(2), &saying(hello(1)));
+    assert_eq!(drain(&mut replaced, Ms(0)).events, Vec::new());
+    let outputs = drain(&mut replaced, Ms(1_000));
+    assert_eq!(outputs.closed, vec![LINK]);
+    assert_eq!(outputs.events, Vec::new());
+    let info = replaced.device(device).unwrap();
+    assert_eq!(info.presence, Presence::Present);
+
+    let (mut forgotten, device) = joined();
+    forgotten.forget(device);
+    assert_eq!(drain(&mut forgotten, Ms(0)).events, Vec::new());
+    let outputs = drain(&mut forgotten, Ms(1_000));
+    assert_eq!(outputs.closed, vec![LINK]);
+    assert_eq!(outputs.events, Vec::new());
+    assert_eq!(forgotten.devices().count(), 0);
+
+    let mut refused = room();
+    refused.opened(Ms(0), LINK, Caps::DATAGRAM);
+    let wrong = Hello {
+        game: GAME + 1,
+        ..hello(1)
+    };
+    refused.received(Ms(0), LINK, &saying(wrong));
+    assert_eq!(drain(&mut refused, Ms(0)).events, Vec::new());
+    let outputs = drain(&mut refused, Ms(1_000));
+    assert_eq!(outputs.closed, vec![LINK]);
+    assert_eq!(outputs.events, Vec::new());
+    assert_eq!(refused.devices().count(), 0);
+}
+
 #[test]
 fn identities_count_what_was_given() {
     let mut host = room();
