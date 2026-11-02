@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::stream::{Bucket, Budget, InEvents, InState, OutEvents, OutState, Peer};
+use crate::stream::{Bucket, Budget, InEvents, InState, OutEvents, OutState, Peer, Window};
 use crate::types::{
     Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Refusal, Timing, Token, TvKey,
     Why,
@@ -139,6 +139,7 @@ struct Device {
     presence: Presence,
     last_heard: Ms,
     peer: Peer,
+    window: Window,
     up: InEvents,
     down: OutEvents,
     out_state: OutState,
@@ -167,6 +168,7 @@ impl Device {
             presence: Presence::Absent,
             last_heard: now,
             peer: Peer::new(),
+            window: Window::new(),
             up: InEvents::new(0),
             down: OutEvents::new(0),
             out_state: OutState::new(),
@@ -179,6 +181,21 @@ impl Device {
             session_began: 0,
             past: VecDeque::new(),
         }
+    }
+
+    /// How long a fragment waits for news.
+    fn wait(&self, timing: &Timing) -> u64 {
+        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
+        self.window.wait(resend, timing.resend_max)
+    }
+
+    /// Data bytes the window lets out now.
+    fn room(&self, now: Ms, wait: u64, packet: usize) -> usize {
+        let flying = self
+            .down
+            .flying(now, wait)
+            .saturating_add(self.out_state.flying(now, wait));
+        self.window.room(flying, packet)
     }
 
     /// Another client took over: what it sends is not the rest of a message
@@ -390,8 +407,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         device.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
-            device.down.ack(&ack, heard);
-            device.out_state.ack(&ack, heard);
+            let wait = device.wait(&self.config.timing);
+            let learned = device.down.ack(&ack, heard);
+            let learned = learned.with(device.out_state.ack(&ack, heard));
+            device.window.heard(learned, now, wait);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = device
@@ -534,6 +553,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         device.presence = Presence::Present;
         device.last_heard = now;
         device.peer.reset();
+        device.window = Window::new();
         device.down.unsend();
         device.out_state.unsend();
         let session = Resume {
@@ -693,6 +713,10 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
         for (&id, link) in &mut self.links {
             let mut device = link.device.and_then(|device| self.devices.get_mut(&device));
             let packet_size = link.caps.packet();
+            let wait = device.as_deref().map_or(0, |device| device.wait(&timing));
+            let mut room = device
+                .as_deref()
+                .map_or(0, |device| device.room(now, wait, packet_size));
             for _ in 0..BURST {
                 let control = link.controls.pop_front();
                 let mut packet = Packet {
@@ -703,8 +727,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                 };
                 let mut has_data = false;
                 if let Some(device) = device.as_deref_mut() {
-                    let resend = device.peer.resend(timing.resend_min, timing.resend_max);
-                    let mut budget = Budget::for_packet(packet_size);
+                    let mut budget = Budget::for_packet(packet_size, room);
                     budget.bytes =
                         budget
                             .bytes
@@ -718,9 +741,13 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                         event_parts: device.up.parts(),
                         state_parts: device.in_state.parts(),
                     });
-                    packet.events = device.down.take(now, resend, packet_size, &mut budget);
-                    packet.state = device.out_state.take(now, resend, packet_size, &mut budget);
+                    packet.events = device.down.take(now, wait, packet_size, &mut budget);
+                    packet.state = device.out_state.take(now, wait, packet_size, &mut budget);
                     has_data = !packet.events.is_empty() || !packet.state.is_empty();
+                    room = budget.room;
+                    if budget.expired {
+                        device.window.expired(now, wait);
+                    }
                 } else if packet.control.is_none() {
                     break;
                 }
@@ -781,11 +808,12 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                         timing.absent
                     };
                     consider(device.last_heard.plus(quiet));
-                    let resend = device.peer.resend(timing.resend_min, timing.resend_max);
-                    if let Some(at) = device.down.due_at(resend) {
+                    let wait = device.wait(&timing);
+                    let room = device.room(self.now, wait, link.caps.packet());
+                    if let Some(at) = device.down.due_at(wait, room) {
                         consider(at.max(self.now));
                     }
-                    if let Some(at) = device.out_state.due_at(resend) {
+                    if let Some(at) = device.out_state.due_at(wait, room) {
                         consider(at.max(self.now));
                     }
                 }

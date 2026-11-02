@@ -1761,16 +1761,13 @@ fn a_message_bigger_than_the_pipe_arrives() {
     ] {
         let one = through(narrow, Caps::DATAGRAM, 1, 60_000, 60_000);
         assert_eq!(one.arrived, 1, "{narrow:?}: {} s", one.seconds);
-        if narrow.rate >= Narrow::kilobits(300, 0).rate {
-            let five = through(narrow, Caps::DATAGRAM, 5, 60_000, 120_000);
-            assert_eq!(five.arrived, 5, "{narrow:?}: {} s", five.seconds);
-        }
+        let five = through(narrow, Caps::DATAGRAM, 5, 60_000, 120_000);
+        assert_eq!(five.arrived, 5, "{narrow:?}: {} s", five.seconds);
     }
 }
 
 /// T3. A queue goes at the pace of its acknowledgements, not at once.
 #[test]
-#[ignore = "T3: everything leaves at once, and most of it into a full buffer"]
 fn a_full_queue_costs_less_than_twice_its_size() {
     let queue = through(
         Narrow::kilobits(1_000, Narrow::SCTP),
@@ -1785,7 +1782,6 @@ fn a_full_queue_costs_less_than_twice_its_size() {
 
 /// T3. A dead link learns nothing from more of the same.
 #[test]
-#[ignore = "T3: the resend keeps its pace on a link that went silent"]
 fn a_silent_link_is_not_hammered() {
     let mut net = Net::new(5, Faults::default());
     let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);

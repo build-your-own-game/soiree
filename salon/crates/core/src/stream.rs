@@ -14,13 +14,15 @@
 //!   one, even half sent. It goes again until acknowledged.
 //!
 //! A message bigger than one packet is cut into fragments, sized for the
-//! current link when it is sent.
+//! current link when it is sent. What leaves follows what comes back
+//! ([`Window`]): a link is never offered more than it has shown it carries, and
+//! a link that answers nothing is asked less and less often.
 
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::types::Ms;
+use crate::types::{Caps, Ms};
 use crate::wire::{Ack, EventPart, PACKET_OVERHEAD, PART_OVERHEAD, Parts, StatePart};
 
 /// One message being put back together. It costs what arrived, never what the
@@ -133,19 +135,31 @@ fn fragment(data: &[u8], index: u16, fragment: usize) -> Vec<u8> {
     data.iter().skip(start).take(fragment).copied().collect()
 }
 
-/// Room left in a packet being filled.
+/// Room left in a packet being filled, and in the window of the link.
 pub(crate) struct Budget {
     pub bytes: usize,
+    /// Data bytes the window still lets out.
+    pub room: usize,
+    /// A timer ran out on a fragment going again.
+    pub expired: bool,
 }
 
 impl Budget {
-    pub fn for_packet(packet: usize) -> Budget {
+    pub fn for_packet(packet: usize, room: usize) -> Budget {
         Budget {
             bytes: packet.saturating_sub(PACKET_OVERHEAD),
+            room,
+            expired: false,
         }
     }
 
+    /// The last fragment that gets in may pass the window by its own size: it
+    /// is one fragment, and a window that refused it would wake the sender up
+    /// for nothing until the next ack.
     fn take(&mut self, data: usize) -> bool {
+        if self.room == 0 {
+            return false;
+        }
         let Some(left) = data
             .checked_add(PART_OVERHEAD)
             .and_then(|cost| self.bytes.checked_sub(cost))
@@ -153,6 +167,120 @@ impl Budget {
             return false;
         };
         self.bytes = left;
+        self.room = self.room.saturating_sub(data);
+        true
+    }
+}
+
+/// What an ack taught a sender.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Heard {
+    /// Data bytes it had been waiting news of, and now knows arrived.
+    bytes: usize,
+    /// Fragments it passed over too many times.
+    lost: bool,
+}
+
+impl Heard {
+    pub fn with(self, other: Heard) -> Heard {
+        Heard {
+            bytes: self.bytes.saturating_add(other.bytes),
+            lost: self.lost || other.lost,
+        }
+    }
+}
+
+/// How much may be on its way at once on one link, in one direction: what
+/// comes back says what passes (Reno, RFC 9002 section 7). It doubles each
+/// round trip, then adds a fragment each round trip past the size it last lost
+/// something at, and is halved by a loss. So the queue never sits in a buffer
+/// it would overflow, and a resend does not pile up behind its own original.
+///
+/// `str0m` says nothing of its own window, and refuses a write past 128 KiB;
+/// the page's browser and the Wi-Fi have theirs, which nobody can read from
+/// here. A loss is all salon learns of them. The constants below have not been
+/// tried against any of them, only against the simulated pipes of the tests.
+pub(crate) struct Window {
+    bytes: usize,
+    /// Past this, it grows by a fragment each round trip.
+    ceiling: usize,
+    /// Timers run out in a row with nothing heard: each doubles the wait.
+    expired: u32,
+    /// When a loss last halved it: everything in flight then counts as one.
+    halved: Option<Ms>,
+}
+
+impl Window {
+    /// Ten full packets, the first window of QUIC and TCP (RFC 9002 section 7.2).
+    const START: usize = 10 * Caps::DATAGRAM.max_packet;
+    /// Whatever it fell to, two packets may leave: with less, an ack per
+    /// packet stops. RFC 9002 section 7.2 keeps two as well.
+    const FEWEST_PACKETS: usize = 2;
+    /// Three quarters of str0m's 128 KiB, which also counts headers: above it,
+    /// the DataChannel refuses what comes next.
+    const MOST: usize = 96 * 1024;
+    /// A wait stops doubling here, far past any `Timing::resend_max`.
+    const MOST_DOUBLINGS: u32 = 16;
+
+    pub fn new() -> Window {
+        Window {
+            bytes: Window::START,
+            ceiling: Window::MOST,
+            expired: 0,
+            halved: None,
+        }
+    }
+
+    /// Bytes that may still leave, with `flying` on their way.
+    pub fn room(&self, flying: usize, packet: usize) -> usize {
+        self.bytes
+            .max(packet.saturating_mul(Window::FEWEST_PACKETS))
+            .saturating_sub(flying)
+    }
+
+    /// How long a fragment waits for news, `resend` being what the round trip
+    /// asks for: twice as long after each timer that ran out in a row, up to
+    /// `max`, as `ENet` and `quinn` do.
+    pub fn wait(&self, resend: u64, max: u64) -> u64 {
+        let doubled = 1_u64
+            .checked_shl(self.expired)
+            .map_or(u64::MAX, |times| resend.saturating_mul(times));
+        doubled.min(max.max(resend))
+    }
+
+    pub fn heard(&mut self, heard: Heard, now: Ms, wait: u64) {
+        if heard.bytes > 0 {
+            self.expired = 0;
+            let more = if self.bytes < self.ceiling {
+                heard.bytes
+            } else {
+                heard
+                    .bytes
+                    .saturating_mul(Caps::DATAGRAM.max_packet)
+                    .checked_div(self.bytes)
+                    .unwrap_or(0)
+            };
+            self.bytes = self.bytes.saturating_add(more).min(Window::MOST);
+        }
+        if heard.lost {
+            self.halve(now, wait);
+        }
+    }
+
+    /// A timer ran out on something in flight.
+    pub fn expired(&mut self, now: Ms, wait: u64) {
+        if self.halve(now, wait) {
+            self.expired = self.expired.saturating_add(1).min(Window::MOST_DOUBLINGS);
+        }
+    }
+
+    fn halve(&mut self, now: Ms, wait: u64) -> bool {
+        if self.halved.is_some_and(|at| now.since(at) < wait) {
+            return false;
+        }
+        self.halved = Some(now);
+        self.bytes /= 2;
+        self.ceiling = self.bytes;
         true
     }
 }
@@ -202,35 +330,58 @@ impl Pieces {
         Some(from.saturating_add(due))
     }
 
-    fn sent(&mut self, index: usize, now: Ms) {
-        if let Some(piece) = self.each.get_mut(index) {
-            *piece = Piece::Sent(now, 0);
-        }
+    /// It left now. Says whether a timer sent it.
+    fn sent(&mut self, index: usize, now: Ms) -> bool {
+        let Some(piece) = self.each.get_mut(index) else {
+            return false;
+        };
+        let expired = matches!(piece, Piece::Sent(..));
+        *piece = Piece::Sent(now, 0);
+        expired
     }
 
-    /// When something of it goes again, if anything does. Not cut yet: now.
-    fn due_at(&self, resend: u64) -> Option<Ms> {
+    /// When something of it goes next, if anything does: the timers only,
+    /// without `room` in the window. Not cut yet: at once.
+    fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
         if self.each.is_empty() {
-            return Some(Ms(0));
+            return (room > 0).then_some(Ms(0));
         }
         self.each
             .iter()
             .filter_map(|piece| match piece {
-                Piece::Waiting => Some(Ms(0)),
+                Piece::Waiting => (room > 0).then_some(Ms(0)),
                 Piece::Sent(at, _) => Some(at.plus(resend)),
                 Piece::Arrived => None,
             })
             .min()
     }
 
-    fn all_arrived(&mut self) {
+    /// Bytes on their way, as far as the timers can tell.
+    fn flying(&self, now: Ms, resend: u64) -> usize {
+        let on_time =
+            |piece: &&Piece| matches!(piece, Piece::Sent(at, _) if now.since(*at) < resend);
+        let fragments = self.each.iter().filter(on_time).count();
+        fragments.saturating_mul(self.cut)
+    }
+
+    /// What arrived and was on its way, in bytes.
+    fn gone(&self) -> usize {
+        let on_its_way = |piece: &&Piece| matches!(piece, Piece::Sent(..));
+        let fragments = self.each.iter().filter(on_its_way).count();
+        fragments.saturating_mul(self.cut)
+    }
+
+    fn all_arrived(&mut self) -> Heard {
+        let bytes = self.gone();
         self.each.fill(Piece::Arrived);
+        Heard { bytes, lost: false }
     }
 
     /// An ack that was written after `heard` left says something past these
     /// first `count` fragments arrived, and not them. What left after `heard`
     /// is not passed over: the ack could not have known.
-    fn passed_over(&mut self, count: usize, heard: Ms) {
+    fn passed_over(&mut self, count: usize, heard: Ms) -> Heard {
+        let mut lost = false;
         for piece in self.each.iter_mut().take(count) {
             if let Piece::Sent(at, reports) = piece
                 && *at <= heard
@@ -238,13 +389,16 @@ impl Pieces {
                 *reports = reports.saturating_add(1);
                 if *reports >= REPORTS {
                     *piece = Piece::Waiting;
+                    lost = true;
                 }
             }
         }
+        Heard { bytes: 0, lost }
     }
 
-    fn arrived(&mut self, parts: Parts) {
+    fn arrived(&mut self, parts: Parts) -> Heard {
         let first = usize::from(parts.first);
+        let mut bytes = 0_usize;
         for (index, piece) in self.each.iter_mut().enumerate() {
             let past = index.checked_sub(first.saturating_add(1));
             let said = past.is_some_and(|bit| {
@@ -253,10 +407,14 @@ impl Pieces {
                     .and_then(|bit| parts.more.checked_shr(bit))
                     .is_some_and(|more| more & 1 == 1)
             });
+            if (index < first || said) && matches!(piece, Piece::Sent(..)) {
+                bytes = bytes.saturating_add(self.cut);
+            }
             if index < first || said {
                 *piece = Piece::Arrived;
             }
         }
+        Heard { bytes, lost: false }
     }
 }
 
@@ -308,15 +466,19 @@ impl OutEvents {
     }
 
     /// The other side has every event below `next`.
-    pub fn ack_below(&mut self, next: u32) {
+    pub fn ack_below(&mut self, next: u32) -> Heard {
+        let mut heard = Heard::default();
         while self.queue.front().is_some_and(|event| event.seq < next) {
-            self.queue.pop_front();
+            if let Some(event) = self.queue.pop_front() {
+                heard.bytes = heard.bytes.saturating_add(event.pieces.gone());
+            }
         }
+        heard
     }
 
     /// What an ack says of events, written once `heard` reached the other side.
-    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) {
-        self.ack_below(ack.events);
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) -> Heard {
+        let mut learned = self.ack_below(ack.events);
         let parts = ack.event_parts;
         // The last number something arrived of: what lies before was passed
         // over, and nothing is known of what lies after.
@@ -328,7 +490,7 @@ impl OutEvents {
         for event in &mut self.queue {
             let bit = event.seq.saturating_sub(ack.events);
             if ack.ahead.checked_shr(bit).is_some_and(|bits| bits & 1 == 1) {
-                event.pieces.all_arrived();
+                learned = learned.with(event.pieces.all_arrived());
                 continue;
             }
             let later = last.is_some_and(|last| event.seq < last);
@@ -336,13 +498,14 @@ impl OutEvents {
             if let Some(parts) = parts
                 && parts.seq == event.seq
             {
-                event.pieces.arrived(parts);
+                learned = learned.with(event.pieces.arrived(parts));
                 holes = holes.max(parts.span());
             }
             if let Some(heard) = heard {
-                event.pieces.passed_over(holes, heard);
+                learned = learned.with(event.pieces.passed_over(holes, heard));
             }
         }
+        learned
     }
 
     /// The oldest event still waiting (or the next number if none).
@@ -369,13 +532,23 @@ impl OutEvents {
     }
 
     /// When something waiting goes again, if anything waits.
-    pub fn due_at(&self, resend: u64) -> Option<Ms> {
-        let last = self.oldest().saturating_add(AHEAD);
-        self.queue
-            .iter()
-            .take_while(|event| event.seq < last)
-            .filter_map(|event| event.pieces.due_at(resend))
+    pub fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
+        self.sendable()
+            .filter_map(|event| event.pieces.due_at(resend, room))
             .min()
+    }
+
+    /// Data bytes on their way, as far as the timers can tell.
+    pub fn flying(&self, now: Ms, resend: u64) -> usize {
+        self.sendable()
+            .map(|event| event.pieces.flying(now, resend))
+            .fold(0, usize::saturating_add)
+    }
+
+    /// What the other side would keep, were it to leave now.
+    fn sendable(&self) -> impl Iterator<Item = &Outgoing> {
+        let last = self.oldest().saturating_add(AHEAD);
+        self.queue.iter().take_while(move |event| event.seq < last)
     }
 
     /// Fragments due now, from the oldest, that fit `budget`.
@@ -403,7 +576,7 @@ impl OutEvents {
                 if !budget.take(data.len()) {
                     return parts;
                 }
-                event.pieces.sent(due, now);
+                budget.expired |= event.pieces.sent(due, now);
                 parts.push(EventPart {
                     seq: event.seq,
                     index,
@@ -619,18 +792,24 @@ impl OutState {
 
     /// What an ack says of the state, written once `heard` reached the other
     /// side.
-    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) {
+    pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>) -> Heard {
+        if self.acked {
+            return Heard::default();
+        }
         if ack.state >= self.seq {
             self.acked = true;
+            return self.pieces.all_arrived();
         }
+        let mut learned = Heard::default();
         if let Some(parts) = ack.state_parts
             && parts.seq == self.seq
         {
-            self.pieces.arrived(parts);
+            learned = self.pieces.arrived(parts);
             if let Some(heard) = heard {
-                self.pieces.passed_over(parts.span(), heard);
+                learned = learned.with(self.pieces.passed_over(parts.span(), heard));
             }
         }
+        learned
     }
 
     /// A new link: the latest state goes again.
@@ -648,11 +827,19 @@ impl OutState {
         self.unsend();
     }
 
-    pub fn due_at(&self, resend: u64) -> Option<Ms> {
+    pub fn due_at(&self, resend: u64, room: usize) -> Option<Ms> {
         if self.acked {
             return None;
         }
-        self.pieces.due_at(resend)
+        self.pieces.due_at(resend, room)
+    }
+
+    /// Data bytes on their way, as far as the timers can tell.
+    pub fn flying(&self, now: Ms, resend: u64) -> usize {
+        if self.acked {
+            return 0;
+        }
+        self.pieces.flying(now, resend)
     }
 
     pub fn take(
@@ -669,6 +856,11 @@ impl OutState {
         let cut = fragment_size(packet);
         let count = fragment_count(self.data.len(), cut);
         self.pieces.cut(self.data.len(), cut);
+        // What one packet says goes whatever the window: the latest stick of
+        // a pad does not wait behind a queue of events.
+        if count == 1 {
+            budget.room = budget.room.max(1);
+        }
         let mut from = 0;
         while let Some(due) = self.pieces.due(from, now, resend) {
             from = due.saturating_add(1);
@@ -677,7 +869,7 @@ impl OutState {
             if !budget.take(data.len()) {
                 break;
             }
-            self.pieces.sent(due, now);
+            budget.expired |= self.pieces.sent(due, now);
             parts.push(StatePart {
                 seq: self.seq,
                 index,

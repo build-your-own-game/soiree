@@ -688,6 +688,69 @@ fn a_sender_stays_within_what_its_receiver_keeps() {
     assert!(room.next_deadline() > Some(Ms(0)));
 }
 
+/// How many fragments of events leave now.
+fn leaving(room: &mut Room, now: Ms) -> usize {
+    sent(&drain(room, now).1).0.len()
+}
+
+/// What says every fragment below `first` of message 0 arrived.
+fn fragments_below(first: u16, now: u64) -> Vec<u8> {
+    encode(&Packet {
+        epoch: EPOCH,
+        sent: now,
+        ack: Some(Ack {
+            event_parts: Some(Parts {
+                seq: 0,
+                first,
+                more: 0,
+            }),
+            ..Ack::default()
+        }),
+        ..Packet::default()
+    })
+}
+
+/// A big message does not leave at once: ten packets, then what the acks say
+/// has passed. Each one that arrived makes room for two.
+#[test]
+fn a_big_message_leaves_by_the_window() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    assert_eq!(leaving(&mut room, Ms(1)), 0);
+    assert!(room.next_deadline() > Some(Ms(1)), "nothing to wake up for");
+    room.received(Ms(2), LINK, &fragments_below(12, 2));
+    assert_eq!(leaving(&mut room, Ms(2)), 24);
+    room.received(Ms(3), LINK, &fragments_below(36, 3));
+    assert_eq!(leaving(&mut room, Ms(3)), 28);
+}
+
+/// Each timer that runs out with nothing heard doubles the next wait, up to
+/// its limit, and an ack that brings news starts over.
+#[test]
+fn each_timer_that_runs_out_doubles_the_next_wait() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 2_500]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 3);
+    for (before, at) in [(249, 250), (749, 750), (1_749, 1_750), (2_749, 2_750)] {
+        assert_eq!(leaving(&mut room, Ms(before)), 0, "{before}");
+        assert!(leaving(&mut room, Ms(at)) > 0, "{at}");
+    }
+    room.received(Ms(2_751), LINK, &fragments_below(1, 2_751));
+    assert_eq!(leaving(&mut room, Ms(2_999)), 0);
+    assert!(leaving(&mut room, Ms(3_000)) > 0, "back to 250 ms");
+}
+
+/// The latest position of a stick does not wait behind a queue of events.
+#[test]
+fn a_state_of_one_packet_goes_whatever_the_window() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    room.show(device, &vec![2]).unwrap();
+    assert_eq!(sent(&drain(&mut room, Ms(1)).1), (vec![], vec![(1, 0)]));
+}
+
 /// The resend delay is twice the round trip, between its two bounds.
 #[test]
 fn the_resend_delay_follows_the_round_trip_within_its_bounds() {

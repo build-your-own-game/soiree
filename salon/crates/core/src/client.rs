@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::stream::{Budget, InEvents, InState, OutEvents, OutState, Peer};
+use crate::stream::{Budget, Heard, InEvents, InState, OutEvents, OutState, Peer, Window};
 use crate::types::{Caps, DeviceId, Kind, Limits, Ms, Name, Refusal, Timing, Token, TvKey};
 use crate::wire::{self, Ack, Control, Hello, PROTOCOL, Packet, Resume, Welcome};
 
@@ -130,6 +130,7 @@ pub struct Client<Up, Down> {
     out_state: OutState,
     in_state: InState,
     peer: Peer,
+    window: Window,
     attempts: u32,
     rng: u64,
     outbox: VecDeque<ClientOutput<Down>>,
@@ -160,6 +161,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             out_state: OutState::new(),
             in_state: InState::new(),
             peer: Peer::new(),
+            window: Window::new(),
             attempts: 0,
             rng,
             outbox: VecDeque::new(),
@@ -362,8 +364,10 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         self.peer.on_packet(now, packet.sent, packet.echo);
         if let Some(ack) = packet.ack {
             let heard = packet.echo.map(|echo| Ms(echo.sent));
-            self.up.ack(&ack, heard);
-            self.out_state.ack(&ack, heard);
+            let wait = self.wait();
+            let learned = self.up.ack(&ack, heard);
+            let learned = learned.with(self.out_state.ack(&ack, heard));
+            self.window.heard(learned, now, wait);
         }
         if let Some(phase) = packet.phase {
             self.phase = phase;
@@ -405,13 +409,13 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             Some(known) if known == now_known => {
                 // Same host run, same client: keep the numbering; what the
                 // host already has is acknowledged, the rest goes again.
-                self.up.ack_below(welcome.up_next);
+                let _: Heard = self.up.ack_below(welcome.up_next);
                 self.down.skip_to(welcome.down_first);
             }
             Some(known) if (known.epoch, known.device) == (welcome.epoch, welcome.device) => {
                 // Another tab held the device meanwhile: its numbers came
                 // after ours. What arrived is done, the rest moves above it.
-                self.up.ack_below(welcome.up_seen);
+                let _: Heard = self.up.ack_below(welcome.up_seen);
                 self.up.renumber(welcome.up_next);
                 self.out_state.rebase(welcome.state);
                 self.down.skip_to(welcome.down_first);
@@ -439,6 +443,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         self.up.unsend();
         self.out_state.unsend();
         self.peer.reset();
+        self.window = Window::new();
         self.set_status(Status::Connected);
     }
 
@@ -481,14 +486,35 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         self.outbox.pop_front()
     }
 
+    /// How long a fragment waits for news.
+    fn wait(&self) -> u64 {
+        let timing = self.config.timing;
+        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
+        self.window.wait(resend, timing.resend_max)
+    }
+
+    /// Data bytes the window lets out now.
+    fn room(&self, now: Ms, wait: u64, packet: usize) -> usize {
+        let flying = self
+            .up
+            .flying(now, wait)
+            .saturating_add(self.out_state.flying(now, wait));
+        self.window.room(flying, packet)
+    }
+
     fn flush(&mut self, now: Ms) {
         let timing = self.config.timing;
-        let Link::Open(open) = &mut self.link else {
+        let wait = self.wait();
+        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
+        let Link::Open(open) = &self.link else {
             return;
         };
         let packet_size = open.caps.packet();
+        let mut room = self.room(now, wait, packet_size);
+        let Link::Open(open) = &mut self.link else {
+            return;
+        };
         let epoch = self.known.map_or(0, |known| known.epoch);
-        let resend = self.peer.resend(timing.resend_min, timing.resend_max);
         let mut closing = false;
         for _ in 0..BURST {
             let mut packet = Packet {
@@ -516,7 +542,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             }
             let mut has_data = false;
             if open.welcomed && !closing {
-                let mut budget = Budget::for_packet(packet_size);
+                let mut budget = Budget::for_packet(packet_size, room);
                 packet.echo = self.peer.echo(now);
                 packet.ack = Some(Ack {
                     events: self.down.next(),
@@ -526,9 +552,13 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     state_parts: self.in_state.parts(),
                 });
                 packet.holding = self.out_state.holding();
-                packet.events = self.up.take(now, resend, packet_size, &mut budget);
-                packet.state = self.out_state.take(now, resend, packet_size, &mut budget);
+                packet.events = self.up.take(now, wait, packet_size, &mut budget);
+                packet.state = self.out_state.take(now, wait, packet_size, &mut budget);
                 has_data = !packet.events.is_empty() || !packet.state.is_empty();
+                room = budget.room;
+                if budget.expired {
+                    self.window.expired(now, wait);
+                }
             }
             let heartbeat = open
                 .last_sent
@@ -569,9 +599,14 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
                     .map_or(self.now, |at| at.plus(timing.heartbeat));
                 if open.welcomed {
                     next = next.min(open.last_heard.plus(timing.absent));
-                    for due in [self.up.due_at(resend), self.out_state.due_at(resend)]
-                        .into_iter()
-                        .flatten()
+                    let wait = self.wait();
+                    let room = self.room(self.now, wait, open.caps.packet());
+                    for due in [
+                        self.up.due_at(wait, room),
+                        self.out_state.due_at(wait, room),
+                    ]
+                    .into_iter()
+                    .flatten()
                     {
                         next = next.min(due.max(self.now));
                     }
