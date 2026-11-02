@@ -6,6 +6,12 @@
     clippy::arithmetic_side_effects,
     reason = "test: an overflow must panic and fail the test"
 )]
+#![expect(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test helpers outside #[test] functions: indices come from the room's own lists"
+)]
 
 #[expect(
     dead_code,
@@ -200,10 +206,9 @@ fn number(message: &Up) -> u32 {
     match message {
         Up::Answer(id) => *id,
         Up::Blob(bytes) => {
-            let mut parts = bytes.chunks_exact(4);
-            let first = parts.next().unwrap();
-            assert!(parts.all(|part| part == first), "pieces of two messages");
-            u32::from_le_bytes(first.try_into().unwrap())
+            let id = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+            assert_eq!(*bytes, id.to_le_bytes().repeat(600), "pieces of two");
+            id
         }
         Up::Pad(..) => panic!("the chaos sends no pad"),
     }
@@ -235,7 +240,7 @@ impl Seat {
 
 /// What can happen to a room, on top of the network. `usize` pairs are a
 /// seat, then which of its pages.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Trouble {
     /// An event, or a state, that may need several packets.
     Send(usize, usize, Size),
@@ -446,21 +451,8 @@ impl Room {
     }
 }
 
-/// Everything a page can go through at once: the promise of `Host` and
-/// `Client` when nothing is as it should be.
-fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(), TestCaseError> {
-    let mut room = Room::new(Net::new(
-        seed,
-        Faults {
-            loss,
-            duplicate: 10,
-            jitter,
-        },
-    ));
-    room.net.run(500);
-    for trouble in troubles {
-        room.apply(trouble);
-    }
+/// The network heals, and each page plays in turn: what waits in it must go.
+fn heal(room: &mut Room) -> Result<(), TestCaseError> {
     // The network heals, and nobody is frozen any more.
     room.net.faults = Faults::default();
     for seat in &room.seats {
@@ -499,7 +491,12 @@ fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(),
         }
     }
     room.net.run(3_000);
+    Ok(())
+}
 
+/// Each run of the host, on its own: what it heard. Once each, in order from
+/// each page, and every device comes and goes as it should.
+fn check_runs(room: &Room) -> Result<BTreeSet<u32>, TestCaseError> {
     let mut heard = BTreeSet::new();
     let owner: BTreeMap<u32, usize> = room
         .seats
@@ -551,6 +548,11 @@ fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(),
             }
         }
     }
+    Ok(heard)
+}
+
+/// What must be true at the end, for each seat.
+fn check_seats(room: &Room, heard: &BTreeSet<u32>) -> Result<(), TestCaseError> {
     for (index, seat) in room.seats.iter().enumerate() {
         for page in &seat.pages {
             for id in &page.sent {
@@ -571,18 +573,18 @@ fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(),
             Some(Presence::Present)
         );
         if let Some(id) = last.state {
-            let state = room
-                .net
-                .happened
-                .iter()
-                .rev()
-                .find_map(|(_, event)| match event {
-                    DeviceEvent::State {
-                        device: from,
-                        state,
-                    } if *from == device => Some(state),
-                    _ => None,
-                });
+            let state = room.net.happened.iter().rev().find_map(|(_, event)| {
+                if let DeviceEvent::State {
+                    device: from,
+                    state,
+                } = event
+                    && *from == device
+                {
+                    Some(state)
+                } else {
+                    None
+                }
+            });
             prop_assert_eq!(state.map(number), Some(id), "seat {}", index);
         }
         if let Some(id) = room.shown[index] {
@@ -621,6 +623,26 @@ fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(),
         prop_assert!(notes.windows(2).all(|pair| pair[0] < pair[1]), "{notes:?}");
     }
     Ok(())
+}
+
+/// Everything a page can go through at once: the promise of `Host` and
+/// `Client` when nothing is as it should be.
+fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(), TestCaseError> {
+    let mut room = Room::new(Net::new(
+        seed,
+        Faults {
+            loss,
+            duplicate: 10,
+            jitter,
+        },
+    ));
+    room.net.run(500);
+    for trouble in troubles {
+        room.apply(trouble);
+    }
+    heal(&mut room)?;
+    let heard = check_runs(&room)?;
+    check_seats(&room, &heard)
 }
 
 /// Exactly one page of a seat plays, and the others wait to be asked. With a

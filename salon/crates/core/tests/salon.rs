@@ -764,13 +764,17 @@ fn a_transport_budget_cannot_postpone_an_open_connections_handshake() {
 fn hello_of(config: salon_core::ClientConfig, now: Ms) -> Vec<u8> {
     use salon_core::{Client, ClientOutput};
     let mut client: Client<Up, Down> = Client::new(now, config);
-    loop {
-        match client.poll(now).expect("a hello") {
-            ClientOutput::Connect => client.opened(now, Caps::DATAGRAM),
-            ClientOutput::Transmit(bytes) => return bytes,
-            _ => {}
-        }
-    }
+    assert_eq!(client.poll(now), Some(ClientOutput::Connect));
+    client.opened(now, Caps::DATAGRAM);
+    std::iter::from_fn(|| client.poll(now))
+        .find_map(|output| {
+            if let ClientOutput::Transmit(bytes) = output {
+                Some(bytes)
+            } else {
+                None
+            }
+        })
+        .expect("a hello")
 }
 
 /// C5: a late copy of a hello, on the link that was just replaced, must not
@@ -873,19 +877,42 @@ fn a_late_hello_on_a_link_refused_for_a_full_room_takes_no_seat() {
         net.count(|event| matches!(event, DeviceEvent::Arrived { .. })),
         max
     );
-    let next = net.add_phone(phone_config(201, Kind::Phone), Caps::DATAGRAM);
-    joined(&mut net, next);
+    let newcomer = net.add_phone(phone_config(201, Kind::Phone), Caps::DATAGRAM);
+    joined(&mut net, newcomer);
+}
+
+/// One hello, held back past the tab that came after: whatever the order,
+/// one tab plays and the other waits.
+#[test]
+fn a_hello_held_back_leaves_one_tab_playing() {
+    let mut net = Net::new(47, Faults::default());
+    net.hold_next(2_000);
+    let first = net.add_phone(phone_config(54, Kind::Phone), Caps::DATAGRAM);
+    net.run(10);
+    let second = net.add_phone(phone_config(54, Kind::Phone), Caps::DATAGRAM);
+    net.run(5_000);
+    let mut statuses = [
+        net.phones[first].client.status(),
+        net.phones[second].client.status(),
+    ];
+    statuses.sort_by_key(|status| *status == Status::Replaced);
+    assert_eq!(statuses, [Status::Connected, Status::Replaced]);
 }
 
 fn states_from(net: &Net, device: DeviceId) -> Vec<Up> {
     net.happened
         .iter()
-        .filter_map(|(_, event)| match event {
-            DeviceEvent::State {
+        .filter_map(|(_, event)| {
+            if let DeviceEvent::State {
                 device: from,
                 state,
-            } if *from == device => Some(state.clone()),
-            _ => None,
+            } = event
+                && *from == device
+            {
+                Some(state.clone())
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -959,8 +986,8 @@ fn a_reloaded_page_holds_nothing_until_it_says_so() {
     assert_eq!(net.host.device(device).and_then(|info| info.held_at), held);
 }
 
-/// A client and a host joined by hand: `deliver` chooses which packets of the
-/// client reach the host.
+/// A client and a host joined by hand, to choose which packets of the client
+/// reach the host.
 struct Pipe {
     now: Ms,
     host: salon_core::Host<Up, Down>,
@@ -982,7 +1009,7 @@ impl Pipe {
     }
 
     /// Everything the client has to send now.
-    fn from_client(&mut self) -> Vec<Vec<u8>> {
+    fn client_sends(&mut self) -> Vec<Vec<u8>> {
         use salon_core::ClientOutput;
         let mut sent = Vec::new();
         while let Some(output) = self.client.poll(self.now) {
@@ -992,34 +1019,38 @@ impl Pipe {
                     self.host.opened(self.now, self.link, Caps::DATAGRAM);
                 }
                 ClientOutput::Transmit(bytes) => sent.push(bytes),
-                _ => {}
+                ClientOutput::Disconnect
+                | ClientOutput::Status(_)
+                | ClientOutput::Reset
+                | ClientOutput::Event(_)
+                | ClientOutput::State(_) => {}
             }
         }
         sent
     }
 
-    /// What the host has to do now; `to_client` carries its packets across.
-    fn from_host(&mut self, to_client: bool) -> Vec<DeviceEvent<Up>> {
-        let mut happened = Vec::new();
+    /// What the host does now: its packets for this link, and what it heard.
+    fn host_acts(&mut self) -> (Vec<Vec<u8>>, Vec<DeviceEvent<Up>>) {
+        let (mut packets, mut heard) = (Vec::new(), Vec::new());
         while let Some(output) = self.host.poll(self.now) {
             match output {
-                salon_core::Output::Transmit { link, bytes } => {
-                    if to_client && link == self.link {
-                        self.client.received(self.now, &bytes);
-                    }
+                salon_core::Output::Transmit { link, bytes } if link == self.link => {
+                    packets.push(bytes);
                 }
-                salon_core::Output::Device(event) => happened.push(event),
-                salon_core::Output::Close { .. } => {}
+                salon_core::Output::Device(event) => heard.push(event),
+                salon_core::Output::Transmit { .. } | salon_core::Output::Close { .. } => {}
             }
         }
-        happened
+        (packets, heard)
     }
 
     fn join(&mut self) {
-        for packet in self.from_client() {
+        for packet in self.client_sends() {
             self.host.received(self.now, self.link, &packet);
         }
-        self.from_host(true);
+        for packet in self.host_acts().0 {
+            self.client.received(self.now, &packet);
+        }
         assert_eq!(self.client.status(), Status::Connected);
     }
 
@@ -1027,13 +1058,14 @@ impl Pipe {
     fn reload(&mut self) {
         self.now = self.now.plus(10);
         self.client = salon_core::Client::new(self.now, phone_config(39, Kind::Phone));
-        self.link = salon_core::LinkId(self.link.0 + 1);
+        self.link = salon_core::LinkId(self.link.0.saturating_add(1));
         self.join();
     }
 
+    /// One packet of the client reaches the host.
     fn deliver(&mut self, packet: &[u8]) -> Vec<DeviceEvent<Up>> {
         self.host.received(self.now, self.link, packet);
-        self.from_host(false)
+        self.host_acts().1
     }
 }
 
@@ -1045,12 +1077,12 @@ fn a_half_sent_state_of_the_old_page_is_not_mixed_with_the_new_ones() {
     let mut pipe = Pipe::new();
     let (old, new) = (Up::Blob(vec![1; 3_000]), Up::Blob(vec![2; 3_000]));
     pipe.client.set_state(&old).unwrap();
-    let packets = pipe.from_client();
+    let packets = pipe.client_sends();
     assert!(packets.len() > 1, "the state must be cut");
     assert_eq!(pipe.deliver(&packets[0]), Vec::new());
     pipe.reload();
     pipe.client.set_state(&new).unwrap();
-    let packets = pipe.from_client();
+    let packets = pipe.client_sends();
     let mut heard = Vec::new();
     for packet in &packets[1..] {
         heard.extend(pipe.deliver(packet));
@@ -1066,12 +1098,12 @@ fn a_half_sent_event_of_the_old_page_is_not_mixed_with_the_new_ones() {
     let mut pipe = Pipe::new();
     let (old, new) = (Up::Blob(vec![1; 3_000]), Up::Blob(vec![2; 3_000]));
     pipe.client.send(&old).unwrap();
-    let packets = pipe.from_client();
+    let packets = pipe.client_sends();
     assert!(packets.len() > 1, "the event must be cut");
     assert_eq!(pipe.deliver(&packets[0]), Vec::new());
     pipe.reload();
     pipe.client.send(&new).unwrap();
-    let packets = pipe.from_client();
+    let packets = pipe.client_sends();
     let mut heard = Vec::new();
     for packet in &packets[1..] {
         heard.extend(pipe.deliver(packet));
@@ -1415,7 +1447,7 @@ const WALL: Ms = Ms(1_800_000_000_000);
 fn a_clock_stopped_by_sleep_does_not_hide_the_silence() {
     use salon_core::{ClientOutput, SleepClock};
     let mut pipe = Pipe::new();
-    pipe.from_client();
+    pipe.client_sends();
     let mut clock = SleepClock::default();
     let start = clock.read(pipe.now, WALL);
     assert_eq!(start, pipe.now);
