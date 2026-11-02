@@ -83,6 +83,12 @@ Règles :
 - **Les manettes** : `host.add_local(now, Kind::Gamepad, …)`, puis `local_state`, `local_unplugged` et `local_plugged`.
 - **Les requêtes HTTP du jeu** (télécharger des résultats) : `Game::http`. Les actions de l'organisateur passent par la TV, en événements : seule la TV a la clé, et seule une connexion de l'ordinateur lui-même peut être la TV.
 
+### Si la salle meurt
+
+Une panique du jeu, dans n'importe laquelle de ses méthodes, ou un échec de l'attente du système arrêtent le fil de la salle, et rien ne peut continuer sans elle. `salon_host::run` ne revient alors pas : il écrit `salon: the room died: …` sur la sortie d'erreur, avec la cause, et termine le processus avec le code `salon_host::ROOM_DIED` (101), ce qui ferme toutes les connexions. Les pages restent sur « Reconnexion… » et reviennent seules quand le jeu est relancé. Le jeu n'a rien à faire, et son `main` ne peut pas perdre ce code. Ce qu'il possède est détruit avant la fin du processus ; un journal se relit jusqu'à son dernier checkpoint.
+
+Une panique ne se rattrape pas ici : un état à moitié modifié ne vaut pas une partie qui continue.
+
 ### Le QR code
 
 L'hôte fabrique l'adresse et le code ; la page les dessine.

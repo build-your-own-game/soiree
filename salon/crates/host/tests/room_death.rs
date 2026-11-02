@@ -56,6 +56,7 @@ fn serve_a_doomed_game() {
         "doomed ready",
     );
     options.tick = Duration::from_millis(5);
+    options.data = Some(std::env::temp_dir().join(format!("salon-room-death-{port}")));
     let asked = Arc::new(AtomicBool::new(false));
     salon_host::run(options, Doomed { asked }).unwrap();
 }
