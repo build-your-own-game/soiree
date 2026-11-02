@@ -72,3 +72,12 @@ fn a_public_url_that_is_no_address_is_refused_out_loud() {
     assert!(!url.contains("party.example"), "{url}");
     assert!(log.contains(salon_host::PUBLIC_URL), "{log}");
 }
+
+/// T8: salon only listens on IPv4, so an IPv6 address would be a QR code that
+/// leads nowhere, without a word.
+#[test]
+fn an_ipv6_public_url_is_refused_out_loud() {
+    let (url, log) = join_url_for(Some("http://[::1]:8090"));
+    assert!(!url.contains("[::1]"), "{url}");
+    assert!(log.contains("IPv6"), "{log}");
+}

@@ -32,21 +32,12 @@ impl<'a> PublicUrl<'a> {
             return Err("it is a base: scheme, host, port and path, nothing else");
         }
         let authority = rest.split('/').next().unwrap_or_default();
-        let (host, port) = match authority.strip_prefix('[') {
-            Some(ipv6) => {
-                let (host, after) = ipv6.split_once(']').ok_or("its IPv6 address has no `]`")?;
-                (
-                    host,
-                    after
-                        .strip_prefix(':')
-                        .or(Some(after))
-                        .filter(|port| !port.is_empty()),
-                )
-            }
-            None => match authority.split_once(':') {
-                Some((host, port)) => (host, Some(port)),
-                None => (authority, None),
-            },
+        if authority.starts_with('[') {
+            return Err("an IPv6 address leads nowhere: salon only listens on IPv4");
+        }
+        let (host, port) = match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
         };
         if host.is_empty() {
             return Err("it has no host");
@@ -125,7 +116,6 @@ mod tests {
             base("https://example.org/soiree/"),
             Some("https://example.org/soiree")
         );
-        assert_eq!(base("http://[fe80::1]:8090"), Some("http://[fe80::1]:8090"));
     }
 
     #[test]
@@ -155,13 +145,20 @@ mod tests {
         }
     }
 
+    /// T8: the server binds IPv4 only. The QR code led nowhere, without a word.
+    #[test]
+    fn an_ipv6_address_is_refused_by_name() {
+        for text in ["http://[fe80::1]:8090", "http://[::1]:8090", "http://[::1]"] {
+            let why = PublicUrl::parse(text).unwrap_err();
+            assert!(why.contains("IPv6"), "{text}: {why}");
+        }
+    }
+
     /// WebRTC's candidate comes from this host: an IP address or nothing.
     #[test]
     fn the_host_of_a_base_is_found() {
         let host = |text| PublicUrl::parse(text).unwrap().unwrap().host;
         assert_eq!(host("http://192.168.1.5:8090"), "192.168.1.5");
         assert_eq!(host("https://party.example/soiree"), "party.example");
-        assert_eq!(host("http://[fe80::1]:8090"), "fe80::1");
-        assert_eq!(host("http://[fe80::1]"), "fe80::1");
     }
 }
