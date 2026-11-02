@@ -19,6 +19,26 @@ const ARTIFACT_DIRECTORIES: &[&str] =
     &[".git", "target", "node_modules", ".soiree", "certification"];
 type Environment = BTreeMap<OsString, OsString>;
 
+/// Whether a passage cannot go without Node.
+#[derive(Clone, Copy)]
+enum Node {
+    Required,
+    Optional,
+}
+
+/// How a system spells programs and variables.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Spelling {
+    Posix,
+    Windows,
+}
+
+const SPELLING: Spelling = if cfg!(windows) {
+    Spelling::Windows
+} else {
+    Spelling::Posix
+};
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Identity {
     pub value: String,
@@ -142,7 +162,12 @@ pub fn capture(
     hash_configs(&mut hash, &dir, &environment)?;
     hash_environment(&mut hash, &dir, &environment)?;
     hash_tools(&mut hash, &dir, &environment)?;
-    hash_node(&mut hash, &dir, &environment, observer.is_some())?;
+    let node = if observer.is_some() {
+        Node::Required
+    } else {
+        Node::Optional
+    };
+    hash_node(&mut hash, &dir, &environment, node)?;
     Ok(Identity {
         value: hex(&hash.finalize()),
         source_roots: roots
@@ -519,15 +544,16 @@ fn hash_configs(hash: &mut Sha256, dir: &Path, environment: &Environment) -> Res
 }
 
 fn environment() -> Environment {
-    kept_variables(std::env::vars_os(), cfg!(windows))
+    kept_variables(std::env::vars_os(), SPELLING)
 }
 
 /// Windows spells `Path` as it likes and has `USERPROFILE` for a home: its
 /// variable names are folded here, so that the rest reads one spelling.
 fn kept_variables(
     variables: impl Iterator<Item = (OsString, OsString)>,
-    windows: bool,
+    spelling: Spelling,
 ) -> Environment {
+    let windows = spelling == Spelling::Windows;
     variables
         .map(|(key, value)| {
             (
@@ -649,13 +675,10 @@ fn hash_version(hash: &mut Sha256, dir: &Path, program: &str, flag: &str) -> Res
 /// stays an input. Its absence is an input too, as for a missing Cargo config:
 /// the identity of a passage without Node is not that of a passage with it,
 /// and Node leaving or arriving during a passage is a change of the inputs.
-fn hash_node(
-    hash: &mut Sha256,
-    dir: &Path,
-    environment: &Environment,
-    required: bool,
-) -> Result<()> {
-    if !required && find_on_path(dir, OsStr::new("node"), environment, cfg!(windows))?.is_none() {
+fn hash_node(hash: &mut Sha256, dir: &Path, environment: &Environment, node: Node) -> Result<()> {
+    if matches!(node, Node::Optional)
+        && find_on_path(dir, OsStr::new("node"), environment, SPELLING)?.is_none()
+    {
         add(hash, "node", b"absent");
         return Ok(());
     }
@@ -689,7 +712,7 @@ fn executable_path(dir: &Path, program: &OsStr, environment: &Environment) -> Re
         }
         return std::fs::canonicalize(&path).map_err(|e| e.to_string());
     }
-    find_on_path(dir, program, environment, cfg!(windows))?.ok_or_else(|| {
+    find_on_path(dir, program, environment, SPELLING)?.ok_or_else(|| {
         format!(
             "programme introuvable pour l’identité : {}",
             program.to_string_lossy()
@@ -703,13 +726,13 @@ fn find_on_path(
     dir: &Path,
     program: &OsStr,
     environment: &Environment,
-    windows: bool,
+    spelling: Spelling,
 ) -> Result<Option<PathBuf>> {
     let search = environment
         .get(OsStr::new("PATH"))
         .ok_or("PATH absent : exécutables non identifiés")?;
     let mut name = program.to_owned();
-    if windows && Path::new(program).extension().is_none() {
+    if spelling == Spelling::Windows && Path::new(program).extension().is_none() {
         name.push(".exe");
     }
     for root in std::env::split_paths(search) {
@@ -1020,20 +1043,24 @@ mod tests {
     fn a_check_records_a_missing_node_and_a_harness_refuses_it() {
         let fixture = Fixture::new();
         std::fs::create_dir(fixture.0.join("empty")).unwrap();
-        let digest = |environment: &Environment, required: bool| {
+        let digest = |environment: &Environment, node: Node| {
             let mut hash = Sha256::new();
-            hash_node(&mut hash, &fixture.0, environment, required).map(|()| hex(&hash.finalize()))
+            hash_node(&mut hash, &fixture.0, environment, node).map(|()| hex(&hash.finalize()))
         };
         let without =
             Environment::from([("PATH".into(), fixture.0.join("empty").into_os_string())]);
-        let absent = digest(&without, false).unwrap();
-        assert!(digest(&without, true).unwrap_err().contains("node"));
+        let absent = digest(&without, Node::Optional).unwrap();
+        assert!(
+            digest(&without, Node::Required)
+                .unwrap_err()
+                .contains("node")
+        );
         let with = Environment::from([("PATH".into(), std::env::var_os("PATH").unwrap())]);
-        let present = digest(&with, false).unwrap();
+        let present = digest(&with, Node::Optional).unwrap();
         assert_ne!(absent, present, "a missing Node must show in the identity");
         assert_eq!(
             present,
-            digest(&with, true).unwrap(),
+            digest(&with, Node::Required).unwrap(),
             "a Node that is there is hashed the same with or without a harness"
         );
     }
@@ -1050,14 +1077,27 @@ mod tests {
         }
         let environment =
             Environment::from([("PATH".into(), fixture.0.join("bin").into_os_string())]);
-        let find = |program: &str, windows: bool| {
-            find_on_path(&fixture.0, OsStr::new(program), &environment, windows).unwrap()
+        let find = |program: &str, spelling: Spelling| {
+            find_on_path(&fixture.0, OsStr::new(program), &environment, spelling).unwrap()
         };
-        assert_eq!(find("node", true), Some(fixture.0.join("bin/node.exe")));
-        assert_eq!(find("node.exe", true), Some(fixture.0.join("bin/node.exe")));
-        assert_eq!(find("node", false), None);
-        assert_eq!(find("cargo", false), Some(fixture.0.join("bin/cargo")));
-        assert_eq!(find("cargo", true), None, "Command would not start it");
+        assert_eq!(
+            find("node", Spelling::Windows),
+            Some(fixture.0.join("bin/node.exe"))
+        );
+        assert_eq!(
+            find("node.exe", Spelling::Windows),
+            Some(fixture.0.join("bin/node.exe"))
+        );
+        assert_eq!(find("node", Spelling::Posix), None);
+        assert_eq!(
+            find("cargo", Spelling::Posix),
+            Some(fixture.0.join("bin/cargo"))
+        );
+        assert_eq!(
+            find("cargo", Spelling::Windows),
+            None,
+            "Command would not start it"
+        );
     }
     #[test]
     fn windows_variable_names_are_folded_and_its_home_is_kept() {
@@ -1066,14 +1106,14 @@ mod tests {
                 .into_iter()
                 .map(|(key, value)| (OsString::from(key), OsString::from(value)))
         };
-        let windows = kept_variables(variables(), true);
+        let windows = kept_variables(variables(), Spelling::Windows);
         assert_eq!(windows.get(OsStr::new("PATH")), Some(&"bin".into()));
         assert_eq!(
             windows.get(OsStr::new("USERPROFILE")),
             Some(&"profile".into())
         );
         assert_eq!(windows.len(), 2);
-        assert!(kept_variables(variables(), false).is_empty());
+        assert!(kept_variables(variables(), Spelling::Posix).is_empty());
     }
     #[test]
     fn the_windows_home_holds_the_global_cargo_config() {

@@ -1,7 +1,8 @@
 //! `soiree certify` on Windows: the harness refuses at its first import, and
 //! that reason must reach the terminal, not a stack trace or a bare failure.
 //! Nothing here runs on Windows: the platform is changed under the real guard.
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod windows {
     use std::path::{Path, PathBuf};
     use std::process::Command;

@@ -1,6 +1,7 @@
 //! `soiree check` on a machine without Node: the harness needs it, the check
 //! does not, unless a game declares a pattern only JavaScript can compile.
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod without_node {
     use serde_json::{Value, json};
     use std::os::unix::fs::PermissionsExt as _;

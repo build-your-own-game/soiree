@@ -35,6 +35,13 @@ enum System {
     Other,
 }
 
+#[derive(Clone, Copy)]
+enum GithubCli {
+    Absent,
+    Disconnected,
+    Connected,
+}
+
 const SYSTEM: System = if cfg!(target_os = "macos") {
     System::Mac
 } else if cfg!(windows) {
@@ -136,20 +143,24 @@ fn linker_verdict(system: System, developer: Option<&str>, cc: Option<&str>) -> 
 
 /// Optional: the README also says how to create the repository without it.
 fn github_cli(report: &mut Report, dir: &Path) {
-    let version = util::stdout_of(dir, "gh", &["--version"]);
-    let connected = version.is_some()
-        && util::run(dir, "gh", &["auth", "status"]).is_ok_and(|output| output.status.success());
-    say(report, github_verdict(version.as_deref(), connected));
+    let state = if util::stdout_of(dir, "gh", &["--version"]).is_none() {
+        GithubCli::Absent
+    } else if util::run(dir, "gh", &["auth", "status"]).is_ok_and(|o| o.status.success()) {
+        GithubCli::Connected
+    } else {
+        GithubCli::Disconnected
+    };
+    say(report, github_verdict(state));
 }
 
-fn github_verdict(version: Option<&str>, connected: bool) -> (Level, String) {
-    match version {
-        None => (
+fn github_verdict(state: GithubCli) -> (Level, String) {
+    match state {
+        GithubCli::Absent => (
             Level::Info,
             format!("gh absent (facultatif, il crée le dépôt du jeu) : {GITHUB_CLI}"),
         ),
-        Some(_) if connected => (Level::Ok, "gh connecté à GitHub".to_owned()),
-        Some(_) => (
+        GithubCli::Connected => (Level::Ok, "gh connecté à GitHub".to_owned()),
+        GithubCli::Disconnected => (
             Level::Info,
             "gh n'est pas connecté à GitHub : lance gh auth login toi-même, il ouvre le navigateur"
                 .to_owned(),
@@ -469,13 +480,13 @@ mod tests {
 
     #[test]
     fn github_cli_is_only_information_until_it_is_connected() {
-        let (level, message) = github_verdict(None, false);
+        let (level, message) = github_verdict(GithubCli::Absent);
         assert_eq!(level, Level::Info);
         assert!(message.contains(GITHUB_CLI), "{message}");
-        let (level, message) = github_verdict(Some("gh version 2"), false);
+        let (level, message) = github_verdict(GithubCli::Disconnected);
         assert_eq!(level, Level::Info);
         assert!(message.contains("gh auth login"), "{message}");
-        assert_eq!(github_verdict(Some("gh version 2"), true).0, Level::Ok);
+        assert_eq!(github_verdict(GithubCli::Connected).0, Level::Ok);
     }
 
     #[test]
