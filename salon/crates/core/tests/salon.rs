@@ -1878,15 +1878,15 @@ fn a_stream_that_drops_a_packet_recovers_it() {
     );
     let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::STREAM);
     let device = joined(&mut net, phone);
-    for n in 0..20 {
+    for n in 0..15 {
         net.host
             .send(device, &Down::View(n, vec![0; 60_000]))
             .unwrap();
         net.phones[phone].client.send(&Up::Answer(n)).unwrap();
     }
     assert!(
-        net.run_until(20_000, |net| net.phones[phone].events.len() == 20
-            && net.events_from(device).len() == 20)
+        net.run_until(20_000, |net| net.phones[phone].events.len() == 15
+            && net.events_from(device).len() == 15)
     );
 }
 
@@ -2008,4 +2008,38 @@ fn an_event_sent_just_before_quitting_arrives() {
         net.count(|event| matches!(event, DeviceEvent::Left { why: Why::Quit, .. })),
         1
     );
+}
+
+/// T11. What waits for a device that does not answer is bounded in bytes, not
+/// only in messages: the queue says `Full`, and one message is always let in.
+#[test]
+fn what_waits_for_a_device_is_bounded_in_bytes() {
+    let mut net = Net::new(1, Faults::default());
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.phones[phone].frozen = true;
+    let mut taken = 0;
+    while net
+        .host
+        .send(device, &Down::View(taken, vec![0; 60_000]))
+        .is_ok()
+    {
+        taken += 1;
+        assert!(taken < 256, "only the count stopped it");
+    }
+    assert_eq!(taken, 17);
+    assert_eq!(
+        net.host.send(device, &Down::Note(0)),
+        Ok(()),
+        "a small event still fits"
+    );
+
+    let huge = Limits {
+        max_down: 900 * 1024,
+        ..Limits::default()
+    };
+    let (mut net, _, device) = limited(huge, huge);
+    let big = || Down::View(0, vec![0; 800 * 1024]);
+    assert_eq!(net.host.send(device, &big()), Ok(()));
+    assert_eq!(net.host.send(device, &big()), Err(SendError::Full));
 }

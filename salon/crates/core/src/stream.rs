@@ -111,6 +111,13 @@ const MAX_FRAGMENTS: u16 = 1024;
 /// the smallest fragments the shells use, no receiver would take it.
 pub(crate) const LARGEST_MESSAGE: usize =
     (MAX_FRAGMENTS as usize) * (Caps::DATAGRAM.max_packet - PACKET_OVERHEAD - PART_OVERHEAD);
+/// Bytes of events one side keeps for the other: what [`Limits`] let wait of
+/// the largest message a device may send, the default `max_pending` of the
+/// default `max_up`. By default 16 events of the largest `max_down` then wait
+/// for a phone that does not answer, and `Full` tells the game so.
+///
+/// [`Limits`]: crate::types::Limits
+const MOST_WAITING: usize = 256 * 4 * 1024;
 /// Numbers a receiver keeps from the next one it expects: the bits of
 /// [`Ack::ahead`]. A sender does not go past them, so a whole queue of small
 /// events still fits: 64 of them in a burst, as many as
@@ -482,6 +489,8 @@ struct Outgoing {
 pub(crate) struct OutEvents {
     next: u32,
     queue: VecDeque<Outgoing>,
+    /// Bytes in `queue`.
+    waiting: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -492,6 +501,7 @@ impl OutEvents {
         OutEvents {
             next,
             queue: VecDeque::new(),
+            waiting: 0,
         }
     }
 
@@ -502,11 +512,14 @@ impl OutEvents {
         at: Option<u64>,
         max: usize,
     ) -> Result<u32, Full> {
-        if self.queue.len() >= max {
+        let bytes = self.waiting.saturating_add(data.len());
+        let room = self.queue.is_empty() || bytes <= MOST_WAITING;
+        if self.queue.len() >= max || !room {
             return Err(Full);
         }
         let seq = self.next;
         self.next = self.next.checked_add(1).ok_or(Full)?;
+        self.waiting = bytes;
         self.queue.push_back(Outgoing {
             seq,
             data,
@@ -523,6 +536,7 @@ impl OutEvents {
         while self.queue.front().is_some_and(|event| event.seq < next) {
             if let Some(event) = self.queue.pop_front() {
                 heard.bytes = heard.bytes.saturating_add(event.pieces.gone());
+                self.waiting = self.waiting.saturating_sub(event.data.len());
             }
         }
         heard

@@ -104,7 +104,8 @@ pub enum SendError {
     Local,
     /// Encoded bigger than [`Limits::max_down`].
     TooBig,
-    /// [`Limits::max_pending`] events already wait for this device.
+    /// [`Limits::max_pending`] events, or 1 MiB of them, already wait for this
+    /// device.
     Full,
 }
 

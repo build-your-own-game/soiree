@@ -81,8 +81,8 @@ pub enum ClientOutput<Down> {
 pub enum SendError {
     /// Encoded bigger than [`Limits::max_up`].
     TooBig,
-    /// [`Limits::max_pending`] events already wait: the host is unreachable
-    /// or flooded. Nothing was dropped; tell the player.
+    /// [`Limits::max_pending`] events, or 1 MiB of them, already wait: the
+    /// host is unreachable or flooded. Nothing was dropped; tell the player.
     Full,
 }
 

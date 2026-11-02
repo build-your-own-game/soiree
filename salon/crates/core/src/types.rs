@@ -298,6 +298,7 @@ pub struct Limits {
     /// the same way.
     pub max_down: usize,
     /// Events waiting for an acknowledgement, in each direction, per device.
+    /// They may not hold more than 1 MiB either, unless there is only one.
     pub max_pending: usize,
     /// Devices on the network at once (the TV included); local ones aside.
     pub max_devices: usize,
