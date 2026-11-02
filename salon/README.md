@@ -103,11 +103,11 @@ let svg = salon_web::qr(&code)?;                 // dans la page TV : un <svg> d
 - `join_url(port, chemin)` part de l'adresse réseau de l'ordinateur (`lan_address()`), celle de sa route par défaut. Sans réseau, elle n'existe pas : `join_url` écrit un avertissement et rend `http://localhost`, qu'un téléphone n'atteint pas. Derrière un VPN complet, elle existe mais aucun téléphone ne l'atteint.
 - `SALON_PUBLIC_URL` dit alors l'adresse vraie, pour tous les jeux et sans une ligne de code : `SALON_PUBLIC_URL=http://192.168.1.5:8090`, ou `https://soiree.example`. Elle remplace le schéma, l'hôte et le port ; `join_url` y ajoute le chemin. Vide ou blanche, elle est ignorée. Elle doit commencer par `http://` ou `https://`, sans requête ni fragment : sinon elle est ignorée, avec un message sur la sortie d'erreur.
 - Si son hôte est une adresse IP, c'est aussi celle que WebRTC annonce. Un nom ne peut pas l'être : WebRTC garde l'adresse réseau et les téléphones qui ne l'atteignent pas passent par WebSocket.
-- Le QR de la TV suffit aussi à l'app iPhone, qui en déduit `/remote` (`remote/CONTRAT.md`).
+- Le QR de la TV suffit aussi à l'app iPhone, qui en déduit `/remote` (`../remote/CONTRAT.md`).
 
 ### La télécommande native
 
-Par défaut, l'app iPhone affiche la page `options.app_page`, qui parle à salon comme un téléphone. Un jeu peut lui préférer une télécommande dessinée par l'app (`remote/CONTRAT.md` : les presets et les compositions), sans `Up`, sans page et sans socket. `options.app_page` reste nécessaire : c'est lui qui ouvre `/remote`, et chaque jeu garde sa page pour les joueurs sans app.
+Par défaut, l'app iPhone affiche la page `options.app_page`, qui parle à salon comme un téléphone. Un jeu peut lui préférer une télécommande dessinée par l'app (`../remote/CONTRAT.md` : les presets et les compositions), sans `Up`, sans page et sans socket. `options.app_page` reste nécessaire : c'est lui qui ouvre `/remote`, et chaque jeu garde sa page pour les joueurs sans app.
 
 ```rust
 use salon_host::remote::web::PlayerId;

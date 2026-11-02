@@ -5,7 +5,7 @@ L'app iPhone de `remote/` sert de télécommande. Le joueur n'y choisit rien, et
 **Avec salon, c'est-à-dire pour tous les jeux de la soirée :** salon tient `/remote`, dès que le jeu donne `options.app_page`. Un jeu ne touche jamais un socket : ne sers pas `/remote` toi-même.
 
 - **Par défaut,** l'app affiche ta page téléphone, et tu n'as rien à servir ni à écrire. Ce que tu utilises alors, c'est la section « Ce que l'app ajoute à ta page ».
-- **Pour une télécommande native** (`Remote::Pad`), `salon_host::Game` a trois méthodes facultatives, décrites dans `salon/README.md` : `remote` choisit ce que l'app affiche, `on_app` reçoit les arrivées, les entrées et les tracés, `feedback` fait vibrer. Salon s'occupe de `Hello`, de la version, des reconnexions, de `seq`, du silence et du débit. Les types de ce contrat sont dans `salon_host::remote`, sans dépendance à ajouter.
+- **Pour une télécommande native** (`Remote::Pad`), `salon_host::Game` a trois méthodes facultatives, décrites dans `../salon/README.md` : `remote` choisit ce que l'app affiche, `on_app` reçoit les arrivées, les entrées et les tracés, `feedback` fait vibrer. Salon s'occupe de `Hello`, de la version, des reconnexions, de `seq`, du silence et du débit. Les types de ce contrat sont dans `salon_host::remote`, sans dépendance à ajouter.
 
 **Hors de salon :** tout le reste de ce document décrit le protocole complet, celui de `crates/demo`. Avec salon, lis-y « Décrire la télécommande » et « Lire un état », pour les presets et les lectures de `InputState`.
 
