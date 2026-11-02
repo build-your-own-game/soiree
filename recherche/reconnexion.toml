@@ -472,7 +472,8 @@ citation = "const hasExpired = Date.now() > this._pingTimeoutTime;"
 enonce = "Après un sommeil, le chien de garde compare une horloge murale, parce que les minuteries et l'horloge monotone ont pu s'arrêter."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_clock_stopped_by_sleep_does_not_hide_the_silence", "salon/crates/core/tests/salon.rs::a_clock_that_counts_sleep_is_left_as_it_is"]
 trou = "T5"
 
 [[lecon]]
@@ -708,7 +709,8 @@ citation = "Any such throttling should not affect the resolution or accuracy"
 enonce = "La norme parle du gel d'un onglet, pas du sommeil de l'appareil : l'issue w3c/hr-time#115 relève des horloges qui ne comptent pas le sommeil."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_clock_stopped_by_sleep_does_not_hide_the_silence", "salon/crates/core/tests/salon.rs::a_clock_that_counts_sleep_is_left_as_it_is"]
 trou = "T5"
 
 [[lecon]]
@@ -719,7 +721,8 @@ citation = "return fromMachAbsoluteTime(mach_absolute_time());"
 enonce = "Sur Darwin, MonotonicTime lit mach_absolute_time ; WebKit réserve ContinuousTime au temps qui continue pendant le sommeil, et performance.now() lit MonotonicTime."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/salon.rs::a_clock_stopped_by_sleep_does_not_hide_the_silence", "salon/crates/core/tests/salon.rs::a_clock_that_counts_sleep_is_left_as_it_is"]
 trou = "T5"
 
 [[lecon]]

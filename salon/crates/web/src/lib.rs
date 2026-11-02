@@ -12,7 +12,8 @@
 //!   good after two failures in a row. The tab remembers the failure, so that
 //!   a reload does not wait again: for ten minutes, or until the browser says
 //!   it is `online` again, or until a WebRTC link opens;
-//! - **the clock** (`performance.now()`) and the timers salon asks for;
+//! - **the clock** (`performance.now()`, and `Date.now()` to count the sleep
+//!   that one may not, [`SleepClock`]) and the timers salon asks for;
 //! - **waking up**: `visibilitychange` and `pageshow` tell salon to check the
 //!   link at once, since iOS freezes pages in the background, and `online`
 //!   also drops an attempt started while there was no network;
@@ -37,7 +38,7 @@ use recovery::wall_ms;
 use rtc_memory::RtcMemory;
 use salon_core::{
     Caps, Client, ClientConfig, ClientOutput, ClientSendError, DeviceId, Kind, Limits, Ms, Qr,
-    Refusal, Status, Timing, Token, TvKey, route,
+    Refusal, SleepClock, Status, Timing, Token, TvKey, route,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -223,6 +224,11 @@ impl<Up, Down> Clone for Connection<Up, Down> {
     }
 }
 
+thread_local! {
+    /// One clock for all of a page: what it adds must never go back.
+    static CLOCK: Cell<SleepClock> = const { Cell::new(SleepClock::new()) };
+}
+
 fn now() -> Ms {
     let ms = web_sys::window()
         .and_then(|window| window.performance())
@@ -232,7 +238,13 @@ fn now() -> Ms {
         clippy::cast_sign_loss,
         reason = "performance.now() is a small positive number of milliseconds"
     )]
-    Ms(ms.max(0.0) as u64)
+    let monotonic = Ms(ms.max(0.0) as u64);
+    CLOCK.with(|clock| {
+        let mut read = clock.get();
+        let now = read.read(monotonic, Ms(wall_ms()));
+        clock.set(read);
+        now
+    })
 }
 
 fn random_bytes() -> Option<[u8; 16]> {

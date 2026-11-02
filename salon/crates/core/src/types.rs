@@ -37,6 +37,48 @@ impl Ms {
     }
 }
 
+/// A page's clock that keeps counting while the device sleeps. The monotonic
+/// clock of a browser may stop then (`performance.now()` reads
+/// `mach_absolute_time` on Darwin), and every delay of salon would not see the
+/// time go by. A wall clock does not stop, but it jumps. So the monotonic
+/// clock stays the reference, and what the wall clock gained on it at one go
+/// is added to it. Where the monotonic clock counts sleep, nothing is added.
+/// A wall clock set forward by hand looks like a sleep: at worst, one
+/// reconnection.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SleepClock {
+    /// The two clocks at the last reading.
+    last: Option<(Ms, Ms)>,
+    slept: u64,
+}
+
+impl SleepClock {
+    /// Less than this between two readings is drift, or a wall clock being
+    /// corrected: below [`Timing::silent`], nothing depends on it.
+    const SMALLEST_SLEEP: u64 = 1_000;
+
+    pub const fn new() -> SleepClock {
+        SleepClock {
+            last: None,
+            slept: 0,
+        }
+    }
+
+    /// The time now: `monotonic` plus all the sleep so far.
+    pub fn read(&mut self, monotonic: Ms, wall: Ms) -> Ms {
+        if let Some((last_monotonic, last_wall)) = self.last {
+            let gained = wall
+                .since(last_wall)
+                .saturating_sub(monotonic.since(last_monotonic));
+            if gained >= Self::SMALLEST_SLEEP {
+                self.slept = self.slept.saturating_add(gained);
+            }
+        }
+        self.last = Some((monotonic, wall));
+        monotonic.plus(self.slept)
+    }
+}
+
 /// A QR code as its modules, row by row: `width` rows of `width` modules,
 /// `true` for dark. The host makes it (`salon_host::qr`) and the page draws
 /// it (`salon_web::qr`): no markup crosses the wire.

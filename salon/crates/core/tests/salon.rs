@@ -1406,3 +1406,56 @@ fn the_network_coming_back_retries_at_once() {
     assert!(net.run_until(500, |net| net.phones[phone].connects == 2
         && net.phones[phone].client.status() == Status::Connected));
 }
+
+const WALL: Ms = Ms(1_800_000_000_000);
+
+/// The clock of a page may stop while the phone sleeps. The silence must
+/// show all the same, at the wake, instead of up to 6 s later.
+#[test]
+fn a_clock_stopped_by_sleep_does_not_hide_the_silence() {
+    use salon_core::{ClientOutput, SleepClock};
+    let mut pipe = Pipe::new();
+    pipe.from_client();
+    let mut clock = SleepClock::default();
+    let start = clock.read(pipe.now, WALL);
+    assert_eq!(start, pipe.now);
+    // A minute asleep: the wall clock went on, the page's clock did not.
+    let woke = clock.read(pipe.now.plus(20), WALL.plus(60_020));
+    pipe.client.wake(woke);
+    assert_eq!(pipe.client.poll(woke), Some(ClientOutput::Disconnect));
+}
+
+#[test]
+fn a_clock_that_counts_sleep_is_left_as_it_is() {
+    let mut clock = salon_core::SleepClock::default();
+    clock.read(Ms(0), WALL);
+    assert_eq!(clock.read(Ms(60_000), WALL.plus(60_000)), Ms(60_000));
+    assert_eq!(clock.read(Ms(60_010), WALL.plus(60_010)), Ms(60_010));
+}
+
+/// A clock that stopped twice is ahead by both sleeps, and does not lose them
+/// when the wall clock is set back.
+#[test]
+fn sleep_adds_up_and_time_never_goes_back() {
+    let mut clock = salon_core::SleepClock::default();
+    clock.read(Ms(0), WALL);
+    assert_eq!(clock.read(Ms(0), WALL.plus(5_000)), Ms(5_000));
+    assert_eq!(clock.read(Ms(0), WALL.plus(12_000)), Ms(12_000));
+    assert_eq!(clock.read(Ms(10), WALL), Ms(12_010));
+    assert_eq!(clock.read(Ms(20), WALL.plus(10)), Ms(12_020));
+}
+
+/// Drift between the two clocks, and small corrections of the wall clock, are
+/// not sleep, however many readings they spread over.
+#[test]
+fn drift_is_not_sleep() {
+    let mut clock = salon_core::SleepClock::default();
+    clock.read(Ms(0), WALL);
+    assert_eq!(clock.read(Ms(0), WALL.plus(999)), Ms(0));
+    for n in 1..100 {
+        assert_eq!(
+            clock.read(Ms(n * 100), WALL.plus(999 + n * 105)),
+            Ms(n * 100)
+        );
+    }
+}

@@ -110,7 +110,8 @@
 //!   [`Timing::heartbeat`]. After [`Timing::absent`] without a packet, the
 //!   host sees [`DeviceEvent::Left`] with [`Why::Silent`], and the page drops
 //!   its socket and reconnects without waiting for an `onclose` that iOS may
-//!   never send (C3).
+//!   never send (C3). A page reads its time through [`SleepClock`], so a
+//!   clock stopped by the device's sleep does not hide the silence.
 //! - **A restarting host** changes its [`Epoch`]. Devices reconnect on their
 //!   own and get [`ClientOutput::Reset`]: they forget what the old run said
 //!   and wait for the new one. With [`Host::known`] saved and given back in
@@ -182,8 +183,8 @@ pub use client::{Client, ClientConfig, ClientOutput, SendError as ClientSendErro
 pub use host::{DeviceEvent, DeviceInfo, Host, HostConfig, Known, Output, SendError};
 pub use stream::Bucket;
 pub use types::{
-    Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Qr, Refusal, Timing, Token,
-    TvKey, Why,
+    Caps, DeviceId, Epoch, Kind, Limits, LinkId, Ms, Name, Presence, Qr, Refusal, SleepClock,
+    Timing, Token, TvKey, Why,
 };
 pub use wire::PROTOCOL;
 
