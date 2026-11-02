@@ -704,7 +704,7 @@ diff --git a/salon/crates/core/src/wire.rs b/salon/crates/core/src/wire.rs
         );
         assert!(text.contains("Niveau à tenir : 3"), "{text}");
         assert!(text.contains("1. **Déclencheur.**"), "{text}");
-        assert!(text.contains("11. **Vérifie**"), "{text}");
+        assert!(text.contains("11. **Vérifie.**"), "{text}");
     }
 
     #[test]

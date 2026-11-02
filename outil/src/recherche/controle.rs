@@ -170,9 +170,15 @@ pub fn rules(fiche: &Fiche, stem: &str, registre: &Registre, world: &dyn World) 
     references(fiche, &mut errors);
     lessons(fiche, &mut errors);
     holes(fiche, &mut errors);
-    if let Some(niveau) = registre.niveau(fiche.niveau) {
-        saturation(fiche, sous_systeme, niveau, &mut errors);
-        quotas(fiche, sous_systeme, niveau, &mut errors);
+    match registre.niveau(fiche.niveau) {
+        Some(niveau) => {
+            saturation(fiche, sous_systeme, niveau, &mut errors);
+            quotas(fiche, sous_systeme, niveau, &mut errors);
+        }
+        None => errors.push(format!(
+            "`niveau` {} absent de sous-systemes.toml ; attendu un `numero` de [[niveau]]",
+            fiche.niveau
+        )),
     }
     cost(fiche, &mut errors);
     cited(fiche, world, &mut errors);
@@ -828,6 +834,44 @@ mod tests {
             "niveau = 3\nraison_niveau = \"pour rien\"\n",
         );
         one_error(&raised, "`raison_niveau` sans objet");
+    }
+
+    #[test]
+    fn an_unknown_level_is_refused_rather_than_free_of_quotas() {
+        one_error(
+            &with(SHEET, "niveau = 3\n", "niveau = 9\n"),
+            "`niveau` 9 absent",
+        );
+    }
+
+    #[test]
+    fn a_free_text_field_is_never_empty() {
+        let question = SHEET
+            .lines()
+            .find(|l| l.starts_with("question = "))
+            .unwrap();
+        one_error(&with(SHEET, question, "question = \"\""), "`question` vide");
+        let note = SHEET.rfind("\nnote = ").unwrap() + 1;
+        let end = note + SHEET[note..].find('\n').unwrap_or(SHEET.len() - note);
+        one_error(
+            &with(SHEET, &SHEET[note..end], "note = \"\""),
+            "[cout] : `note` vide",
+        );
+        let saturation = SHEET.split("[saturation]").nth(1).unwrap();
+        let line = saturation
+            .lines()
+            .find(|l| l.starts_with("note = "))
+            .unwrap();
+        one_error(
+            &with(SHEET, line, "note = \"\""),
+            "[saturation] : `note` vide",
+        );
+        let lesson = lesson("reconnexion-07");
+        let line = lesson.lines().find(|l| l.starts_with("note = ")).unwrap();
+        one_error(
+            &with(SHEET, line, "note = \"\""),
+            "reconnexion-07 : `note` vide",
+        );
     }
 
     #[test]

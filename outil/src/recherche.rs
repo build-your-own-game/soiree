@@ -179,3 +179,57 @@ pub fn debt_line(dir: &Path, report: &mut Report) {
         Err(error) => report.info(format!("dette de recherche non lue : {error}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::report::Level;
+
+    /// The real research folder, without the code its sheets cite.
+    fn fixture() -> std::path::PathBuf {
+        let dir = crate::testdir::fresh("recherche");
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../recherche");
+        for file in ["reconnexion.toml", REGISTRY, SOURCES] {
+            let text = util::read(&real.join(file)).unwrap();
+            util::write(&dir.join(FOLDER).join(file), &text).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn the_full_check_fails_where_the_fast_one_only_informs() {
+        let dir = fixture();
+        let mut full = Report::quiet();
+        check(&dir, Options::default(), &mut full);
+        assert!(full.count(Level::Error) > 0, "{:?}", full.lines);
+        let fast = Options {
+            fast: true,
+            ..Options::default()
+        };
+        let mut quick = Report::quiet();
+        check(&dir, fast, &mut quick);
+        assert_eq!(quick.count(Level::Error), 0, "{:?}", quick.lines);
+        assert_eq!(quick.lines.len(), 1, "{:?}", quick.lines);
+        assert_eq!(quick.count(Level::Info), 1);
+    }
+
+    #[test]
+    fn the_common_repository_cannot_lose_its_registry_in_silence() {
+        let dir = crate::testdir::fresh("recherche-absente");
+        let mut full = Report::quiet();
+        check(&dir, Options::default(), &mut full);
+        assert_eq!(full.count(Level::Error), 1, "{:?}", full.lines);
+        let mut game = Report::quiet();
+        debt_line(&dir, &mut game);
+        assert!(game.lines.is_empty(), "{:?}", game.lines);
+    }
+
+    #[test]
+    fn the_carried_registry_and_steps_are_readable() {
+        let dir = crate::testdir::fresh("recherche-jeu");
+        let folder = Folder::load(&dir).unwrap();
+        assert_eq!(folder.perimetre, Perimetre::Jeu);
+        assert!(folder.sheets.is_empty());
+        assert!(embedded::recherche::PROCESSUS.contains("## Le processus"));
+    }
+}

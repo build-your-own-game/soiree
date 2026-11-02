@@ -17,7 +17,8 @@ use crate::{catalogue, gaps, lints};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
-    /// Skips fmt, both Clippy runs and the tests.
+    /// Skips fmt, both Clippy runs and the tests, and leaves one line of the
+    /// research control: the code is moving.
     pub fast: bool,
     /// Passes `--locked` to Cargo: never rewrites a `Cargo.lock`.
     pub locked: bool,

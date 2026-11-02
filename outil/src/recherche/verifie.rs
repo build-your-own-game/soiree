@@ -80,10 +80,10 @@ impl<'a> Tools<'a> {
         if output.status.success() {
             return Ok(Fetched::Body(output.stdout));
         }
-        Err(gh_failure(&String::from_utf8_lossy(&output.stderr))).or_else(|outage| match outage {
+        match gh_failure(&String::from_utf8_lossy(&output.stderr)) {
             GhFailure::Missing => Ok(Fetched::Missing),
             GhFailure::Outage(outage) => Err(outage),
-        })
+        }
     }
 
     fn curl(url: &str) -> Result<Fetched, Outage> {

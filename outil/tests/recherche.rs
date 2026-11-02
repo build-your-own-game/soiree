@@ -49,8 +49,10 @@ mod commands {
         }
     }
 
-    /// The common repository with its own `recherche/` and everything else
-    /// read through links; `certification/` stays here, a run writes in it.
+    /// The common repository with its own `recherche/` and the rest read
+    /// through links; `certification/` stays here, a run writes in it. The
+    /// check's identity refuses links, so this run never passes: these tests
+    /// judge its lines, and `recherche.rs` counts the same errors in process.
     #[cfg(unix)]
     fn common() -> PathBuf {
         let dir = fresh();
@@ -82,12 +84,12 @@ mod commands {
         let clean = soiree(&dir).args(["check", "."]).output().unwrap();
         let shown = text(&clean);
         assert!(shown.contains("✓ recherche : 1 fiche(s)"), "{shown}");
+        assert!(!shown.contains("✗ recherche"), "{shown}");
         assert!(shown.contains("– dette de recherche : "), "{shown}");
 
         break_sheet(&dir);
         let failed = soiree(&dir).args(["check", "."]).output().unwrap();
         let shown = text(&failed);
-        assert!(!failed.status.success(), "{shown}");
         assert!(
             shown.contains(
                 "✗ recherche/reconnexion.toml : reconnexion-01 : `etat = \"trou\"` sans `trou`"
@@ -95,6 +97,36 @@ mod commands {
             "{shown}"
         );
         assert!(!shown.contains("✓ recherche : "), "{shown}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_broken_registry_or_source_list_stops_the_full_check() {
+        for (file, from, to, expected) in [
+            (
+                "recherche/sources.toml",
+                "\netat = \"consultee\"",
+                "\netat = \"lue\"",
+                "✗ recherche/sources.toml",
+            ),
+            (
+                "recherche/sous-systemes.toml",
+                "id = \"fiabilite\"",
+                "id = \"reconnexion\"",
+                "sous-système reconnexion en double",
+            ),
+        ] {
+            let dir = common();
+            let path = dir.join(file);
+            let original = std::fs::read_to_string(&path).unwrap();
+            let broken = original.replacen(from, to, 1);
+            assert_ne!(original, broken);
+            std::fs::write(path, broken).unwrap();
+            let failed = soiree(&dir).args(["check", "."]).output().unwrap();
+            let shown = text(&failed);
+            assert!(shown.contains(expected), "{shown}");
+            assert!(!shown.contains("✓ recherche : "), "{shown}");
+        }
     }
 
     #[cfg(unix)]
