@@ -6,9 +6,17 @@
 //! latest wins, sent when it changes but at most 60 times a second, and every
 //! 250 ms anyway so a game that missed one catches up. Drawing steps are
 //! events and all go, in order, before the state.
+//!
+//! Between two sockets, the drawing steps wait (`CONTRAT.md` promises them
+//! all) and the states do not: the next one is read fresh. A new socket says
+//! `Hello` first, and what waited goes once the game has shown its remote:
+//! salon drops the frames of an app that shows no pad yet.
+
+use std::collections::VecDeque;
 
 use remote_protocol::{
-    Feedback, GameMessage, InputState, PhoneMessage, Remote as Shown, VERSION, decode, encode,
+    DrawEvent, Feedback, GameMessage, InputState, PhoneMessage, Remote as Shown, VERSION, decode,
+    encode,
 };
 
 use crate::remote::Remote;
@@ -18,6 +26,9 @@ use crate::{Insets, Size};
 const MIN_INTERVAL: f64 = 1.0 / 60.0;
 /// The slowest: an unchanged state is sent again this often.
 const HEARTBEAT: f64 = 0.25;
+/// How fast drawing steps that waited go out, a second. Salon takes 240
+/// frames a second from an app, and states may take 60 of them.
+const BACKLOG_RATE: f64 = 180.0;
 
 /// What a frame from the game changed, for the app to act on.
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +43,17 @@ pub enum Event {
     Unreadable,
 }
 
+/// Where the socket stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Link {
+    /// Open, and the game knows this phone.
+    Up,
+    /// Gone: nothing can leave.
+    Down,
+    /// `Hello` is on its way, and the game has not shown anything since.
+    Greeted,
+}
+
 #[derive(Clone, Debug)]
 pub struct Session {
     player: [u8; 16],
@@ -43,6 +65,11 @@ pub struct Session {
     /// When the last state went out, and what it was (its `seq` aside).
     last_sent: Option<(f64, InputState)>,
     outbox: Vec<Vec<u8>>,
+    link: Link,
+    /// Drawing steps waiting for a game that can read them, oldest first.
+    backlog: VecDeque<Vec<u8>>,
+    /// How many of them may go now, and when that was reckoned.
+    allowance: (f64, f64),
 }
 
 impl Session {
@@ -56,6 +83,9 @@ impl Session {
             seq: 0,
             last_sent: None,
             outbox: Vec::new(),
+            link: Link::Up,
+            backlog: VecDeque::new(),
+            allowance: (0.0, 0.0),
         }
     }
 
@@ -66,7 +96,24 @@ impl Session {
             player: self.player,
             name: self.name.clone(),
         }));
+        if self.link == Link::Down {
+            self.link = Link::Greeted;
+        }
         self.last_sent = None;
+    }
+
+    /// The socket is gone. What had not left stays for the next one, if it
+    /// is a drawing step: an older state is worth nothing by then.
+    pub fn disconnected(&mut self) {
+        self.link = Link::Down;
+        self.last_sent = None;
+        let unsent = std::mem::take(&mut self.outbox);
+        let steps = unsent
+            .into_iter()
+            .filter(|frame| matches!(decode(frame), Ok(PhoneMessage::Draw(_))));
+        let mut backlog: VecDeque<Vec<u8>> = steps.collect();
+        backlog.append(&mut self.backlog);
+        self.backlog = backlog;
     }
 
     pub fn receive(&mut self, frame: &[u8]) -> Event {
@@ -74,12 +121,13 @@ impl Session {
             Ok(GameMessage::Show(Shown::Pad(layout))) => {
                 self.let_go();
                 self.remote = Some(Remote::new(layout, self.screen, self.insets));
-                self.last_sent = None;
+                self.shown();
                 Event::ShowPad
             }
             Ok(GameMessage::Show(Shown::Web { url })) => {
                 self.let_go();
                 self.remote = None;
+                self.shown();
                 Event::ShowWeb(url)
             }
             Ok(GameMessage::Feedback(feedback)) => Event::Feedback(feedback),
@@ -98,8 +146,44 @@ impl Session {
         };
         old.release_all();
         for event in old.drain_drawing() {
-            self.outbox.push(encode(&PhoneMessage::Draw(event)));
+            self.push_step(&event);
         }
+    }
+
+    /// The game answered this socket: what waited may go.
+    fn shown(&mut self) {
+        self.last_sent = None;
+        if self.link == Link::Greeted {
+            self.link = Link::Up;
+        }
+    }
+
+    /// A step leaves behind those that wait, never ahead of them.
+    fn push_step(&mut self, event: &DrawEvent) {
+        let frame = encode(&PhoneMessage::Draw(*event));
+        if self.link == Link::Up && self.backlog.is_empty() {
+            self.outbox.push(frame);
+        } else {
+            self.backlog.push_back(frame);
+        }
+    }
+
+    /// Lets out what the elapsed time allows of the backlog.
+    fn release_backlog(&mut self, now: f64) {
+        if self.link != Link::Up || self.backlog.is_empty() {
+            self.allowance = (now, 0.0);
+            return;
+        }
+        let (since, earned) = self.allowance;
+        let mut earned = earned + (now - since).max(0.0) * BACKLOG_RATE;
+        while earned >= 1.0 {
+            let Some(frame) = self.backlog.pop_front() else {
+                break;
+            };
+            self.outbox.push(frame);
+            earned -= 1.0;
+        }
+        self.allowance = (now, earned);
     }
 
     pub fn resize(&mut self, screen: Size, insets: Insets) {
@@ -120,12 +204,18 @@ impl Session {
 
     /// Queues what is due at `now` (seconds): drawing steps, then the state.
     pub fn tick(&mut self, now: f64) {
-        let Some(remote) = &mut self.remote else {
+        let steps = self
+            .remote
+            .as_mut()
+            .map(Remote::drain_drawing)
+            .unwrap_or_default();
+        for event in &steps {
+            self.push_step(event);
+        }
+        self.release_backlog(now);
+        let Some(remote) = self.remote.as_ref().filter(|_| self.link == Link::Up) else {
             return;
         };
-        for event in remote.drain_drawing() {
-            self.outbox.push(encode(&PhoneMessage::Draw(event)));
-        }
         let state = remote.state(0);
         let due = match &self.last_sent {
             None => true,
@@ -152,7 +242,7 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-    use remote_protocol::{DrawEvent, Haptic, Remote as Shown, presets};
+    use remote_protocol::{Haptic, Remote as Shown, presets};
 
     use super::*;
     use crate::Point;
@@ -256,6 +346,121 @@ mod tests {
                 pressed: 1,
                 ..
             })]
+        ));
+    }
+
+    /// Starts a stroke on a shown canvas, on a socket that has opened.
+    fn drawing() -> (Session, Point) {
+        let mut session = session();
+        session.connected();
+        show(&mut session, presets::draw());
+        let rect = session
+            .remote()
+            .and_then(Remote::canvas_rect)
+            .unwrap_or_default();
+        let at = Point::new(rect.center_x(), rect.center_y());
+        session.remote_mut().map(|r| r.touch_down(1, at, 0.0));
+        session.tick(0.0);
+        session.drain();
+        (session, at)
+    }
+
+    #[test]
+    fn what_is_drawn_between_two_sockets_waits_behind_hello_and_the_games_show() {
+        let (mut session, at) = drawing();
+        session.disconnected();
+        if let Some(remote) = session.remote_mut() {
+            remote.touch_move(1, Point::new(at.x + 40.0, at.y), 0.1);
+            remote.touch_up(1);
+        }
+        session.tick(0.5);
+        assert_eq!(sent(&mut session), [], "no socket: nothing leaves");
+        session.tick(1.0);
+
+        // A try that opens and dies spends nothing kept.
+        session.connected();
+        assert!(matches!(
+            sent(&mut session).as_slice(),
+            [PhoneMessage::Hello { .. }]
+        ));
+        session.tick(1.1);
+        assert_eq!(sent(&mut session), [], "the game has not shown yet");
+        session.disconnected();
+        session.tick(1.5);
+
+        session.connected();
+        assert!(matches!(
+            sent(&mut session).as_slice(),
+            [PhoneMessage::Hello { .. }]
+        ));
+        show(&mut session, presets::draw());
+        session.tick(1.6);
+        session.tick(3.0);
+        let steps: Vec<PhoneMessage> = sent(&mut session)
+            .into_iter()
+            .filter(|message| matches!(message, PhoneMessage::Draw(_)))
+            .collect();
+        assert!(matches!(
+            steps.first(),
+            Some(PhoneMessage::Draw(DrawEvent::Point { .. }))
+        ));
+        assert!(matches!(
+            steps.last(),
+            Some(PhoneMessage::Draw(DrawEvent::End { .. }))
+        ));
+    }
+
+    #[test]
+    fn a_state_from_before_a_cut_is_not_kept() {
+        let (mut session, _) = drawing();
+        session.tick(0.5);
+        session.disconnected();
+        session.tick(1.0);
+        session.connected();
+        show(&mut session, presets::draw());
+        session.tick(2.0);
+        let states = sent(&mut session)
+            .into_iter()
+            .filter(|message| matches!(message, PhoneMessage::Input(_)))
+            .count();
+        assert_eq!(states, 1);
+    }
+
+    #[test]
+    fn a_long_backlog_goes_out_all_and_at_a_pace_salon_accepts() {
+        let (mut session, at) = drawing();
+        session.disconnected();
+        let mut x = at.x;
+        for step in 0..600 {
+            x += 2.0;
+            let time = f64::from(step) * 0.016;
+            session
+                .remote_mut()
+                .map(|r| r.touch_move(1, Point::new(x, at.y), time));
+            session.tick(time);
+        }
+        session.remote_mut().map(|r| r.touch_up(1));
+        session.tick(10.0);
+        session.connected();
+        session.drain();
+        show(&mut session, presets::draw());
+
+        let (mut steps, mut most, mut now) = (Vec::new(), 0, 10.0);
+        while now < 20.0 {
+            now += 1.0 / 60.0;
+            session.tick(now);
+            let sent: Vec<_> = sent(&mut session)
+                .into_iter()
+                .filter(|message| matches!(message, PhoneMessage::Draw(_)))
+                .collect();
+            most = most.max(sent.len());
+            steps.extend(sent);
+        }
+        assert!(most <= 4, "{most} steps in one frame: 240 a second at most");
+        assert!(steps.len() > 500);
+        assert!(matches!(
+            steps.last(),
+            Some(PhoneMessage::Draw(DrawEvent::End { .. }))
         ));
     }
 

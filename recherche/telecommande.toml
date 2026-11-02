@@ -339,7 +339,8 @@ citation = "Le WebSocket les livre tous."
 enonce = "Un trait est un événement : le contrat promet chaque étape, donc ce qui part pendant une coupure doit attendre, pas disparaître."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::what_is_drawn_between_two_sockets_waits_behind_hello_and_the_games_show", "remote/bench/tests/shell.rs::a_stroke_cut_by_the_host_reaches_the_next_socket_behind_hello"]
 trou = "T1"
 
 [[lecon]]
@@ -350,7 +351,8 @@ citation = "message, so that it gets buffered and sent upon reconnection."
 enonce = "Un client mûr garde ce qui est émis sur un lien mort et l'envoie à la reconnexion."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::what_is_drawn_between_two_sockets_waits_behind_hello_and_the_games_show", "remote/bench/tests/shell.rs::a_stroke_cut_by_the_host_reaches_the_next_socket_behind_hello"]
 trou = "T1"
 
 [[lecon]]
@@ -831,7 +833,7 @@ lieux = [
 cas = "flush vide session.drain() avant de regarder le socket. Pendant le repli de 0,5 à 5 s, socket vaut nil : les trames sont jetées. Dessin en cours, hôte qui coupe : l'hôte reçoit Begin et 19 points, puis plus rien, ni le reste ni End, alors que release_all a bien produit End. Le jeu garde un trait ouvert pour toujours. CONTRAT.md dit que le WebSocket les livre tous. Les envois partis sans accusé juste avant la coupure sont perdus aussi, send ignore son erreur."
 preuve = "sonde H1, app réelle dans le simulateur, hôte de sonde qui coupe après 20 trames : témoin sans coupure Begin + 19 points + End ; avec coupure pas de End ; en gardant les trames jusqu'au socket suivant, Hello d'abord, End arrive 0,5 s plus tard, à la reconnexion. Seul flush a changé."
 verifie = "le chemin complet dans l'app sur simulateur iOS 26.5, sur boucle locale"
-suppose = "La fréquence sur un vrai Wi-Fi. Il faudrait aussi rendre les trames encore en vol : un numéro de trait accusé par l'hôte, à trancher."
+suppose = "La fréquence sur un vrai Wi-Fi. Reste ouvert ce que le correctif ne peut pas voir : une trame déjà remise au noyau quand le lien meurt est perdue sans erreur. Y compris un End, jusqu'à la détection de T2. Il faudrait un numéro de trait accusé par l'hôte, à trancher : un Pong n'y suffit pas, renvoyer Undo ou Clear le rejouerait."
 
 [[trou]]
 id = "T2"

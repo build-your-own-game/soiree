@@ -35,9 +35,9 @@ Des frames WebSocket binaires, un message par frame, encodés par le crate `remo
    - Si `version` diffère de `remote_protocol::VERSION`, réponds `GameMessage::Refuse { reason }` : l'app affiche la raison.
 2. Ton jeu répond `GameMessage::Show(Remote)`, la télécommande à afficher. Renvoie-le pour en changer.
 3. Le téléphone envoie `PhoneMessage::Input(InputState)` à chaque changement (au plus 60 fois par seconde), et toutes les 250 ms sinon. C'est un état complet : garde le dernier, ignore un `seq` plus petit que le précédent.
-4. Les traits d'une toile arrivent dans l'ordre, en `PhoneMessage::Draw(DrawEvent)`. Le WebSocket les livre tous.
+4. Les traits d'une toile arrivent dans l'ordre, en `PhoneMessage::Draw(DrawEvent)`. Le WebSocket les livre tous. Après une coupure, ce qui a été tracé entre-temps part sur le socket suivant, derrière `Hello` et ton `Show`, à 180 trames par seconde au plus. Seule exception : une trame déjà partie quand le lien meurt, que rien ne peut signaler.
 5. `GameMessage::Feedback(Feedback)` fait vibrer le téléphone (`Haptic::Success`, `Warning`…) et peut teinter son fond, par exemple « premier au buzzer ».
-6. Si la connexion tombe, l'app se reconnecte seule et renvoie le même `Hello`.
+6. Si la connexion tombe, l'app se reconnecte seule et renvoie le même `Hello`. Réponds-y `Show`, même inchangé : c'est lui qui dit à l'app que tu l'as reconnue.
 
 ## Décrire la télécommande : trois niveaux
 

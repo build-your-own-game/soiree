@@ -277,6 +277,12 @@ impl Session {
         self.lock().connected();
     }
 
+    /// The WebSocket is gone. Call `drain` only while one is open: drawing
+    /// steps wait here for the next one.
+    pub fn disconnected(&self) {
+        self.lock().disconnected();
+    }
+
     #[expect(clippy::needless_pass_by_value, reason = "UniFFI passes bytes owned")]
     pub fn receive(&self, frame: Vec<u8>) -> GameEvent {
         match self.lock().receive(&frame) {

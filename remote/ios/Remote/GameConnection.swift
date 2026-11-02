@@ -32,7 +32,10 @@ final class GameConnection {
 
     let target: JoinTarget
     @ObservationIgnored let session: Session
+    @ObservationIgnored private var sockets: URLSession?
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
+    /// The open handshake is over: frames sent earlier die with a failed try.
+    @ObservationIgnored private var opened = false
     @ObservationIgnored private var attempt = 0
     @ObservationIgnored private var ticker: Ticker?
     @ObservationIgnored private let haptics = Haptics()
@@ -47,6 +50,10 @@ final class GameConnection {
 
     func start() {
         closed = false
+        let delegate = SocketDelegate { [weak self] socket in
+            Task { @MainActor in self?.didOpen(socket) }
+        }
+        sockets = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         ticker = Ticker { [weak self] in self?.tick() }
         connect()
     }
@@ -60,16 +67,25 @@ final class GameConnection {
         pad?.stop()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+        sockets?.invalidateAndCancel()
+        sockets = nil
     }
 
     private func connect() {
-        guard !closed, let url = URL(string: target.socket) else { return }
-        let socket = URLSession.shared.webSocketTask(with: url)
+        guard !closed, let sockets, let url = URL(string: target.socket) else { return }
+        let socket = sockets.webSocketTask(with: url)
         self.socket = socket
+        opened = false
         socket.resume()
+        receive(on: socket)
+    }
+
+    /// Hello goes first, on a socket that has really opened.
+    private func didOpen(_ socket: URLSessionWebSocketTask) {
+        guard socket === self.socket, !closed else { return }
+        opened = true
         session.connected()
         flush()
-        receive(on: socket)
     }
 
     private func receive(on socket: URLSessionWebSocketTask) {
@@ -120,6 +136,8 @@ final class GameConnection {
     private func lost(_ socket: URLSessionWebSocketTask) {
         guard socket === self.socket, !closed else { return }
         self.socket = nil
+        opened = false
+        session.disconnected()
         pad?.releaseAll()
         status = .reconnecting
         let delay = min(0.5 * pow(2, Double(attempt)), 5)
@@ -136,10 +154,10 @@ final class GameConnection {
         flush()
     }
 
+    /// Only with a socket to take them: the session keeps what waits.
     private func flush() {
-        let frames = session.drain()
-        guard let socket, socket.state == .running else { return }
-        for frame in frames {
+        guard let socket, opened else { return }
+        for frame in session.drain() {
             socket.send(.data(frame)) { _ in }
         }
     }
@@ -160,6 +178,21 @@ final class GameConnection {
         let made = withUnsafeBytes(of: UUID().uuid) { Data($0) }
         UserDefaults.standard.set(made, forKey: key)
         return made
+    }
+}
+
+/// Says when a socket has finished opening.
+private final class SocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
+    private let onOpen: @Sendable (URLSessionWebSocketTask) -> Void
+
+    init(onOpen: @escaping @Sendable (URLSessionWebSocketTask) -> Void) {
+        self.onOpen = onOpen
+    }
+
+    func urlSession(
+        _ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?
+    ) {
+        onOpen(webSocketTask)
     }
 }
 
