@@ -198,16 +198,6 @@ impl Device {
         self.window.room(flying, packet)
     }
 
-    /// See [`Order::stuck`].
-    fn stuck(&mut self, now: Ms, order: Order, timing: &Timing) -> bool {
-        if self.down.waits() || self.out_state.waits() {
-            order.stuck(&mut self.window, now, timing)
-        } else {
-            self.window.at_rest();
-            false
-        }
-    }
-
     /// Another client took over: what it sends is not the rest of a message
     /// the last one left half sent.
     fn new_session(&mut self) {
@@ -426,7 +416,6 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
             let learned = device.down.ack(&ack, heard, order);
             let learned = learned.with(device.out_state.ack(&ack, heard, order));
             device.window.heard(learned, now, round);
-            device.window.said(ack);
         }
         let had_parts = !packet.events.is_empty() || !packet.state.is_empty();
         let received = device
@@ -696,8 +685,11 @@ impl<Up: DeserializeOwned, Down: Serialize> Host<Up, Down> {
                 continue;
             };
             let quiet = now.since(device.last_heard);
-            let order = self.links.get(&link).map(|link| Order::of(link.caps));
-            if quiet >= timing.absent || order.is_some_and(|it| device.stuck(now, it, &timing)) {
+            let stuck = self.links.get(&link).is_some_and(|link| {
+                let order = Order::of(link.caps);
+                order.stuck(now, &mut device.down, &mut device.out_state, &timing)
+            });
+            if quiet >= timing.absent || stuck {
                 silent.push(link);
             } else if quiet >= timing.silent {
                 device.presence = Presence::Weak;

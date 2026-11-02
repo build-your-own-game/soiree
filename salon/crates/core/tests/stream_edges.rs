@@ -4,7 +4,6 @@
 
 #![expect(
     clippy::expect_used,
-    clippy::panic,
     reason = "test helpers outside #[test] functions: a room that does not answer stops the test"
 )]
 #![expect(
@@ -1460,6 +1459,92 @@ fn states_shown_faster_than_they_are_acknowledged_keep_a_stream_alive() {
         room.received(Ms(now), LinkId(2), &late);
         assert!(!closes(&mut room, LinkId(2), now), "at {now}");
     }
+}
+
+/// A packet where the ack says `ack`, from a phone alive on the stream.
+fn saying(ack: Ack, now: u64) -> Vec<u8> {
+    encode(&Packet {
+        epoch: EPOCH,
+        sent: now,
+        echo: Some(Echo { sent: 5, held: 0 }),
+        ack: Some(ack),
+        ..Packet::default()
+    })
+}
+
+/// Each queue answers for itself: an event that leaves a hole nobody proves is
+/// not excused by the states that keep arriving past it.
+#[test]
+fn states_that_move_do_not_hide_an_event_that_is_stuck() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 1);
+    let mut gone_at = None;
+    for state in 1..60_u32 {
+        let now = 10 + u64::from(state) * 500;
+        room.show(device, &vec![2]).unwrap();
+        drain(&mut room, Ms(now));
+        let ack = Ack {
+            state,
+            ..Ack::default()
+        };
+        room.received(Ms(now + 1), LinkId(2), &saying(ack, now + 1));
+        if closes(&mut room, LinkId(2), now + 1) {
+            gone_at = Some(now + 1);
+            break;
+        }
+    }
+    let gone_at = gone_at.expect("the event is stuck, and the link goes");
+    assert!((PATIENCE..PATIENCE + 1_000).contains(&gone_at), "{gone_at}");
+}
+
+/// The other way round: a state on its way that nothing answers is not excused
+/// by the events that keep arriving.
+#[test]
+fn events_that_move_do_not_hide_a_state_that_is_stuck() {
+    let (mut room, device) = on_a_stream();
+    room.show(device, &vec![1; 2_000]).unwrap();
+    assert_eq!(states_leaving(&mut room, Ms(10)), vec![1]);
+    let mut gone = false;
+    for events in 1..60 {
+        let now = 10 + u64::from(events) * 500;
+        room.send(device, &vec![2]).unwrap();
+        drain(&mut room, Ms(now));
+        let ack = Ack {
+            events,
+            ..Ack::default()
+        };
+        room.received(Ms(now + 1), LinkId(2), &saying(ack, now + 1));
+        gone = closes(&mut room, LinkId(2), now + 1);
+        if gone {
+            break;
+        }
+    }
+    assert!(gone, "the state is stuck, and the link goes");
+}
+
+/// A state that has not left owes the other side nothing: on a slow stream it
+/// waits for the window behind a long queue of events, and that is no silence.
+#[test]
+fn a_state_that_waits_for_the_window_is_not_stuck() {
+    let (mut room, device) = on_a_stream();
+    for _ in 0..60 {
+        room.send(device, &vec![1; 15_000]).unwrap();
+    }
+    let first = u32::try_from(leaving(&mut room, Ms(10))).expect("a few");
+    room.show(device, &vec![2; 40_000]).unwrap();
+    // One fragment of the queue arrives each time, the rest stays on its way,
+    // and the state still has not left.
+    for (step, events) in (1..50_u64).zip(first..) {
+        let now = 10 + step * 500;
+        let ack = Ack {
+            events,
+            ..Ack::default()
+        };
+        room.received(Ms(now), LinkId(2), &saying(ack, now));
+        assert!(!closes(&mut room, LinkId(2), now), "at {now}");
+    }
+    assert_eq!(states_leaving(&mut room, Ms(40_000)), Vec::<u32>::new());
 }
 
 /// A wait of nothing would have `poll` answer at the same instant for ever, and

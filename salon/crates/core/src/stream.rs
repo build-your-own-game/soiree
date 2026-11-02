@@ -236,9 +236,17 @@ impl Order {
 
     /// Whether this link stopped carrying without a word. Timers keep a
     /// datagram link talking. A stream has none, so a hole in what proves a
-    /// loss there would leave it alive and mute, with no error, for ever.
-    pub fn stuck(self, window: &mut Window, now: Ms, timing: &Timing) -> bool {
-        self == Order::Kept && window.stuck(now, timing.patience())
+    /// loss there would leave it alive and mute, with no error, for ever. Each
+    /// queue answers for itself: states that arrive say nothing of an event
+    /// stuck beside them.
+    pub fn stuck(
+        self,
+        now: Ms,
+        events: &mut OutEvents,
+        state: &mut OutState,
+        timing: &Timing,
+    ) -> bool {
+        self == Order::Kept && events.silence(now).max(state.silence(now)) >= timing.patience()
     }
 }
 
@@ -278,10 +286,6 @@ pub(crate) struct Window {
     expired: u32,
     /// When a loss last halved it: everything in flight then counts as one.
     halved: Option<Ms>,
-    /// The last ack, which says all the other side has.
-    said: Option<Ack>,
-    /// Since when it says the same with something waiting.
-    unmoved: Option<Ms>,
 }
 
 impl Window {
@@ -305,8 +309,6 @@ impl Window {
             ceiling: Window::MOST,
             expired: 0,
             halved: None,
-            said: None,
-            unmoved: None,
         }
     }
 
@@ -334,26 +336,6 @@ impl Window {
             peer.resend(timing.resend_min, timing.resend_max),
             timing.resend_max,
         )
-    }
-
-    /// An ack came. If it says anything new, the link carries.
-    pub fn said(&mut self, ack: Ack) {
-        if self.said != Some(ack) {
-            self.said = Some(ack);
-            self.unmoved = None;
-        }
-    }
-
-    /// Nothing waits for an ack.
-    pub fn at_rest(&mut self) {
-        self.unmoved = None;
-    }
-
-    /// Something waits, and no ack has moved for `patience`. What moves is the
-    /// ack, not what it frees: a state replaced before its ack is never
-    /// acknowledged, yet the number applied climbs.
-    fn stuck(&mut self, now: Ms, patience: u64) -> bool {
-        now.since(*self.unmoved.get_or_insert(now)) >= patience
     }
 
     pub fn heard(&mut self, heard: Heard, now: Ms, wait: u64) {
@@ -390,6 +372,39 @@ impl Window {
         self.bytes = (self.bytes / 2).max(Window::FLOOR);
         self.ceiling = self.bytes;
         true
+    }
+}
+
+/// How long the other side has said nothing new of one queue, `T` being what an
+/// ack says of it. What counts is that the ack moves, not what it frees: a
+/// state replaced before its ack is never acknowledged, yet the number applied
+/// climbs.
+struct Silence<T> {
+    said: Option<T>,
+    since: Option<Ms>,
+}
+
+impl<T: PartialEq> Silence<T> {
+    fn new() -> Silence<T> {
+        Silence {
+            said: None,
+            since: None,
+        }
+    }
+
+    fn heard(&mut self, said: T) {
+        if self.said.as_ref() != Some(&said) {
+            self.said = Some(said);
+            self.since = None;
+        }
+    }
+
+    fn lasted(&mut self, now: Ms) -> u64 {
+        now.since(*self.since.get_or_insert(now))
+    }
+
+    fn at_rest(&mut self) {
+        self.since = None;
     }
 }
 
@@ -456,6 +471,17 @@ impl Pieces {
     fn forget(&mut self) {
         self.cut = 0;
         self.each.clear();
+    }
+
+    /// The other side owes word of it: something left and nothing says what
+    /// became of it, or all of it arrived and nothing was delivered. What has
+    /// yet to leave waits for this side's window, not for the other side.
+    fn owed(&self) -> bool {
+        let unknown = self
+            .each
+            .iter()
+            .any(|piece| matches!(piece, Piece::Sent(..) | Piece::Lost));
+        unknown || (!self.each.is_empty() && self.each.iter().all(|it| *it == Piece::Arrived))
     }
 
     /// Several fragments, and some have left.
@@ -607,6 +633,9 @@ pub(crate) struct OutEvents {
     queue: VecDeque<Outgoing>,
     /// Bytes in `queue`.
     waiting: usize,
+    /// Below which number, what is whole past it, and what of the first not
+    /// whole: all an ack says of events.
+    silence: Silence<(u32, u64, Option<Parts>)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -618,6 +647,7 @@ impl OutEvents {
             next,
             queue: VecDeque::new(),
             waiting: 0,
+            silence: Silence::new(),
         }
     }
 
@@ -660,6 +690,7 @@ impl OutEvents {
 
     /// What an ack says of events, written once `heard` reached the other side.
     pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>, order: Order) -> Heard {
+        self.silence.heard((ack.events, ack.ahead, ack.event_parts));
         let mut learned = self.ack_below(ack.events);
         let parts = ack.event_parts;
         // The last number something arrived of: what lies before was passed
@@ -693,9 +724,14 @@ impl OutEvents {
         learned
     }
 
-    /// Something the other side has not acknowledged.
-    pub fn waits(&self) -> bool {
-        !self.queue.is_empty()
+    /// How long the other side has owed word of these events.
+    pub fn silence(&mut self, now: Ms) -> u64 {
+        if self.sendable().any(|event| event.pieces.owed()) {
+            self.silence.lasted(now)
+        } else {
+            self.silence.at_rest();
+            0
+        }
     }
 
     /// The oldest event still waiting (or the next number if none).
@@ -708,6 +744,7 @@ impl OutEvents {
         for event in &mut self.queue {
             event.pieces.forget();
         }
+        self.silence = Silence::new();
     }
 
     /// Keeps what waits but numbers it from `next` (a welcome says where the
@@ -957,6 +994,8 @@ pub(crate) struct OutState {
     pieces: Pieces,
     /// The latest one, while one of several fragments finishes.
     latest: Option<Vec<u8>>,
+    /// What number was applied, and what of the next: all an ack says of it.
+    silence: Silence<(u32, Option<Parts>)>,
 }
 
 impl OutState {
@@ -968,12 +1007,18 @@ impl OutState {
             acked: true,
             pieces: Pieces::default(),
             latest: None,
+            silence: Silence::new(),
         }
     }
 
-    /// Something the other side has not acknowledged.
-    pub fn waits(&self) -> bool {
-        !self.acked
+    /// How long the other side has owed word of this state.
+    pub fn silence(&mut self, now: Ms) -> u64 {
+        if !self.acked && self.pieces.owed() {
+            self.silence.lasted(now)
+        } else {
+            self.silence.at_rest();
+            0
+        }
     }
 
     /// The number of the state held, if any.
@@ -1008,6 +1053,7 @@ impl OutState {
     /// What an ack says of the state, written once `heard` reached the other
     /// side.
     pub fn ack(&mut self, ack: &Ack, heard: Option<Ms>, order: Order) -> Heard {
+        self.silence.heard((ack.state, ack.state_parts));
         if self.acked {
             return Heard::default();
         }
@@ -1039,6 +1085,7 @@ impl OutState {
             self.acked = false;
         }
         self.pieces.forget();
+        self.silence = Silence::new();
     }
 
     /// Numbers above `applied`, the last number the other side took from

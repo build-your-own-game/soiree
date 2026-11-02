@@ -376,7 +376,6 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             let learned = self.up.ack(&ack, heard, order);
             let learned = learned.with(self.out_state.ack(&ack, heard, order));
             self.window.heard(learned, now, round);
-            self.window.said(ack);
         }
         // Fragments and acks are safe to read from an old packet. The phase is
         // not: it would take back what a newer one said, and the next event
@@ -474,13 +473,11 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
         let now = self.advance(now);
         let timing = self.config.timing;
         let stuck = match &self.link {
-            Link::Open(open) if self.up.waits() || self.out_state.waits() => {
-                open.welcomed && Order::of(open.caps).stuck(&mut self.window, now, &timing)
+            Link::Open(open) if open.welcomed => {
+                let order = Order::of(open.caps);
+                order.stuck(now, &mut self.up, &mut self.out_state, &timing)
             }
-            Link::Idle { .. } | Link::Connecting { .. } | Link::Open(_) => {
-                self.window.at_rest();
-                false
-            }
+            Link::Idle { .. } | Link::Connecting { .. } | Link::Open(_) => false,
         };
         match &self.link {
             Link::Idle { retry_at: Some(at) } if *at <= now => {
