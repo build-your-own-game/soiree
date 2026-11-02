@@ -102,6 +102,7 @@ mod commands {
     #[cfg(unix)]
     #[test]
     fn a_hollow_sheet_stops_the_full_check() {
+        type Change<'a> = &'a dyn Fn(&str) -> String;
         let without_lessons = |sheet: &str| {
             sheet
                 .split("\n\n")
@@ -121,7 +122,6 @@ mod commands {
                 &lesson[end..]
             )
         };
-        type Change<'a> = &'a dyn Fn(&str) -> String;
         let cases: [(Change<'_>, &str); 3] = [
             (
                 &without_lessons,
