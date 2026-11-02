@@ -29,8 +29,9 @@ const GARBAGE_BEFORE_HELLO: u32 = 3;
 const FINAL_GRACE: u64 = 1_000;
 /// Sessions a device remembers the end of, so that a tab that comes back
 /// after being replaced is told what arrived. Past that it may repeat what
-/// it had in flight, never lose it.
-const PAST_SESSIONS: usize = 4;
+/// it had in flight, never lose it. A session that delivered nothing, like a
+/// welcome that got lost, does not count.
+const PAST_SESSIONS: usize = 8;
 
 pub struct HostConfig {
     /// The game's version: a phone with another one is refused.
@@ -151,6 +152,8 @@ struct Device {
     announced: bool,
     /// Which client holds the numbering (see [`Resume`]).
     session: u32,
+    /// Where the numbers of events stood when it began.
+    session_began: u32,
     /// Past sessions, with the number the events stood at when each ended.
     past: VecDeque<(u32, u32)>,
 }
@@ -174,6 +177,7 @@ impl Device {
             garbage: 0,
             announced: true,
             session: 0,
+            session_began: 0,
             past: VecDeque::new(),
         }
     }
@@ -181,11 +185,15 @@ impl Device {
     /// Another client took over: what it sends is not the rest of a message
     /// the last one left half sent.
     fn new_session(&mut self) {
-        if self.past.len() >= PAST_SESSIONS {
-            self.past.pop_front();
+        let next = self.up.next();
+        if next != self.session_began {
+            if self.past.len() >= PAST_SESSIONS {
+                self.past.pop_front();
+            }
+            self.past.push_back((self.session, next));
         }
-        self.past.push_back((self.session, self.up.next()));
         self.session = self.session.wrapping_add(1);
+        self.session_began = next;
         self.up.abandon();
         self.in_state.abandon();
     }

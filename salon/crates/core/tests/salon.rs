@@ -1251,7 +1251,7 @@ fn a_tab_away_for_many_takeovers_loses_nothing() {
     let mut net = Net::new(39, Faults::default());
     let (first, _, device) = twins(&mut net, 45);
     net.phones[first].client.send(&Up::Answer(100)).unwrap();
-    for n in 0..8 {
+    for n in 0..12 {
         let other = net.add_phone(phone_config(45, Kind::Phone), Caps::DATAGRAM);
         joined(&mut net, other);
         net.phones[other].client.send(&Up::Answer(n)).unwrap();
@@ -1259,7 +1259,7 @@ fn a_tab_away_for_many_takeovers_loses_nothing() {
     }
     net.phones[first].client.resume();
     net.run(2_000);
-    let want: Vec<Up> = (0..8).chain([100]).map(Up::Answer).collect();
+    let want: Vec<Up> = (0..12).chain([100]).map(Up::Answer).collect();
     assert_eq!(net.events_from(device), want);
 }
 

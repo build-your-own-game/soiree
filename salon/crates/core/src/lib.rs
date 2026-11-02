@@ -90,9 +90,9 @@
 //!   the device never left. Tabs of one device do not share their numbers:
 //!   the host tells them apart, so the tab that plays again ([`Client::resume`])
 //!   is heard, what waited in it goes once, after what the other one sent, and
-//!   what had arrived does not go twice. The host remembers that for the last
-//!   four takeovers of a device; a tab away for longer may repeat what it had
-//!   in flight, and loses nothing.
+//!   what had arrived does not go twice. The host remembers that for the
+//!   last eight tabs that sent something; a tab away for longer may repeat
+//!   what it had in flight, and loses nothing.
 //! - **Coming back.** After a cut, a reload or a locked phone, the device
 //!   reconnects on its own, from 250 ms to 2 s between attempts and without
 //!   end, and gets its identity, its latest state and every event it missed
