@@ -36,13 +36,15 @@ const DOCS: [&str; 19] = [
 ];
 
 /// A document may name these before they exist: runs and `soiree new` write
-/// them, and the host's folder has its games beside this repository.
-const WRITTEN_LATER: [&str; 6] = [
+/// them, `cargo xtask ios` generates the bindings Git ignores, and the host's
+/// folder has its games beside this repository.
+const WRITTEN_LATER: [&str; 7] = [
     ".github/workflows/soiree.yml",
     "certification/",
     "data/",
     "dist/",
     "games/",
+    "ios/Generated",
     "target/",
 ];
 
@@ -464,7 +466,7 @@ mod tests {
         paths(
             &dir,
             "README.md",
-            "`salon/crates`, `.soiree/salon/crates`, `certification/check.json`",
+            "`salon/crates`, `.soiree/salon/crates`, `certification/check.json`, `ios/Generated`",
             &mut report,
         );
         assert!(report.lines.is_empty(), "{:?}", report.lines);
