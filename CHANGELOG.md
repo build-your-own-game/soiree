@@ -188,7 +188,7 @@ Le flux fiable ne demande aucun changement de code non plus, mais quatre choses 
 
 ### Recherche mesurable
 
-`recherche/` rend mesurable la méthode du manifeste : une fiche par sous-système, des citations vérifiables, chaque leçon reliée à un test ou à un trou. La fiche pilote, `recherche/reconnexion.toml`, a lu 28 sources et relevé 13 trous dans salon, dont trois graves.
+`recherche/` rend mesurable la méthode du manifeste : une fiche par sous-système, des citations vérifiables, chaque leçon reliée à un test ou à un trou. La fiche pilote, `recherche/reconnexion.toml`, a lu 28 sources et relevé 13 trous dans salon, dont trois graves. `fiabilite`, `transport-webrtc` et `telecommande` en ont relevé 41 de plus, dont sept graves, que cette version ferme presque tous.
 
 - `soiree recherche plan` dit ce que le diff ajoute, le sous-système, le niveau, la fiche, ce qui manque et les étapes à suivre. Il n'empêche rien.
 - `soiree recherche verifie` confronte à l'amont chaque commit et chaque citation des fiches. Un lien mort fait échouer la fiche ; une panne de réseau a son propre code et ne conclut rien.
@@ -198,20 +198,17 @@ Le flux fiable ne demande aucun changement de code non plus, mais quatre choses 
 
 La dette de niveau 3 restante, ligne par ligne :
 
-- `fiabilite` : pas encore de fiche. La méthode a d'abord été éprouvée sur la reconnexion, le sujet le plus risqué pour une soirée. Cette fiche est à écrire pour une version suivante.
 - `telecommande` T17, faible : l'app ne déclare ni `UIRequiresPersistentWiFi` ni de type de service réseau. L'effet ne se voit qu'avec de vrais iPhones et une partie de plus de 30 min, et rien ne dit qu'un réglage aveugle ne ferait pas pire : à mesurer d'abord (`REPETITION.md`).
 - `transport-webrtc` T9, moyen : Safari iOS n'a jamais été mesuré sur un vrai Wi-Fi de soirée. Il faut un vrai iPhone : le cas est dans `REPETITION.md`.
-- `transport-webrtc` T11, moyen : dimpl 0.7.6 garde ses défauts, contenus à un lien par T1. Aucune version publiée de str0m n'embarque dimpl 0.9 ; une dépendance `git` sur un commit non publié est un choix laissé à l'hôte.
-- T12, moyen : le chaos joue maintenant rechargements, jumeaux et redémarrages. Il reste au harnais à employer `slow_close` et `reset_peer`, sur un vrai transport.
-- T8, faible : l'écouteur de `resume` existe, sans test : aucun navigateur ne l'a rejoué, et le comportement de Chrome reste rapporté par Phoenix. Une ligne de code ne ferme plus un trou, il rouvre donc.
-- T9, faible : `wake` coupe un lien encore valide après 1,5 s de silence. Rien n'est perdu, et le coût visible pour un joueur reste à juger sur de vrais téléphones (`REPETITION.md`).
-- T11, faible : le rattrapage ne se distingue pas du direct. Rien ne montre que cela gêne un jeu, et les jeux peuvent horodater leurs événements.
+- `transport-webrtc` T11, moyen : dimpl 0.7.6 garde ses défauts, contenus à un lien par T1. Aucune version publiée de str0m n'embarque dimpl 0.9, et une dépendance `git` sur 46 commits non publiés, avec 32 paquets de plus chez chaque ami, coûterait plus que ce défaut confiné : on attend la publication.
+- `reconnexion` T9, faible : `wake` coupe un lien encore valide après 1,5 s de silence. Rien n'est perdu, et le coût visible pour un joueur reste à juger sur de vrais téléphones (`REPETITION.md`).
+- `reconnexion` T11, faible : le rattrapage ne se distingue pas du direct. Rien ne montre que cela gêne un jeu, et les jeux peuvent horodater leurs événements.
 
 ### Nuit, mutations, tests
 
 - `nuit.yml` lance chaque nuit, sur des machines Linux gratuites, ou à la main, jamais sur un push : les mutations de `salon-core`, dont le rapport n'a pas de seuil, et un fuzzing borné dont le corpus se garde d'une nuit à l'autre. `salon/fuzz/` attaque les paquets et une session hostile : un lien hostile doit laisser connecté un téléphone honnête, et lui devoir exactement ce qui lui était dû.
 - Une campagne réelle sur `salon-core` laissait 141 mutants vivants sur 433 : accusés, renvois, renumérotation et échéances n'avaient aucun test pour les voir manquer. La campagne suivante en laisse 11 sur 453. Les nouveaux tests (`client_edges.rs`, `host_edges.rs`, `stream_edges.rs`, `types_edges.rs`) forgent des paquets avec une copie du format, et `found_bugs.rs` garde chaque bug reproduit en les lisant.
-- Le chaos joue rechargements, onglets jumeaux, « Jouer ici », pages mortes en silence, redémarrages de l'hôte et paquets retenus : retirer seul le correctif d'un des trous T1, T2, T3 ou T6 le fait rougir en moins de 3 000 cas. `NOTE_CRITICAL` a son test : le retirer de la minuterie le fait échouer. Un serveur réel dans un processus fils prouve la mort de la salle.
+- Le chaos joue rechargements, onglets jumeaux, « Jouer ici », pages mortes en silence, redémarrages de l'hôte et paquets retenus : retirer seul un correctif de ces trous le fait rougir, parfois après plusieurs milliers de cas (mesures dans `recherche/reconnexion.toml`). `NOTE_CRITICAL` a son test : le retirer de la minuterie le fait échouer. Un serveur réel dans un processus fils prouve la mort de la salle.
 
 ### L'app iPhone
 
