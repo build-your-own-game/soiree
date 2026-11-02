@@ -600,9 +600,10 @@ citation = "Chrome 149 started to not reliably fire visibilitychange after resum
 enonce = "visibilitychange ne suffit plus à détecter le retour d'une page gelée : écouter aussi resume."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/web/src/wake.rs::a_page_thawing_without_visibilitychange_checks_its_link_at_once"]
 trou = "T8"
-note = "L'écouteur existe (salon/crates/web/src/lib.rs:421), sans test : aucun navigateur ne l'a rejoué, et le comportement de Chrome reste rapporté par Phoenix. Une ligne de code ne ferme pas un trou."
+note = "Ce test passe resume à un vrai Client, sans navigateur. salon/tests/ui-browser.mjs, en CI mais que `garantie` ne sait pas citer, envoie l'événement dans WebKit et Chromium : une socket s'ouvre tout de suite, et rien sur window. Ce n'est pas un vrai dégel, et le comportement de Chrome reste rapporté par Phoenix."
 
 [[lecon]]
 id = "reconnexion-24"
@@ -784,9 +785,10 @@ citation = "Delay the TCP socket from closing until `delay` has elapsed."
 enonce = "Une fermeture lente éprouve la leçon de la fermeture tardive sur un vrai transport ; le harnais ne l'utilise pas."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/host/tests/transport_faults.rs::a_slow_close_does_not_touch_the_link_that_followed", "salon/crates/host/tests/transport_faults.rs::a_page_reloaded_behind_a_slow_close_just_plays", "salon/crates/host/tests/transport_faults.rs::a_page_does_not_wait_for_a_close_that_is_slow_to_come", "salon/crates/host/tests/transport_faults.rs::a_reset_loses_nothing_and_doubles_nothing"]
 trou = "T12"
-note = "Le faux réseau de salon livre désormais une fermeture derrière les données du lien, retard compris : le chaos joue ce cas sur le modèle. Il reste à l'éprouver sur un vrai transport, dans le harnais."
+note = "Éprouvé sur un vrai WebSocket, entre un vrai salon-host et un vrai Client, par un relais TCP qui joue slow_close et reset_peer. Le harnais n'emploie toujours pas ces deux toxiques : Toxiproxy et les navigateurs restent hors de cette preuve."
 
 [[lecon]]
 id = "reconnexion-40"
@@ -982,12 +984,12 @@ id = "T8"
 titre = "Le retour d'une page gelée n'écoute pas resume"
 gravite = "faible"
 lieux = [
-  "salon/crates/web/src/lib.rs:385",
+  "salon/crates/web/src/wake.rs:59",
 ]
 cas = "Chrome 149 et suivants sur Android : si visibilitychange ne vient pas, wake n'est pas appelé et le chien de garde prend jusqu'à 6 s."
 preuve = "lecture du code : ni pagehide ni resume écoutés."
-verifie = "l'absence de l'écouteur"
-suppose = "Le comportement de Chrome, rapporté par Phoenix, non reproduit ici."
+verifie = "avant : l'absence de test. Depuis, resume sur document réveille un vrai Client (test natif) ; envoyé dans WebKit et Chromium, il ouvre une socket tout de suite (salon/tests/ui-browser.mjs), et mettre l'écouteur sur window fait rougir les deux"
+suppose = "Le comportement de Chrome, rapporté par Phoenix, non reproduit ici : le banc ne sait pas geler une page, Page.setWebLifecycleState n'y a aucun effet (Chrome 156). L'événement est envoyé, pas produit par un dégel."
 
 [[trou]]
 id = "T9"
@@ -999,8 +1001,8 @@ lieux = [
 ]
 cas = "Gel de 3 s, sous les 6 s de l'hôte, lien encore valide : wake le coupe dès 1,5 s de silence, avant de lire ce qui attend dans le socket. Rien n'est perdu, mais chaque coup d'œil à une notification coûte une renégociation et un état Reconnecting. Le test existant fige ce comportement."
 preuve = "le test a_page_that_wakes_up_reconnects_at_once exige connects == 2."
-verifie = "salon-core"
-suppose = "Le coût visible pour le joueur."
+verifie = "salon-core ; sonde sur une copie avec un vrai gel de 3 s, les paquets restés dans le socket : wake coupe quand même (2 connexions), sans wake le lien survit (1 connexion)"
+suppose = "Le coût visible pour le joueur. Tout délai dans Client::wake casse a_page_woken_from_a_freeze_reconnects_at_once de Sidequest, qui exige le Connect dans l'instant du réveil."
 
 [[trou]]
 id = "T10"
@@ -1032,13 +1034,13 @@ id = "T12"
 titre = "Le chaos ne joue ni redémarrage, ni rechargement, ni jumeau"
 gravite = "moyenne"
 lieux = [
-  "salon/crates/core/tests/properties.rs:58",
+  "salon/crates/core/tests/properties.rs:256",
   "tools/cert/toxiproxy.mjs:256",
 ]
 cas = "Step ne connaît que Send, Notify, Show, Cut, Freeze, Thaw, Wait, sur 3 téléphones aux jetons distincts, et Faults n'a pas de retard ciblé. T1, T2 et T3 traversent donc ces suites sans les faire rougir. Le harnais n'emploie pas slow_close ni reset_peer."
 preuve = "lecture de properties.rs et de net/mod.rs ; T1 à T3 passent inaperçus à 64 cas."
-verifie = "le contenu des suites ; depuis, retirer seul le correctif de T1, T2, T3 ou T6 fait rougir chaos_keeps_every_page_in_its_place en moins de 3 000 cas, et retirer seul celui du hello tardif sur un lien plus ancien la fait rougir à 64 cas"
-suppose = "Ce qui reste ouvert est le harnais, et lui seul : slow_close et reset_peer, sur un vrai transport. Côté salon, le chaos joue redémarrage, rechargement, jumeau, retour du réseau et hello retenu sur une tentative abandonnée, et une page seule doit finir par jouer sans qu'on le lui demande."
+verifie = "le contenu des suites ; depuis, retirer seul le correctif de T1, T2, T3 ou T6 fait rougir chaos_keeps_every_page_in_its_place en moins de 3 000 cas, et retirer seul celui du hello tardif sur un lien plus ancien la fait rougir à 64 cas. Le chaos joue aussi le vrai gel, le départ, le retrait d'un appareil, le changement de transport, l'hôte figé, absent ou amnésique, et polle aux échéances. Sur un vrai WebSocket, transport_faults.rs joue slow_close et reset_peer : retirer les gardes de la fermeture tardive, ou renuméroter à la reprise, le fait rougir"
+suppose = "Le relais de transport_faults.rs reproduit les deux toxiques ; Toxiproxy n'y est pas, ni un navigateur : le harnais ne les emploie toujours pas, et la réaction de WebKit à un RST n'est pas éprouvée."
 
 [[trou]]
 id = "T13"
