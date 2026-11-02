@@ -44,6 +44,12 @@ const POLL: Duration = Duration::from_millis(1);
 /// fault, so it may well panic again at once, and this keeps that from eating
 /// a core. Short enough that a page's next offer finds the thread back.
 const RESTART: Duration = Duration::from_millis(100);
+/// Links negotiating at once. Nothing else bounds them: an offer costs no
+/// token, a `Rtc` stays [`HANDSHAKE`] and every datagram walks them all, and
+/// 17 000 offers took a live link from 0 to 75 ms of round trip (E3). A page
+/// negotiates for less than a second, so this is a whole room arriving
+/// together four times over, the same as the queue of signals in `http.rs`.
+const NEGOTIATIONS: usize = 64;
 /// str0m's datagram size, sized so that the largest packet `Caps::DATAGRAM`
 /// allows leaves in one datagram: str0m takes 48 octets of DTLS and 40 of SCTP
 /// off it, and its default of 1 150 cut every packet over 1 062 in two. What
@@ -220,6 +226,17 @@ pub struct Rtcs {
 
 type Entries = BTreeMap<LinkId, Entry>;
 
+/// Drops the oldest negotiation over [`NEGOTIATIONS`]. Link numbers only grow.
+fn make_room(entries: &mut Entries) {
+    let mut negotiating = entries.iter().filter(|(_, entry)| entry.channel.is_none());
+    let oldest = negotiating.next().map(|(&link, _)| link);
+    if negotiating.count() >= NEGOTIATIONS
+        && let Some(oldest) = oldest
+    {
+        entries.remove(&oldest);
+    }
+}
+
 impl Rtcs {
     /// Starts the thread that serves every page. What each link does is
     /// guarded by [`Entry::guarded`]; a panic that still comes out of [`run`]
@@ -284,6 +301,7 @@ fn run(rtcs: &Rtcs, entries: &mut Entries) {
                     };
                     let _: Option<()> = entry.guarded(link, |entry| drive(rtcs, link, entry));
                     entries.insert(link, entry);
+                    make_room(entries);
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return,
@@ -783,6 +801,41 @@ mod tests {
         }
         let waiting = entry.rtc.channel(id).unwrap().buffered_amount();
         assert!(waiting >= 32 * packet.len(), "{waiting} octets");
+    }
+
+    /// A link that is still negotiating, without a channel.
+    fn negotiating(cert: &DtlsCert) -> Entry {
+        let now = Clock::instant();
+        Entry {
+            rtc: RtcConfig::new().set_dtls_cert(cert.clone()).build(now),
+            channel: None,
+            created: now,
+            timeout: None,
+            local: false,
+            broken: false,
+            reached: HOST.parse().unwrap(),
+            backlog: Backlog::default(),
+        }
+    }
+
+    /// T7: each offer is kept 15 s and every datagram walks them all, so that
+    /// a loop of offers slowed the links that were open. The oldest goes: a
+    /// real page takes milliseconds, and it has WebSocket.
+    #[test]
+    fn offers_in_negotiation_are_bounded_and_the_oldest_goes() {
+        salon_crypto::provider().install_process_default();
+        let cert = salon_crypto::dtls_cert().unwrap();
+        let mut entries = Entries::new();
+        entries.insert(LinkId(0), Pair::opened().host);
+        for offer in 1..=NEGOTIATIONS as u64 + 2 {
+            entries.insert(LinkId(offer), negotiating(&cert));
+            make_room(&mut entries);
+        }
+        assert_eq!(entries.len(), NEGOTIATIONS + 1);
+        assert!(entries.contains_key(&LinkId(0)), "an open link never goes");
+        assert!(!entries.contains_key(&LinkId(1)));
+        assert!(!entries.contains_key(&LinkId(2)));
+        assert!(entries.contains_key(&LinkId(3)));
     }
 
     /// T3: a phone has just reached this address, the one the host would have
