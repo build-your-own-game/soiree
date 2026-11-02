@@ -1,5 +1,8 @@
 # Faire un jeu pour la soirée
 
+**Si tu veux faire un jeu :** ouvre un assistant IA (ChatGPT, Claude, Gemini ou un autre) et démarre une nouvelle conversation.
+Copie tout ce texte, du titre à la dernière ligne, colle-le dans la conversation et envoie-le. L'assistant te guidera.
+
 > **À l'assistant IA qui lit ce texte** (ChatGPT, Claude, Gemini ou un autre) : la personne qui te l'a donné veut faire un jeu pour une soirée entre amis. Ce texte te dit comment l'y amener. Suis-le dans l'ordre, une étape à la fois, et vérifie chaque étape avec elle avant de passer à la suivante.
 
 ## La soirée
@@ -12,7 +15,9 @@ Tout le commun est public ici : https://github.com/build-your-own-game/soiree
 
 Amener la personne jusqu'à ce point : **un agent de code tourne sur son ordinateur, dans le dépôt GitHub de son jeu, et a lu le fichier `AGENTS.md` de ce dépôt.** À partir de là, c'est ce dépôt qui guide l'agent, et ton rôle s'arrête.
 
-Tu n'écris pas le jeu dans cette conversation. Tu n'inventes aucune commande : celles de la soirée sont dans le README du dépôt commun, et celles des outils tiers dans leur documentation officielle actuelle. Si tu ne peux pas consulter une page web, dis-le, et donne à la personne l'adresse officielle à ouvrir.
+Si tu es déjà un agent de code qui tourne sur l'ordinateur de la personne, le chemin est plus court : va directement à la section 4 et suis toi-même le texte qu'elle contient, sans lui demander de te le recoller. Demande-lui seulement si elle sait coder, car la dernière phrase de ce texte en dépend. Une fois `AGENTS.md` lu, c'est toi qui écris le jeu.
+
+Sinon, tu n'écris pas le jeu dans cette conversation. Tu n'inventes aucune commande : celles de la soirée sont dans le README du dépôt commun, et celles des outils tiers dans leur documentation officielle actuelle. Si tu ne peux pas consulter une page web, dis-le, et donne à la personne l'adresse officielle à ouvrir.
 
 ## 1. Connaître la personne
 
@@ -20,11 +25,12 @@ Demande, en une fois et simplement :
 - son ordinateur : Mac, Windows ou Linux ;
 - si elle a déjà ouvert un terminal, ou écrit du code ;
 - si elle a un compte GitHub ;
-- quel assistant IA elle paie déjà, s'il y en a un.
+- quel assistant IA elle paie déjà, s'il y en a un ;
+- si un agent de code tourne déjà sur son ordinateur, et lequel.
 
-Si elle code déjà, envoie-la directement à la section « Commencer un jeu » du README du dépôt commun : elle n'a pas besoin du reste.
+Si elle code déjà, envoie-la directement à la section « Commencer un jeu » du README du dépôt commun : il dit tout, y compris l'invitation de l'hôte, et elle n'a pas besoin du reste.
 
-Si elle est sous Windows, préviens-la que ce parcours n'y a pas encore été essayé et que `soiree certify` n'y est pas encore disponible. Elle doit en parler à l'hôte avant d'installer quoi que ce soit.
+Si elle est sous Windows, dis-lui d'en parler à l'hôte avant d'installer quoi que ce soit : ce parcours y a des limites, écrites au début de « Commencer un jeu ».
 
 ## 2. Choisir un agent de code
 
@@ -33,9 +39,9 @@ Il lui faut un agent de code **qui tourne sur son ordinateur** et qui sait :
 - lancer des commandes dans un terminal ;
 - utiliser git et GitHub.
 
-Choisis celui qui va avec ce qu'elle a déjà : l'agent de code de l'assistant qu'elle paie, s'il en a un. Les noms et les offres changent vite : vérifie l'offre et la procédure d'installation actuelles sur le site officiel avant de les lui donner.
+Si elle en a déjà un qui sait tout cela, garde-le. Sinon, choisis celui qui va avec ce qu'elle a : l'agent de code de l'assistant qu'elle paie, s'il en a un. Les noms et les offres changent vite : vérifie l'offre et la procédure d'installation actuelles sur le site officiel avant de les lui donner.
 
-Un agent qui ne tourne que dans le cloud peut écrire le jeu, mais la personne ne pourra pas y jouer avant la soirée. Préfère un agent local ; si elle n'en a aucun moyen, dis-le-lui et laisse-la choisir. Si elle ne paie aucun assistant, cherche sur les sites officiels s'il existe une offre gratuite avec un agent local, et donne-lui le prix exact avant qu'elle décide.
+Un agent qui ne tourne que dans le cloud peut écrire le jeu, mais la personne ne pourra pas y jouer avant la soirée, et ce choix ne remplit pas « C'est fini quand » : aucun agent ne pourra lui montrer le jeu dans son navigateur. Préfère un agent local ; si elle n'en a aucun moyen, dis-le-lui et laisse-la choisir. Si elle ne paie aucun assistant, cherche sur les sites officiels s'il existe une offre gratuite avec un agent local, et donne-lui le prix exact avant qu'elle décide.
 
 ## 3. Préparer l'ordinateur
 

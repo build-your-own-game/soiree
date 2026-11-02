@@ -6,7 +6,7 @@ Les jeux sont écrits en Rust, tournent dans le navigateur, et tiennent tous le 
 
 Ce dépôt est le commun : les idées, la couche réseau, la télécommande, l'outil `soiree` et le jeu de départ. Chaque jeu vit dans son propre dépôt, dans l'organisation `build-your-own-game`.
 
-Tu ne codes pas ? Commence par [`REJOINDRE.md`](REJOINDRE.md) : donne-le à ton assistant IA, il te guidera.
+Tu ne codes pas ? Ouvre [`REJOINDRE.md`](REJOINDRE.md), copie tout son texte, du titre à la dernière ligne, et colle-le dans un assistant IA (ChatGPT, Claude, Gemini ou un autre) : il te guidera.
 
 Les contrats de vérification, leur portée et leurs limites sont décrits dans [`VERIFICATION.md`](VERIFICATION.md).
 
@@ -36,8 +36,9 @@ Sous Windows, ce parcours n'a pas encore été essayé, et `soiree certify` n'y 
    ```
    Le nom : des minuscules, des chiffres et des tirets, comme `course-de-canards`.
 5. **Vérifier le jeu, créer son dépôt dans l'organisation et pousser.**
-   Le premier contrôle compile tout : c'est l'essentiel de la durée annoncée plus haut, et il n'affiche presque rien pendant ce temps. Un agent de code ne lui impose pas de délai court. Il crée aussi `Cargo.lock`, nécessaire à la CI. Il a réussi quand son résumé commence par `✓ Aucun problème trouvé` ; ce qui reste « hors de ce passage » relève de `soiree certify` et de la soirée. S'il dit `✗ À corriger` ou `⚠ Le passage n’a pas abouti`, la cause est juste en dessous, et le détail dans `certification/check.md`.
-   Avec [GitHub CLI](https://cli.github.com), après avoir accepté l'invitation de l'organisation et lancé une fois `gh auth login` (toi-même : il ouvre le navigateur) :
+   Le premier contrôle compile tout : c'est l'essentiel de la durée annoncée plus haut, et il n'affiche presque rien pendant ce temps. Un agent de code ne lui impose pas de délai court. Il crée aussi `Cargo.lock`, nécessaire à la CI. Il a réussi quand son résumé commence par `✓ Aucun problème trouvé` ; ce qui reste « hors de ce passage » relève de `soiree certify`, de la soirée, ou de `[[bindings]]` dans `verification.toml` pour les items sans contrôle relié. S'il dit `✗ À corriger` ou `⚠ Le passage n’a pas abouti`, la cause est juste en dessous, et le détail dans `certification/check.md`.
+   Pour créer le dépôt, il faut être dans l'organisation : envoie ton pseudo GitHub à l'hôte, qui t'invite, puis accepte l'invitation reçue par mail.
+   Avec [GitHub CLI](https://cli.github.com), après avoir lancé une fois `gh auth login` (toi-même : il ouvre le navigateur) :
    ```sh
    soiree check
    git init -b main
@@ -79,16 +80,7 @@ C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème
 
 `soiree help` les rappelle.
 
-`soiree check` et `soiree certify` finissent par le même résumé : **aucun problème
-trouvé**, **aucun échec, N point(s) à juger**, **à corriger** ou **le passage n’a
-pas abouti**. Ce qu’un humain doit juger reste listé sans faire échouer la
-commande, et change le titre : ces points ne sont pas attestés, l’agent les
-montre à l’auteur avant de dire que c’est fini. Ce qui n’a pas pu être vérifié
-fait échouer la commande. Le code de sortie porte sur le périmètre demandé. Un passage rapide ou
-un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
-méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
-un test passé. Les durées et les gains dans la boucle d’itération restent à
-mesurer. Le format est dans [`VERIFICATION.md`](VERIFICATION.md).
+`soiree check` et `soiree certify` finissent par le même résumé. Ce qu'il atteste, et ce que l'agent fait d'un point à juger, est dans [`VERIFICATION.md`](VERIFICATION.md), « Choisir le passage sans perdre le périmètre ».
 
 ## Où trouver le reste
 
