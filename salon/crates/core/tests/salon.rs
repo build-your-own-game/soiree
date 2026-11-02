@@ -6,11 +6,15 @@
     clippy::indexing_slicing,
     reason = "test helpers outside #[test] functions: a phone that never joins stops the test with its message"
 )]
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 
 mod framing;
 mod net;
 
-use net::{Down, Faults, Net, Up, phone_config};
+use net::{Down, Faults, Narrow, Net, Up, phone_config};
 use salon_core::{Caps, DeviceEvent, DeviceId, Kind, Ms, Presence, Refusal, Status, Timing, Why};
 
 fn device_of(net: &Net, phone: usize) -> DeviceId {
@@ -1698,4 +1702,124 @@ fn a_closed_room_keeps_a_forgotten_device_out() {
         Status::Refused(Refusal::Closed)
     );
     assert_eq!(net.host.devices().count(), 0);
+}
+
+/// What it took to bring `events` of `size` bytes to a phone behind `narrow`.
+struct Through {
+    arrived: usize,
+    seconds: f64,
+    /// Bytes offered to the link for each useful one.
+    cost: f64,
+}
+
+/// A phone behind `narrow` receives `events` events at once, in at most `ms`.
+fn through(narrow: Narrow, caps: Caps, events: u32, size: usize, ms: u64) -> Through {
+    let mut net = Net::new(5, Faults::default());
+    net.narrow = Some(narrow);
+    let phone = net.add_phone(phone_config(1, Kind::Phone), caps);
+    let device = joined(&mut net, phone);
+    net.run(1_000);
+    net.offered = 0;
+    net.dropped = 0;
+    for n in 0..events {
+        net.host
+            .send(device, &Down::View(n, vec![0; size]))
+            .expect("the queue has room");
+    }
+    let start = net.now;
+    let want = usize::try_from(events).expect("a small number");
+    net.run_until(ms, |net| net.phones[phone].events.len() == want);
+    let sent: Vec<u32> = (0..events).collect();
+    let got: Vec<u32> = net.phones[phone]
+        .events
+        .iter()
+        .map(|event| match event {
+            Down::View(n, _) | Down::Note(n) => *n,
+        })
+        .collect();
+    assert_eq!(got, sent[..got.len()], "in order, and nothing twice");
+    let cost = Ms(net.offered).as_f64() / Ms((size as u64) * u64::from(events)).as_f64();
+    Through {
+        arrived: got.len(),
+        seconds: Ms(net.now.since(start)).as_f64() / 1_000.0,
+        cost,
+    }
+}
+
+/// T1. The buffer keeps the head of a burst and drops its tail: a resend that
+/// starts from the same fragment would carry the same ones for ever, and what
+/// follows in the queue would wait behind them.
+#[test]
+#[ignore = "T1: each resend starts from fragment 0, and the tail never passes"]
+fn a_message_bigger_than_the_pipe_arrives() {
+    for narrow in [
+        Narrow::kilobits(1_000, 32 * 1024),
+        Narrow::kilobits(5_000, 32 * 1024),
+        Narrow::kilobits(20_000, 32 * 1024),
+        Narrow::kilobits(300, Narrow::SCTP),
+        Narrow::kilobits(100, Narrow::SCTP),
+    ] {
+        let one = through(narrow, Caps::DATAGRAM, 1, 60_000, 60_000);
+        assert_eq!(one.arrived, 1, "{narrow:?}: {} s", one.seconds);
+        let five = through(narrow, Caps::DATAGRAM, 5, 60_000, 120_000);
+        assert_eq!(five.arrived, 5, "{narrow:?}: {} s", five.seconds);
+    }
+}
+
+/// T3. A queue goes at the pace of its acknowledgements, not at once.
+#[test]
+#[ignore = "T3: everything leaves at once, and most of it into a full buffer"]
+fn a_full_queue_costs_less_than_twice_its_size() {
+    let queue = through(
+        Narrow::kilobits(1_000, Narrow::SCTP),
+        Caps::DATAGRAM,
+        20,
+        8_000,
+        60_000,
+    );
+    assert_eq!(queue.arrived, 20, "{} s", queue.seconds);
+    assert!(queue.cost < 2.0, "{}", queue.cost);
+}
+
+/// T3. A dead link learns nothing from more of the same.
+#[test]
+#[ignore = "T3: the resend keeps its pace on a link that went silent"]
+fn a_silent_link_is_not_hammered() {
+    let mut net = Net::new(5, Faults::default());
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::DATAGRAM);
+    let device = joined(&mut net, phone);
+    net.run(1_000);
+    net.phones[phone].frozen = true;
+    net.offered = 0;
+    net.host
+        .show(device, &Down::View(1, vec![0; 60_000]))
+        .unwrap();
+    net.run(Timing::default().absent - 100);
+    assert!(net.offered < 8 * 60_000, "{}", net.offered);
+}
+
+/// T4. A WebSocket loses nothing: a copy of what is on its way only delays
+/// what is fresh, and the state shown waits behind it.
+#[test]
+#[ignore = "T4: the resend timer also runs on a link that loses nothing"]
+fn a_lossless_link_carries_no_copies() {
+    let mut net = Net::new(5, Faults::default());
+    net.narrow = Some(Narrow::kilobits(300, Narrow::OUTBOX));
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::STREAM);
+    let device = joined(&mut net, phone);
+    net.run(1_000);
+    net.offered = 0;
+    let (mut shown, every) = (0, 4_000);
+    while shown < 15 {
+        shown += 1;
+        net.host
+            .show(device, &Down::View(shown, vec![0; 60_000]))
+            .unwrap();
+        net.run(every);
+    }
+    net.run(every);
+    let useful = 60_000 * u64::from(shown);
+    assert!(net.offered < useful * 13 / 10, "{}", net.offered);
+    assert!(net.deepest < 2 * 60_000, "{} bytes queued", net.deepest);
+    assert_eq!(net.phones[phone].states.len(), 15);
 }

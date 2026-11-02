@@ -21,7 +21,7 @@ mod net;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use net::{Down, Faults, Net, Up, phone_config};
+use net::{Down, Faults, Narrow, Net, Up, phone_config};
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseError;
 use salon_core::{
@@ -194,6 +194,10 @@ enum Size {
     SeveralPackets,
 }
 
+/// Bytes of the biggest message the chaos sends down: under `Limits::max_down`
+/// once encoded, like the biggest a game may send.
+const PARCEL: usize = 60_000;
+
 /// A message that says its number. All of a big one says the same, so that
 /// pieces of two messages show.
 fn message(id: u32, size: Size) -> Up {
@@ -254,6 +258,8 @@ enum Trouble {
     Send(usize, usize, Size),
     SetState(usize, usize, Size),
     Notify(usize),
+    /// An event as big as the host may send: dozens of packets.
+    Parcel(usize),
     /// The host sends more events than a device may have waiting.
     Flood(usize),
     /// What the device shows, in one packet or many.
@@ -325,6 +331,7 @@ fn trouble() -> impl Strategy<Value = Trouble> {
         5 => (seat(), page(), size()).prop_map(|(s, p, k)| Trouble::Send(s, p, k)),
         3 => (seat(), page(), size()).prop_map(|(s, p, k)| Trouble::SetState(s, p, k)),
         2 => seat().prop_map(Trouble::Notify),
+        1 => seat().prop_map(Trouble::Parcel),
         1 => seat().prop_map(Trouble::Flood),
         1 => (seat(), size()).prop_map(|(s, k)| Trouble::Show(s, k)),
         1 => (seat(), page()).prop_map(|(s, p)| Trouble::Cut(s, p)),
@@ -498,6 +505,18 @@ impl Room {
                     self.notes[seat].push(id);
                 }
             }
+            Trouble::Parcel(seat) => {
+                let id = self.fresh_id();
+                if let Some(device) = self.device(seat)
+                    && self
+                        .net
+                        .host
+                        .send(device, &Down::View(id, vec![0; PARCEL]))
+                        .is_ok()
+                {
+                    self.notes[seat].push(id);
+                }
+            }
             Trouble::Flood(seat) => {
                 for _ in 0..300 {
                     let id = self.fresh_id();
@@ -514,7 +533,7 @@ impl Room {
                 let id = self.fresh_id();
                 let bytes = match size {
                     Size::OnePacket => 500,
-                    Size::SeveralPackets => 30_000,
+                    Size::SeveralPackets => PARCEL,
                 };
                 if let Some(device) = self.device(seat)
                     && self
@@ -746,7 +765,35 @@ fn heal(room: &mut Room) -> Result<(), TestCaseError> {
         }
     }
     room.net.run(3_000);
+    // A narrow link takes its time, and only its time: past this, a message
+    // that has not arrived is stuck. No game waits that long, and the slowest
+    // pipe of `narrow()` passes 2 MB in that time.
+    if room.net.narrow.is_some() {
+        room.net
+            .run_until(LONGEST_DRAIN, |net| drained(&room.notes, &room.seats, net));
+    }
     Ok(())
+}
+
+/// The longest a room gets to empty its queues through a narrow narrow.
+const LONGEST_DRAIN: u64 = 180_000;
+
+/// Each seat has every event the host sent it.
+fn drained(notes: &[Vec<u32>; 3], seats: &[Seat; 3], net: &Net) -> bool {
+    notes.iter().zip(seats).all(|(notes, seat)| {
+        let device = seat
+            .pages
+            .last()
+            .and_then(|page| net.phones[page.phone].client.device());
+        let got: BTreeSet<u32> = net
+            .phones
+            .iter()
+            .filter(|phone| phone.client.device() == device)
+            .flat_map(|phone| &phone.events)
+            .map(noted)
+            .collect();
+        notes.iter().all(|id| got.contains(id))
+    })
 }
 
 /// Every event of `sent` reached a run of the host.
@@ -882,6 +929,13 @@ fn check_memory(room: &Room) -> Result<(), TestCaseError> {
     Ok(())
 }
 
+/// The number of an event the host sent, of any size.
+fn noted(event: &Down) -> u32 {
+    match event {
+        Down::Note(id) | Down::View(id, _) => *id,
+    }
+}
+
 /// What must be true at the end, for each seat.
 fn check_seats(room: &Room, heard: &BTreeSet<u32>) -> Result<(), TestCaseError> {
     for (index, seat) in room.seats.iter().enumerate() {
@@ -937,10 +991,7 @@ fn check_seats(room: &Room, heard: &BTreeSet<u32>) -> Result<(), TestCaseError> 
             .iter()
             .filter(|other| other.client.device() == Some(device))
             .flat_map(|other| &other.events)
-            .filter_map(|event| match event {
-                Down::Note(id) => Some(*id),
-                Down::View(..) => None,
-            })
+            .map(noted)
             .collect();
         for id in &room.notes[index] {
             prop_assert!(got.contains(id), "seat {index}: note {id} lost");
@@ -948,14 +999,7 @@ fn check_seats(room: &Room, heard: &BTreeSet<u32>) -> Result<(), TestCaseError> 
     }
     prop_assert_eq!(room.net.host.devices().count(), 3, "one device per token");
     for phone in &room.net.phones {
-        let notes: Vec<u32> = phone
-            .events
-            .iter()
-            .filter_map(|event| match event {
-                Down::Note(id) => Some(*id),
-                Down::View(..) => None,
-            })
-            .collect();
+        let notes: Vec<u32> = phone.events.iter().map(noted).collect();
         prop_assert!(notes.windows(2).all(|pair| pair[0] < pair[1]), "{notes:?}");
         let views: Vec<u32> = phone
             .states
@@ -985,6 +1029,7 @@ fn play(
     loss: u64,
     jitter: u64,
     polling: Polling,
+    narrow: Option<Narrow>,
     troubles: Vec<Trouble>,
 ) -> Result<(), TestCaseError> {
     let mut net = Net::new(
@@ -996,6 +1041,7 @@ fn play(
         },
     );
     net.lazy = polling == Polling::AtDeadlines;
+    net.narrow = narrow;
     let mut room = Room::new(net);
     room.net.run(500);
     for trouble in troubles {
@@ -1042,8 +1088,35 @@ proptest! {
         polling in prop_oneof![Just(Polling::EveryStep), Just(Polling::AtDeadlines)],
         troubles in prop::collection::vec(trouble(), 1..50),
     ) {
-        play(seed, loss, jitter, polling, troubles)?;
+        play(seed, loss, jitter, polling, None, troubles)?;
     }
+
+    /// The same, on links that carry so much and no more: a message bigger
+    /// than what passes between two resends goes through like any other.
+    #[test]
+    #[ignore = "T1: a message bigger than the pipe never arrives, and blocks its queue"]
+    fn chaos_keeps_every_page_in_its_place_through_a_narrow_pipe(
+        seed in any::<u64>(),
+        loss in 0..30u64,
+        jitter in 0..100u64,
+        polling in prop_oneof![Just(Polling::EveryStep), Just(Polling::AtDeadlines)],
+        narrow in narrow(),
+        troubles in prop::collection::vec(trouble(), 1..50),
+    ) {
+        play(seed, loss, jitter, polling, Some(narrow), troubles)?;
+    }
+}
+
+/// Links narrower than the messages of the chaos, each with the buffer in
+/// front of it. The rates are chosen to be below one [`PARCEL`] a second, not
+/// measured on a real network.
+fn narrow() -> impl Strategy<Value = Narrow> {
+    prop_oneof![
+        Just(Narrow::kilobits(100, Narrow::SCTP)),
+        Just(Narrow::kilobits(300, Narrow::SCTP)),
+        Just(Narrow::kilobits(1_000, 32 * 1024)),
+        Just(Narrow::kilobits(5_000, 8 * 1024)),
+    ]
 }
 
 /// The chaos stays cheap in a plain `cargo test`, and `PROPTEST_CASES`, as

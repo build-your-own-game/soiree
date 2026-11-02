@@ -11,7 +11,7 @@
     reason = "test: an overflow must panic and fail the test"
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Which way a packet travels.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,10 +52,39 @@ pub struct Faults {
     pub jitter: u64,
 }
 
+/// What a link can carry, each way: past `rate`, packets wait in a buffer of
+/// `buffer` bytes, and past that they are dropped from the tail. Picked to look
+/// like what is in front of salon, never measured on a real network:
+/// [`Narrow::SCTP`] has str0m's buffer, [`Narrow::OUTBOX`] the host's file of
+/// packets to a WebSocket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Narrow {
+    /// Bytes a second.
+    pub rate: u64,
+    pub buffer: usize,
+}
+
+impl Narrow {
+    /// What str0m keeps of a data channel before it refuses a write.
+    pub const SCTP: usize = 128 * 1024;
+    /// What the host queues for a WebSocket before it loses a packet:
+    /// `OUTBOX` packets of `Caps::STREAM`.
+    pub const OUTBOX: usize = 256 * 16 * 1024;
+
+    pub const fn kilobits(kilobits: u64, buffer: usize) -> Narrow {
+        Narrow {
+            rate: kilobits * 1000 / 8,
+            buffer,
+        }
+    }
+}
+
 pub struct Phone {
     pub client: Client<Up, Down>,
     pub link: Option<LinkId>,
     pub caps: Caps,
+    /// What the current link was opened with: `caps` is for the next one.
+    on: Caps,
     /// Packets to and from this phone vanish, and closes are not seen: a
     /// locked iPhone, or Wi-Fi that died without a word.
     pub frozen: bool,
@@ -91,6 +120,13 @@ pub struct Net {
     pub phones: Vec<Phone>,
     pub happened: Vec<(Ms, DeviceEvent<Up>)>,
     pub faults: Faults,
+    /// Every link is this narrow, and stays so when the faults heal.
+    pub narrow: Option<Narrow>,
+    /// Bytes the host offered its links, and those their buffers dropped.
+    pub offered: u64,
+    pub dropped: u64,
+    /// Bytes waiting in a host's buffer, at the most.
+    pub deepest: usize,
     /// Polls only on news and at `next_deadline`, as the shells do, instead
     /// of at every step: a deadline that comes too late then shows.
     pub lazy: bool,
@@ -107,6 +143,10 @@ pub struct Net {
     next_link: u64,
     /// The next packet, whichever way, comes this much later.
     held: u64,
+    /// Each way of each link, in microseconds: when its buffer will be empty.
+    busy: BTreeMap<(LinkId, bool), u64>,
+    /// Each way of each stream, when its last packet arrives.
+    latest: BTreeMap<(LinkId, bool), Ms>,
 }
 
 pub fn host_config(epoch: u32, known: Vec<Known>) -> HostConfig {
@@ -156,6 +196,10 @@ impl Net {
             phones: Vec::new(),
             happened: Vec::new(),
             faults,
+            narrow: None,
+            offered: 0,
+            dropped: 0,
+            deepest: 0,
             lazy: false,
             stirred: true,
             process: Process::default(),
@@ -167,6 +211,8 @@ impl Net {
             rng: seed,
             next_link: 1,
             held: 0,
+            busy: BTreeMap::new(),
+            latest: BTreeMap::new(),
         }
     }
 
@@ -194,6 +240,7 @@ impl Net {
             client,
             link: None,
             caps,
+            on: caps,
             frozen: false,
             asleep: false,
             events: Vec::new(),
@@ -208,10 +255,56 @@ impl Net {
         self.phones.len() - 1
     }
 
+    /// The packet enters the link's buffer: when its last byte leaves, or
+    /// `None` if there is no room for it.
+    fn through_buffer(&mut self, toward: Toward, link: LinkId, len: usize) -> Option<Ms> {
+        let Some(narrow) = self.narrow else {
+            return Some(self.now);
+        };
+        let now = self.now.0 * 1_000;
+        let busy = self
+            .busy
+            .entry((link, toward == Toward::Host))
+            .or_insert(now);
+        let start = now.max(*busy);
+        let waiting =
+            usize::try_from((start - now) * narrow.rate / 1_000_000).unwrap_or(usize::MAX);
+        if waiting + len > narrow.buffer {
+            if toward == Toward::Phone {
+                self.dropped += len as u64;
+            }
+            return None;
+        }
+        if toward == Toward::Phone {
+            self.deepest = self.deepest.max(waiting + len);
+        }
+        *busy = start + len as u64 * 1_000_000 / narrow.rate;
+        Some(Ms(*busy / 1_000))
+    }
+
+    /// A stream hands packets over in order, however late one of them is.
+    fn in_order(&mut self, toward: Toward, link: LinkId, at: Ms) -> Ms {
+        let stream = self
+            .phone_of(link)
+            .is_some_and(|index| self.phones[index].on.max_packet > Caps::DATAGRAM.max_packet);
+        if !stream {
+            return at;
+        }
+        let latest = self
+            .latest
+            .entry((link, toward == Toward::Host))
+            .or_insert(at);
+        *latest = at.max(*latest);
+        *latest
+    }
+
     fn schedule(&mut self, toward: Toward, link: LinkId, bytes: &[u8]) {
         if toward == Toward::Host && self.closed_links.contains(&link) {
             return;
         }
+        let Some(left) = self.through_buffer(toward, link, bytes.len()) else {
+            return;
+        };
         if self.chance(self.faults.loss) {
             return;
         }
@@ -242,7 +335,8 @@ impl Net {
             } else {
                 0
             };
-            let at = self.now.plus(delay + held).max(stuck);
+            let at = left.plus(delay + held).max(stuck);
+            let at = self.in_order(toward, link, at);
             match toward {
                 Toward::Host => self.to_host.push((at, link, bytes.to_vec())),
                 Toward::Phone => self.to_phone.push((at, link, bytes.to_vec())),
@@ -369,6 +463,7 @@ impl Net {
         while let Some(output) = self.host.poll(now) {
             match output {
                 Output::Transmit { link, bytes } => {
+                    self.offered += bytes.len() as u64;
                     if let Some(index) = self.phone_of(link)
                         && !self.phones[index].frozen
                     {
@@ -405,6 +500,7 @@ impl Net {
                     }
                     phone.link = Some(link);
                     let caps = phone.caps;
+                    phone.on = caps;
                     phone.client.opened(now, caps);
                     self.host.opened(now, link, caps);
                     self.stirred = true;
