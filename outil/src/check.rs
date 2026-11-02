@@ -99,6 +99,7 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
             report.info("pas de Cargo.toml : le catalogue et les documents du commun");
             catalogue::check(dir, report);
             crate::docs::check(dir, report);
+            crate::recherche::check(dir, options, report);
         } else {
             report.error("pas de Cargo.toml");
         }
@@ -121,6 +122,7 @@ pub fn check_project(dir: &Path, options: Options, report: &mut Report) {
     lints::check_clippy(dir, report);
     if game.folder == Folder::Game {
         crate::ci::check(dir, report);
+        crate::recherche::debt_line(dir, report);
     }
     check_headless_core(dir, options, report);
     match &metadata {

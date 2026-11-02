@@ -106,14 +106,7 @@ fn run_static(
     input: Option<&str>,
 ) -> Vec<Observation> {
     let mut report = Report::new();
-    check::check_project(
-        dir,
-        check::Options {
-            fast: true,
-            ..options
-        },
-        &mut report,
-    );
+    check::check_project(dir, options, &mut report);
     plan.controls
         .iter()
         .find(|control| control.id == "static:common")

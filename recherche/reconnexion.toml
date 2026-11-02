@@ -65,6 +65,7 @@ ordre = 5
 sorte = "reel"
 depot = "socketio/socket.io"
 commit = "1eaa582d3b453e3e6f522300ed05b10da0a0799b"
+vu_le = "2026-11-02"
 consulte = [
   "git log --grep reconnect/recover/ping/throttl (60 titres)",
   "commits 8adcfbfd, 13c6d2e8, 46213a64, 4996f9ee, 121fd7c7, a63066bd, 3734b74b, d54d12ce, da008a51, 8a2f5a3d, f27cba5b",
@@ -306,6 +307,7 @@ ordre = 26
 sorte = "reel"
 depot = "dotnet/aspnetcore"
 commit = "4f556f73a610b386e5ec29355a300e493d30c4c5"
+nature = "code-client"
 consulte = [
   "src/SignalR/clients/ts/signalr/src/HubConnection.ts",
   "src/SignalR/clients/ts/signalr/src/MessageBuffer.ts",
@@ -318,6 +320,7 @@ ordre = 27
 sorte = "reel"
 depot = "livekit/client-sdk-js"
 commit = "0d7acbd038a06cac0c09cd277dfdb572ad9dff42"
+nature = "code-client"
 consulte = [
   "git log (60 titres)",
   "commits 23e3afb, 38ba511, 7a39dde, f583181, b6615cd, 8d1269d, 12a72a5, 866072d, 9e3f8eb",
@@ -331,6 +334,7 @@ ordre = 28
 sorte = "reel"
 depot = "enisdenjo/graphql-ws"
 commit = "7281f1b8f09637ab383c1aab4d14247d683bc15d"
+nature = "code-client"
 consulte = [
   "git log (32 titres)",
   "src/client.ts (retry, keepAlive, terminate)",

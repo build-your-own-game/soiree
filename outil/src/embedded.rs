@@ -27,6 +27,11 @@ pub mod rules {
     pub const CI: &str = include_str!("../regles/ci.yml");
 }
 
+/// What `soiree recherche` needs in a game, which has no `recherche/`.
+pub mod recherche {
+    pub const SOUS_SYSTEMES: &str = include_str!("../../recherche/sous-systemes.toml");
+}
+
 /// The documents written to a game's `.soiree/`, at their path there.
 pub const DOCS: &[(&str, &str)] = &[
     ("VERIFICATION.md", include_str!("../../VERIFICATION.md")),

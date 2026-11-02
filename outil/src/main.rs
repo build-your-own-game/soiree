@@ -15,6 +15,7 @@ mod lints;
 mod markdown;
 mod mutants;
 mod new;
+mod recherche;
 mod report;
 mod status;
 mod ui_contract;
@@ -45,6 +46,8 @@ const HELP: &str = "soiree : l'outil de la soirée
                                      ids, classes, data-*, attributs, propriétés CSS
   soiree upgrade [--dry-run] [dossier] aligne le jeu sur la version de ce binaire
   soiree status [dossier]            dépôts pas commités, pas poussés, sans amont
+  soiree recherche dette [dossier]   sous-systèmes de niveau 3 sans fiche, trous ouverts ;
+                                     informe, et ne bloque qu'à l'étiquette du commun
   soiree host-setup [dossier] [--author P | --all] [--force] [--dry-run] [--source URL]
                                      installe le dossier de l'hôte : AGENTS.md,
                                      .cargo/config.toml, soiree/ et ses jeux
@@ -99,6 +102,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             Ok(check::run(&dirs, options))
         }
         "status" => Ok(status::run(&one_dir(rest)?)),
+        "recherche" => recherche::run(rest),
         "contracts" => contracts(rest),
         "doctor" => Ok(doctor::run(&one_dir(rest)?)),
         "new" => {
