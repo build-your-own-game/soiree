@@ -121,7 +121,7 @@
 //!   packet lost with nothing to prove it would leave it alive and mute. With
 //!   something waiting and no acknowledgement that moves for three times
 //!   [`Timing::absent`], either side gives the link up, and the device comes
-//!   back like after any cut, [`Why::Silent`] for the game.
+//!   back like after any cut: the game sees it leave and come back.
 //! - **A restarting host** changes its [`Epoch`]. Devices reconnect on their
 //!   own and get [`ClientOutput::Reset`]: they forget what the old run said
 //!   and wait for the new one. With [`Host::known`] saved and given back in

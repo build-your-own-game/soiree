@@ -384,7 +384,7 @@ enonce = "Le type dit qu'un WebSocket ne perd rien, et le flux y renvoie quand m
 categorie = "physique"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/core/tests/salon.rs::a_lossless_link_carries_no_copies", "salon/crates/core/tests/salon.rs::a_stream_that_drops_a_packet_recovers_it"]
+garantie = ["salon/crates/core/tests/salon.rs::a_lossless_link_carries_no_copies", "salon/crates/core/tests/salon.rs::a_stream_that_drops_a_packet_recovers_it", "salon/crates/core/tests/salon.rs::a_stream_with_a_hole_in_its_proof_comes_back", "salon/crates/core/tests/salon.rs::a_slow_stream_is_not_taken_for_a_mute_one"]
 trou = "T4"
 
 [[lecon]]
@@ -597,7 +597,7 @@ enonce = "Un ensemble de messages reçus hors d'ordre grossissait sans fin."
 categorie = "accident"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/core/tests/stream_edges.rs::a_new_page_inherits_nothing_of_what_waited_past_a_hole", "salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments"]
+garantie = ["salon/crates/core/tests/stream_edges.rs::a_new_page_inherits_nothing_of_what_waited_past_a_hole", "salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments", "salon/crates/core/tests/stream_cost.rs::what_joins_a_message_past_a_hole_counts_against_the_bound"]
 [[lecon]]
 id = "fiabilite-21"
 source = "renet"
@@ -758,7 +758,7 @@ enonce = "Garder ce qui arrive après un trou demande une borne : au-delà, on j
 categorie = "usage-reel"
 decision = "garder"
 etat = "couvert"
-garantie = ["salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments", "salon/crates/core/tests/stream_edges.rs::nothing_is_kept_past_the_last_number_an_acknowledgement_can_say"]
+garantie = ["salon/crates/core/tests/stream_cost.rs::what_waits_past_a_hole_is_bounded_in_fragments", "salon/crates/core/tests/stream_cost.rs::what_joins_a_message_past_a_hole_counts_against_the_bound", "salon/crates/core/tests/stream_edges.rs::nothing_is_kept_past_the_last_number_an_acknowledgement_can_say"]
 trou = "T2"
 
 [[lecon]]
@@ -1010,7 +1010,7 @@ lieux = [
 cas = "BURST ne borne rien : poll relance flush dès que l'outbox est vide, donc toute la file part au même instant. Le renvoi ne recule pas. Sur 5,9 s de silence avant Timing::absent, un état de 60 000 octets à 10 ms d'aller-retour coûte 3 599 paquets, 3,6 Mo, 60 fois sa taille. 20 événements de 8 000 octets à 1 Mb/s coûtent 2,3 fois leur taille, dont 48 % jetés. Le refus de str0m ne remonte pas."
 preuve = "Sondes s6b et s6_a_full_queue. Allonger l'attente du silence en cours, plafonnée à resend_max, dans host.rs seul : de 60 à 6,1 fois la taille, suites vertes. Une fenêtre fixe de 64 Kio en vol : de 2,3 à 1,4 fois, 0 % jeté à 1 Mb/s, suites vertes, mais à 300 kb/s 20 x 8 000 tombe de 20 sur 20 à 12 sur 20 en 120 s : une fenêtre doit suivre les accusés. Fermé. Fenêtre de dix paquets qui suit les accusés, moitié à chaque perte, plancher de deux paquets, plafond de 96 Kio, et attente doublée à chaque minuterie expirée : sur 5,9 s de silence, 60 000 octets passent de 60,3 à 0,8 fois leur taille ; 20 x 8 000 à 1 Mb/s, de 2,26 à 1,04 fois, 0 % jeté. Le prix sur un lien rapide : 1 x 60 000 passe de 10 à 30 ms sur le banc, 5 x 60 000 de 10 à 60 ms."
 verifie = "Les octets offerts par salon-core sur tuyau simulé et sur coupure. Les octets offerts sur tuyau simulé et sur coupure, avant et après."
-suppose = "Ce que cela coûte sur un Wi-Fi partagé par quinze téléphones : pas mesuré. Le plafond de 96 Kio vient de la lecture de str0m, 128 Kio moins les en-têtes : sur le banc, 64 ou 256 Kio donnent les mêmes chiffres, il n'y est jamais atteint. Dix paquets au départ viennent de la RFC 9002 : 4 fait aussi bien sur le banc, 30 fait pire à 100 kb/s. À 50 kb/s, une minuterie plafonnée à resend_max renvoie encore à tort : 2,2 fois la taille."
+suppose = "Ce que cela coûte sur un Wi-Fi partagé par quinze téléphones : pas mesuré. Le plafond de 96 Kio vient de la lecture de str0m, 128 Kio moins les en-têtes : sur le banc, 64 ou 256 Kio donnent les mêmes chiffres, il n'y est jamais atteint. Dix paquets au départ viennent de la RFC 9002 : 4 fait aussi bien sur le banc, 30 fait pire à 100 kb/s. À 50 kb/s, une minuterie plafonnée à resend_max renvoie encore à tort : 2,2 fois la taille. Une relecture a trouvé cinq écarts à ce que ce trou promet, chacun avec son test : la fenêtre tombait à 0 et n'en remontait plus, ou à quelques octets et sautait à 96 Kio au premier accusé (plancher de deux paquets) ; un flux ne la coupait qu'une fois dans sa vie ; un état d'un paquet en attente laissait passer 32 fragments au lieu de 12 ; et un fragment échu que la fenêtre retient faisait tourner le fil de la salle jusqu'à la minuterie suivante."
 
 [[trou]]
 id = "T4"
@@ -1023,8 +1023,8 @@ lieux = [
 ]
 cas = "Un WebSocket ne perd rien, mais le renvoi à la minuterie y tourne quand même. Sur un lien sans perte de 300 kb/s, un état de 60 000 octets toutes les 2 s fait monter la file à 1 805 Kio, soit 49 s de retard : 15 états vus sur 30."
 preuve = "Sonde s8 : même lien, sans renvoi à la minuterie sur un lien en flux (copie isolée) : 1,0 fois la taille, 1,6 s de file, 30 états sur 30, suites vertes. Fermé. Pas de minuterie sur un lien en flux : ce que l'hôte jette avant le socket est prouvé perdu par un écho de ce qui est parti après. À 300 kb/s, 60 000 octets toutes les 2 s : de 2,37 à 1,00 fois la taille, de 1 862 à 58 Kio de file, de 16 à 30 états vus sur 30."
-verifie = "salon-core sur un tuyau sans perte, à file de 256 paquets de 16 Kio comme OUTBOX. Le flux simulé garde l'ordre ; 20 % de paquets y sont jetés dans le test de reprise, et le chaos y perd jusqu'à 30 %."
-suppose = "Le comportement d'un vrai TCP lent. Qu'une page ou un jeu ne déclare un paquet de plus de 1 100 octets que sur un flux : Caps n'a pas de champ pour le dire, et salon le déduit de la taille, ce qui n'a pas changé l'API. Une perte en fin de flux attend le prochain écho, soit jusqu'à deux battements. Il n'y a pas de minuterie de secours : si la preuve par l'écho avait encore un trou, un flux vivant resterait muet sans erreur, et le chaos en a déjà trouvé deux avant d'être vert."
+verifie = "salon-core sur un tuyau sans perte, à file de 256 paquets de 16 Kio comme OUTBOX. Le flux simulé garde l'ordre ; 20 % de paquets y sont jetés dans le test de reprise, et le chaos y perd jusqu'à 30 %. La garde : un trou de preuve forcé en effaçant l'écho, rouge sans elle ; aucune reconnexion ni copie à 300, 64 et 32 kb/s."
+suppose = "Le comportement d'un vrai TCP lent. Qu'une page ou un jeu ne déclare un paquet de plus de 1 100 octets que sur un flux : Caps n'a pas de champ pour le dire, et salon le déduit de la taille, ce qui n'a pas changé l'API. Une perte en fin de flux attend le prochain écho, soit jusqu'à deux battements. Il n'y a toujours pas de minuterie de renvoi. Si la preuve par l'écho avait encore un trou, le chaos en a déjà trouvé deux avant d'être vert : un flux où ce qui est parti reste sans nouvelle, dans une file ou dans l'autre, pendant trois fois Timing::absent est déclaré perdu des deux côtés, et la reconnexion reprend. Ces 18 s restent un silence, et le jeu voit Left puis Back. Le seuil vient d'un raisonnement : un flux qui ne passe pas un fragment en Timing::absent a déjà perdu l'autre côté. Sur le banc sans perte, 32 kb/s tient avec 6 s de patience et pas avec 3 ; 64 kb/s tient avec 3 s et pas avec 2. Rien de cela n'a été mesuré sur un vrai TCP."
 
 [[trou]]
 id = "T5"
@@ -1124,8 +1124,8 @@ gravite = "faible"
 lieux = [
   "salon/crates/core/src/stream.rs:631",
 ]
-cas = "Timing est public et non validé. Avec resend_min au-dessus de resend_max, clamp panique à la première mesure d'aller-retour, sur le fil de la salle."
-preuve = "Sonde s12. Remplacer clamp par max puis min (copie isolée) : plus de panique, suites vertes. Fermé. resend_max est relevé à resend_min quand salon reçoit Timing, des deux côtés."
+cas = "Timing est public et non validé. Avec resend_min au-dessus de resend_max, clamp panique à la première mesure d'aller-retour, sur le fil de la salle. Avec heartbeat ou resend_min à 0, poll répond sans fin au même instant, et une coquille qui l'appelle jusqu'à None ne sort plus de sa boucle."
+preuve = "Sonde s12. Remplacer clamp par max puis min (copie isolée) : plus de panique, suites vertes. Fermé. resend_max est relevé à resend_min quand salon reçoit Timing, des deux côtés, et une attente de 0 devient 1 ms."
 verifie = "La panique à stream.rs:631, sur faux réseau. La panique disparaît, sur faux réseau."
 suppose = "Une erreur de configuration d'un jeu, qu'un test verrait aussitôt."
 

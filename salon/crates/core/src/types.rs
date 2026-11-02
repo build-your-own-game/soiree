@@ -370,7 +370,8 @@ impl Default for Limits {
 pub enum Why {
     /// Nothing heard for [`Timing::absent`]: Wi-Fi gone, phone locked. Or, on
     /// a WebSocket, heard but with nothing acknowledged for three times that:
-    /// the same thing to a game, and the device comes back the same way.
+    /// the same thing to a game, and the device comes back the same way. When
+    /// the page is the one to give up, the host sees [`Why::Closed`].
     Silent,
     /// The transport closed (or the gamepad was unplugged).
     Closed,
