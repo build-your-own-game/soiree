@@ -1,5 +1,7 @@
 // Production SDK negotiation contracts. Every case uses one real page/identity,
 // an owned UDP relay and the normal native timers; no retry or engine override.
+// A tab remembers WebRTC failing (RtcMemory), so each case starts as a new tab
+// would: unless it is about that memory, a case must not read the one before.
 import assert from 'node:assert/strict';
 import { UdpProxy, observeRtc, rewrittenJsonFulfillment, welcomeDevice } from './udp.mjs';
 import { cleanupAll, runWithCleanup } from './cleanup.mjs';
@@ -10,11 +12,15 @@ const CASES = [
   { name: 'SDP delayed 4 s', delay: 4000, expect: 'rtc' },
   { name: 'native SDP rejection', badSdp: true, expect: 'ws' },
   { name: 'native DTLS fingerprint rejection', badCertificate: true, expect: 'ws' },
+  { name: 'remembered failure skips the window', remembered: true, expect: 'ws' },
   { name: 'absolute deadline after SDP progress', delay: 4000, blackhole: true, deadline: true, expect: 'ws' },
   { name: 'absolute deadline and late SDP', delay: 16000, deadline: true, late: true, expect: 'ws' },
   { name: 'deadline registration failure releases attempt', armFailure: true, expect: 'ws' },
 ];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** A new tab under the same identity: sessionStorage goes, localStorage stays. */
+export const forgetTab = page => page.evaluate(() => sessionStorage.clear());
 
 function installCaseObserver() {
   if (globalThis.__certNegotiation) return;
@@ -92,6 +98,7 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
         let result;
         await runWithCleanup(async () => {
           await page.route('**/salon/offer', route);
+          if (!definition.remembered) await forgetTab(page);
           const target = new URL(rtcUrl);
           if (definition.armFailure) target.searchParams.set('__cert_rtc_arm_failure', '1');
           const started = Date.now();
@@ -133,9 +140,11 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
           if (definition.badCertificate) assert.ok(events.some(event => event.connection === 'failed'), 'DTLS failure was not native');
           if (definition.badSdp || definition.badCertificate || definition.armFailure)
             assert.ok(sockets[0].at - events.find(event => event.kind === 'peer').at < 3000, `${definition.name}: native failure did not fall back immediately`);
+          if (definition.remembered) assert.ok(!events.some(event => event.kind === 'peer'), 'a reload paid the WebRTC window again after a failure');
           if (definition.deadline) {
             const peer = events.find(event => event.kind === 'peer'), closed = events.find(event => event.kind === 'close');
-            assert.ok(peer && closed, 'absolute deadline did not close its peer');
+            assert.ok(peer, 'the page never tried WebRTC, so nothing tests its deadline');
+            assert.ok(closed, 'absolute deadline did not close its peer');
             result.closed_ms = closed.at - peer.at;
             assert.ok(result.closed_ms >= 14900 && result.closed_ms <= 15500, `absolute 15 s deadline was renewed or not enforced: ${result.closed_ms} ms`);
           }
@@ -161,6 +170,6 @@ export async function verifyRtcNegotiation({ page, url, upstream, port, expected
       }
       return receipts();
     } catch (error) { error.rtcNegotiation = receipts(); throw error; }
-  }, [{ name: 'negotiation phone restore', run: () => page.goto(wsUrl.href, { waitUntil: 'load', timeout: 15000 }) }],
+  }, [{ name: 'negotiation phone restore', run: async () => { await page.goto(wsUrl.href, { waitUntil: 'load', timeout: 15000 }); await forgetTab(page); } }],
   { timeoutMs: 16000, onFailure: onCleanupFailure });
 }

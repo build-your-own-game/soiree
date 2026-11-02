@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
 import { once } from 'node:events';
+import { createServer } from 'node:http';
 import vm from 'node:vm';
+import { launchBrowser } from './browser.mjs';
+import { forgetTab } from './rtc-negotiation.mjs';
 import { UdpProxy, receivedRtcSince, withRtcRelay, rewrittenJsonFulfillment, observeRtc, welcomeDevice } from './udp.mjs';
 import { FixtureFailure } from './performance.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -173,4 +176,23 @@ test('rewritten JSON fulfillment replaces entity framing with the exact UTF-8 bo
   assert.equal('response' in result, false, 'fulfill must not inherit the fetched response a second time');
   const noType = rewrittenJsonFulfillment({ status: () => 200, headers: () => ({}) }, value);
   assert.equal(noType.headers['content-type'], 'application/json; charset=utf-8');
+});
+
+test('a negotiation case starts with a new tab\'s memory, under the same identity', async () => {
+  const server = createServer((_, response) => { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><title>page</title>'); });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const browser = await launchBrowser();
+  try {
+    for (const engine of ['chromium', 'webkit']) {
+      const tab = await browser.open(null, { engine });
+      try {
+        await tab.page.goto(`http://127.0.0.1:${server.address().port}/`);
+        await tab.page.evaluate(() => { sessionStorage.setItem('what-this-tab-learned', '2'); localStorage.setItem('who-this-is', 'seat'); });
+        await forgetTab(tab.page);
+        await tab.page.reload();
+        assert.deepEqual(await tab.page.evaluate(() => [sessionStorage.length, localStorage.getItem('who-this-is')]), [0, 'seat']);
+      } finally { await tab.context.close(); }
+    }
+  } finally { await browser.close(); server.close(); }
 });
