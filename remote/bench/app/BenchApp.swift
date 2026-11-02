@@ -112,6 +112,18 @@ final class Bench {
             let landscape = scene?.effectiveGeometry.interfaceOrientation.isLandscape == true
             guard landscape, area.right > area.bottom else { return "no" }
             return "\(area.left) \(area.top) \(area.right) \(area.bottom)"
+        case "orientation":
+            return "\(Orientation.current)"
+        case "landscape-left":
+            return String(connection?.pad?.landscapeLeft ?? false)
+        case "half-turn":
+            // What holding the phone the other way up does: same size, same
+            // margins. The rotation's own animation does not matter here.
+            guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return "no scene" }
+            let mask: UIInterfaceOrientationMask =
+                scene.effectiveGeometry.interfaceOrientation == .landscapeLeft ? .landscapeRight : .landscapeLeft
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+            return "ok"
         case "control":
             let id = UInt8(numbers.first ?? 0)
             let found = connection?.pad?.layout?.controls.first { $0.id == id }

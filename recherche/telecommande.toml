@@ -639,7 +639,8 @@ citation = "A web view that says when its size changes"
 enonce = "Déduire l'orientation de la taille manque le retournement de 180°, qui ne change ni la taille ni les marges."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::a_half_turn_reaches_the_page", "remote/bench/tests/shell.rs::a_half_turn_reaches_the_wheel"]
 trou = "T11"
 
 [[lecon]]
@@ -987,7 +988,7 @@ lieux = [
 cas = "L'orientation n'est relue que si la taille ou les marges changent. D'un paysage à l'autre, ni l'une ni les autres ne bougent : telecommande:orientation ne part pas, window.telecommande.orientation ment, et RemoteModel garde landscapeLeft périmé, ce qui inverse le volant."
 preuve = "sonde H14 : géométrie passée à landscapeLeft dans l'app, aucun événement, aucun reportLayout, capture de la page qui affiche encore landscapeRight. En lisant effectiveGeometry, seule variante : événement reçu 8 ms après. Rust : même inclinaison, volant 83 ou -83 selon l'orientation."
 verifie = "le silence de la page et du pad dans l'app sur simulateur ; le signe en Rust"
-suppose = "Le volant lui-même, le simulateur n'a pas de capteurs. La sonde lit la géométrie par minuterie ; le vrai correctif passe par un rappel de scène, à choisir."
+suppose = "Le volant lui-même, le simulateur n'a pas de capteurs : le banc voit le côté passer au modèle, pas un braquage. Le retournement est demandé par requestGeometryUpdate, pas par une main : sur un vrai iPhone, c'est le geste du volant de REPETITION.md."
 
 [[trou]]
 id = "T12"

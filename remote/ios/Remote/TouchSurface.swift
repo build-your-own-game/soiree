@@ -33,6 +33,7 @@ struct TouchSurface: UIViewRepresentable {
         private var ids: [ObjectIdentifier: UInt64] = [:]
         private var nextId: UInt64 = 0
         private var lastLayout: (CGSize, UIEdgeInsets, Bool)?
+        private let turns = TurnWatch()
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -52,6 +53,11 @@ struct TouchSurface: UIViewRepresentable {
         override func safeAreaInsetsDidChange() {
             super.safeAreaInsetsDidChange()
             reportLayout()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            turns.watch(window?.windowScene) { [weak self] in self?.reportLayout() }
         }
 
         private func reportLayout() {

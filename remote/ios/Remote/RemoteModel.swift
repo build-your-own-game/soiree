@@ -23,7 +23,7 @@ final class RemoteModel {
     @ObservationIgnored private let session: Session
     @ObservationIgnored private let haptics = Haptics()
     @ObservationIgnored private var pressedAt: [UInt8: ContinuousClock.Instant] = [:]
-    @ObservationIgnored private var landscapeLeft = true
+    @ObservationIgnored private(set) var landscapeLeft = true
     @ObservationIgnored private var motion: MotionReader?
 
     init(session: Session) {

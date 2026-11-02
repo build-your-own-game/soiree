@@ -274,17 +274,36 @@ struct WebRemote: UIViewRepresentable {
     }
 }
 
-/// A web view that says when its size changes, so the page learns the new
-/// orientation.
+/// A web view that says when its size or its side changes, so the page learns
+/// the new orientation.
 final class RemoteWebView: WKWebView {
     var onResize: (() -> Void)?
     private var lastSize = CGSize.zero
+    private let turns = TurnWatch()
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        turns.watch(window?.windowScene) { [weak self] in self?.onResize?() }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         if bounds.size != lastSize {
             lastSize = bounds.size
             onResize?()
+        }
+    }
+}
+
+/// Says when a scene turns. From one landscape to the other neither the size
+/// nor the margins change, so a view's layout never hears of a half turn.
+@MainActor
+final class TurnWatch {
+    private var observation: NSKeyValueObservation?
+
+    func watch(_ scene: UIWindowScene?, onTurn: @escaping @MainActor () -> Void) {
+        observation = scene?.observe(\.effectiveGeometry) { _, _ in
+            MainActor.assumeIsolated(onTurn)
         }
     }
 }

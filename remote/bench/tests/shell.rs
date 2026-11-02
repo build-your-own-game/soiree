@@ -382,3 +382,57 @@ fn a_thumb_left_on_the_stick_still_steers_after_a_cut() {
         host.messages(1).last()
     );
 }
+
+const LISTENING: &str = "<!doctype html><title>page</title><script>\
+    window.heard = [];\
+    addEventListener('telecommande:orientation', e => heard.push(e.detail));\
+    </script>";
+
+#[test]
+fn a_half_turn_reaches_the_page() {
+    let host = page_game(LISTENING);
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+    assert!(eventually(SOON, || shell
+        .ask("orientation")
+        .starts_with("landscape")));
+    // The first turn, to landscape, can still be on its way.
+    std::thread::sleep(Duration::from_secs(1));
+    let before = shell.ask("orientation");
+    shell.ask("eval window.heard = []; 1");
+    shell.ask("half-turn");
+    assert!(
+        eventually(SOON, || shell.ask("orientation") != before),
+        "the scene did not turn"
+    );
+    let after = shell.ask("orientation");
+    assert!(
+        eventually(SOON, || shell
+            .ask("eval window.heard.join()")
+            .contains(&after)),
+        "the page was not told: {}",
+        shell.ask("eval window.heard.join()")
+    );
+    assert_eq!(shell.ask("eval window.telecommande.orientation"), after);
+}
+
+#[test]
+fn a_half_turn_reaches_the_wheel() {
+    let host = FakeHost::start(Some(Remote::Pad(presets::wheel())));
+    let mut shell = joined(&host, "/play");
+    let before = shell.ask("landscape-left");
+    assert_eq!(
+        before,
+        (shell.ask("orientation") == "landscapeLeft").to_string()
+    );
+    let turned = shell.ask("orientation");
+    shell.ask("half-turn");
+    assert!(
+        eventually(SOON, || shell.ask("orientation") != turned),
+        "the scene did not turn"
+    );
+    assert!(
+        eventually(SOON, || shell.ask("landscape-left") != before),
+        "the wheel still reads the old side"
+    );
+}
