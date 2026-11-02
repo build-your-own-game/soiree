@@ -20,7 +20,7 @@ Le réseau n'y est jamais : les coupures, les jetons, les paquets perdus ou host
 1. **Repère les mécaniques de ton jeu.** Relis ses règles (`LEARNINGS.md`, le code de `crates/core`) et coche ce qu'il fait dans la table ci-dessous. Un jeu en coche presque toujours plusieurs : un quiz au buzzer coche « vote et quiz », « égalités », « hasard », « texte » et « affichage ».
 2. **Lis les fichiers correspondants en entier.** Les titres de l'index ne suffisent pas : un item s'applique souvent sous un autre nom (« consigne » chez toi s'appelle peut-être « mot » ou « défi »).
 3. **Prends tout ce qui s'applique.** Dans le doute, prends l'item : un test de trop coûte quelques secondes, un bug en pleine soirée coûte la soirée.
-4. **Adapte chaque item.** Remplace les mots génériques par ceux de ton jeu, suis la ligne « Adapter », écris le test, et vérifie qu'il échoue quand tu casses exprès la règle (sinon il ne teste rien). Dans le `CERTIFICATION.md` du jeu, note d'où vient l'item :
+4. **Adapte chaque item.** Remplace les mots génériques par ceux de ton jeu, suis la ligne « Adapter », écris le test, et vérifie qu'il échoue quand tu casses exprès la règle (sinon il ne teste rien). Dans le `verification.toml` du jeu, note d'où vient l'item :
 
    ```toml
    [[guarantees]]
@@ -64,7 +64,7 @@ Un bug trouvé en jouant suit la procédure de l'`AGENTS.md` du jeu (« Un bug t
 - **C'est l'hôte qui décide** de la fusionner ou non : rien n'entre dans le catalogue sans son choix. En attendant, la garantie reste dans le `verification.toml` du jeu, qui la teste déjà.
 - **Si l'agent ne peut pas ouvrir de PR lui-même,** il en écrit le contenu (le fichier visé et l'item complet) pour l'auteur du jeu, qui l'ouvrira.
 
-Un item qui manque de famille peut ouvrir un nouveau fichier, avec un nouveau préfixe stable. Un identifiant publié ne change jamais et n'est jamais réutilisé, même si l'item est retiré : des jeux le citent dans leur `origine`.
+Un item qui manque de famille peut ouvrir un nouveau fichier, avec un nouveau préfixe stable. Un identifiant publié ne change jamais et n'est jamais réutilisé, même si l'item est retiré : des jeux le citent dans leurs `origins`.
 
 ## Les sources
 
