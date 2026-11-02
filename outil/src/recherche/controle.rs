@@ -102,35 +102,92 @@ fn items_in(certification: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// Where the attribute that starts this text closes.
+fn attribute_end(text: &str) -> Option<usize> {
+    let (mut depth, mut quoted) = (0_usize, false);
+    for (at, character) in text.char_indices() {
+        match character {
+            '"' => quoted = !quoted,
+            '[' if !quoted => depth = depth.saturating_add(1),
+            ']' if !quoted && depth == 0 => return Some(at),
+            ']' if !quoted => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The attributes a line opens with, and what comes after them.
+fn attributes(line: &str) -> (Vec<&str>, &str) {
+    let mut rest = line.trim_start();
+    let mut found = Vec::new();
+    while let Some(after) = rest.strip_prefix("#[") {
+        let Some((attribute, on)) =
+            attribute_end(after).and_then(|end| after.split_at_checked(end))
+        else {
+            break;
+        };
+        found.push(attribute);
+        rest = on.get(1..).unwrap_or_default().trim_start();
+    }
+    (found, rest)
+}
+
+fn declares(code: &str, name: &str) -> bool {
+    let code = code.strip_prefix("pub ").unwrap_or(code);
+    let code = code.strip_prefix("async ").unwrap_or(code);
+    code.strip_prefix("fn ")
+        .and_then(|rest| rest.strip_prefix(name))
+        .is_some_and(|rest| rest.starts_with(['(', '<']))
+}
+
+fn path_of(attribute: &str) -> &str {
+    attribute
+        .split(|c: char| c == '(' || c == '=' || c.is_whitespace())
+        .next()
+        .unwrap_or_default()
+}
+
+/// `#[test]`, `#[tokio::test]`, `#[wasm_bindgen_test]`; never `#[cfg(test)]`.
+fn runs_as_a_test(attribute: &str) -> bool {
+    let path = path_of(attribute);
+    path == "test" || path.ends_with("::test") || path.ends_with("_test")
+}
+
+fn is_ignored(attribute: &str) -> bool {
+    let path = path_of(attribute);
+    path == "ignore" || (path == "cfg_attr" && attribute.contains("ignore"))
+}
+
 /// `name` is a function of `source`, with a test attribute and not ignored.
 /// This reads the text: it says the test is there, not that it runs.
 fn test_in(source: &str, name: &str) -> Result<()> {
-    let wanted = format!("fn {name}");
     let lines: Vec<&str> = source.lines().collect();
-    let found = lines.iter().position(|line| {
-        let line = line.trim_start();
-        let line = line.strip_prefix("pub ").unwrap_or(line);
-        let line = line.strip_prefix("async ").unwrap_or(line);
-        line.strip_prefix(&wanted)
-            .is_some_and(|rest| rest.starts_with(['(', '<']))
-    });
+    let found = lines
+        .iter()
+        .position(|line| declares(attributes(line).1, name));
     let Some(found) = found else {
         return Err(format!("pas de fonction {name}"));
     };
-    let above = lines.get(..found).unwrap_or_default();
-    let mut tested = false;
-    for line in above.iter().rev().map(|line| line.trim()) {
-        if line.is_empty() || line.ends_with(['{', '}', ';']) {
+    let mut held = lines
+        .get(found)
+        .map_or_else(Vec::new, |line| attributes(line).0);
+    for line in lines.get(..found).unwrap_or_default().iter().rev() {
+        let line = line.trim();
+        if line.starts_with("//") {
+            continue;
+        }
+        let (above, rest) = attributes(line);
+        if above.is_empty() || !rest.is_empty() {
             break;
         }
-        if line.starts_with("#[ignore") {
-            return Err(format!("{name} est ignoré : il ne garantit rien"));
-        }
-        if line.starts_with("#[") && line.contains("test") {
-            tested = true;
-        }
+        held.extend(above);
     }
-    tested
+    if held.iter().any(|attribute| is_ignored(attribute)) {
+        return Err(format!("{name} est ignoré : il ne garantit rien"));
+    }
+    held.iter()
+        .any(|attribute| runs_as_a_test(attribute))
         .then_some(())
         .ok_or_else(|| format!("{name} n'a pas d'attribut de test"))
 }
@@ -243,6 +300,11 @@ fn references(fiche: &Fiche, errors: &mut Vec<String>) {
         }
         for line in &reference.consulte {
             filled(errors, &format!("référence {id}"), "consulte", line);
+            if !line.trim().is_empty() && !plausible(line) {
+                errors.push(format!(
+                    "référence {id} : `consulte` « {line} » ; attendu un lien, un chemin ou ce qui permet de retrouver la lecture"
+                ));
+            }
         }
     }
     let mut orders: Vec<u32> = fiche.references.iter().map(|r| r.ordre).collect();
@@ -256,6 +318,24 @@ fn references(fiche: &Fiche, errors: &mut Vec<String>) {
             "`ordre` des références : {orders:?} ; attendu 1, 2, 3… sans trou ni doublon"
         ));
     }
+}
+
+/// A line someone else could follow: a link, a file, a numbered issue or
+/// commit, or a sentence. `x` is none of these. What it names can still be
+/// invented: this rule only refuses what cannot be looked up.
+fn plausible(line: &str) -> bool {
+    let line = line.trim();
+    let dotted = |word: &str| {
+        word.split_once('.').is_some_and(|(name, extension)| {
+            name.ends_with(char::is_alphanumeric) && extension.starts_with(char::is_alphanumeric)
+        })
+    };
+    let file = line
+        .split_whitespace()
+        .any(|word| word.chars().count() > 3 && (word.contains('/') || dotted(word)));
+    let numbered =
+        line.split_whitespace().count() >= 2 && line.contains(|c: char| c.is_ascii_digit());
+    file || numbered || util::real_reason(line)
 }
 
 fn lessons(fiche: &Fiche, errors: &mut Vec<String>) {
@@ -344,6 +424,16 @@ fn state(lecon: &Lecon, known_holes: &BTreeSet<&str>, errors: &mut Vec<String>) 
     if lecon.etat == Etat::Couvert && lecon.garantie.is_empty() {
         errors.push(format!(
             "{id} : `etat = \"couvert\"` sans `garantie` ; attendu le test ou l'item qui le couvre"
+        ));
+    }
+    let proven = lecon
+        .garantie
+        .iter()
+        .any(|garantie| matches!(garantie, Garantie::Test { .. } | Garantie::Item(_)));
+    if lecon.etat == Etat::Couvert && lecon.trou.is_some() && !lecon.garantie.is_empty() && !proven
+    {
+        errors.push(format!(
+            "{id} : `garantie` sans rapport avec un trou fermé ; attendu un test ou un item, un fichier ou une ligne de code ne l'éprouvent pas"
         ));
     }
     match (&lecon.trou, lecon.etat) {
@@ -489,6 +579,13 @@ fn quotas(fiche: &Fiche, sous_systeme: &SousSysteme, niveau: &Niveau, errors: &m
         errors.push(format!(
             "{total} référence(s) ; le niveau {} en demande au moins {}",
             niveau.numero, niveau.references
+        ));
+    }
+    let lessons = fiche.lecons.len();
+    if lessons < niveau.lecons {
+        errors.push(format!(
+            "{lessons} leçon(s) ; le niveau {} en demande au moins {}",
+            niveau.numero, niveau.lecons
         ));
     }
     for sorte in &sous_systeme.marches {
@@ -1318,6 +1415,74 @@ mod tests {
     }
 
     #[test]
+    fn a_sheet_needs_lessons_for_its_level() {
+        let hollow: String = SHEET
+            .split("\n\n")
+            .filter(|block| !block.starts_with("[[lecon]]") && !block.starts_with("[[trou]]"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let found = errors_of(&hollow);
+        assert!(
+            found
+                .iter()
+                .any(|e| e.contains("0 leçon(s) ; le niveau 3 en demande au moins 9")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn what_was_read_can_be_found_again() {
+        let consulte = "consulte = [\n  \"postmortem entier\",\n]";
+        for line in ["x", "lu", "tout lu", "README", "n/a"] {
+            one_error(
+                &with(SHEET, consulte, &format!("consulte = [\"{line}\"]")),
+                "`consulte`",
+            );
+        }
+        for line in [
+            "https://example.org/rapport",
+            "src/client.ts",
+            "client.go (récupération)",
+            "issue 893",
+            "commit 61891a3",
+            "section sur la reconnexion",
+        ] {
+            let text = with(SHEET, consulte, &format!("consulte = [\"{line}\"]"));
+            assert_eq!(errors_of(&text), Vec::<String>::new(), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_hole_closes_on_a_test_or_an_item_only() {
+        let parsed: Fiche = fiche::read(SHEET, "reconnexion.toml").unwrap();
+        let closed = parsed
+            .lecons
+            .iter()
+            .find(|l| l.etat == Etat::Couvert && l.trou.is_some())
+            .unwrap();
+        let block = lesson(&closed.id);
+        let guarantee = block.lines().find(|l| l.starts_with("garantie")).unwrap();
+        for weak in ["README.md", "salon/crates/core/src/host.rs#L1"] {
+            one_error(
+                &with(
+                    SHEET,
+                    &block,
+                    &block.replace(guarantee, &format!("garantie = [\"{weak}\"]")),
+                ),
+                "attendu un test ou un item",
+            );
+        }
+        assert_eq!(
+            errors_of(&with(
+                SHEET,
+                &block,
+                &block.replace(guarantee, "garantie = [\"C2\", \"README.md\"]"),
+            )),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
     fn a_cited_test_item_or_file_must_exist() {
         let dir = fixture(&[
             (
@@ -1326,7 +1491,7 @@ mod tests {
             ),
             (
                 "t/a.rs",
-                "#[test]\nfn real() {}\n\n/// Documented.\n#[tokio::test]\nasync fn asynchronous() {}\n\nfn helper() {}\n\n#[test]\n#[ignore = \"plus tard\"]\nfn ignored() {}\n\nproptest! {\n    #[test]\n    fn chaos(seed in any::<u64>()) {}\n}\n",
+                "#[test]\nfn real() {}\n\n/// Documented.\n#[tokio::test(flavor = \"multi_thread\")]\nasync fn asynchronous() {}\n\nfn helper() {}\n\n#[cfg(test)]\nfn fixture() {}\n\n#[test]\n#[ignore = \"plus tard\"]\nfn ignored() {}\n\n#[test] #[ignore]\nfn ignored_on_a_line() {}\n\n#[test] #[ignore] fn ignored_on_its_line() {}\n\n#[test] fn inline() {}\n\n#[test]\n#[cfg_attr(miri, ignore)]\nfn ignored_somewhere() {}\n\n// #[test]\nfn commented() {}\n\nproptest! {\n    #[test]\n    fn chaos(seed in any::<u64>()) {}\n}\n",
             ),
         ]);
         for held in [
@@ -1334,6 +1499,7 @@ mod tests {
             "t/a.rs::real",
             "t/a.rs::asynchronous",
             "t/a.rs::chaos",
+            "t/a.rs::inline",
             "t/a.rs#L2",
             "t/a.rs",
         ] {
@@ -1344,7 +1510,12 @@ mod tests {
             ("t/a.rs::absent", "pas de fonction"),
             ("t/b.rs::real", "n'existe pas"),
             ("t/a.rs::helper", "pas d'attribut de test"),
+            ("t/a.rs::fixture", "pas d'attribut de test"),
+            ("t/a.rs::commented", "pas d'attribut de test"),
             ("t/a.rs::ignored", "ignoré"),
+            ("t/a.rs::ignored_on_a_line", "ignoré"),
+            ("t/a.rs::ignored_on_its_line", "ignoré"),
+            ("t/a.rs::ignored_somewhere", "ignoré"),
             ("t/a.rs#L99", "n'a que"),
             ("t/b.rs#L1", "n'existe pas"),
             ("t/b.rs", "n'existe pas"),

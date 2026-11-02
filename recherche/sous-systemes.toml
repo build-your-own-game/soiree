@@ -3,7 +3,9 @@
 # jeu quand perimetre = "jeu". Un fichier peut déclencher plusieurs sous-systèmes.
 #
 # Les quotas sont une première proposition, calée sur un seul pilote : à ajuster
-# après d'autres fiches. Le pilote de niveau 3 a lu 28 références.
+# après d'autres fiches. Le pilote de niveau 3 a lu 28 références et tiré 47
+# leçons. `lecons` tient compte de la saturation : les dernières sources lues
+# n'en donnent aucune, donc un niveau en demande moins que de références.
 
 # L'échelle, dans l'ordre de lecture.
 marches = ["chez-nous", "reel", "normes", "bancs", "retours"]
@@ -15,6 +17,7 @@ nouveau = ["fichier", "api-publique", "dependance", "delai", "message-de-protoco
 numero = 1
 intention = "un ajout local, sans frontière ni garantie commune"
 references = 3
+lecons = 2
 saturation = 3
 quota = { chez-nous = 1, reel = 2 }
 
@@ -22,6 +25,7 @@ quota = { chez-nous = 1, reel = 2 }
 numero = 2
 intention = "un ajout qui touche une frontière, ou dont dépend un jeu"
 references = 6
+lecons = 4
 saturation = 3
 quota = { chez-nous = 1, reel = 3, normes = 1, bancs = 1 }
 
@@ -29,6 +33,7 @@ quota = { chez-nous = 1, reel = 3, normes = 1, bancs = 1 }
 numero = 3
 intention = "une garantie commune que chaque jeu suppose vraie le soir même"
 references = 12
+lecons = 9
 saturation = 3
 quota = { chez-nous = 1, reel = 4, normes = 2, bancs = 2, retours = 2 }
 

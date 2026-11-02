@@ -472,9 +472,10 @@ fn section(
             })
             .collect();
         lines.push(format!(
-            "  quota : {} références, dont {} ; {} dernières sources sans leçon",
+            "  quota : {} références, dont {} ; {} leçons ; {} dernières sources sans leçon",
             niveau.references,
             quotas.join(", "),
+            niveau.lecons,
             niveau.saturation
         ));
     }

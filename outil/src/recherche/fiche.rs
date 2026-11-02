@@ -582,6 +582,7 @@ pub struct Niveau {
     pub numero: u8,
     pub intention: String,
     pub references: usize,
+    pub lecons: usize,
     pub saturation: usize,
     pub quota: BTreeMap<Sorte, usize>,
 }

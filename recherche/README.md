@@ -4,7 +4,7 @@ Ce dossier rend mesurable la méthode de `../MANIFESTE.md` (« Extraire le signa
 
 | Fichier | Rôle |
 |---|---|
-| `sous-systemes.toml` | les sous-systèmes, leurs chemins, leur niveau, leurs marches ; les quotas |
+| `sous-systemes.toml` | les sous-systèmes, leurs chemins, leur niveau, leurs marches ; les quotas de références et de leçons |
 | `sources.toml` | les références candidates de chaque sous-système |
 | `<sous_systeme>.toml` | la fiche ; `reconnexion.toml` sert de modèle |
 
@@ -15,11 +15,11 @@ Ce dossier rend mesurable la méthode de `../MANIFESTE.md` (« Extraire le signa
 3. **Fiche.** Ouvre `<sous_systeme>.toml`, ou crée-la avec `sous_systeme`, `niveau`, une `question` réfutable et `compare_a`, le commit que tu compares.
 4. **Chez nous d'abord.** Lis le code et les tests concernés en entier, puis les `LEARNINGS.md`. Écris tes hypothèses de trous avant de lire ailleurs.
 5. **Choisis les sources** dans `sources.toml`, en montant l'échelle : `chez-nous`, `reel`, `normes`, `bancs`, `retours`. Ajoute à `sources.toml` ce que tu trouves en route.
-6. **Lis l'histoire avant le code.** Dans le scratchpad, jamais dans ce dépôt : `git clone --filter=blob:none`, `git log --grep`, `git log -S`, `gh search issues <mot> --repo <dépôt> --sort comments`. Note dans `consulte` ce que tu as réellement lu, et le commit dans `commit`.
+6. **Lis l'histoire avant le code.** Dans le scratchpad, jamais dans ce dépôt : `git clone --filter=blob:none`, `git log --grep`, `git log -S`, `gh search issues <mot> --repo <dépôt> --sort comments`. Note dans `consulte` ce que tu as réellement lu, de quoi le retrouver : un lien, un chemin, une issue, une phrase, pas `x`. Le commit va dans `commit`.
 7. **Une leçon par fait.** Remplis un `[[lecon]]` : `lien` figé, `citation` copiée de la source, moins de 15 mots, un seul extrait par document. Trie-la par les quatre catégories du manifeste.
 8. **Compare au vrai code.** `etat` vaut `couvert` (nomme dans `garantie` le test ou l'item), `trou`, ou `non-applicable` (écris la `raison`). Une leçon reprise d'une issue ou d'une page exige `vu_le` sur sa référence.
-9. **Éprouve chaque trou.** Écris une sonde sur une copie de `salon/` hors du dépôt. Le cas doit échouer, puis passer en changeant la seule cause supposée. Sépare `verifie` de `suppose` dans `[[trou]]`. Ne corrige pas dans le même commit. Le correctif passe la leçon à `couvert`, nomme sa `garantie` et garde `trou` : c'est ce qui ferme le trou.
-10. **Arrête-toi** quand le quota est atteint **et** que les 3 dernières sources lues n'ont apporté aucune leçon nouvelle. Liste-les dans `[saturation]`, avec ce qu'elles recoupent, et remplis `[cout]`. Elles couvrent la nature des sources : au moins une référence `reel`, et au moins une avec `nature = "code-client"` quand le sous-système a un client. Trois serveurs ou trois normes ne disent rien du client.
+9. **Éprouve chaque trou.** Écris une sonde sur une copie de `salon/` hors du dépôt. Le cas doit échouer, puis passer en changeant la seule cause supposée. Sépare `verifie` de `suppose` dans `[[trou]]`. Ne corrige pas dans le même commit. Le correctif passe la leçon à `couvert`, nomme sa `garantie` et garde `trou` : c'est ce qui ferme le trou, et cette garantie doit être un test non ignoré ou un item, jamais un fichier ni une ligne de code.
+10. **Arrête-toi** quand le quota de références et de leçons de `[[niveau]]` est atteint **et** que les 3 dernières sources lues n'ont apporté aucune leçon nouvelle. Liste-les dans `[saturation]`, avec ce qu'elles recoupent, et remplis `[cout]`. Elles couvrent la nature des sources : au moins une référence `reel`, et au moins une avec `nature = "code-client"` quand le sous-système a un client. Trois serveurs ou trois normes ne disent rien du client.
 11. **Vérifie.** `soiree check .` juge la fiche hors ligne ; `soiree recherche verifie` confronte chaque commit et chaque `citation` à l'amont. Publie d'abord les commits que tu cites, puis mets à jour `LEARNINGS.md` si tu y travailles.
 
 La dette de recherche ne bloque qu'à l'étiquette du commun : un jeu n'attend jamais une fiche.

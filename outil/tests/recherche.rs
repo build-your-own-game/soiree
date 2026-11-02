@@ -101,6 +101,49 @@ mod commands {
 
     #[cfg(unix)]
     #[test]
+    fn a_hollow_sheet_stops_the_full_check() {
+        let without_lessons = |sheet: &str| {
+            sheet
+                .split("\n\n")
+                .filter(|block| !block.starts_with("[[lecon]]") && !block.starts_with("[[trou]]"))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        };
+        let unread = |sheet: &str| sheet.replace("\"postmortem entier\"", "\"x\"");
+        let weak_closure = |sheet: &str| {
+            let (before, after) = sheet.split_once("id = \"reconnexion-03\"").unwrap();
+            let (lesson, rest) = after.split_once("\n\n").unwrap();
+            let start = lesson.find("garantie = ").unwrap();
+            let end = start + lesson[start..].find('\n').unwrap();
+            format!(
+                "{before}id = \"reconnexion-03\"{}garantie = [\"README.md\"]{}\n\n{rest}",
+                &lesson[..start],
+                &lesson[end..]
+            )
+        };
+        let cases: [(&dyn Fn(&str) -> String, &str); 3] = [
+            (
+                &without_lessons,
+                "0 leçon(s) ; le niveau 3 en demande au moins 9",
+            ),
+            (&unread, "`consulte` « x »"),
+            (&weak_closure, "attendu un test ou un item"),
+        ];
+        for (change, expected) in cases {
+            let dir = common();
+            let path = dir.join("recherche/reconnexion.toml");
+            let sheet = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(&path, change(&sheet)).unwrap();
+            let failed = soiree(&dir).args(["check", "."]).output().unwrap();
+            let shown = text(&failed);
+            assert!(!failed.status.success(), "{shown}");
+            assert!(shown.contains(expected), "{expected} : {shown}");
+            assert!(!shown.contains("✓ recherche : "), "{shown}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_broken_registry_or_source_list_stops_the_full_check() {
         for (file, from, to, expected) in [
             (
