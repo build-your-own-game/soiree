@@ -23,7 +23,7 @@ mutable dans un `Cell` ou `RefCell` du propriétaire et libérer les emprunts
 avant un appel susceptible de déclencher un autre événement.
 
 - Ton hôte sert un WebSocket au chemin `/remote` (`remote_protocol::PATH`), sur la même adresse et le même port que ta page téléphone.
-- Le joueur scanne le QR de la TV depuis l'app. Pour une adresse `http://hôte:port/chemin?requête`, l'app se connecte à `ws://hôte:port/remote?requête`. La requête (code de salle…) passe telle quelle : ton QR actuel suffit.
+- Le joueur scanne le QR de la TV depuis l'app. Pour une adresse `http://hôte:port/chemin?requête`, l'app se connecte à `ws://hôte:port/remote?requête`. La requête (code de salle…) passe telle quelle : ton QR actuel suffit. Elle suit aussi une `url` relative de `Remote::Web` qui n'a pas de requête à elle.
 - Scanné avec l'appareil photo de l'iPhone, le QR ouvre ta page web. Elle peut proposer un lien `telecommande://join?url=<adresse de la page, encodée>`, qui ouvre l'app sur ton jeu.
 
 ## Messages

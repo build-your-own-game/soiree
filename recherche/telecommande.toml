@@ -723,7 +723,8 @@ citation = "T.query = R.query;"
 enonce = "Une adresse relative avec un chemin remplace la requête de sa base : le code de salle d'un QR ne suit pas Show(Web { url: \"/play\" })."
 categorie = "heritage"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/bench/tests/shell.rs::the_page_of_a_qr_code_keeps_its_room_code"]
 trou = "T16"
 
 [[lecon]]

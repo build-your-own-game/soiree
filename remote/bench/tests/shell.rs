@@ -568,3 +568,24 @@ fn the_screen_may_sleep_again_once_the_game_is_left() {
         "the phone will never sleep on the join screen"
     );
 }
+
+#[test]
+fn the_page_of_a_qr_code_keeps_its_room_code() {
+    let host = FakeHost::start(Some(Remote::Web {
+        url: "/room".to_owned(),
+    }));
+    host.with(|state| {
+        state
+            .routes
+            .insert("/room".to_owned(), Page::Html(PAGE.to_owned()));
+    });
+    let _shell = joined(&host, "/room?code=AB12");
+    assert!(
+        host.wait(SOON, |state| !state.requests.is_empty()),
+        "no page was asked for"
+    );
+    assert_eq!(
+        host.with(|state| state.requests.clone()),
+        ["/room?code=AB12"]
+    );
+}

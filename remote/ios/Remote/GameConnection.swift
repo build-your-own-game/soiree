@@ -141,8 +141,8 @@ final class GameConnection {
         case let .showWeb(url):
             pad?.stop()
             pad = nil
-            if let page = URL(string: target.page), let resolved = URL(string: url, relativeTo: page) {
-                content = .web(resolved.absoluteURL)
+            if let page = pageAddress(url) {
+                content = .web(page)
             }
         case let .feedback(haptic, color):
             haptics.play(haptic)
@@ -153,6 +153,20 @@ final class GameConnection {
         case .unreadable:
             break
         }
+    }
+
+    /// Where the game's address leads, from the page of its QR code. An
+    /// address relative to that page and without a query of its own keeps the
+    /// QR's: a room code would otherwise reach the socket and not the page.
+    private func pageAddress(_ url: String) -> URL? {
+        guard let page = URL(string: target.page), let address = URL(string: url, relativeTo: page)?.absoluteURL else {
+            return nil
+        }
+        guard URL(string: url)?.scheme == nil, address.query == nil, let query = page.query(percentEncoded: true),
+            var parts = URLComponents(url: address, resolvingAgainstBaseURL: false)
+        else { return address }
+        parts.percentEncodedQuery = query
+        return parts.url ?? address
     }
 
     /// Back-off as Sidequest's phones do: 0.5 s, doubling up to 5 s.
