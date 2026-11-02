@@ -116,7 +116,12 @@
 //!   host sees [`DeviceEvent::Left`] with [`Why::Silent`], and the page drops
 //!   its socket and reconnects without waiting for an `onclose` that iOS may
 //!   never send (C3). A page reads its time through [`SleepClock`], so a
-//!   clock stopped by the device's sleep does not hide the silence.
+//!   clock stopped by the device's sleep does not hide the silence. A
+//!   WebSocket can go silent another way: it has no timer to send again, so a
+//!   packet lost with nothing to prove it would leave it alive and mute. With
+//!   something waiting and no acknowledgement that moves for three times
+//!   [`Timing::absent`], either side gives the link up, and the device comes
+//!   back like after any cut, [`Why::Silent`] for the game.
 //! - **A restarting host** changes its [`Epoch`]. Devices reconnect on their
 //!   own and get [`ClientOutput::Reset`]: they forget what the old run said
 //!   and wait for the new one. With [`Host::known`] saved and given back in
@@ -172,7 +177,7 @@
 //! than a packet are cut to fit the link ([`Caps`]). A receiver keeps what
 //! arrives past a hole, within 64 numbers, and an acknowledgement says what it
 //! has: three that pass over a fragment send it again without its timer. A
-//! WebSocket has no timer at all: it keeps its order, so an echo of something
+//! WebSocket has no such timer: it keeps its order, so an echo of something
 //! that left later proves a packet was dropped before it. The limits of the
 //! room are the host's: each welcome says them.
 //!

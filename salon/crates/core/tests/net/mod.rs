@@ -105,6 +105,9 @@ pub struct Phone {
     stirred: bool,
 }
 
+/// Makes something else of a packet on its way.
+pub type Tamper = fn(&[u8]) -> Vec<u8>;
+
 /// What can happen to the host's process, past its own code.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Process {
@@ -133,6 +136,9 @@ pub struct Net {
     /// Something reached the host since its last poll.
     stirred: bool,
     pub process: Process,
+    /// What the road makes of a phone's packets, past what `faults` can say:
+    /// a way to make the hole a test looks for.
+    pub tamper: Option<Tamper>,
     to_host: Vec<(Ms, LinkId, Vec<u8>)>,
     to_phone: Vec<(Ms, LinkId, Vec<u8>)>,
     closed_links: BTreeSet<LinkId>,
@@ -203,6 +209,7 @@ impl Net {
             lazy: false,
             stirred: true,
             process: Process::default(),
+            tamper: None,
             to_host: Vec::new(),
             to_phone: Vec::new(),
             closed_links: BTreeSet::new(),
@@ -524,6 +531,7 @@ impl Net {
                     if let Some(link) = self.phones[index].link
                         && !self.phones[index].frozen
                     {
+                        let bytes = self.tamper.map_or(bytes.clone(), |tamper| tamper(&bytes));
                         self.schedule(Toward::Host, link, &bytes);
                     }
                 }

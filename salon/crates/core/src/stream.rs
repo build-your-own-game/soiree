@@ -200,8 +200,9 @@ pub(crate) enum Order {
     Any,
     /// A stream: past what the other side heard, whatever it does not have
     /// was dropped on this side of the transport. A WebSocket loses nothing
-    /// by itself, so no timer runs on it: a copy of what is on its way would
-    /// only stand in front of what is fresh.
+    /// by itself, so no timer sends anything again on it: a copy of what is on
+    /// its way would only stand in front of what is fresh. What stands in for
+    /// the timer, should that proof ever fail, is [`Order::stuck`].
     Kept,
 }
 
@@ -231,6 +232,13 @@ impl Order {
             Order::Any => window.round(peer, timing),
             Order::Kept => u64::MAX,
         }
+    }
+
+    /// Whether this link stopped carrying without a word. Timers keep a
+    /// datagram link talking. A stream has none, so a hole in what proves a
+    /// loss there would leave it alive and mute, with no error, for ever.
+    pub fn stuck(self, window: &mut Window, now: Ms, timing: &Timing) -> bool {
+        self == Order::Kept && window.stuck(now, timing.patience())
     }
 }
 
@@ -270,6 +278,10 @@ pub(crate) struct Window {
     expired: u32,
     /// When a loss last halved it: everything in flight then counts as one.
     halved: Option<Ms>,
+    /// The last ack, which says all the other side has.
+    said: Option<Ack>,
+    /// Since when it says the same with something waiting.
+    unmoved: Option<Ms>,
 }
 
 impl Window {
@@ -293,6 +305,8 @@ impl Window {
             ceiling: Window::MOST,
             expired: 0,
             halved: None,
+            said: None,
+            unmoved: None,
         }
     }
 
@@ -320,6 +334,26 @@ impl Window {
             peer.resend(timing.resend_min, timing.resend_max),
             timing.resend_max,
         )
+    }
+
+    /// An ack came. If it says anything new, the link carries.
+    pub fn said(&mut self, ack: Ack) {
+        if self.said != Some(ack) {
+            self.said = Some(ack);
+            self.unmoved = None;
+        }
+    }
+
+    /// Nothing waits for an ack.
+    pub fn at_rest(&mut self) {
+        self.unmoved = None;
+    }
+
+    /// Something waits, and no ack has moved for `patience`. What moves is the
+    /// ack, not what it frees: a state replaced before its ack is never
+    /// acknowledged, yet the number applied climbs.
+    fn stuck(&mut self, now: Ms, patience: u64) -> bool {
+        now.since(*self.unmoved.get_or_insert(now)) >= patience
     }
 
     pub fn heard(&mut self, heard: Heard, now: Ms, wait: u64) {
@@ -659,6 +693,11 @@ impl OutEvents {
         learned
     }
 
+    /// Something the other side has not acknowledged.
+    pub fn waits(&self) -> bool {
+        !self.queue.is_empty()
+    }
+
     /// The oldest event still waiting (or the next number if none).
     pub fn oldest(&self) -> u32 {
         self.queue.front().map_or(self.next, |event| event.seq)
@@ -930,6 +969,11 @@ impl OutState {
             pieces: Pieces::default(),
             latest: None,
         }
+    }
+
+    /// Something the other side has not acknowledged.
+    pub fn waits(&self) -> bool {
+        !self.acked
     }
 
     /// The number of the state held, if any.

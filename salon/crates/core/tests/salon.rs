@@ -13,6 +13,11 @@
 
 mod framing;
 mod net;
+#[expect(
+    dead_code,
+    reason = "the forged packets are shared with tests/client_edges.rs, which uses all of them"
+)]
+mod wire;
 
 use net::{Down, Faults, Narrow, Net, Up, host_config, phone_config};
 use salon_core::{
@@ -1821,6 +1826,7 @@ fn a_lossless_link_carries_no_copies() {
     assert!(net.offered < useful * 13 / 10, "{}", net.offered);
     assert!(net.deepest < 2 * 60_000, "{} bytes queued", net.deepest);
     assert_eq!(net.phones[phone].states.len(), 15);
+    assert_eq!(net.phones[phone].connects, 1);
 }
 
 /// How long `events` events of `size` bytes take to reach a phone, on average
@@ -1887,6 +1893,69 @@ fn a_stream_that_drops_a_packet_recovers_it() {
         net.run_until(20_000, |net| net.phones[phone].events.len() == 15
             && net.events_from(device).len() == 15)
     );
+}
+
+/// A hole in the proof that a stream dropped a packet. The phone's packets
+/// lose their echo on the way, so nothing proves anything, the host keeps
+/// hearing the phone, and a stream has no timer: what was dropped stays dropped.
+/// The link is given up on, and what waited arrives on the next one, once.
+#[test]
+fn a_stream_with_a_hole_in_its_proof_comes_back() {
+    let mut net = Net::new(5, Faults::default());
+    let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::STREAM);
+    let device = joined(&mut net, phone);
+    net.tamper = Some(|bytes| {
+        let mut packet = wire::decode(bytes);
+        packet.echo = None;
+        wire::encode(&packet)
+    });
+    net.faults.loss = 100;
+    net.host.send(device, &Down::Note(1)).unwrap();
+    net.stir();
+    net.faults.loss = 0;
+    let patience = 3 * Timing::default().absent;
+    net.run(patience - 1_000);
+    assert_eq!(net.phones[phone].events, []);
+    assert_eq!(net.phones[phone].connects, 1, "not before its time");
+    assert!(net.run_until(3_000, |net| net.phones[phone].events.len() == 1));
+    assert_eq!(net.phones[phone].events, [Down::Note(1)]);
+    assert_eq!(net.phones[phone].connects, 2);
+}
+
+/// A stream may be slow, and nobody gives up on it for that: well under what
+/// T4 passes, with a queue of big states that takes a minute to go, no link
+/// goes down and no copy leaves.
+#[test]
+fn a_slow_stream_is_not_taken_for_a_mute_one() {
+    for kilobits in [300, 64, 32] {
+        let mut net = Net::new(5, Faults::default());
+        net.narrow = Some(Narrow::kilobits(kilobits, Narrow::OUTBOX));
+        let phone = net.add_phone(phone_config(1, Kind::Phone), Caps::STREAM);
+        let device = joined(&mut net, phone);
+        net.offered = 0;
+        for n in 0..12 {
+            net.host
+                .send(device, &Down::View(n, vec![0; 60_000]))
+                .unwrap();
+        }
+        let useful = 12 * 60_000;
+        assert!(
+            net.run_until(240_000, |net| net.phones[phone].events.len() == 12),
+            "{kilobits} kb/s: {}",
+            net.phones[phone].events.len()
+        );
+        assert_eq!(net.phones[phone].connects, 1, "{kilobits} kb/s");
+        assert_eq!(
+            net.count(|event| matches!(event, DeviceEvent::Left { .. })),
+            0,
+            "{kilobits} kb/s"
+        );
+        assert!(
+            net.offered < useful * 11 / 10,
+            "{kilobits} kb/s: {}",
+            net.offered
+        );
+    }
 }
 
 /// T5. A state shown more often than it can arrive: each one used to wipe out

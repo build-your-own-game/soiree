@@ -376,6 +376,7 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             let learned = self.up.ack(&ack, heard, order);
             let learned = learned.with(self.out_state.ack(&ack, heard, order));
             self.window.heard(learned, now, round);
+            self.window.said(ack);
         }
         // Fragments and acks are safe to read from an old packet. The phase is
         // not: it would take back what a newer one said, and the next event
@@ -472,6 +473,15 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
     pub fn tick(&mut self, now: Ms) {
         let now = self.advance(now);
         let timing = self.config.timing;
+        let stuck = match &self.link {
+            Link::Open(open) if self.up.waits() || self.out_state.waits() => {
+                open.welcomed && Order::of(open.caps).stuck(&mut self.window, now, &timing)
+            }
+            Link::Idle { .. } | Link::Connecting { .. } | Link::Open(_) => {
+                self.window.at_rest();
+                false
+            }
+        };
         match &self.link {
             Link::Idle { retry_at: Some(at) } if *at <= now => {
                 self.outbox.push_back(ClientOutput::Connect);
@@ -488,7 +498,9 @@ impl<Up: Serialize, Down: DeserializeOwned> Client<Up, Down> {
             }
             // The page's own watchdog: the browser may never report a dead
             // socket (WebKit 247943), so silence is the only sure sign.
-            Link::Open(open) if open.welcomed && now.since(open.last_heard) >= timing.absent => {
+            Link::Open(open)
+                if open.welcomed && (stuck || now.since(open.last_heard) >= timing.absent) =>
+            {
                 self.retry(now, Retry::Now);
             }
             // Every state is named, so that a new one without its own

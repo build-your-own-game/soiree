@@ -280,6 +280,15 @@ impl Timing {
             ..self
         }
     }
+
+    /// How long a stream may go with something waiting and no ack that moves.
+    /// A stream on which no fragment passes in [`Timing::absent`] has lost the
+    /// other side already, so a slow one always moves within that: three
+    /// times is all margin. Silence past it is no slowness, and the link goes.
+    #[must_use]
+    pub(crate) fn patience(self) -> u64 {
+        self.absent.saturating_mul(3)
+    }
 }
 
 impl Default for Timing {
@@ -355,7 +364,9 @@ impl Default for Limits {
 /// Why a device left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Why {
-    /// Nothing heard for [`Timing::absent`]: Wi-Fi gone, phone locked.
+    /// Nothing heard for [`Timing::absent`]: Wi-Fi gone, phone locked. Or, on
+    /// a WebSocket, heard but with nothing acknowledged for three times that:
+    /// the same thing to a game, and the device comes back the same way.
     Silent,
     /// The transport closed (or the gamepad was unplugged).
     Closed,

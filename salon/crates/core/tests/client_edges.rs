@@ -870,3 +870,43 @@ fn a_hello_is_no_reason_to_wake_up_before_it_goes_again() {
     );
     assert_eq!(phone.next_deadline(), Some(now.plus(600)));
 }
+
+/// Like the host, a phone does not stay mute on a stream that proves nothing,
+/// with a host alive and an ack that never moves. A link with timers does not
+/// need this, and goes on sending.
+#[test]
+fn a_page_gives_up_on_a_stream_that_proves_nothing() {
+    let patience = 3 * Timing::default().absent;
+    let same = encode(&Packet {
+        ack: Some(Ack::default()),
+        ..from_host(1, 0)
+    });
+    for (caps, gives_up) in [(Caps::STREAM, true), (Caps::DATAGRAM, false)] {
+        let mut phone = Phone::new(Ms(0), config(1, Timing::default()));
+        drain(&mut phone, Ms(0));
+        phone.opened(Ms(0), caps);
+        drain(&mut phone, Ms(0));
+        phone.received(Ms(0), &welcome(4, 1, 0, 0));
+        drain(&mut phone, Ms(0));
+        phone.send(&1).expect("room");
+        assert_eq!(sent(&drain(&mut phone, Ms(1))).len(), 1);
+        phone.received(Ms(2), &same);
+        drain(&mut phone, Ms(2));
+        let mut gave_up = false;
+        let mut now = 2;
+        while now < 60_000 {
+            now += 250;
+            phone.received(Ms(now), &same);
+            let outputs = drain(&mut phone, Ms(now));
+            if has(&outputs, &ClientOutput::Disconnect) == 1 {
+                assert_eq!(now, 2 + patience, "{caps:?}");
+                gave_up = true;
+                break;
+            }
+        }
+        assert_eq!(gave_up, gives_up, "{caps:?}");
+        if gives_up {
+            assert_eq!(phone.status(), Status::Reconnecting);
+        }
+    }
+}

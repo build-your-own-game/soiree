@@ -7,6 +7,10 @@
     clippy::panic,
     reason = "test helpers outside #[test] functions: a room that does not answer stops the test"
 )]
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "test: an overflow must panic and fail the test"
+)]
 
 #[expect(
     dead_code,
@@ -16,7 +20,7 @@ mod wire;
 
 use salon_core::{
     Caps, DeviceEvent, DeviceId, Epoch, Host, HostConfig, Kind, Limits, LinkId, Ms, Output,
-    PROTOCOL, Timing, Token, TvKey,
+    PROTOCOL, Timing, Token, TvKey, Why,
 };
 use wire::{Ack, Control, Echo, EventPart, Hello, Packet, Parts, StatePart, decode, encode};
 
@@ -1217,7 +1221,7 @@ fn a_window_that_fell_to_its_floor_grows_again() {
 fn busy_stream() -> (Room, DeviceId) {
     let (mut room, device) = on_a_stream();
     for _ in 0..30 {
-        room.send(device, &vec![1; 15_000]).unwrap();
+        room.send(device, &vec![1; 15_000]).expect("room");
     }
     (room, device)
 }
@@ -1265,7 +1269,11 @@ fn a_stream_halves_its_window_at_each_loss() {
     room.received(Ms(12), LinkId(2), &all_below(7, 12));
     assert_eq!(leaving(&mut room, Ms(12)), 7, "96 KiB");
     room.received(Ms(1_000), LinkId(2), &hole_at(7, 6, 1_000, 500));
-    assert_eq!(leaving(&mut room, Ms(1_000)), 4, "48 KiB, the lost one first");
+    assert_eq!(
+        leaving(&mut room, Ms(1_000)),
+        4,
+        "48 KiB, the lost one first"
+    );
     room.received(Ms(3_000), LinkId(2), &hole_at(14, 2, 3_000, 2_500));
     assert_eq!(leaving(&mut room, Ms(3_000)), 3, "the floor of two packets");
 }
@@ -1310,4 +1318,134 @@ fn a_shut_window_is_no_reason_to_wake_up() {
         "{:?}",
         room.next_deadline()
     );
+}
+
+/// How long a stream may go with something waiting and no ack that moves.
+const PATIENCE: u64 = 3 * 6_000;
+
+/// A phone alive on `link`, whose ack says what it said before and whose echo
+/// never passes what left: every packet is heard, none proves anything.
+fn alive_but_saying_nothing_new(room: &mut Room, link: LinkId, now: u64) {
+    let same = Packet {
+        epoch: EPOCH,
+        sent: now,
+        echo: Some(Echo { sent: 5, held: 0 }),
+        ack: Some(Ack::default()),
+        ..Packet::default()
+    };
+    room.received(Ms(now), link, &encode(&same));
+}
+
+/// Whether polling at `now` closes `link` and tells the game why.
+fn closes(room: &mut Room, link: LinkId, now: u64) -> bool {
+    let mut closed = false;
+    while let Some(output) = room.poll(Ms(now)) {
+        match output {
+            Output::Close { link: which } => closed |= which == link,
+            Output::Device(DeviceEvent::Left { why, .. }) => assert_eq!(why, Why::Silent),
+            Output::Device(_) | Output::Transmit { .. } => {}
+        }
+    }
+    closed
+}
+
+/// The hole the proof by echo may still have: a stream has no timer, the phone
+/// keeps talking so nobody calls it absent, and what left is never said lost.
+/// Past all that a slow link can explain, the link is over: a new one starts
+/// from what both sides know, the way every other cut does.
+#[test]
+fn a_stream_that_proves_nothing_is_given_up_on() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 1);
+    alive_but_saying_nothing_new(&mut room, LinkId(2), 20);
+    assert!(!closes(&mut room, LinkId(2), 20));
+    let mut now = 20;
+    while now < 20 + PATIENCE - 250 {
+        now += 250;
+        alive_but_saying_nothing_new(&mut room, LinkId(2), now);
+        assert!(!closes(&mut room, LinkId(2), now), "at {now}");
+    }
+    alive_but_saying_nothing_new(&mut room, LinkId(2), 20 + PATIENCE - 1);
+    assert!(!closes(&mut room, LinkId(2), 20 + PATIENCE - 1));
+    alive_but_saying_nothing_new(&mut room, LinkId(2), 20 + PATIENCE);
+    assert!(closes(&mut room, LinkId(2), 20 + PATIENCE));
+}
+
+/// Plays `alive_but_saying_nothing_new` for a minute, and says if that closed
+/// the link.
+fn a_minute_of_the_same_ack(room: &mut Room, link: LinkId) -> bool {
+    (0..240).any(|step| {
+        let now = 20 + step * 250;
+        alive_but_saying_nothing_new(room, link, now);
+        closes(room, link, now)
+    })
+}
+
+/// Nothing waits, so nothing has to move: an idle stream is left alone.
+#[test]
+fn a_stream_with_nothing_to_say_is_left_alone() {
+    let (mut room, _) = on_a_stream();
+    assert!(!a_minute_of_the_same_ack(&mut room, LinkId(2)));
+}
+
+/// A link with timers is not mute: what waits goes again by itself.
+#[test]
+fn a_datagram_link_has_its_timers_and_no_such_patience() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1]).unwrap();
+    assert!(!a_minute_of_the_same_ack(&mut room, LINK));
+}
+
+/// The patience runs from the last ack that moved, however long the message:
+/// on a slow stream, what matters is that its fragments keep arriving.
+#[test]
+fn a_long_message_keeps_a_stream_alive_as_long_as_its_fragments_arrive() {
+    let (mut room, device) = on_a_stream();
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(10)), 3);
+    for first in 1..4 {
+        let now = 10 + u64::from(first) * (PATIENCE - 1);
+        let moved = encode(&Packet {
+            epoch: EPOCH,
+            sent: now,
+            ack: Some(Ack {
+                event_parts: Some(Parts {
+                    seq: 0,
+                    count: 4,
+                    first,
+                    more: 0,
+                }),
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        });
+        room.received(Ms(now), LinkId(2), &moved);
+        assert!(!closes(&mut room, LinkId(2), now), "fragment {first}");
+    }
+}
+
+/// A state that a newer one keeps replacing is never acknowledged as such: the
+/// number the other side applied still moves, and that is enough.
+#[test]
+fn states_shown_faster_than_they_are_acknowledged_keep_a_stream_alive() {
+    let (mut room, device) = on_a_stream();
+    let mut now = 10;
+    for state in 1..30 {
+        room.show(device, &vec![1]).unwrap();
+        drain(&mut room, Ms(now));
+        now += 1_000;
+        let late = encode(&Packet {
+            epoch: EPOCH,
+            sent: now,
+            ack: Some(Ack {
+                state,
+                ..Ack::default()
+            }),
+            ..Packet::default()
+        });
+        room.show(device, &vec![2]).unwrap();
+        room.received(Ms(now), LinkId(2), &late);
+        assert!(!closes(&mut room, LinkId(2), now), "at {now}");
+    }
 }
