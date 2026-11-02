@@ -673,7 +673,8 @@ citation = "a main frame navigation but to an outside source"
 enonce = "Un pont mûr décide de chaque navigation : le pont natif n'accompagne pas une page qui part ailleurs."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/trust.rs::the_web_view_stays_on_the_origin_of_the_page_the_game_asked_for", "remote/crates/core/src/trust.rs::only_the_top_frame_on_the_pages_origin_reaches_the_bridge", "remote/bench/tests/shell.rs::only_the_page_itself_reaches_the_bridge", "remote/bench/tests/shell.rs::a_page_stays_on_its_origin_and_takes_the_identity_nowhere_else"]
 trou = "T13"
 
 [[lecon]]
@@ -1015,7 +1016,7 @@ lieux = [
 cas = "userContentController ne regarde ni le cadre ni l'origine, et aucune navigation n'est filtrée. Un iframe d'une autre origine atteint le pont et envoie de l'UDP vers l'hôte du jeu. Une page qui navigue ailleurs reçoit window.telecommande, donc player, ces 16 octets identiques dans tous les jeux que Sidequest emploie comme jeton de salon."
 preuve = "sonde H11 : iframe localhost sous une page 127.0.0.1, bridge true et datagramme reçu ; navigation vers localhost, player lu. Avec le contrôle de frameInfo et un decidePolicyFor, seule variante : 3 messages refusés, 0 datagramme, navigation annulée."
 verifie = "l'app sur simulateur, deux origines de la même machine"
-suppose = "Une attaque réelle : il faut une page de jeu qui embarque ou renvoie vers un tiers. L'UDP reste limité à l'hôte du jeu."
+suppose = "Une attaque réelle : il faut une page de jeu qui embarque ou renvoie vers un tiers. L'UDP reste limité à l'hôte du jeu. Le filtre ne dit rien d'une page malveillante à laquelle un QR mène directement : elle est sa propre origine, reçoit player et le pont. Ces 16 octets valent dans tous les jeux par contrat, à revoir si un jeu en fait un secret."
 
 [[trou]]
 id = "T14"

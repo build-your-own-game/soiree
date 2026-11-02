@@ -13,6 +13,7 @@ pub mod join;
 pub mod pointer;
 pub mod remote;
 pub mod session;
+pub mod trust;
 pub mod wheel;
 
 /// A position or offset in screen points, origin top-left, Y down.

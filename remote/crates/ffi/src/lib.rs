@@ -258,6 +258,41 @@ pub fn join_target(text: String) -> Option<JoinTarget> {
     })
 }
 
+/// The frame a call or a request comes from, as WebKit gives it.
+#[derive(uniffi::Record)]
+pub struct WebFrame {
+    /// The top of the web view, not an iframe.
+    pub main: bool,
+    pub scheme: String,
+    pub host: String,
+    /// 0 for the scheme's default.
+    pub port: u16,
+}
+
+/// Whether the top of the web view may go to `to`, when the game asked for
+/// `page`: the rules are in `remote_core::trust`.
+#[uniffi::export]
+#[expect(clippy::needless_pass_by_value, reason = "UniFFI passes strings owned")]
+pub fn page_may_open(page: String, to: String) -> bool {
+    remote_core::trust::may_open(&page, &to)
+}
+
+/// Whether `frame` may reach the bridge, when the game asked for `page`: the
+/// rules are in `remote_core::trust`.
+#[uniffi::export]
+#[expect(clippy::needless_pass_by_value, reason = "UniFFI passes strings owned")]
+pub fn frame_may_call(page: String, frame: WebFrame) -> bool {
+    remote_core::trust::may_call(
+        &page,
+        &remote_core::trust::Frame {
+            main: frame.main,
+            scheme: &frame.scheme,
+            host: &frame.host,
+            port: frame.port,
+        },
+    )
+}
+
 /// The connection to one game. The app owns the WebSocket: it passes every
 /// frame received to `receive`, calls `tick` each screen refresh, and sends
 /// what `drain` returns. Each call is a few comparisons; the app calls it on

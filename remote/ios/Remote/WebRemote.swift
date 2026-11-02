@@ -92,7 +92,32 @@ struct WebRemote: UIViewRepresentable {
             webBootstrap(player: player, name: name, orientation: Orientation.current) ?? ""
         }
 
+        /// The rules are in `remote_core::trust`.
+        private func mayCall(_ frame: WKFrameInfo) -> Bool {
+            let origin = frame.securityOrigin
+            return frameMayCall(
+                page: page.absoluteString,
+                frame: WebFrame(
+                    main: frame.isMainFrame, scheme: origin.protocol, host: origin.host,
+                    port: UInt16(clamping: origin.port)))
+        }
+
+        /// The top of the view stays on the page's origin, which is also what
+        /// keeps the identity injected at each load from going elsewhere. A
+        /// new window has no frame here: it does not open. An iframe may load
+        /// what it wants, it gets neither the bridge nor the identity.
+        func webView(
+            _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+        ) {
+            let top = action.targetFrame?.isMainFrame
+            let to = action.request.url?.absoluteString ?? ""
+            let allowed = top == false || (top == true && pageMayOpen(page: page.absoluteString, to: to))
+            decisionHandler(allowed ? .allow : .cancel)
+        }
+
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard mayCall(message.frameInfo) else { return }
             // WebKit supplies an untyped JavaScript object. Rust validates
             // it into the same contract used by the page, before any effect.
             guard JSONSerialization.isValidJSONObject(message.body),
@@ -173,7 +198,7 @@ struct WebRemote: UIViewRepresentable {
         private func failed(_ webView: WKWebView, _ error: Error) {
             let error = error as NSError
             let replaced = error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
-            let refused = error.domain == WKErrorDomain && error.code == Self.frameLoadInterrupted
+            let refused = error.domain == "WebKitErrorDomain" && error.code == Self.frameLoadInterrupted
             if !replaced, !refused {
                 loadAgain(webView)
             }

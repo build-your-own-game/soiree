@@ -123,6 +123,17 @@ La page `/free` du faux jeu (dans `crates/demo/src/main.rs`) montre chacun de ce
 
 Plein écran, gestes système retardés et écran toujours allumé valent pour toutes les pages. Chaque nouvelle page repart en paysage.
 
+### Qui atteint l'app
+
+Seule la page que le jeu a demandée y a droit : la page vient du réseau, et un QR s'imprime. La règle est dans `remote_core::trust`, avec ses tests.
+
+- **Une origine** est un schéma, un hôte et un port. Les trois doivent être égaux, à la casse et au port par défaut près. `127.0.0.1` et `localhost` sont deux origines, et deux ports d'un même hôte aussi. L'origine de référence est celle de l'adresse que le jeu a envoyée dans `Remote::Web`.
+- **Le haut de la vue reste sur cette origine.** Un lien, `location` ou une redirection HTTP vers une autre origine sont annulés, et `window.open` n'ouvre rien : ta page reste où elle est, sans erreur. Une redirection de `http` vers `https` compte : envoie l'adresse finale. Rien ne change entre deux pages de ton origine.
+- **Seul le cadre principal atteint `webkit.messageHandlers.telecommande`.** Un message venu d'un iframe est ignoré sans effet, même de ton origine. Un iframe se charge normalement, sans `window.telecommande`.
+- **Sont refusés d'office :** `about:`, `data:`, `blob:`, `file:`, tout schéma autre que `http` et `https`, et toute adresse qui ne se lit pas à coup sûr : `user@hôte`, un antislash, un `%` dans l'hôte.
+
+Un jeu qui embarque un tiers n'a donc rien à faire pour le tenir à l'écart. `window.telecommande.player` est en revanche le même dans tous les jeux, et une page a le droit de le lire : n'en fais pas un secret.
+
 ## Lire un état
 
 ```rust

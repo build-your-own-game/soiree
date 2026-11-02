@@ -436,3 +436,71 @@ fn a_half_turn_reaches_the_wheel() {
         "the wheel still reads the old side"
     );
 }
+
+#[test]
+fn only_the_page_itself_reaches_the_bridge() {
+    let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+    udp.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let port = udp.local_addr().unwrap().port();
+    let frame = format!(
+        "<!doctype html><title>frame</title><script>\
+         const app = window.webkit.messageHandlers.telecommande;\
+         app.postMessage({{datagram: {{op: 'open', id: 1, port: {port}}}}});\
+         app.postMessage({{datagram: {{op: 'send', id: 1, data: [66]}}}});\
+         document.title = 'sent';</script>"
+    );
+    let host = page_game("");
+    let elsewhere = format!("http://localhost:{}", host.port);
+    let page =
+        format!("<!doctype html><title>page</title><iframe src=\"{elsewhere}/frame\"></iframe>");
+    host.with(|state| {
+        state.routes.insert("/play".to_owned(), Page::Html(page));
+        state.routes.insert("/frame".to_owned(), Page::Html(frame));
+    });
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+    assert!(host.wait(SOON, |state| state.requests.iter().any(|r| r == "/frame")));
+
+    // The page's own message goes through: the refusal is about the frame.
+    post(
+        &mut shell,
+        &format!("{{datagram: {{op: 'open', id: 2, port: {port}}}}}"),
+    );
+    post(&mut shell, "{datagram: {op: 'send', id: 2, data: [65]}}");
+    let mut received = [0; 8];
+    assert_eq!(udp.recv(&mut received).unwrap(), 1);
+    assert_eq!(received[0], 65, "another origin's frame reached the bridge");
+}
+
+#[test]
+fn a_page_stays_on_its_origin_and_takes_the_identity_nowhere_else() {
+    let host = page_game(PAGE);
+    let away = format!("http://localhost:{}/away", host.port);
+    host.with(|state| {
+        let routes = &mut state.routes;
+        routes.insert("/hop".to_owned(), Page::Redirect(away.clone()));
+        routes.insert("/away".to_owned(), Page::Html(PAGE.to_owned()));
+        routes.insert("/next".to_owned(), Page::Html(PAGE.to_owned()));
+    });
+    let mut shell = joined(&host, "/play");
+    assert!(eventually(LOADED, || shell.ask("eval document.title") == "page"));
+
+    shell.ask(&format!("eval location.href = '{away}'; 1"));
+    shell.ask("eval location.href = '/hop'; 1");
+    assert!(host.wait(SOON, |state| state.requests.iter().any(|r| r == "/hop")));
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(
+        !host.with(|state| state.requests.iter().any(|r| r == "/away")),
+        "the page left its origin, player id in hand"
+    );
+
+    shell.ask("eval location.href = '/next'; 1");
+    assert!(
+        host.wait(SOON, |state| state.requests.iter().any(|r| r == "/next")),
+        "a page must still move around its own origin"
+    );
+    assert!(eventually(LOADED, || shell
+        .ask("eval location.pathname")
+        .contains("next")));
+    assert_eq!(shell.ask("eval typeof window.telecommande"), "object");
+}
