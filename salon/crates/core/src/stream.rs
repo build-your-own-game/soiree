@@ -281,6 +281,9 @@ impl Window {
     /// Whatever it fell to, two packets may leave: with less, an ack per
     /// packet stops. RFC 9002 section 7.2 keeps two as well.
     const FEWEST_PACKETS: usize = 2;
+    /// It falls no lower: each ack adds a share of the window, so at nothing
+    /// it would stay there, and at a few bytes one fragment would fill it.
+    const FLOOR: usize = Window::FEWEST_PACKETS * Caps::DATAGRAM.max_packet;
     /// Three quarters of str0m's 128 KiB, which also counts headers: above it,
     /// the DataChannel refuses what comes next.
     const MOST: usize = 96 * 1024;
@@ -344,7 +347,7 @@ impl Window {
             return false;
         }
         self.halved = Some(now);
-        self.bytes /= 2;
+        self.bytes = (self.bytes / 2).max(Window::FLOOR);
         self.ceiling = self.bytes;
         true
     }

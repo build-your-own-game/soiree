@@ -1155,3 +1155,60 @@ fn a_state_of_one_packet_opens_the_window_for_nothing_else() {
     assert_eq!(events.len(), 12);
     assert_eq!(states, vec![(1, 0)]);
 }
+
+/// The timers of a big message run out `times` times with nothing heard, and
+/// the phone stays there. Says when that ended.
+fn deaf(room: &mut Room, times: u32) -> u64 {
+    let (mut now, mut expired) = (0, 0);
+    while expired < times {
+        now += 1_000;
+        room.received(Ms(now), LINK, &fragments_below(0, 64, now));
+        if leaving(room, Ms(now)) > 0 {
+            expired += 1;
+        }
+    }
+    now
+}
+
+/// What a long deafness leaves of a window is its floor. A window under it
+/// would not read an ack as a few bytes more: at 2 bytes, one fragment heard
+/// asks for all that fits.
+#[test]
+fn a_window_that_fell_far_does_not_jump_at_the_first_ack() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    let now = deaf(&mut room, 12);
+    room.received(Ms(now + 1), LINK, &fragments_below(1, 64, now + 1));
+    let out = leaving(&mut room, Ms(now + 1));
+    assert!(out <= 3, "{out} fragments left at once");
+}
+
+/// A window halved down to nothing stays at nothing unless it has a floor:
+/// each ack adds a share of it, and the link stays at two packets for good.
+#[test]
+fn a_window_that_fell_to_its_floor_grows_again() {
+    let (mut room, device) = joined(Limits::default());
+    room.send(device, &vec![1; 60_000]).unwrap();
+    room.send(device, &vec![2; 60_000]).unwrap();
+    assert_eq!(leaving(&mut room, Ms(0)), 12);
+    let mut now = deaf(&mut room, 16);
+    // From here the link is healthy again: everything sent so far arrives.
+    let (mut first, mut most) = (0, 0);
+    for _ in 0..40 {
+        now += 300;
+        room.received(Ms(now), LINK, &fragments_below(first, 64, now));
+        let out = sent(&drain(&mut room, Ms(now)).1).0;
+        most = out.len().max(most);
+        first = out
+            .iter()
+            .filter(|(seq, _)| *seq == 0)
+            .map(|(_, index)| index + 1)
+            .max()
+            .unwrap_or(first);
+        if first == 64 {
+            break;
+        }
+    }
+    assert!(most > 3, "the window never left its floor: {most}");
+}
