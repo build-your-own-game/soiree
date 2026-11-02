@@ -19,8 +19,17 @@ pub struct OpenHole<'a> {
     pub trou: &'a Trou,
 }
 
+/// A sheet below the floor of its subsystem: the registry says what is owed,
+/// and its reason excuses it nowhere but in the changelog of a version.
+pub struct Lowered<'a> {
+    pub sheet: &'a str,
+    pub niveau: u8,
+    pub plancher: u8,
+}
+
 pub struct Debt<'a> {
     pub missing: Vec<&'a SousSysteme>,
+    pub lowered: Vec<Lowered<'a>>,
     pub holes: Vec<OpenHole<'a>>,
     pub unread: Vec<&'a str>,
 }
@@ -35,21 +44,36 @@ impl<'a> Debt<'a> {
             .filter(|s| s.perimetre == scope && s.niveau >= OWED_LEVEL)
             .filter(|s| !folder.sheets.iter().any(|sheet| sheet.stem == s.id))
             .collect();
+        let mut lowered = Vec::new();
         let mut holes = Vec::new();
         let mut unread = Vec::new();
         for sheet in &folder.sheets {
             match &sheet.parsed {
-                Ok(fiche) => holes.extend(fiche.open().map(|trou| OpenHole {
-                    sheet: &fiche.sous_systeme,
-                    niveau: fiche.niveau,
-                    trou,
-                })),
+                Ok(fiche) => {
+                    let plancher = folder
+                        .registre
+                        .sous_systeme(&fiche.sous_systeme)
+                        .map_or(fiche.niveau, |s| s.niveau.max(fiche.niveau));
+                    if fiche.niveau < plancher && plancher >= OWED_LEVEL {
+                        lowered.push(Lowered {
+                            sheet: &fiche.sous_systeme,
+                            niveau: fiche.niveau,
+                            plancher,
+                        });
+                    }
+                    holes.extend(fiche.open().map(|trou| OpenHole {
+                        sheet: &fiche.sous_systeme,
+                        niveau: plancher,
+                        trou,
+                    }));
+                }
                 Err(_) => unread.push(sheet.file.as_str()),
             }
         }
         holes.sort_by_key(|hole| (hole.trou.gravite, hole.sheet));
         Self {
             missing,
+            lowered,
             holes,
             unread,
         }
@@ -62,7 +86,10 @@ impl<'a> Debt<'a> {
             .iter()
             .filter(|hole| hole.niveau >= OWED_LEVEL)
             .count();
-        self.missing.len().saturating_add(holes)
+        self.missing
+            .len()
+            .saturating_add(self.lowered.len())
+            .saturating_add(holes)
     }
 
     fn count(&self, gravite: Gravite) -> usize {
@@ -77,12 +104,13 @@ impl<'a> Debt<'a> {
         if let Some(file) = self.unread.first() {
             return format!("dette de recherche non lue : {file} est illisible");
         }
-        if self.missing.is_empty() && self.holes.is_empty() {
+        if self.missing.is_empty() && self.lowered.is_empty() && self.holes.is_empty() {
             return "dette de recherche : aucune".to_owned();
         }
         format!(
-            "dette de recherche : {} sous-système(s) de niveau {OWED_LEVEL} sans fiche, {} trou(s) ouvert(s) ({} haute, {} moyenne, {} faible) ; détail : soiree recherche dette",
+            "dette de recherche : {} sous-système(s) de niveau {OWED_LEVEL} sans fiche, {} fiche(s) sous leur plancher, {} trou(s) ouvert(s) ({} haute, {} moyenne, {} faible) ; détail : soiree recherche dette",
             self.missing.len(),
+            self.lowered.len(),
             self.holes.len(),
             self.count(Gravite::Haute),
             self.count(Gravite::Moyenne),
@@ -108,6 +136,16 @@ pub fn run(dir: &Path) -> Result<ExitCode, String> {
         report.info(format!(
             "{} : recherche/{}.toml manque",
             sous_systeme.id, sous_systeme.id
+        ));
+    }
+    report.section(&format!(
+        "fiches sous leur plancher : {}",
+        debt.lowered.len()
+    ));
+    for lowered in &debt.lowered {
+        report.info(format!(
+            "{} : niveau {} sous le plancher {} de sous-systemes.toml",
+            lowered.sheet, lowered.niveau, lowered.plancher
         ));
     }
     report.section(&format!("trous ouverts : {}", debt.holes.len()));

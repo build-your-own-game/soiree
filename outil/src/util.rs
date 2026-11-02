@@ -26,6 +26,16 @@ pub fn stdout_of(dir: &Path, program: &str, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+/// What a reason needs to be one: `x` or `n/a` excuse nothing.
+pub const REASON_RULE: &str = "attendu une raison d'au moins deux mots et 12 caractères";
+
+/// A reason a reader can argue with. Length proves no more than that someone
+/// wrote a sentence, which is all a machine can ask.
+pub fn real_reason(text: &str) -> bool {
+    let text = text.trim();
+    text.chars().count() >= 12 && text.split_whitespace().count() >= 2
+}
+
 pub fn read(path: &Path) -> Result<String> {
     fs::read_to_string(path).map_err(|error| format!("{} : {error}", path.display()))
 }

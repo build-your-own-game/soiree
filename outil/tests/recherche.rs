@@ -164,6 +164,46 @@ mod commands {
         assert!(shown.contains("trous ouverts"), "{shown}");
     }
 
+    fn lines_to_settle(dir: &Path) -> usize {
+        let output = soiree(dir).args(["recherche", "dette"]).output().unwrap();
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        let (_, after) = shown.split_once("Niveau 3 : ").expect(&shown);
+        after.split(' ').next().unwrap().parse().unwrap()
+    }
+
+    #[test]
+    fn lowering_a_sheet_never_lowers_what_is_owed() {
+        let dir = fresh();
+        copy_folder(&repository().join("recherche"), &dir.join("recherche"));
+        let before = lines_to_settle(&dir);
+        let path = dir.join("recherche/reconnexion.toml");
+        let sheet = std::fs::read_to_string(&path).unwrap();
+        let lowered = sheet.replacen(
+            "niveau = 3\n",
+            "niveau = 2\nraison_niveau = \"Une raison assez longue pour passer.\"\n",
+            1,
+        );
+        assert_ne!(sheet, lowered);
+        std::fs::write(&path, lowered).unwrap();
+        assert_eq!(lines_to_settle(&dir), before + 1);
+        let shown = text(&soiree(&dir).args(["recherche", "dette"]).output().unwrap());
+        assert!(shown.contains("sous le plancher 3"), "{shown}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hollow_reason_cannot_lower_a_sheet() {
+        let dir = common();
+        let path = dir.join("recherche/reconnexion.toml");
+        let sheet = std::fs::read_to_string(&path).unwrap();
+        let lowered = sheet.replacen("niveau = 3\n", "niveau = 2\nraison_niveau = \"x\"\n", 1);
+        std::fs::write(&path, lowered).unwrap();
+        let shown = text(&soiree(&dir).args(["check", "."]).output().unwrap());
+        assert!(shown.contains("`raison_niveau`"), "{shown}");
+        assert!(!shown.contains("✓ recherche : "), "{shown}");
+    }
+
     #[test]
     fn a_broken_sheet_is_not_a_clean_debt() {
         let dir = fresh();

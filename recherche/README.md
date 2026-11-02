@@ -11,7 +11,7 @@ Ce dossier rend mesurable la méthode de `../MANIFESTE.md` (« Extraire le signa
 ## Le processus
 
 1. **Déclencheur.** Lance `soiree recherche plan`. Ton changement ajoute du nouveau sous un chemin de `sous-systemes.toml` : fichier, type ou fonction publique, dépendance, délai, message de protocole. Un bug échappé compte aussi, et le diff ne le voit pas. Sinon, pas de recherche à faire : un correctif ordinaire n'en crée pas.
-2. **Niveau.** Prends le niveau du sous-système. S'il y en a plusieurs, prends le plus haut. Le quota vient de `[[niveau]]`. Tu peux relever le niveau ; pour le baisser, écris pourquoi dans `raison_niveau`, comme un `#[expect]`.
+2. **Niveau.** Prends le niveau du sous-système. S'il y en a plusieurs, prends le plus haut. Le quota vient de `[[niveau]]`. Tu peux relever le niveau ; pour le baisser, écris pourquoi dans `raison_niveau`, comme un `#[expect]`. Une raison qui ne dit rien (`x`) est refusée, et la dette part toujours du plancher de `sous-systemes.toml` : une fiche baissée reste une ligne à solder ou à justifier.
 3. **Fiche.** Ouvre `<sous_systeme>.toml`, ou crée-la avec `sous_systeme`, `niveau`, une `question` réfutable et `compare_a`, le commit que tu compares.
 4. **Chez nous d'abord.** Lis le code et les tests concernés en entier, puis les `LEARNINGS.md`. Écris tes hypothèses de trous avant de lire ailleurs.
 5. **Choisis les sources** dans `sources.toml`, en montant l'échelle : `chez-nous`, `reel`, `normes`, `bancs`, `retours`. Ajoute à `sources.toml` ce que tu trouves en route.
@@ -31,6 +31,6 @@ La dette de recherche ne bloque qu'à l'étiquette du commun : un jeu n'attend j
 | `soiree recherche plan` | non | lit le diff depuis la dernière étiquette, ou un autre avec `--depuis REF` ou `--git-diff`, et dit ce qui est nouveau, le sous-système, le niveau, la fiche, ce qui manque, puis ces étapes ; c'est une aide, elle n'empêche rien |
 | `soiree check .` | non | à la racine du commun : format et règles de chaque fiche, quotas, saturation, marches, et existence des tests et items cités en `garantie`. Avec `--fast`, ou dans un jeu : une ligne de dette au plus, et rien qui bloque |
 | `soiree recherche verifie` | oui | chaque commit existe en amont, chaque citation est à l'endroit indiqué, chaque `empreinte` tient. Sort à 1 si une fiche est fausse, ou s'il n'y a aucune fiche : rien vérifié n'est pas une réussite. Sort à 2 sur une panne, qui ne conclut rien, et une réponse qui n'est pas le commit demandé, comme un portail Wi-Fi, en est une |
-| `soiree recherche dette` | non | les sous-systèmes de niveau 3 sans fiche, puis les trous ouverts par gravité ; `AGENTS.md`, « Avant d'étiqueter », dit le seul endroit où elle bloque |
+| `soiree recherche dette` | non | les sous-systèmes de niveau 3 sans fiche, les fiches sous leur plancher, puis les trous ouverts par gravité ; `AGENTS.md`, « Avant d'étiqueter », dit le seul endroit où elle bloque |
 
 `soiree check .` lit le texte : il dit qu'un test existe, pas qu'il tourne ni qu'il passe.

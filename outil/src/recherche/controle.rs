@@ -196,6 +196,12 @@ fn level(fiche: &Fiche, sous_systeme: &SousSysteme, errors: &mut Vec<String>) {
                 "`niveau` {} sous le plancher {floor} de {} ; attendu le plancher, ou `raison_niveau`",
                 fiche.niveau, sous_systeme.id
             ));
+        } else if !reason.is_some_and(util::real_reason) {
+            errors.push(format!(
+                "`raison_niveau` « {} » ; {}",
+                reason.unwrap_or_default(),
+                util::REASON_RULE
+            ));
         }
     } else if reason.is_some() {
         errors.push(format!(
@@ -819,7 +825,7 @@ mod tests {
         let excused = with(
             &lowered,
             "niveau = 2\n",
-            "niveau = 2\nraison_niveau = \"banc seul\"\n",
+            "niveau = 2\nraison_niveau = \"Un banc seul, pour un outil local.\"\n",
         );
         assert_eq!(errors_of(&excused), Vec::<String>::new());
         let empty = with(
@@ -828,6 +834,14 @@ mod tests {
             "niveau = 2\nraison_niveau = \" \"\n",
         );
         one_error(&empty, "sous le plancher 3");
+        one_error(
+            &with(
+                &lowered,
+                "niveau = 2\n",
+                "niveau = 2\nraison_niveau = \"x\"\n",
+            ),
+            "`raison_niveau` « x »",
+        );
         let raised = with(
             SHEET,
             "niveau = 3\n",
