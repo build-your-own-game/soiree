@@ -304,7 +304,7 @@ La fiche `../recherche/reconnexion.toml` garde les preuves et les liens figés ;
 | Une offre sans réponse ne dit rien de WebRTC : c'est l'hôte qui manque. | ici, en lisant T7 | Usage réel | `Negotiation::NoHost` |
 | `visibilitychange` ne suit plus toujours le dégel. | Phoenix, `socket.js` (Chrome 149) | Physique | écoute de `resume` sur `document`, envoyée dans WebKit et Chromium par `tests/ui-browser.mjs`. Pas de vrai dégel : `Page.setWebLifecycleState` n'a aucun effet sur le banc (Chrome 156) |
 | `slow_close` ne retient que le FIN : la trame `Close` de WebSocket est une donnée et passe devant. Une page apprend donc une fermeture de l'hôte par la trame ; c'est la fermeture vers l'hôte que le toxique retarde vraiment. | Toxiproxy `slow_close`, ici en l'essayant | Usage réel | `transport_faults.rs` joue les deux sens |
-| Le chaos doit mêler les pannes de tout le catalogue, et retenir un paquet précis plutôt que d'étaler une gigue. | Jepsen `combined.clj` ; turmoil 61891a3 | Usage réel | `chaos_keeps_every_page_in_its_place` : retirer seul le correctif de T1, T2, T3 ou T6 le fait rougir en moins de 3 000 cas |
+| Le chaos doit mêler les pannes de tout le catalogue, et retenir un paquet précis plutôt que d'étaler une gigue. | Jepsen `combined.clj` ; turmoil 61891a3 | Usage réel | `chaos_keeps_every_page_in_its_place` : retirer seul le correctif de T1, T2 ou T6 le fait rougir en moins de 3 000 cas ; la garde `closing` de T3, doublée par le rang des liens, après 3 717 cas sur un tirage |
 | Un arrêt brutal arrive entre deux écritures : ce qui n'est pas écrit n'a jamais existé. | Jepsen `db.clj` | Usage réel | une identité atteint le disque avant son `Welcome` ; sans `fsync`, donc pas à l'abri d'une coupure de courant |
 
 Ce qu'on n'a pas fait :
