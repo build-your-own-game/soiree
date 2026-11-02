@@ -125,6 +125,11 @@ final class Bench {
         case "up":
             connection?.pad?.handle(.up(id: UInt64(numbers[0])))
             return "ok"
+        case "tap":
+            // Down and up with no refresh between them: a press under a frame.
+            connection?.pad?.handle(.down(id: UInt64(numbers[0]), at: point(numbers), time: uptime))
+            connection?.pad?.handle(.up(id: UInt64(numbers[0])))
+            return "ok"
         case "leave":
             connection?.stop()
             connection = nil

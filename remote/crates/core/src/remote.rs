@@ -38,6 +38,9 @@ pub struct Remote {
     pointer: Option<(Pointer, BTreeMap<u64, Point>)>,
     canvas: Option<Canvas>,
     actions: BTreeMap<ButtonId, Action>,
+    /// Buttons pressed since the state last left. A press can begin and end
+    /// between two sends: it must still reach the game.
+    latched: u32,
 }
 
 impl Remote {
@@ -60,6 +63,7 @@ impl Remote {
             canvas: spec.canvas.then(|| Canvas::new(layout.area)),
             touch: TouchPad::new(layout),
             actions,
+            latched: 0,
             spec,
         }
     }
@@ -88,6 +92,7 @@ impl Remote {
     pub fn touch_down(&mut self, id: u64, point: Point, time: f64) -> Option<Haptic> {
         let before = self.touch.pressed();
         let haptic = self.touch.touch_down(id, point);
+        self.latched |= self.touch.pressed().0;
         let new = Pressed(self.touch.pressed().0 & !before.0);
         for action in new.ids().filter_map(|id| self.actions.get(&id).copied()) {
             match action {
@@ -128,7 +133,9 @@ impl Remote {
             *last = point;
             return None;
         }
-        self.touch.touch_move(id, point)
+        let haptic = self.touch.touch_move(id, point);
+        self.latched |= self.touch.pressed().0;
+        haptic
     }
 
     pub fn touch_up(&mut self, id: u64) -> Option<Haptic> {
@@ -208,11 +215,17 @@ impl Remote {
         self.canvas.as_ref().map(Canvas::rect)
     }
 
-    /// The state a game reads, numbered `seq`.
+    /// Forgets the presses that ended: they have left, or it is too late.
+    pub fn clear_latch(&mut self) {
+        self.latched = 0;
+    }
+
+    /// The state a game reads, numbered `seq`: what is held, and what was
+    /// pressed since [`Remote::clear_latch`].
     pub fn state(&self, seq: u32) -> InputState {
         InputState {
             seq,
-            pressed: self.touch.pressed().0,
+            pressed: self.touch.pressed().0 | self.latched,
             sticks: self
                 .touch
                 .sticks()

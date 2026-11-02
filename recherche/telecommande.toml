@@ -579,7 +579,8 @@ citation = "Une pression plus courte qu'une image ne doit pas se perdre"
 enonce = "La leçon est notée Gardé ; le cœur traite le toucher, mais l'état envoyé ne garde pas la trace d'un appui déjà relâché."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_press_shorter_than_a_send_reaches_the_game_and_ends", "remote/bench/tests/shell.rs::a_tap_shorter_than_a_refresh_reaches_the_game"]
 trou = "T8"
 
 [[lecon]]
@@ -590,7 +591,8 @@ citation = "older MFi controllers can send an instant down+up event for the star
 enonce = "Un appui et son relâchement peuvent arriver d'un bloc : Moonlight le traite exprès pour qu'il atteigne quand même le PC."
 categorie = "physique"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_press_shorter_than_a_send_reaches_the_game_and_ends", "remote/bench/tests/shell.rs::a_tap_shorter_than_a_refresh_reaches_the_game"]
 trou = "T8"
 
 [[lecon]]
@@ -601,7 +603,8 @@ citation = "End mouse motion batches on mouse button events"
 enonce = "Un bouton n'entre jamais dans un regroupement : il le clôt, les mouvements se fondent, les appuis non."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["remote/crates/core/src/session.rs::a_press_shorter_than_a_send_reaches_the_game_and_ends", "remote/bench/tests/shell.rs::a_tap_shorter_than_a_refresh_reaches_the_game"]
 trou = "T8"
 
 [[lecon]]

@@ -292,3 +292,18 @@ fn a_mute_address_costs_a_try_seconds_and_not_a_minute() {
         "the first try is still waiting"
     );
 }
+
+#[test]
+fn a_tap_shorter_than_a_refresh_reaches_the_game() {
+    let host = FakeHost::start(Some(Remote::Pad(presets::buzzer())));
+    let mut shell = joined(&host, "/play");
+    let (x, y) = shell.point(&format!("control {}", presets::buzzer::BUZZ));
+    shell.ask(&format!("tap 1 {x} {y}"));
+    assert!(
+        host.wait(SOON, |state| state.heard.iter().any(|heard| matches!(
+            &heard.message,
+            PhoneMessage::Input(input) if input.pressed != 0
+        ))),
+        "the game saw nothing"
+    );
+}

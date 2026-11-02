@@ -239,9 +239,15 @@ impl Session {
             self.push_step(event);
         }
         self.release_backlog(now);
-        let Some(remote) = self.remote.as_ref().filter(|_| self.link == Link::Up) else {
+        let up = self.link == Link::Up;
+        let Some(remote) = self.remote.as_mut() else {
             return;
         };
+        if !up {
+            // No game to tell: a press would arrive late, as if just made.
+            remote.clear_latch();
+            return;
+        }
         let state = remote.state(0);
         let due = match &self.last_sent {
             None => true,
@@ -255,6 +261,7 @@ impl Session {
                 seq: self.seq,
                 ..state.clone()
             })));
+            remote.clear_latch();
             self.last_sent = Some((now, state));
             self.next_state = (self.next_state + MIN_INTERVAL).max(now + MIN_INTERVAL - TOLERANCE);
         }
@@ -628,6 +635,71 @@ mod tests {
             let left = refreshes(period, 0.0);
             assert!((40..=61).contains(&left.len()), "{period}: {}", left.len());
         }
+    }
+
+    /// A buzzer shown and its first state gone, with where to press.
+    fn buzzer() -> (Session, Point) {
+        let mut session = session();
+        show(&mut session, presets::buzzer());
+        session.tick(0.0);
+        session.drain();
+        let buzz = session
+            .remote()
+            .map(|r| r.layout().buttons[0].center)
+            .unwrap_or_default();
+        (session, buzz)
+    }
+
+    fn pressed(session: &mut Session) -> Vec<u32> {
+        sent(session)
+            .iter()
+            .filter_map(|message| match message {
+                PhoneMessage::Input(state) => Some(state.pressed),
+                PhoneMessage::Hello { .. } | PhoneMessage::Draw(_) => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_press_shorter_than_a_send_reaches_the_game_and_ends() {
+        let (mut session, buzz) = buzzer();
+        if let Some(remote) = session.remote_mut() {
+            remote.touch_down(1, buzz, 0.02);
+            remote.touch_up(1);
+        }
+        session.tick(0.03);
+        assert_eq!(pressed(&mut session), [1], "the press");
+        session.tick(0.05);
+        assert_eq!(pressed(&mut session), [0], "the release");
+    }
+
+    #[test]
+    fn a_press_too_soon_after_a_state_waits_for_the_next_one() {
+        let (mut session, buzz) = buzzer();
+        session.tick(0.001);
+        if let Some(remote) = session.remote_mut() {
+            remote.touch_down(1, buzz, 0.002);
+            remote.touch_up(1);
+        }
+        session.tick(0.003);
+        assert!(pressed(&mut session).is_empty(), "too soon after the last one");
+        session.tick(0.02);
+        assert_eq!(pressed(&mut session), [1]);
+    }
+
+    #[test]
+    fn a_press_made_during_a_cut_is_not_played_after_it() {
+        let (mut session, buzz) = buzzer();
+        session.disconnected();
+        if let Some(remote) = session.remote_mut() {
+            remote.touch_down(1, buzz, 0.1);
+            remote.touch_up(1);
+        }
+        session.tick(0.2);
+        session.connected();
+        show(&mut session, presets::buzzer());
+        session.tick(0.3);
+        assert_eq!(pressed(&mut session), [0]);
     }
 
     #[test]
