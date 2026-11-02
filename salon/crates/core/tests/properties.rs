@@ -13,9 +13,12 @@
 )]
 mod net;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use net::{Down, Faults, Net, Up, phone_config};
 use proptest::prelude::*;
-use salon_core::{Caps, DeviceEvent, Kind, LinkId, Ms, Output, Status};
+use proptest::test_runner::TestCaseError;
+use salon_core::{Caps, DeviceEvent, DeviceId, Kind, LinkId, Ms, Output, Presence, Status};
 
 /// One line per chaos case, so that a run can be counted from outside.
 const CASE: &str = "chaos case";
@@ -174,6 +177,477 @@ proptest! {
                 DeviceEvent::Event { .. } | DeviceEvent::State { .. } => {}
             }
         }
+    }
+}
+
+/// A message that says its number, in one packet or across several: all of
+/// a big one says the same, so that pieces of two messages show.
+fn message(id: u32, big: bool) -> Up {
+    if big {
+        Up::Blob(id.to_le_bytes().repeat(600))
+    } else {
+        Up::Answer(id)
+    }
+}
+
+/// The number a message says.
+fn number(message: &Up) -> u32 {
+    match message {
+        Up::Answer(id) => *id,
+        Up::Blob(bytes) => {
+            let mut parts = bytes.chunks_exact(4);
+            let first = parts.next().unwrap();
+            assert!(parts.all(|part| part == first), "pieces of two messages");
+            u32::from_le_bytes(first.try_into().unwrap())
+        }
+        Up::Pad(..) => panic!("the chaos sends no pad"),
+    }
+}
+
+/// One page of a seat, alive.
+#[derive(Debug)]
+struct Page {
+    phone: usize,
+    /// The events it sent, in order, and the state it last set.
+    sent: Vec<u32>,
+    state: Option<u32>,
+}
+
+/// Everything that ever showed one token.
+#[derive(Debug, Default)]
+struct Seat {
+    pages: Vec<Page>,
+    /// A page died in silence: its twins stay replaced until a player asks.
+    crashed: bool,
+}
+
+impl Seat {
+    fn page(&mut self, which: usize) -> &mut Page {
+        let index = which % self.pages.len();
+        &mut self.pages[index]
+    }
+}
+
+/// What can happen to a room, on top of the network. `usize` pairs are a
+/// seat, then which of its pages.
+#[derive(Clone, Debug)]
+enum Trouble {
+    /// An event, or a state, that may need several packets.
+    Send(usize, usize, bool),
+    SetState(usize, usize, bool),
+    Notify(usize),
+    Show(usize),
+    Cut(usize, usize),
+    Freeze(usize, usize),
+    Thaw(usize, usize),
+    /// The page comes back to the foreground.
+    Wake(usize, usize),
+    /// The page reloads: gone with what it had not sent.
+    Reload(usize, usize),
+    /// The page dies without a word, and another one starts.
+    Crash(usize, usize),
+    /// Another tab opens on the same token.
+    Twin(usize),
+    /// A replaced tab plays again.
+    PlayHere(usize, usize),
+    RestartHost,
+    /// One packet comes late.
+    Late(u64),
+    Wait(u64),
+}
+
+fn trouble() -> impl Strategy<Value = Trouble> {
+    let seat = || 0..3usize;
+    let page = || 0..4usize;
+    prop_oneof![
+        5 => (seat(), page(), any::<bool>()).prop_map(|(s, p, big)| Trouble::Send(s, p, big)),
+        3 => (seat(), page(), any::<bool>()).prop_map(|(s, p, big)| Trouble::SetState(s, p, big)),
+        2 => seat().prop_map(Trouble::Notify),
+        1 => seat().prop_map(Trouble::Show),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Cut(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Freeze(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Thaw(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Wake(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Reload(s, p)),
+        1 => (seat(), page()).prop_map(|(s, p)| Trouble::Crash(s, p)),
+        2 => seat().prop_map(Trouble::Twin),
+        2 => (seat(), page()).prop_map(|(s, p)| Trouble::PlayHere(s, p)),
+        1 => Just(Trouble::RestartHost),
+        2 => (1..2_500u64).prop_map(Trouble::Late),
+        5 => (1..2_000u64).prop_map(Trouble::Wait),
+    ]
+}
+
+/// A room in the chaos, and what the game and the pages must end up with.
+struct Room {
+    net: Net,
+    seats: [Seat; 3],
+    next_id: u32,
+    epoch: u32,
+    /// Where each run of the host starts in `net.happened`.
+    runs: Vec<usize>,
+    /// What the host sent since its last start, per seat.
+    notes: [Vec<u32>; 3],
+    shown: [Option<u32>; 3],
+}
+
+impl Room {
+    fn new(net: Net) -> Room {
+        let mut room = Room {
+            net,
+            seats: [Seat::default(), Seat::default(), Seat::default()],
+            next_id: 0,
+            epoch: 1,
+            runs: vec![0],
+            notes: [Vec::new(), Vec::new(), Vec::new()],
+            shown: [None; 3],
+        };
+        for seat in 0..3 {
+            room.open_page(seat);
+        }
+        room
+    }
+
+    fn open_page(&mut self, seat: usize) {
+        let token = u8::try_from(seat).unwrap() + 1;
+        let phone = self
+            .net
+            .add_phone(phone_config(token, Kind::Phone), Caps::DATAGRAM);
+        self.seats[seat].pages.push(Page {
+            phone,
+            sent: Vec::new(),
+            state: None,
+        });
+    }
+
+    fn fresh_id(&mut self) -> u32 {
+        self.next_id += 1;
+        self.next_id
+    }
+
+    fn device(&self, seat: usize) -> Option<DeviceId> {
+        self.seats[seat]
+            .pages
+            .iter()
+            .find_map(|page| self.net.phones[page.phone].client.device())
+    }
+
+    fn apply(&mut self, trouble: Trouble) {
+        match trouble {
+            Trouble::Send(seat, which, big) => {
+                let id = self.fresh_id();
+                let page = self.seats[seat].page(which);
+                let phone = page.phone;
+                if self.net.phones[phone]
+                    .client
+                    .send(&message(id, big))
+                    .is_ok()
+                {
+                    self.seats[seat].page(which).sent.push(id);
+                }
+            }
+            Trouble::SetState(seat, which, big) => {
+                let id = self.fresh_id();
+                let page = self.seats[seat].page(which);
+                page.state = Some(id);
+                let phone = page.phone;
+                self.net.phones[phone]
+                    .client
+                    .set_state(&message(id, big))
+                    .unwrap();
+            }
+            Trouble::Notify(seat) => {
+                let id = self.fresh_id();
+                if let Some(device) = self.device(seat)
+                    && self.net.host.send(device, &Down::Note(id)).is_ok()
+                {
+                    self.notes[seat].push(id);
+                }
+            }
+            Trouble::Show(seat) => {
+                let id = self.fresh_id();
+                if let Some(device) = self.device(seat)
+                    && self
+                        .net
+                        .host
+                        .show(device, &Down::View(id, vec![0; 1_500]))
+                        .is_ok()
+                {
+                    self.shown[seat] = Some(id);
+                }
+            }
+            Trouble::Cut(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                self.net.cut(phone);
+            }
+            Trouble::Freeze(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                self.net.phones[phone].frozen = true;
+            }
+            Trouble::Thaw(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                self.net.phones[phone].frozen = false;
+            }
+            Trouble::Wake(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                let now = self.net.now;
+                self.net.phones[phone].client.wake(now);
+            }
+            Trouble::Reload(seat, which) => {
+                let index = which % self.seats[seat].pages.len();
+                let phone = self.seats[seat].pages.remove(index).phone;
+                self.net.cut(phone);
+                self.net.phones[phone].client.quit();
+                self.open_page(seat);
+            }
+            Trouble::Crash(seat, which) => {
+                let index = which % self.seats[seat].pages.len();
+                let phone = self.seats[seat].pages.remove(index).phone;
+                self.net.phones[phone].frozen = true;
+                self.seats[seat].crashed = true;
+                self.open_page(seat);
+            }
+            Trouble::Twin(seat) => self.open_page(seat),
+            Trouble::PlayHere(seat, which) => {
+                let phone = self.seats[seat].page(which).phone;
+                self.net.phones[phone].client.resume();
+            }
+            Trouble::RestartHost => {
+                self.epoch += 1;
+                let known = self.net.host.known();
+                self.net.restart_host(self.epoch, known);
+                self.runs.push(self.net.happened.len());
+                self.notes = [Vec::new(), Vec::new(), Vec::new()];
+                self.shown = [None; 3];
+            }
+            Trouble::Late(ms) => self.net.hold_next(ms),
+            Trouble::Wait(ms) => self.net.run(ms),
+        }
+    }
+
+    /// Each run, split: what the game heard from that start of the host.
+    fn runs(&self) -> impl Iterator<Item = &[(Ms, DeviceEvent<Up>)]> {
+        let ends = self
+            .runs
+            .iter()
+            .skip(1)
+            .copied()
+            .chain([self.net.happened.len()]);
+        self.runs
+            .iter()
+            .zip(ends)
+            .map(|(start, end)| &self.net.happened[*start..end])
+    }
+}
+
+/// Everything a page can go through at once: the promise of `Host` and
+/// `Client` when nothing is as it should be.
+fn play(seed: u64, loss: u64, jitter: u64, troubles: Vec<Trouble>) -> Result<(), TestCaseError> {
+    let mut room = Room::new(Net::new(
+        seed,
+        Faults {
+            loss,
+            duplicate: 10,
+            jitter,
+        },
+    ));
+    room.net.run(500);
+    for trouble in troubles {
+        room.apply(trouble);
+    }
+    // The network heals, and nobody is frozen any more.
+    room.net.faults = Faults::default();
+    for seat in &room.seats {
+        for page in &seat.pages {
+            room.net.phones[page.phone].frozen = false;
+        }
+    }
+    // Long enough for a page that thinks it plays to find out.
+    room.net.run(8_000);
+    prop_assert!(
+        room.net.run_until(30_000, |net| settled(&room.seats, net)),
+        "{:?}",
+        room.seats
+            .iter()
+            .map(|seat| seat
+                .pages
+                .iter()
+                .map(|page| room.net.phones[page.phone].client.status())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+    // Each page plays in turn: what waits in it must go.
+    for seat in 0..3 {
+        for index in 0..room.seats[seat].pages.len() {
+            let phone = room.seats[seat].pages[index].phone;
+            room.net.phones[phone].client.resume();
+            prop_assert!(
+                room.net
+                    .run_until(10_000, |net| net.phones[phone].client.status()
+                        == Status::Connected),
+                "page {} of seat {seat}: {:?}",
+                index,
+                room.net.phones[phone].statuses
+            );
+            room.net.run(1_500);
+        }
+    }
+    room.net.run(3_000);
+
+    let mut heard = BTreeSet::new();
+    let owner: BTreeMap<u32, usize> = room
+        .seats
+        .iter()
+        .flat_map(|seat| &seat.pages)
+        .flat_map(|page| page.sent.iter().map(|id| (*id, page.phone)))
+        .collect();
+    for run in room.runs() {
+        // Once per run, and in order from each page.
+        let mut once = BTreeSet::new();
+        let mut last: BTreeMap<usize, u32> = BTreeMap::new();
+        let mut away = BTreeMap::new();
+        for (_, event) in run {
+            match event {
+                DeviceEvent::Event { event, .. } => {
+                    let id = number(event);
+                    prop_assert!(once.insert(id), "event {} twice in one run", id);
+                    heard.insert(id);
+                    if let Some(page) = owner.get(&id) {
+                        let before = last.insert(*page, id).unwrap_or(0);
+                        prop_assert!(before < id, "page {}: {} after {}", page, id, before);
+                    }
+                }
+                DeviceEvent::Arrived { device, .. } => {
+                    prop_assert!(
+                        away.insert(*device, false).is_none(),
+                        "{device} arrived twice"
+                    );
+                }
+                DeviceEvent::Left { device, .. } => {
+                    prop_assert_eq!(
+                        away.insert(*device, true),
+                        Some(false),
+                        "{} left twice",
+                        device
+                    );
+                }
+                DeviceEvent::Back { device } => {
+                    prop_assert_eq!(
+                        away.insert(*device, false),
+                        Some(true),
+                        "{} back without leaving",
+                        device
+                    );
+                }
+                DeviceEvent::State { state, .. } => {
+                    number(state);
+                }
+            }
+        }
+    }
+    for (index, seat) in room.seats.iter().enumerate() {
+        for page in &seat.pages {
+            for id in &page.sent {
+                prop_assert!(
+                    heard.contains(id),
+                    "seat {index}, page {}: event {id} lost",
+                    page.phone
+                );
+            }
+        }
+        // The page that played last is what the game and the screen know.
+        let last = seat.pages.last().unwrap();
+        let phone = &room.net.phones[last.phone];
+        let device = phone.client.device().unwrap();
+        prop_assert_eq!(phone.client.status(), Status::Connected);
+        prop_assert_eq!(
+            room.net.host.device(device).map(|info| info.presence),
+            Some(Presence::Present)
+        );
+        if let Some(id) = last.state {
+            let state = room
+                .net
+                .happened
+                .iter()
+                .rev()
+                .find_map(|(_, event)| match event {
+                    DeviceEvent::State {
+                        device: from,
+                        state,
+                    } if *from == device => Some(state),
+                    _ => None,
+                });
+            prop_assert_eq!(state.map(number), Some(id), "seat {}", index);
+        }
+        if let Some(id) = room.shown[index] {
+            prop_assert_eq!(
+                phone.states.last(),
+                Some(&Down::View(id, vec![0; 1_500])),
+                "seat {}",
+                index
+            );
+        }
+        // Whatever page got them, the notes of this run all arrived.
+        let got: BTreeSet<u32> = room
+            .net
+            .phones
+            .iter()
+            .filter(|other| other.client.device() == Some(device))
+            .flat_map(|other| &other.events)
+            .filter_map(|event| match event {
+                Down::Note(id) => Some(*id),
+                Down::View(..) => None,
+            })
+            .collect();
+        for id in &room.notes[index] {
+            prop_assert!(got.contains(id), "seat {index}: note {id} lost");
+        }
+    }
+    for phone in &room.net.phones {
+        let notes: Vec<u32> = phone
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Down::Note(id) => Some(*id),
+                Down::View(..) => None,
+            })
+            .collect();
+        prop_assert!(notes.windows(2).all(|pair| pair[0] < pair[1]), "{notes:?}");
+    }
+    Ok(())
+}
+
+/// Exactly one page of a seat plays, and the others wait to be asked. With a
+/// dead page in the way, none may play until someone asks.
+fn settled(seats: &[Seat; 3], net: &Net) -> bool {
+    seats.iter().all(|seat| {
+        let statuses = seat
+            .pages
+            .iter()
+            .map(|page| net.phones[page.phone].client.status());
+        let waiting = statuses
+            .clone()
+            .all(|status| matches!(status, Status::Connected | Status::Replaced));
+        let playing = statuses
+            .filter(|status| *status == Status::Connected)
+            .count();
+        waiting && (playing == 1 || (playing == 0 && seat.crashed))
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    /// A reload, a twin, a crash, a restart of the host, a packet held back:
+    /// mixed with the network's own faults, every one at any moment.
+    #[test]
+    fn chaos_keeps_every_page_in_its_place(
+        seed in any::<u64>(),
+        loss in 0..30u64,
+        jitter in 0..100u64,
+        troubles in prop::collection::vec(trouble(), 1..50),
+    ) {
+        play(seed, loss, jitter, troubles)?;
     }
 }
 

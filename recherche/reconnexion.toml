@@ -733,7 +733,8 @@ citation = "more interesting to have a shifting mixture of packages at play over
 enonce = "Le chaos doit mêler toutes les pannes du catalogue, pas seulement celles du réseau."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place"]
 trou = "T12"
 
 [[lecon]]
@@ -766,7 +767,8 @@ citation = "Let network faults affect in-flight messages"
 enonce = "Retenir un paquet précis puis le livrer après coup : le retard utile n'est pas une gigue uniforme."
 categorie = "usage-reel"
 decision = "garder"
-etat = "trou"
+etat = "couvert"
+garantie = ["salon/crates/core/tests/properties.rs::chaos_keeps_every_page_in_its_place"]
 trou = "T12"
 
 [[lecon]]

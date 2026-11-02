@@ -80,6 +80,8 @@ pub struct Net {
     closes_to_phone: Vec<(Ms, LinkId)>,
     rng: u64,
     next_link: u64,
+    /// The next packet, whichever way, comes this much later.
+    held: u64,
 }
 
 pub fn host_config(epoch: u32, known: Vec<Known>) -> HostConfig {
@@ -121,7 +123,14 @@ impl Net {
             closes_to_phone: Vec::new(),
             rng: seed,
             next_link: 1,
+            held: 0,
         }
+    }
+
+    /// Holds back the next packet that survives, whichever way it goes, and
+    /// delivers it `ms` later: one chosen packet, not a jitter on all of them.
+    pub fn hold_next(&mut self, ms: u64) {
+        self.held = ms;
     }
 
     fn random(&mut self) -> u64 {
@@ -164,13 +173,14 @@ impl Net {
         } else {
             1
         };
+        let held = std::mem::take(&mut self.held);
         for _ in 0..copies {
             let delay = 1 + if self.faults.jitter > 0 {
                 self.random() % self.faults.jitter
             } else {
                 0
             };
-            let at = self.now.plus(delay);
+            let at = self.now.plus(delay + held);
             match toward {
                 Toward::Host => self.to_host.push((at, link, bytes.to_vec())),
                 Toward::Phone => self.to_phone.push((at, link, bytes.to_vec())),
