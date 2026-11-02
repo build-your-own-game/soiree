@@ -337,3 +337,20 @@ fn what_waits_past_a_hole_is_bounded_in_fragments() {
     // Reading a packet costs half of what keeping it does.
     assert!(turned_away < kept / 4 * 3, "{turned_away} against {kept}");
 }
+
+/// The room asks this of each device at each turn of its loop: it costs no
+/// allocation, however much waits.
+#[test]
+fn the_next_deadline_allocates_nothing() {
+    let mut room = joined(Limits::default());
+    let id = device(&room);
+    for number in 0..256_u32 {
+        room.send(id, &vec![0; 40_000 + number as usize])
+            .expect("room");
+    }
+    while room.poll(Ms(1)).is_some() {}
+    let spent = allocated_by(|| {
+        assert!(room.next_deadline().is_some());
+    });
+    assert_eq!(spent, 0);
+}
