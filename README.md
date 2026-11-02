@@ -72,6 +72,9 @@ C'est fini quand le résumé de `soiree check` commence par `✓ Aucun problème
 | `soiree dom <fichier.rs>` | après un changement de page | réécrit le module typé des noms de la page |
 | `soiree upgrade` | après une publication | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
 | `soiree status` | chez l'hôte | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
+| `soiree recherche plan` | avant d'ajouter du nouveau au commun | dit ce que le diff ajoute, le sous-système, le niveau, la fiche, ce qui manque et les étapes à suivre ; n'empêche rien |
+| `soiree recherche verifie` | à la fin d'une fiche, avec réseau | vérifie en amont chaque commit et chaque citation des fiches ; une panne n'est pas un échec |
+| `soiree recherche dette` | avant d'étiqueter le commun | liste les sous-systèmes de niveau 3 sans fiche et les trous ouverts ; informe, et ne bloque qu'à l'étiquette |
 | `soiree host-setup` | chez l'hôte, une fois par machine | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |
 
 `soiree help` les rappelle.

@@ -131,7 +131,8 @@ l’hôte tranche explicitement les limites acceptables pour cette version.
 4. Les mêmes sur chaque jeu du dossier de l'hôte (`games/*`). Le `[patch]` de son `.cargo/config.toml` les fait compiler contre ce salon-ci, avant toute étiquette. Un jeu qui casse : soit tu corriges ici, soit la section « Passer à cette version » dit exactement quoi changer dans le jeu.
 5. `CHANGELOG.md` a sa section, avec « Passer à cette version ».
 6. La version de `outil/Cargo.toml` est celle de l'étiquette.
-7. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
+7. `soiree recherche dette` : la dette de niveau 3 est soldée, c'est-à-dire aucun sous-système de niveau 3 sans fiche et aucun trou ouvert dans une fiche de niveau 3, ou chaque ligne restante a sa raison écrite dans la section de cette version de `CHANGELOG.md`. C'est le seul endroit où la dette de recherche bloque.
+8. Un agent neuf relit la documentation contre le code, sans connaître ce changement : une machine vérifie les faits (`soiree check .`), pas le sens.
 
 Puis : commit, étiquette, `git push --follow-tags`, avec l'accord de l'hôte. Ensuite seulement, les jeux de l'hôte passent à l'étiquette (voir l'`AGENTS.md` du dossier de l'hôte).
 
