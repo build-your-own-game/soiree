@@ -376,7 +376,10 @@ process.exit(mode === 'abort' ? 2 : 0);
         for (tests, why) in [
             (IGNORED, "1 ignoré"),
             ("", "aucun test découvert"),
-            ("#[test]\n#[ignore]\nfn a() {}\n#[test]\n#[ignore]\nfn b() {}\n", "2 ignoré"),
+            (
+                "#[test]\n#[ignore]\nfn a() {}\n#[test]\n#[ignore]\nfn b() {}\n",
+                "2 ignoré",
+            ),
         ] {
             let fixture = Fixture::new("completed");
             fixture.tests(tests);
@@ -437,7 +440,10 @@ process.exit(mode === 'abort' ? 2 : 0);
         fixture.member("");
         let (_, report) = fixture.check();
         assert_eq!(observation(&report, "cargo:suite")["outcome"], "passed");
-        assert_eq!(obligation(&report, "cargo:suite")["assessment"], "satisfied");
+        assert_eq!(
+            obligation(&report, "cargo:suite")["assessment"],
+            "satisfied"
+        );
     }
 
     #[test]

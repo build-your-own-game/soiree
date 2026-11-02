@@ -113,7 +113,7 @@ Chaque jeu décrit en quelques lignes comment le harnais le lance et le rejoint.
 - **`jitter`** prépare le scénario de latence : `setup` (actions d'avant la mesure) et `ready` (expression vraie quand on peut commencer).
 - **`phone_upstream`** vaut `lan` par défaut, ou `loopback` si le jeu ne doit pas passer par l'adresse du réseau ; le LAN reste alors non attesté.
 - **`advance.progress`** est une expression dont la valeur change quand la partie avance. Sans elle, la progression de D2 n'est pas attestée.
-- Un jeu sans téléphone (`"phone": null`) passe seulement les items qui le concernent : le singe joue alors sur sa page.
+- **`phone`** déclaré exige **`socket`** : sans lui, E1 à E4 et C7 ne seraient plus exercés, et `soiree check` refuse. Un jeu sans téléphone écrit `"phone": null`, `"socket": null` et `display` avec `"role":"desktop"` et sa raison ; sans cela, `soiree check` refuse aussi. Il passe alors seulement les items qui le concernent : le singe joue sur sa page.
 - **`ui`** décrit les contrôles d’interface U1 ci-dessous. Chaque catégorie
   `editing`, `lifecycle`, `async`, `effects` est couverte par un scénario ou
   une commande de test, ou porte une raison précise dans `not_applicable`.

@@ -121,6 +121,65 @@ mod checks {
         assert!(String::from_utf8_lossy(&failed.stdout).contains("attend color"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_game_cannot_drop_its_network_items_by_editing_cert_json() {
+        let (parent, dir) = game();
+        let path = controlled_cargo(&parent);
+        let cert = dir.join("cert.json");
+        let original: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&cert).unwrap()).unwrap();
+        let check = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut config = original.clone();
+            edit(&mut config);
+            std::fs::write(&cert, serde_json::to_string(&config).unwrap()).unwrap();
+            let output = command(&dir)
+                .env("PATH", &path)
+                .args(["check", "--fast"])
+                .output()
+                .unwrap();
+            (
+                output.status.success(),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+            )
+        };
+        let (passed, shown) = check(&|_| {});
+        assert!(passed, "{shown}");
+        for (edit, expected) in [
+            (
+                (&|config: &mut serde_json::Value| {
+                    config.as_object_mut().unwrap().remove("socket");
+                }) as &dyn Fn(&mut serde_json::Value),
+                "socket",
+            ),
+            (
+                &|config| config["socket"] = serde_json::Value::Null,
+                "socket",
+            ),
+            (
+                &|config| config["phone"] = serde_json::Value::Null,
+                "display",
+            ),
+            (
+                &|config| {
+                    config["phone"] = serde_json::Value::Null;
+                    config["socket"] = serde_json::Value::Null;
+                },
+                "display",
+            ),
+        ] {
+            let (passed, shown) = check(edit);
+            assert!(!passed, "{shown}");
+            assert!(shown.contains(expected), "{expected} : {shown}");
+        }
+        let (passed, shown) = check(&|config| {
+            config["phone"] = serde_json::Value::Null;
+            config["socket"] = serde_json::Value::Null;
+            config["display"] = serde_json::json!({"role":"desktop","reason":"Éditeur solo au clavier, sans téléphone."});
+        });
+        assert!(passed, "{shown}");
+    }
+
     #[test]
     fn public_certify_preserves_a_failed_observers_exit_code() {
         let (parent, dir) = game();

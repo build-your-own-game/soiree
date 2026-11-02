@@ -529,6 +529,13 @@ fn display_scope(config: &Value, plan: &mut Plan) -> Option<Display> {
     })
 }
 
+/// JavaScript's idea of a value: the harness skips a key that reads empty.
+fn declared(config: &Value, key: &str) -> bool {
+    config
+        .get(key)
+        .is_some_and(|value| !value.is_null() && value != false && value != "")
+}
+
 fn harness_controls(config: &Value, plan: &mut Plan) {
     let progression = continuous_reason(config, plan);
     let display = display_scope(config, plan);
@@ -544,12 +551,26 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
         plan.diagnostics
             .push("cert.json : phone_upstream attend lan ou loopback".to_owned());
     }
-    let phone = config
-        .get("phone")
-        .is_some_and(|v| !v.is_null() && v != false);
-    let network = config
-        .get("socket")
-        .is_some_and(|v| !v.is_null() && v != false);
+    let phone = declared(config, "phone");
+    let network = declared(config, "socket");
+    let solo = display
+        .as_ref()
+        .is_some_and(|display| display.role == DisplayRole::Desktop);
+    if phone && !network {
+        plan.diagnostics.push(
+            "cert.json : phone déclaré sans socket ; attendu le chemin du WebSocket de salon, sinon E1 à E4 et C7 ne seraient plus exercés".to_owned(),
+        );
+    }
+    if !phone && !solo && config.get("display").is_none_or(Value::is_null) {
+        plan.diagnostics.push(
+            "cert.json : sans téléphone, attendu display {\"role\":\"desktop\",\"reason\":\"…\"} ; retirer phone n'exclut aucun item".to_owned(),
+        );
+    } else if !phone && !solo {
+        plan.diagnostics.push(
+            "cert.json : sans téléphone, display doit valoir role = desktop, avec sa raison"
+                .to_owned(),
+        );
+    }
     let mut obligations: BTreeMap<String, Obligation> = BTreeMap::new();
     for &(scenario, items) in HARNESS {
         for &item in items {
@@ -581,11 +602,12 @@ fn harness_controls(config: &Value, plan: &mut Plan) {
                 ))
             } else if ["C1", "C2", "C3", "C4", "C5", "C8", "C10", "T4", "R1", "R3"].contains(&item)
                 && !phone
+                && solo
             {
                 Applicability::NotApplicable(
                     "cert.json ne déclare aucun écran téléphone".to_owned(),
                 )
-            } else if ["E1", "E2", "E3", "E4", "C7"].contains(&item) && !network {
+            } else if ["E1", "E2", "E3", "E4", "C7"].contains(&item) && !network && solo {
                 Applicability::NotApplicable(
                     "cert.json ne déclare aucune connexion permanente".to_owned(),
                 )
@@ -678,7 +700,10 @@ mod tests {
     #[test]
     fn functional_jitter_does_not_claim_to_measure_physical_playability() {
         let mut plan = empty_plan(vec![]);
-        harness_controls(&serde_json::json!({"phone": "/play"}), &mut plan);
+        harness_controls(
+            &serde_json::json!({"phone": "/play", "socket": "/ws"}),
+            &mut plan,
+        );
         rehearsal(&mut plan);
         plan.obligations.retain(|obligation| obligation.id == "R1");
         let ids = plan.obligations.first().unwrap().controls.clone();
@@ -726,7 +751,7 @@ mod tests {
                 .applicability,
             Applicability::Unknown(_)
         ));
-        let declaration = serde_json::json!({"progression": {"kind": "continuous", "reason": "A shared tap counter, with no rounds."}});
+        let declaration = serde_json::json!({"phone": "/play", "socket": "/ws", "progression": {"kind": "continuous", "reason": "A shared tap counter, with no rounds."}});
         let mut plan = empty_plan(vec![]);
         harness_controls(&declaration, &mut plan);
         assert_eq!(plan.diagnostics, Vec::<String>::new());
@@ -779,7 +804,7 @@ mod tests {
             Applicability::Applicable
         );
 
-        let desktop = serde_json::json!({"layout": false, "display": {"role": "desktop", "reason": "Scrollable local editor; its text frames are tested."}});
+        let desktop = serde_json::json!({"layout": false, "phone": null, "display": {"role": "desktop", "reason": "Scrollable local editor; its text frames are tested."}});
         let mut plan = empty_plan(vec![]);
         harness_controls(&desktop, &mut plan);
         assert_eq!(plan.diagnostics, Vec::<String>::new());
@@ -819,6 +844,72 @@ mod tests {
                     .applicability,
                 Applicability::Applicable
             );
+        }
+    }
+
+    fn applicability_of(config: &Value, id: &str) -> (Applicability, Vec<String>) {
+        let mut plan = empty_plan(vec![]);
+        harness_controls(config, &mut plan);
+        let applicability = obligation(&plan, id).applicability.clone();
+        (applicability, plan.diagnostics)
+    }
+
+    #[test]
+    fn a_phone_needs_its_socket_and_keeps_every_network_item() {
+        for config in [
+            serde_json::json!({"phone": "/play"}),
+            serde_json::json!({"phone": "/play", "socket": null}),
+            serde_json::json!({"phone": "/play", "socket": false}),
+            serde_json::json!({"phone": "/play", "socket": ""}),
+        ] {
+            for id in ["E1", "E2", "E3", "E4", "C7"] {
+                let (applicability, diagnostics) = applicability_of(&config, id);
+                assert_eq!(applicability, Applicability::Applicable, "{config} {id}");
+                assert!(
+                    diagnostics.iter().any(|d| d.contains("socket")),
+                    "{config} : {diagnostics:?}"
+                );
+            }
+        }
+        let (applicability, diagnostics) = applicability_of(
+            &serde_json::json!({"phone": "/play", "socket": "/ws"}),
+            "E1",
+        );
+        assert_eq!(applicability, Applicability::Applicable);
+        assert_eq!(diagnostics, Vec::<String>::new());
+    }
+
+    #[test]
+    fn no_phone_takes_a_reason_and_a_desktop_display() {
+        for config in [
+            serde_json::json!({}),
+            serde_json::json!({"phone": null}),
+            serde_json::json!({"phone": false}),
+            serde_json::json!({"phone": null, "socket": null}),
+            serde_json::json!({"phone": null, "display": {"role": "tv"}}),
+            serde_json::json!({"phone": null, "display": {"role": "tv", "reason": "Une TV sans personne devant."}}),
+            serde_json::json!({"phone": null, "display": {"role": "desktop", "reason": ""}}),
+            serde_json::json!({"phone": null, "display": {"role": "desktop"}}),
+        ] {
+            for id in [
+                "C1", "C2", "C3", "C4", "C5", "C8", "C10", "T4", "R1", "R3", "E1", "C7",
+            ] {
+                let (applicability, diagnostics) = applicability_of(&config, id);
+                assert_eq!(applicability, Applicability::Applicable, "{config} {id}");
+                assert!(
+                    diagnostics.iter().any(|d| d.contains("display")),
+                    "{config} : {diagnostics:?}"
+                );
+            }
+        }
+        let solo = serde_json::json!({"phone": null, "socket": null, "display": {"role": "desktop", "reason": "Éditeur solo au clavier, sans téléphone."}});
+        for id in ["C1", "C10", "R3", "E1", "C7"] {
+            let (applicability, diagnostics) = applicability_of(&solo, id);
+            assert!(
+                matches!(applicability, Applicability::NotApplicable(_)),
+                "{id}"
+            );
+            assert_eq!(diagnostics, Vec::<String>::new());
         }
     }
 
@@ -995,7 +1086,8 @@ checks = ["other"]
 "#
         ))
         .unwrap();
-        let plan = resolve(&contract, &serde_json::json!({}));
+        let config = serde_json::json!({"phone": "/play", "socket": "/ws"});
+        let plan = resolve(&contract, &config);
         (contract, plan)
     }
 

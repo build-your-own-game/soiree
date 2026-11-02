@@ -138,8 +138,11 @@ extérieures, l’analyse et les limites de l’adaptation se détaillent dans
 `LEARNINGS.md` ; `origins` attend des identifiants du catalogue, pas des URL.
 
 L’applicabilité des minima communs est résolue par l’outil à partir de leur
-politique et de la configuration. Par exemple, l’absence d’écran téléphone
-écarte certains contrôles propres à cet écran. L’absence de progression
+politique et de la configuration. Par exemple, un éditeur solo déclaré
+(`"phone": null` et `display.role = "desktop"`, avec sa raison) écarte les
+contrôles propres au téléphone et au réseau. Retirer `socket` ou `phone` de
+`cert.json` sans cette déclaration n’écarte rien et fait échouer le passage.
+L’absence de progression
 observable pour la terminaison d’une partie peut laisser l’obligation
 **inconnue**. Un test absent, un manque de temps ou une justification rédigée
 par l’agent ne transforment jamais un inconnu en non-applicable.

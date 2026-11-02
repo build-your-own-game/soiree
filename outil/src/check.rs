@@ -526,7 +526,7 @@ fn cert_json_missing(config: &Json) -> Vec<&'static str> {
         .filter(|key| !truthy(key))
         .collect();
     if config.get("phone").is_none() {
-        missing.push("phone (null sans téléphones)");
+        missing.push("phone (null seulement pour un éditeur solo)");
     }
     if truthy("phone") {
         if !truthy("joined") {
@@ -570,7 +570,12 @@ mod tests {
         let none: Json = serde_json::from_str("{}").unwrap();
         assert_eq!(
             cert_json_missing(&none),
-            vec!["launch", "ready", "tv", "phone (null sans téléphones)"]
+            vec![
+                "launch",
+                "ready",
+                "tv",
+                "phone (null seulement pour un éditeur solo)"
+            ]
         );
     }
 
