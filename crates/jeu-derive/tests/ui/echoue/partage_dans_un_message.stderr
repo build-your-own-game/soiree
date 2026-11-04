@@ -1,0 +1,146 @@
+error[E0277]: the trait bound `jeu::Partage<Vec<u8>>: Message` is not satisfied
+ --> tests/ui/echoue/partage_dans_un_message.rs:4:1
+  |
+4 | #[jeu::message]
+  | ^^^^^^^^^^^^^^^ the trait `Message` is not implemented for `jeu::Partage<Vec<u8>>`
+  |
+  = help: the following other types implement trait `Message`:
+            ()
+            (A, B)
+            (A, B, C)
+            (A, B, C, D)
+            (A, B, C, D, E)
+            (A, B, C, D, E, F)
+            (A, B, C, D, E, F, G)
+            (A, B, C, D, E, F, G, H)
+          and $N others
+  = note: this error originates in the attribute macro `jeu::message` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0369]: binary operation `==` cannot be applied to type `jeu::Partage<Vec<u8>>`
+ --> tests/ui/echoue/partage_dans_un_message.rs:6:5
+  |
+4 | #[jeu::message]
+  | --------------- in this attribute macro expansion
+5 | pub struct Vue {
+6 |     pub image: Partage<Vec<u8>>,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+note: `jeu::Partage<Vec<u8>>` does not implement `PartialEq`
+ --> $WORKSPACE/crates/jeu/src/collections.rs
+  |
+  | pub struct Partage<T: Etat>(Rc<T>);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jeu::Partage<Vec<u8>>` is defined in another crate
+  = note: this error originates in the derive macro `::core::cmp::PartialEq` which comes from the expansion of the attribute macro `jeu::message` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `jeu::Partage<Vec<u8>>: serde::Serialize` is not satisfied
+ --> tests/ui/echoue/partage_dans_un_message.rs:4:1
+  |
+4 | #[jeu::message]
+  | ^^^^^^^^^^^^^^^ the trait `jeu::cache::serde::Serialize` is not implemented for `jeu::Partage<Vec<u8>>`
+5 | pub struct Vue {
+6 |     pub image: Partage<Vec<u8>>,
+  |     --- required by a bound introduced by this call
+  |
+  = note: for local types consider adding `#[derive(serde::Serialize)]` to your `jeu::Partage<Vec<u8>>` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `jeu::cache::serde::Serialize`:
+            &'a T
+            &'a mut T
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `jeu::cache::serde::ser::SerializeStruct::serialize_field`
+ --> $CARGO/serde_core-$VERSION/src/ser/mod.rs
+  |
+  |     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
+  |        --------------- required by a bound in this associated function
+  |     where
+  |         T: ?Sized + Serialize;
+  |                     ^^^^^^^^^ required by this bound in `SerializeStruct::serialize_field`
+  = note: this error originates in the derive macro `::jeu::cache::serde::Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `jeu::Partage<Vec<u8>>: serde::Deserialize<'de>` is not satisfied
+ --> tests/ui/echoue/partage_dans_un_message.rs:6:16
+  |
+6 |     pub image: Partage<Vec<u8>>,
+  |                ^^^^^^^^^^^^^^^^ the trait `jeu::cache::serde::Deserialize<'_>` is not implemented for `jeu::Partage<Vec<u8>>`
+  |
+  = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `jeu::Partage<Vec<u8>>` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `jeu::cache::serde::Deserialize<'de>`:
+            &'a [u8]
+            &'a str
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `jeu::cache::serde::de::SeqAccess::next_element`
+ --> $CARGO/serde_core-$VERSION/src/de/mod.rs
+  |
+  |     fn next_element<T>(&mut self) -> Result<Option<T>, Self::Error>
+  |        ------------ required by a bound in this associated function
+  |     where
+  |         T: Deserialize<'de>,
+  |            ^^^^^^^^^^^^^^^^ required by this bound in `SeqAccess::next_element`
+
+error[E0277]: the trait bound `jeu::Partage<Vec<u8>>: serde::Deserialize<'de>` is not satisfied
+ --> tests/ui/echoue/partage_dans_un_message.rs:6:16
+  |
+6 |     pub image: Partage<Vec<u8>>,
+  |                ^^^^^^^^^^^^^^^^ the trait `jeu::cache::serde::Deserialize<'_>` is not implemented for `jeu::Partage<Vec<u8>>`
+  |
+  = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `jeu::Partage<Vec<u8>>` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `jeu::cache::serde::Deserialize<'de>`:
+            &'a [u8]
+            &'a str
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `jeu::cache::serde::de::MapAccess::next_value`
+ --> $CARGO/serde_core-$VERSION/src/de/mod.rs
+  |
+  |     fn next_value<V>(&mut self) -> Result<V, Self::Error>
+  |        ---------- required by a bound in this associated function
+  |     where
+  |         V: Deserialize<'de>,
+  |            ^^^^^^^^^^^^^^^^ required by this bound in `MapAccess::next_value`
+
+error[E0277]: the trait bound `jeu::Partage<Vec<u8>>: serde::Deserialize<'de>` is not satisfied
+ --> tests/ui/echoue/partage_dans_un_message.rs:4:1
+  |
+4 | #[jeu::message]
+  | ^^^^^^^^^^^^^^^ the trait `jeu::cache::serde::Deserialize<'_>` is not implemented for `jeu::Partage<Vec<u8>>`
+  |
+  = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `jeu::Partage<Vec<u8>>` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `jeu::cache::serde::Deserialize<'de>`:
+            &'a [u8]
+            &'a str
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+note: required by a bound in `jeu::cache::serde::__private229::de::missing_field`
+ --> $CARGO/serde-$VERSION/src/private/de.rs
+  |
+  | pub fn missing_field<'de, V, E>(field: &'static str) -> Result<V, E>
+  |        ------------- required by a bound in this function
+  | where
+  |     V: Deserialize<'de>,
+  |        ^^^^^^^^^^^^^^^^ required by this bound in `missing_field`
+  = note: this error originates in the derive macro `::jeu::cache::serde::Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)

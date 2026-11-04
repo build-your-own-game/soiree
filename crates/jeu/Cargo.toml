@@ -1,0 +1,33 @@
+[package]
+name = "jeu"
+description = "Ce qu'écrit l'auteur d'un jeu, la colle du module et jeu::module!."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+jeu-derive.workspace = true
+# Les types du jeu se dérivent pour l'enveloppe ; `jeu::message` écrit `Serialize`.
+serde.workspace = true
+# `jeu::math` : des flottants identiques en natif et dans le module (HIS-50, OUT-144).
+libm.workspace = true
+# Le nettoyage de `Texte<L>`, dans le module (§ 2.3, D22).
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Le tas du module, sous l'allocateur à deux modes (§ 3.2, D34).
+# `global` : son allocateur global, que le mode tas appelle.
+dlmalloc = { workspace = true, features = ["global"] }
+
+[dev-dependencies]
+# Ce qui ne doit pas compiler : `Echeance` hors de `Maintenant`, une déclaration incohérente (§ 8.3).
+trybuild.workspace = true
+# Les propriétés : refus sans trace, nettoyage idempotent, forme canonique (§ 8.3).
+proptest.workspace = true
+
+[lints]
+workspace = true

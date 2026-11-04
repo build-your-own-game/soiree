@@ -1,0 +1,90 @@
+# Les règles d'écriture du commun (CONTRAT, « Les règles d'écriture »), reprises de
+# `outil/regles/clippy.toml` sans ce qui ne visait que l'ancien salon et ses pages.
+# On peut durcir une règle. Pour en assouplir une : #[expect(lint, reason = "…")] à l'endroit précis.
+
+# Les tests ont droit à `unwrap`, `expect`, `panic!` et aux index.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie : une enum à deux variants, ou deux méthodes.
+max-fn-params-bools = 0
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "ordre d'itération différent entre natif et WebAssembly : BTreeMap" },
+  { path = "std::collections::HashSet", reason = "ordre d'itération différent entre natif et WebAssembly : BTreeSet" },
+  { path = "hashbrown::HashMap", reason = "ordre d'itération différent entre natif et WebAssembly : BTreeMap", allow-invalid = true },
+  { path = "hashbrown::HashSet", reason = "ordre d'itération différent entre natif et WebAssembly : BTreeSet", allow-invalid = true },
+]
+disallowed-methods = [
+  # Le décodage strict a une seule définition (§ 3.7, REM-59, OUT-146, SAL-118).
+  { path = "postcard::from_bytes", reason = "accepte des octets restants : jeu_abi::decoder" },
+  { path = "postcard::take_from_bytes", reason = "le décodage strict a une seule définition : jeu_abi::decoder" },
+
+  # Le temps entre comme une entrée. Seul le module du commun qui possède l'horloge les lit,
+  # sous #[expect(clippy::disallowed_methods, reason = "…")].
+  { path = "std::time::Instant::now", reason = "le temps entre comme une entrée ; panique sur wasm32-unknown-unknown" },
+  { path = "std::time::SystemTime::now", reason = "le temps entre comme une entrée" },
+
+  # Ni les fonctions mathématiques des flottants dont le résultat diffère entre WebAssembly et natif.
+  { path = "f32::sin", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::cos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::tan", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::sin_cos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::atan2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::exp", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::ln", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::powf", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::asin", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::acos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::atan", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::sinh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::cosh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::tanh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::asinh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::acosh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::atanh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::exp2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::exp_m1", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::ln_1p", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::log", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::log2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::log10", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::hypot", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::cbrt", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f32::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou libm::powf" },
+  { path = "f64::sin", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::cos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::tan", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::sin_cos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::atan2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::exp", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::ln", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::powf", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::asin", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::acos", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::atan", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::sinh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::cosh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::tanh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::asinh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::acosh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::atanh", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::exp2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::exp_m1", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::ln_1p", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::log", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::log2", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::log10", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::hypot", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::cbrt", reason = "résultat différent entre WebAssembly et natif : libm (jeu::math)" },
+  { path = "f64::powi", reason = "précision non spécifiée, varie selon la plateforme : multiplie, ou libm::pow" },
+
+  # Ni `min` et `max` des flottants : sur -0.0 et +0.0, fminnm/fmaxnm en natif (aarch64) et une
+  # comparaison suivie d'un select dans le module ne rendent pas le même zéro.
+  { path = "f32::min", reason = "zéro signé différent entre WebAssembly et natif : jeu::math::fminf, ou une comparaison écrite" },
+  { path = "f32::max", reason = "zéro signé différent entre WebAssembly et natif : jeu::math::fmaxf, ou une comparaison écrite" },
+  { path = "f64::min", reason = "zéro signé différent entre WebAssembly et natif : jeu::math::fmin, ou une comparaison écrite" },
+  { path = "f64::max", reason = "zéro signé différent entre WebAssembly et natif : jeu::math::fmax, ou une comparaison écrite" },
+]

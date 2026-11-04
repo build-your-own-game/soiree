@@ -1,0 +1,37 @@
+[package]
+name = "devine"
+description = "Le jeu d'exemple de la phase 1 : chaque téléphone devine un chiffre."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu.workspace = true
+
+[dev-dependencies]
+# La copie native de `devine`, pour éprouver ses règles sans WebAssembly (§ 8.4).
+jeu-natif.workspace = true
+# Le contrat `Instance`, que la copie native implémente.
+partie.workspace = true
+# Les octets échangés : encoder un appel, décoder un retour.
+jeu-abi.workspace = true
+# Les propriétés sur des suites d'entrées (§ 8.3).
+proptest.workspace = true
+# Encoder un type de `jeu` et le relire comme sa forme `…Fil` (§ 3.5, `tests/fil.rs`).
+serde.workspace = true
+# Constater ce que le module compilé importe, exporte et emploie (§ 3.1).
+wasmparser.workspace = true
+# Faire tourner le module compilé, sans réécriture, et le comparer à la copie native (E9,
+# en petit) : les mêmes réglages que `moteur-wasmtime`.
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+
+# Les deux modes de l'allocateur, simulés en natif par un allocateur global de test :
+# un seul fil, sans le harnais de `cargo test` (§ 3.2, § 8.3).
+[[test]]
+name = "modes"
+harness = false
+
+[lints]
+workspace = true

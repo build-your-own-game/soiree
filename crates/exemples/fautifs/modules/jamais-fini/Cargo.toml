@@ -1,0 +1,19 @@
+[package]
+name = "fautif-jamais-fini-module"
+description = "Le module WebAssembly de le fautif qui ne finit qu'une fois (E2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

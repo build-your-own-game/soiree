@@ -1,0 +1,18 @@
+[package]
+name = "devine-module"
+description = "Le module WebAssembly de devine : jeu::module!(devine::Devine)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+devine.workspace = true
+
+[lints]
+workspace = true

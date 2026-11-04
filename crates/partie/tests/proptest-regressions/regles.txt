@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 524a541e1936c3ef1d4014c1a96ed139f96a1fa4847107941482506746527f0b # shrinks to parents = [(false, 0, true), (true, 0, false), (false, 6, false)], effets = []
+cc 691747eeaabcc8ea7fa2eac2da65d939a2c7720eccdd79c9917bb23af24928f9 # shrinks to regles = ReglesTenu { fraicheur: None, age_max: Some(Duree(16)), debit_max: 0 }, evs = [Arrivee { valeur: 1, numero: 0, age: 16 }, Arrivee { valeur: 1, numero: 0, age: 0 }, Pas]

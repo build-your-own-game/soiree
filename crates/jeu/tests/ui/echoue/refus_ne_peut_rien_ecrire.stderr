@@ -1,0 +1,27 @@
+error[E0599]: no method named `sorties` found for struct `jeu::Avant<'e, J>` in the current scope
+  --> tests/ui/echoue/refus_ne_peut_rien_ecrire.rs:22:19
+   |
+22 |     let _ = avant.sorties();
+   |                   ^^^^^^^ private field, not a method
+
+error[E0594]: cannot assign to data in a `&` reference
+  --> tests/ui/echoue/refus_ne_peut_rien_ecrire.rs:17:5
+   |
+17 |     avant.jeu().valeur = 3;
+   |     ^^^^^^^^^^^^^^^^^^^^^^ cannot assign
+
+error[E0382]: use of moved value: `avant`
+  --> tests/ui/echoue/refus_ne_peut_rien_ecrire.rs:28:21
+   |
+26 | fn ecrire_apres_un_refus(avant: Avant<'_, Minimal>) -> Issue<Minimal> {
+   |                          ----- move occurs because `avant` has type `jeu::Avant<'_, Minimal>`, which does not implement the `Copy` trait
+27 |     let issue = avant.ignorer();
+   |                       --------- `avant` moved due to this method call
+28 |     let mut apres = avant.accepter();
+   |                     ^^^^^ value used here after move
+   |
+note: `jeu::Avant::<'e, J>::ignorer` takes ownership of the receiver `self`, which moves `avant`
+  --> src/etape.rs
+   |
+   |     pub fn ignorer(self) -> Issue<J> {
+   |                    ^^^^

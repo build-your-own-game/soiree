@@ -1,0 +1,27 @@
+[package]
+name = "jeu-derive"
+description = "Les macros #[jeu::message], #[jeu::etat] et #[derive(Variantes)]."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# Lire les types sur lesquels portent les macros, et écrire ce qu'elles dérivent (§ 8.2).
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
+
+[dev-dependencies]
+# Ce qui ne doit pas compiler : un secret dans un message, une cellule dans un état (§ 8.2).
+trybuild.workspace = true
+# Les macros écrivent `::jeu::…` : leurs tests passent par `jeu`, qui les réexporte.
+jeu.workspace = true
+jeu-abi.workspace = true
+
+[lints]
+workspace = true

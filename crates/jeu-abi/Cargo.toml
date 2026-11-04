@@ -1,0 +1,23 @@
+[package]
+name = "jeu-abi"
+description = "Ce que le commun et le module d'un jeu échangent : l'enveloppe et le vocabulaire du commun."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# La dérivation des types de l'enveloppe, sans `std` (§ 3.7).
+serde.workspace = true
+# Le format, figé, et son décodage strict (§ 3.7).
+postcard.workspace = true
+# La norme d'un `Axe2` ramené et l'arrondi d'un `Fixe`, aux mêmes bits partout.
+libm.workspace = true
+
+[dev-dependencies]
+# Les propriétés et les octets au hasard (§ 8.1).
+proptest.workspace = true
+
+[lints]
+workspace = true

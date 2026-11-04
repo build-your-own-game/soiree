@@ -1,0 +1,17 @@
+error[E0277]: the trait bound `f32: Message` is not satisfied
+ --> tests/ui/echoue/flottant_dans_un_message.rs:2:1
+  |
+2 | #[jeu::message]
+  | ^^^^^^^^^^^^^^^ the trait `Message` is not implemented for `f32`
+  |
+  = help: the following other types implement trait `Message`:
+            i128
+            i16
+            i32
+            i64
+            i8
+            u128
+            u16
+            u32
+          and $N others
+  = note: this error originates in the attribute macro `jeu::message` (in Nightly builds, run with -Z macro-backtrace for more info)

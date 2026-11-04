@@ -1,0 +1,65 @@
+error[E0080]: evaluation panicked: raison! : une raison dit quelque chose, en trois mots au moins (HIS-04, OUT-03)
+ --> tests/ui/echoue/raison_creuse_refusee.rs:2:27
+  |
+2 | const VIDE: jeu::Raison = jeu::raison!("");
+  |                           ^^^^^^^^^^^^^^^^ evaluation of `VIDE::R` failed inside this call
+  |
+note: inside `Raison::new`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: src/declaration.rs
+  |
+  | /         assert!(
+  | |             jeu_abi::raison_suffisante(s),
+  | |             "raison! : une raison dit quelque chose, en trois mots au moins (HIS-04, OUT-03)"
+  | |         );
+  | |_________- in this macro invocation
+
+note: erroneous constant encountered
+ --> tests/ui/echoue/raison_creuse_refusee.rs:2:27
+  |
+2 | const VIDE: jeu::Raison = jeu::raison!("");
+  |                           ^^^^^^^^^^^^^^^^
+  |
+  = note: this note originates in the macro `jeu::raison` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: raison! : une raison dit quelque chose, en trois mots au moins (HIS-04, OUT-03)
+ --> tests/ui/echoue/raison_creuse_refusee.rs:3:25
+  |
+3 | const NA: jeu::Raison = jeu::raison!("n/a");
+  |                         ^^^^^^^^^^^^^^^^^^^ evaluation of `NA::R` failed inside this call
+  |
+note: inside `Raison::new`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: src/declaration.rs
+  |
+  | /         assert!(
+  | |             jeu_abi::raison_suffisante(s),
+  | |             "raison! : une raison dit quelque chose, en trois mots au moins (HIS-04, OUT-03)"
+  | |         );
+  | |_________- in this macro invocation
+
+note: erroneous constant encountered
+ --> tests/ui/echoue/raison_creuse_refusee.rs:3:25
+  |
+3 | const NA: jeu::Raison = jeu::raison!("n/a");
+  |                         ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this note originates in the macro `jeu::raison` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+ --> tests/ui/echoue/raison_creuse_refusee.rs:6:14
+  |
+6 |     let _ = (VIDE, NA);
+  |              ^^^^
+
+note: erroneous constant encountered
+ --> tests/ui/echoue/raison_creuse_refusee.rs:6:20
+  |
+6 |     let _ = (VIDE, NA);
+  |                    ^^

@@ -1,0 +1,17 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/echoue/echeance_ne_nait_que_de_maintenant.rs:6:13
+  |
+6 |     let _ = Echeance(Pas::ZERO);
+  |             ^^^^^^^^
+  |
+  = note: a struct named `Echeance` exists in another namespace
+note: constructor is not visible here due to private fields
+ --> src/temps.rs
+  |
+  | pub struct Echeance(Pas);
+  |                     ^^^ private field
+help: you might have meant to use the `dans` associated function
+  |
+6 -     let _ = Echeance(Pas::ZERO);
+6 +     let _ = Echeance::dans(_, _);
+  |

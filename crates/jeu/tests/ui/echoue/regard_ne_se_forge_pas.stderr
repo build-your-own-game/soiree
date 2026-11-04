@@ -1,0 +1,10 @@
+error[E0624]: associated function `du_fil` is private
+ --> tests/ui/echoue/regard_ne_se_forge_pas.rs:6:29
+  |
+6 |     let _: Regard = Regard::du_fil(jeu_abi::RegardFil::Appareil(42));
+  |                             ^^^^^^ private associated function
+  |
+ ::: src/secret.rs
+  |
+  |     pub(crate) const fn du_fil(qui: RegardFil) -> Regard {
+  |     ---------------------------------------------------- private associated function defined here

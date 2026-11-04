@@ -1,0 +1,24 @@
+[package]
+name = "moteur-wasmtime"
+description = "Le module réécrit dans wasmtime, comme partie::Instance."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+partie.workspace = true
+reecriture.workspace = true
+# Le moteur natif de la phase 1 : Cranelift, sans fils, SIMD, GC ni exceptions (§ 8.7).
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+# L'empreinte de l'état : la mémoire hors des zones exclues, et les globales (§ 3.2).
+blake3.workspace = true
+
+[dev-dependencies]
+# Les modules fautifs écrits à la main : import, boucle, récursion, pile non rendue (§ 8.7).
+wat.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "jeu-natif"
+description = "La copie native d'un jeu, comme partie::Instance."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+jeu.workspace = true
+partie.workspace = true
+# L'empreinte de la forme canonique, comme celle du moteur (§ 8.4).
+blake3.workspace = true
+
+[dev-dependencies]
+# Le jeu d'exemple, sur lequel se vérifient instantané, restauration et empreinte.
+devine.workspace = true
+
+[lints]
+workspace = true

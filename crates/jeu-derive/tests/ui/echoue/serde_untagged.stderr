@@ -1,0 +1,5 @@
+error: #[serde(untagged)] est refusé : un décodage doit être strict et sans ambiguïté (REM-60, PUN-91, SAL-119)
+ --> tests/ui/echoue/serde_untagged.rs:3:9
+  |
+3 | #[serde(untagged)]
+  |         ^^^^^^^^

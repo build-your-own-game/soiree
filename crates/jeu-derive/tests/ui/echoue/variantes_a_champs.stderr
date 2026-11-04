@@ -1,0 +1,5 @@
+error: #[derive(Variantes)] : le variant `Milieu` a des champs ; seules les enums sans champ ont une liste finie de variantes
+ --> tests/ui/echoue/variantes_a_champs.rs:5:5
+  |
+5 |     Milieu(u8),
+  |     ^^^^^^

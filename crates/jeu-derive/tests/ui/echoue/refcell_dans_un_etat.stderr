@@ -1,0 +1,13 @@
+error: `RefCell` ne peut pas vivre dans un #[jeu::etat] : mutabilité intérieure : un refus ou une lecture pourrait écrire l'état
+ --> tests/ui/echoue/refcell_dans_un_etat.rs:6:16
+  |
+6 |     pub champ: RefCell<u8>,
+  |                ^^^^^^^
+
+warning: unused import: `core::cell::RefCell`
+ --> tests/ui/echoue/refcell_dans_un_etat.rs:2:5
+  |
+2 | use core::cell::RefCell;
+  |     ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

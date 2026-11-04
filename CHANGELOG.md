@@ -2,6 +2,26 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
+## Non publié — la refonte, phase 1
+
+Le commun repart de zéro, d'après [`MANIFESTE.md`](MANIFESTE.md), [`CONTRAT.md`](CONTRAT.md) et [`conception/INTERFACE.md`](conception/INTERFACE.md). L'ancien commun est retiré : salon, la télécommande iPhone (`remote/`), le modèle de jeu (`modele/`) et le harnais de certification (`tools/cert/`). Il reste lisible à l'étiquette `avant-refonte`. À sa place, un workspace de crates dans `crates/` : un jeu s'écrit avec `jeu`, se compile en un module WebAssembly qui n'importe rien, est réécrit (`reecriture`), chargé dans wasmtime (`moteur-wasmtime`), joué par le cœur de la partie qui fait foi (`partie`) sur une horloge simulée, et éprouvé (`epreuve`, contrôles E1 à E19, chacun avec son jeu fautif). Il n'y a encore ni navigateur, ni relais, ni rendu, ni prédiction sur appareil, ni outil `soiree` réécrit : un jeu ne se joue pas encore, il s'éprouve. Aucune étiquette n'est posée ; les étiquettes `v0.x` restent celles de l'ancien commun.
+
+Les trois jeux de la soirée sont reconstruits sur ce commun, dans leur branche `refonte`, et en dépendent par chemin. Ce que chacun a demandé au commun, et la réponse, est dans [`conception/BESOINS-DES-JEUX.md`](conception/BESOINS-DES-JEUX.md) ; ce qui a été mesuré sur eux, dans [`conception/MESURES-PHASE-1.md`](conception/MESURES-PHASE-1.md).
+
+### Passer à cette version
+
+Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `cert.json` et `verification.toml` n'existent plus. Un jeu se réécrit sur la crate `jeu`.
+
+1. Lis `conception/INTERFACE.md`, § 2 (l'API d'un jeu) et § 9 (`devine`, un jeu complet), puis `crates/exemples/devine/`.
+2. Fais trois crates, comme Punchline et Sidequest : les règles (`#![no_std]`, `#![forbid(unsafe_code)]`, `impl jeu::Jeu`), la crate de module (`jeu::module!(<ton jeu>)`, `crate-type = ["cdylib"]`), et une crate d'épreuve qui donne la copie native à `epreuve::ligne_de_commande`. Reprends les `[workspace.lints]` et le profil `module` du `Cargo.toml` de ce dépôt.
+3. Pendant la refonte, dépends du commun par chemin, depuis le dossier de l'hôte : `jeu = { path = "../../soiree/crates/jeu" }`, et de même pour `jeu-abi`, `jeu-natif`, `partie`, `epreuve`, `moteur-wasmtime`. Il n'y a pas encore d'étiquette à nommer, ni de `soiree upgrade`.
+4. Compile le module et éprouve-le :
+   ```sh
+   cargo build -p <jeu>-module --target wasm32-unknown-unknown --profile module
+   cargo run --release -p <jeu>-epreuve -- target/wasm32-unknown-unknown/module/<jeu>_module.wasm
+   ```
+   Le jeu passe quand le code de sortie vaut 0, sur le plan standard. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
+
 ## v0.4.0 — 2026-11-02
 
 Un téléphone revient mieux : recharger, rejouer dans un onglet, dormir ou traverser un redémarrage de l'hôte ne perd plus ce qu'il a envoyé, et le protocole passe à 2. Un jeu peut choisir le stick natif de l'app iPhone et relier ses tests aux exigences communes, et sa CI ne part plus à chaque commit. `soiree certify` devient plus strict : une page qui écrit `console.error`, ou un `advance` sans `advance.progress`, le font échouer. `soiree check` aussi : une crate dont aucun test ne tourne, un `cert.json` qui retire `socket` ou `phone` sans le dire, une raison vide de sens ou une commande qui n'observe rien ne passent plus.

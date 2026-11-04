@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d9c190cc1fe1cb93b8d29e8437bccf6d21df86c248ba3dbe481580c12cd3160e # shrinks to (s, debit, tous_les) = ([[Panne { k: 0 }], [Geste { de: 1, quoi: Ajouter(1), retard: 0 }]], 1, 2)

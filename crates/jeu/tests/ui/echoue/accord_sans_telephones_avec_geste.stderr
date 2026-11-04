@@ -1,0 +1,29 @@
+error[E0080]: evaluation panicked: accord : `telephones: SansObjet` demande GesteTelephone, TenuTelephone et VueTelephone = Aucun
+  --> tests/ui/echoue/../commun/minimal.rs
+   |
+   |           jeu::module!(Minimal);
+   |           ^^^^^^^^^^^^^^^^^^^^^ evaluation of `_` failed inside this call
+   |
+  ::: tests/ui/echoue/accord_sans_telephones_avec_geste.rs:4:1
+   |
+ 4 | / jeu_minimal! {
+ 5 | |     telephones: Applicable::SansObjet(jeu::raison!("un jeu de test minimal")),
+ 6 | |     geste: u8,
+ 7 | |     tenu: Aucun,
+...  |
+11 | |     champ: u8,
+12 | | }
+   | |_- in this macro invocation
+   |
+note: inside `jeu::colle::verifier_accord::<Minimal>`
+  --> $RUST/core/src/panic.rs
+   |
+   = note: the failure occurred here
+   |
+  ::: src/colle.rs
+   |
+   | /     assert!(
+   | |         telephones || tout_vide,
+   | |         "accord : `telephones: SansObjet` demande GesteTelephone, TenuTelephone et VueTelephone = Aucun"
+   | |     );
+   | |_____- in this macro invocation

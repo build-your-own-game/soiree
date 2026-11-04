@@ -1,0 +1,65 @@
+error[E0277]: the trait bound `usize: Forme` is not satisfied
+  --> tests/ui/echoue/usize_n_est_pas_un_etat.rs:13:12
+   |
+13 |     champ: usize,
+   |            ^^^^^ the trait `Forme` is not implemented for `usize`
+   |
+   = help: the following other types implement trait `Forme`:
+             f32
+             f64
+             i128
+             i16
+             i32
+             i64
+             i8
+             u128
+           and $N others
+
+error[E0277]: the trait bound `usize: Etat` is not satisfied
+  --> tests/ui/echoue/../commun/minimal.rs
+   |
+   |           #[jeu::etat]
+   |           ------------ required by a bound introduced by this call
+...
+   |               pub champ: $champ,
+   |                   ^^^^^ the trait `Etat` is not implemented for `usize`
+   |
+  ::: tests/ui/echoue/usize_n_est_pas_un_etat.rs:6:1
+   |
+ 6 | / jeu_minimal! {
+ 7 | |     telephones: Applicable::SansObjet(jeu::raison!("un jeu de test minimal")),
+ 8 | |     geste: Aucun,
+ 9 | |     tenu: Aucun,
+...  |
+13 | |     champ: usize,
+14 | | }
+   | |_- in this macro invocation
+   |
+   = help: the following other types implement trait `Etat`:
+             f32
+             f64
+             i128
+             i16
+             i32
+             i64
+             i8
+             u128
+           and $N others
+   = note: this error originates in the macro `jeu_minimal` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `usize: Etat` is not satisfied
+  --> tests/ui/echoue/usize_n_est_pas_un_etat.rs:13:12
+   |
+13 |     champ: usize,
+   |            ^^^^^ the trait `Etat` is not implemented for `usize`
+   |
+   = help: the following other types implement trait `Etat`:
+             f32
+             f64
+             i128
+             i16
+             i32
+             i64
+             i8
+             u128
+           and $N others

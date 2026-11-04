@@ -1,0 +1,157 @@
+# Le nouveau commun : un seul workspace pour les crates de `crates/` (voir
+# `crates/README.md` et `conception/INTERFACE.md`, § 8).
+#
+# Les membres sont nommés un à un, et non par `crates/*` : Cargo refuse un
+# motif qui désigne un dossier sans `Cargo.toml`, et `crates/exemples` en est un.
+# Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
+#
+# Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
+# INTERFACE.md les sort de la crate du jeu (D8), pas du workspace. Elles partagent
+# ainsi le `Cargo.lock`, donc les mêmes versions que le moteur et le cœur, et
+# passent clippy avec le reste. Elles se compilent pour WebAssembly avec le
+# profil `module` ci-dessous :
+#   cargo build -p devine-module --target wasm32-unknown-unknown --profile module
+[workspace]
+resolver = "3"
+members = [
+    "crates/jeu-abi",
+    "crates/jeu-derive",
+    "crates/jeu",
+    "crates/jeu-natif",
+    "crates/reecriture",
+    "crates/moteur-wasmtime",
+    "crates/partie",
+    "crates/epreuve",
+    # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
+    "crates/exemples/*",
+    "crates/exemples/*/module",
+    # Un jeu fautif par contrôle négatif (§ 7.2), chacun avec sa crate de module.
+    "crates/exemples/fautifs/modules/*",
+]
+# L'outil `soiree` est un workspace à part, avec ses propres règles et son
+# propre `Cargo.lock` ; l'ancien code n'y entre pas.
+exclude = ["outil"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+repository = "https://github.com/build-your-own-game/soiree"
+
+[workspace.dependencies]
+# Les crates du commun, par chemin : un membre écrit `jeu-abi.workspace = true`.
+jeu-abi = { path = "crates/jeu-abi", version = "0.1.0" }
+jeu-derive = { path = "crates/jeu-derive", version = "0.1.0" }
+jeu = { path = "crates/jeu", version = "0.1.0" }
+jeu-natif = { path = "crates/jeu-natif", version = "0.1.0" }
+reecriture = { path = "crates/reecriture", version = "0.1.0" }
+moteur-wasmtime = { path = "crates/moteur-wasmtime", version = "0.1.0" }
+partie = { path = "crates/partie", version = "0.1.0" }
+epreuve = { path = "crates/epreuve", version = "0.1.0" }
+devine = { path = "crates/exemples/devine", version = "0.1.0" }
+fautifs = { path = "crates/exemples/fautifs", version = "0.1.0" }
+ardoise = { path = "crates/exemples/ardoise", version = "0.1.0" }
+
+# Les dépendances tierces du § 8, chacune avec sa raison. Un membre les prend par
+# `serde.workspace = true`, et peut y ajouter des fonctionnalités.
+
+# Le format de l'enveloppe : la dérivation des types partagés entre le moteur et
+# le module. Sans `std`, pour le module ; `alloc` pour `Vec` et `String`.
+serde = { version = "1.0.229", default-features = false, features = ["derive", "alloc"] }
+# Le format, figé (§ 3.7) : varints, variants numérotés, aucune étiquette, une
+# spécification écrite et stable en 1.x. Sans `heapless`, que rien n'utilise.
+postcard = { version = "1.1.3", default-features = false }
+# Des flottants identiques en natif et dans le module (HIS-50, OUT-144) : sans la
+# fonctionnalité `arch`, les mêmes implémentations logicielles partout.
+libm = { version = "0.2.16", default-features = false }
+# Le nettoyage des textes dans le module (§ 2.3, D22) : une version d'Unicode par
+# module, donc un rejeu qui ne change pas. Sans `std`.
+unicode-normalization = { version = "0.1.26", default-features = false }
+unicode-segmentation = { version = "1.13.3", default-features = false }
+# Le tas du module (D34) : un allocateur mûr, celui de `std` sur cette cible,
+# plutôt qu'un `unsafe` neuf.
+dlmalloc = { version = "0.2.14", default-features = false }
+# Les macros `#[jeu::message]`, `#[jeu::etat]` et `#[derive(Variantes)]` (§ 8.2).
+# syn 3, celle que `serde_derive`, `thiserror` et wasmtime tirent déjà : une seule
+# version de syn dans la compilation.
+syn = { version = "3.0.9", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+# Lire, valider et réécrire un module (§ 3.6) : la version que lit wasmtime 50.
+wasmparser = "0.245.1"
+# Écrire le module réécrit ; `wasmparser` pour sa réécriture section par section.
+wasm-encoder = { version = "0.245.1", features = ["wasmparser"] }
+# Le moteur natif de la phase 1 (§ 8.7) : Cranelift, sans ce que le contrat refuse.
+# Les fonctionnalités se choisissent dans `moteur-wasmtime`.
+wasmtime = { version = "50.0.1", default-features = false }
+# Les empreintes côté moteur : module, réécriture, état (§ 3.2, § 3.8).
+blake3 = "1.8.7"
+
+# Pour les tests seulement.
+# Les propriétés et les octets au hasard (§ 8.1, § 8.6).
+proptest = "1.12.0"
+# Ce qui ne doit pas compiler (§ 8.2, § 8.3).
+trybuild = "1.0.116"
+# Les petits modules écrits à la main dans les tests de la réécriture et du moteur.
+# La version de la famille de wasmparser 0.245, que lit wasmtime 50.
+wat = "~1.245.1"
+
+# Les règles d'écriture (CONTRAT, « Les règles d'écriture »), reprises de
+# `outil/regles/cargo.toml`. Chaque membre écrit `[lints] workspace = true`.
+[workspace.lints.rust]
+# Pas de code `unsafe`. Refusé partout, mais pas interdit (`forbid`) au niveau du
+# workspace : INTERFACE.md (§ 2.14) en exige à deux endroits, chacun sous
+# `#[expect(unsafe_code, reason = "…")]` : les exports et l'allocateur que
+# `jeu::module!` écrit dans une crate de module, et l'allocateur à deux modes
+# de `jeu::colle`. Toute autre crate pose `#![forbid(unsafe_code)]` en tête.
+unsafe_code = "deny"
+# Une `unsafe fn` n'ouvre pas un bloc `unsafe` en silence.
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Les trois lints de documentation d'API publique que le contrat exempte.
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+todo = "deny"
+# Un `_ =>` sur une enum avale en silence le variant qu'on ajoutera demain : nomme ceux qu'on ignore.
+wildcard_enum_match_arm = "deny"
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie (avec max-fn-params-bools = 0).
+fn_params_excessive_bools = "deny"
+# Un entier converti en flottant peut perdre des chiffres.
+cast_precision_loss = "deny"
+# Un dépassement d'entier arrête la partie : checked_, saturating_ ou wrapping_, choisi exprès.
+arithmetic_side_effects = "deny"
+# Une valeur qu'on jette dit son type (`let _: T = …`), et `.ok()` ne fait pas taire un Result.
+let_underscore_untyped = "deny"
+unused_result_ok = "deny"
+
+# Les dépendances sont optimisées même en debug, sans quoi un jeu est injouable.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Un dépassement d'entier est un bug, même en release.
+[profile.release]
+overflow-checks = true
+
+# Le module d'un jeu (§ 3.1) : `panic = "abort"`, contrôle de débordement actif,
+# LTO. Pour `--target wasm32-unknown-unknown` seulement : la copie native et les
+# tests gardent `panic = "unwind"`, dont `jeu-natif` a besoin (§ 8.4).
+[profile.module]
+inherits = "release"
+panic = "abort"
+lto = "fat"
+codegen-units = 1
+overflow-checks = true

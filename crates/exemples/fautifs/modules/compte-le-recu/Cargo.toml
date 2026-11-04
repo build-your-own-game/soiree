@@ -1,0 +1,19 @@
+[package]
+name = "fautif-compte-le-recu-module"
+description = "Le module WebAssembly du jeu dont une règle lit l'instant de réception d'un geste, qui fait échouer E12."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

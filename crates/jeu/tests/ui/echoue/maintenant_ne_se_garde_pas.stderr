@@ -1,0 +1,64 @@
+error[E0277]: the trait bound `jeu::Maintenant<'_>: Clone` is not satisfied
+ --> tests/ui/echoue/maintenant_ne_se_garde_pas.rs:6:5
+  |
+4 | #[jeu::etat]
+  | ------------ in this attribute macro expansion
+5 | pub struct Garde {
+6 |     pub quand: Maintenant<'static>,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `jeu::Maintenant<'_>`
+  |
+  = note: this error originates in the derive macro `::core::clone::Clone` which comes from the expansion of the attribute macro `jeu::etat` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `jeu::Maintenant<'static>: Forme` is not satisfied
+ --> tests/ui/echoue/maintenant_ne_se_garde_pas.rs:6:16
+  |
+6 |     pub quand: Maintenant<'static>,
+  |                ^^^^^^^^^^^^^^^^^^^ the trait `Forme` is not implemented for `jeu::Maintenant<'static>`
+  |
+  = help: the following other types implement trait `Forme`:
+            ()
+            (A, B)
+            (A, B, C)
+            (A, B, C, D)
+            (A, B, C, D, E)
+            (A, B, C, D, E, F)
+            (A, B, C, D, E, F, G)
+            (A, B, C, D, E, F, G, H)
+          and $N others
+
+error[E0277]: the trait bound `jeu::Maintenant<'_>: Etat` is not satisfied
+ --> tests/ui/echoue/maintenant_ne_se_garde_pas.rs:6:9
+  |
+4 | #[jeu::etat]
+  | ------------ required by a bound introduced by this call
+5 | pub struct Garde {
+6 |     pub quand: Maintenant<'static>,
+  |         ^^^^^ the trait `Etat` is not implemented for `jeu::Maintenant<'_>`
+  |
+  = help: the following other types implement trait `Etat`:
+            ()
+            (A, B)
+            (A, B, C)
+            (A, B, C, D)
+            (A, B, C, D, E)
+            (A, B, C, D, E, F)
+            (A, B, C, D, E, F, G)
+            (A, B, C, D, E, F, G, H)
+          and $N others
+
+error[E0277]: the trait bound `jeu::Maintenant<'static>: Etat` is not satisfied
+ --> tests/ui/echoue/maintenant_ne_se_garde_pas.rs:6:16
+  |
+6 |     pub quand: Maintenant<'static>,
+  |                ^^^^^^^^^^^^^^^^^^^ the trait `Etat` is not implemented for `jeu::Maintenant<'static>`
+  |
+  = help: the following other types implement trait `Etat`:
+            ()
+            (A, B)
+            (A, B, C)
+            (A, B, C, D)
+            (A, B, C, D, E)
+            (A, B, C, D, E, F)
+            (A, B, C, D, E, F, G)
+            (A, B, C, D, E, F, G, H)
+          and $N others

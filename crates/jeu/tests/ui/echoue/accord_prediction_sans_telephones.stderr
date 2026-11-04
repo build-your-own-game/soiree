@@ -1,0 +1,29 @@
+error[E0080]: evaluation panicked: accord : `prediction: Oui` demande `telephones: Oui`
+  --> tests/ui/echoue/../commun/minimal.rs
+   |
+   |           jeu::module!(Minimal);
+   |           ^^^^^^^^^^^^^^^^^^^^^ evaluation of `_` failed inside this call
+   |
+  ::: tests/ui/echoue/accord_prediction_sans_telephones.rs:4:1
+   |
+ 4 | / jeu_minimal! {
+ 5 | |     telephones: Applicable::SansObjet(jeu::raison!("un jeu de test minimal")),
+ 6 | |     geste: Aucun,
+ 7 | |     tenu: Aucun,
+...  |
+11 | |     champ: u8,
+12 | | }
+   | |_- in this macro invocation
+   |
+note: inside `jeu::colle::verifier_accord::<Minimal>`
+  --> $RUST/core/src/panic.rs
+   |
+   = note: the failure occurred here
+   |
+  ::: src/colle.rs
+   |
+   | /     assert!(
+   | |         !d.prediction.oui() || telephones,
+   | |         "accord : `prediction: Oui` demande `telephones: Oui`"
+   | |     );
+   | |_____- in this macro invocation

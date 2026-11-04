@@ -1,0 +1,28 @@
+[package]
+name = "reecriture"
+description = "Valider et réécrire le module d'un jeu : une fonction pure."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Lire et valider le module, avant et après la réécriture (§ 3.6).
+wasmparser.workspace = true
+# Écrire le module réécrit.
+wasm-encoder.workspace = true
+# L'empreinte du module original et du module réécrit (§ 3.8).
+blake3.workspace = true
+
+[dev-dependencies]
+# Les petits modules écrits à la main, un par refus et par passe (§ 8.5).
+wat.workspace = true
+# Les entrées variées de « la réécriture garde le sens », et des octets au hasard.
+proptest.workspace = true
+# Exécuter un module avant et après la réécriture, sous deux réglages de moteur :
+# dans les tests seulement, la bibliothèque reste sans moteur (§ 8.5).
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+
+[lints]
+workspace = true

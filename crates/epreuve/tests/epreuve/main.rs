@@ -1,0 +1,432 @@
+//! L'épreuve elle-même, éprouvée (INTERFACE.md, § 8.8, « Tests attendus ») : `devine`
+//! et le socle sain passent chaque contrôle écrit ; chaque jeu de `exemples/fautifs`
+//! fait échouer exactement le contrôle qu'il vise, et aucun autre (OUT-27, HIS-03,
+//! SAL-168) ; une panne déclarée qui n'a pas eu lieu, ou un contrôle qui n'a rien
+//! évalué, ne compte jamais comme réussi (OUT-26, OUT-07) ; le rejeu d'un échec
+//! refait sa faute (HIS-06, HIS-07) ; et le binaire `soiree-epreuve` dit tout cela par
+//! son code de sortie et son rapport JSON.
+//!
+//! Chaque épreuve joue le plan court (`Plan::court`) : une soirée principale de deux
+//! minutes avec toutes les pannes, sa seconde exécution, une soirée hostile et une
+//! soirée longue d'une heure. Le plan standard (`soiree-epreuve` sans `--court`)
+//! joue deux soirées de trois minutes et six heures pour E15.
+
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "code de test : un échec s'y lit comme l'échec du test qui l'appelle"
+)]
+
+mod modules;
+mod pile;
+
+use epreuve::{FabriqueDynamique, IdControle, IssueControle, Panne, Plan, Rapport};
+use fautifs::jeux;
+use jeu_abi::Duree;
+use jeu_natif::FabriqueNative;
+use partie::Faute;
+
+/// La graine des épreuves de ce fichier : fixée, pour qu'un échec se rejoue.
+const GRAINE: [u8; 32] = [0x2a; 32];
+
+/// L'épreuve du module `nom`, avec sa copie native, sur ce plan.
+fn eprouver(nom: &str, natif: &mut dyn FabriqueDynamique, plan: &Plan) -> Rapport {
+    let (moteur, octets) = modules::module(nom);
+    epreuve::eprouver_octets(&moteur, &octets, Some(natif), plan)
+}
+
+/// Le résumé lisible d'un rapport, pour les messages d'échec.
+fn lisible(r: &Rapport) -> String {
+    r.texte()
+}
+
+/// Chaque contrôle est réussi ou sans objet, et chaque réussite a des évaluations.
+fn passe_tout(r: &Rapport) {
+    for c in &r.controles {
+        assert!(
+            matches!(c.issue, IssueControle::Reussi | IssueControle::SansObjet(_)),
+            "{} : {:?}\n{}",
+            c.id,
+            c.issue,
+            lisible(r)
+        );
+        if c.issue == IssueControle::Reussi {
+            assert!(c.evaluations > 0, "{} réussi sans évaluation", c.id);
+        }
+    }
+    assert_eq!(r.code_de_sortie(), 0, "{}", lisible(r));
+}
+
+/// Le fautif fait échouer exactement `vise`, et aucun autre contrôle écrit ; le
+/// rapport le nomme, avec de quoi le rejouer quand il vient d'une soirée.
+fn echoue_exactement(r: &Rapport, vise: IdControle) {
+    assert_eq!(r.echecs(), [vise], "{}", lisible(r));
+    for c in &r.controles {
+        assert!(
+            !matches!(c.issue, IssueControle::PanneDeLOutil),
+            "{} : panne de l'outil\n{}",
+            c.id,
+            lisible(r)
+        );
+    }
+    let e = r.resultat(vise).expect("le contrôle visé est au rapport");
+    assert!(!e.detail.is_empty(), "le rapport dit ce qui a échoué");
+    assert_eq!(r.code_de_sortie(), 1);
+    // Un pire cas se refait par son indice, que le détail nomme : il n'a pas de soirée.
+    if vise != IdControle::E1 && vise != IdControle::E3 && vise != IdControle::E16 {
+        assert!(
+            e.rejeu.is_some(),
+            "{vise} : un échec d'une soirée porte son rejeu"
+        );
+    }
+}
+
+#[test]
+fn devine_passe_tout() {
+    let r = eprouver(
+        "devine",
+        &mut FabriqueNative::<devine::Devine>::new(),
+        &Plan::court(GRAINE),
+    );
+    passe_tout(&r);
+    // `devine` n'a pas de fin : E2 est sans objet, avec la raison qu'il déclare.
+    assert_eq!(
+        r.resultat(IdControle::E2).map(|c| c.issue.clone()),
+        Some(IssueControle::SansObjet(String::from(
+            "les manches s'enchaînent sans fin de partie"
+        )))
+    );
+    assert!(r.natif);
+}
+
+#[test]
+fn le_socle_sain_passe_tout() {
+    let r = eprouver(
+        "sain",
+        &mut FabriqueNative::<jeux::Sain>::new(),
+        &Plan::court(GRAINE),
+    );
+    passe_tout(&r);
+    // Le socle a une fin : E2 y est jugé, pas sans objet.
+    assert_eq!(
+        r.resultat(IdControle::E2).map(|c| c.issue.clone()),
+        Some(IssueControle::Reussi)
+    );
+}
+
+/// Besoins 2 et 3 des jeux (`conception/BESOINS-DES-JEUX.md`, Tier list n° 2 et n° 3) :
+/// un jeu sans téléphone ne vit aucune panne de téléphone. Elles sont sans objet, dites
+/// dans le rapport, et ses soirées sont jugées au lieu de finir « pas exécuté » (code 3).
+#[test]
+fn un_jeu_sans_telephone_passe_tout_sans_pannes_de_telephone() {
+    let r = eprouver(
+        "ardoise",
+        &mut FabriqueNative::<ardoise::Ardoise>::new(),
+        &Plan::court(GRAINE),
+    );
+    passe_tout(&r);
+    assert!(
+        r.joue
+            .contains("pannes sans objet, le jeu n'a pas de téléphone : coupure de 1500 ms"),
+        "le rapport dit les pannes sans objet : {}",
+        r.joue
+    );
+    // Les autres pannes du plan restent jouées et constatées.
+    assert!(
+        !r.joue.contains("redémarrage de l'autorité, "),
+        "{}",
+        r.joue
+    );
+    for c in [
+        IdControle::E4,
+        IdControle::E9,
+        IdControle::E14,
+        IdControle::E19,
+    ] {
+        assert_eq!(
+            r.resultat(c).map(|c| c.issue.clone()),
+            Some(IssueControle::Reussi),
+            "{c}\n{}",
+            lisible(&r)
+        );
+    }
+}
+
+macro_rules! fautif {
+    ($test:ident, $nom:literal, $jeu:ty, $vise:expr) => {
+        #[test]
+        fn $test() {
+            let r = eprouver(
+                $nom,
+                &mut FabriqueNative::<$jeu>::new(),
+                &Plan::court(GRAINE),
+            );
+            echoue_exactement(&r, $vise);
+        }
+    };
+}
+
+fautif!(
+    declaration_incoherente_echoue_e1,
+    "declaration-incoherente",
+    jeux::DeclarationIncoherente,
+    IdControle::E1
+);
+fautif!(
+    jamais_fini_echoue_e2,
+    "jamais-fini",
+    jeux::JamaisFini,
+    IdControle::E2
+);
+fautif!(
+    phase_inaccessible_echoue_e3,
+    "phase-inaccessible",
+    jeux::PhaseInaccessible,
+    IdControle::E3
+);
+fautif!(
+    invariant_viole_echoue_e4,
+    "invariant-viole",
+    jeux::InvariantViole,
+    IdControle::E4
+);
+// CAT-78.
+fautif!(
+    attend_un_absent_echoue_e5,
+    "attend-un-absent",
+    jeux::AttendUnAbsent,
+    IdControle::E5
+);
+// PUN-27, HIS-44 : un refus ne change rien.
+fautif!(
+    refuse_apres_avoir_ecrit_echoue_e6,
+    "refuse-apres-avoir-ecrit",
+    jeux::RefuseApresAvoirEcrit,
+    IdControle::E6
+);
+fautif!(
+    vue_qui_ecrit_echoue_e7,
+    "vue-qui-ecrit",
+    jeux::VueQuiEcrit,
+    IdControle::E7
+);
+// CAT-46.
+fautif!(
+    vue_qui_fuit_echoue_e8,
+    "vue-qui-fuit",
+    jeux::VueQuiFuit,
+    IdControle::E8
+);
+fautif!(
+    natif_different_echoue_e9,
+    "natif-different",
+    jeux::NatifDifferent,
+    IdControle::E9
+);
+// SAL-117, REM-58, REM-59.
+fautif!(
+    octet_qui_panique_echoue_e13,
+    "octet-qui-panique",
+    jeux::OctetQuiPanique,
+    IdControle::E13
+);
+fautif!(
+    etat_hors_enveloppe_echoue_e14,
+    "etat-hors-enveloppe",
+    jeux::EtatHorsEnveloppe,
+    IdControle::E14
+);
+// OUT-84, HIS-10, SQ-76, PUN-15.
+fautif!(
+    fuit_la_memoire_echoue_e15,
+    "fuit-la-memoire",
+    jeux::FuitLaMemoire,
+    IdControle::E15
+);
+// CAT-27.
+fautif!(
+    depend_de_l_appareil_echoue_e10,
+    "depend-de-l-appareil",
+    jeux::DependDeLAppareil,
+    IdControle::E10
+);
+// PUN-73, SQ-28.
+fautif!(
+    coupure_qui_compte_echoue_e11,
+    "coupure-qui-compte",
+    jeux::CoupureQuiCompte,
+    IdControle::E11
+);
+// § 4.3, D12.
+fautif!(
+    compte_le_recu_echoue_e12,
+    "compte-le-recu",
+    jeux::CompteLeRecu,
+    IdControle::E12
+);
+// § 6.1, D26.
+fautif!(
+    pire_cas_qui_deborde_echoue_e16,
+    "pire-cas-qui-deborde",
+    jeux::PireCasQuiDeborde,
+    IdControle::E16
+);
+// CAT-05, SQ-68.
+fautif!(
+    nan_dans_l_etat_echoue_e17,
+    "nan-dans-l-etat",
+    jeux::NanDansLEtat,
+    IdControle::E17
+);
+// PUN-34, D14, D15.
+fautif!(
+    gel_qui_enchaine_echoue_e18,
+    "gel-qui-enchaine",
+    jeux::GelQuiEnchaine,
+    IdControle::E18
+);
+fautif!(
+    boucle_au_vote_echoue_e19,
+    "boucle-au-vote",
+    jeux::BoucleAuVote,
+    IdControle::E19
+);
+
+/// La fenêtre et la tête (§ 4.2, D12) : le socle sain, avec une fenêtre de douze pas,
+/// passe chaque contrôle, et E12 y est jugé, pas sans objet.
+#[test]
+fn avec_fenetre_passe_tout() {
+    let r = eprouver(
+        "avec-fenetre",
+        &mut FabriqueNative::<jeux::AvecFenetre>::new(),
+        &Plan::court(GRAINE),
+    );
+    passe_tout(&r);
+    assert_eq!(
+        r.resultat(IdControle::E12).map(|c| c.issue.clone()),
+        Some(IssueControle::Reussi)
+    );
+}
+
+/// `panne_injectee_constatee` (OUT-26) : un gel plus long que la soirée ne peut pas
+/// avoir lieu ; les contrôles lus dans la soirée sont « pas exécuté », jamais réussis,
+/// et le rapport nomme la panne.
+#[test]
+fn panne_injectee_constatee() {
+    let plan = Plan {
+        soirees: 1,
+        duree: Duree::s(20),
+        pannes: vec![Panne::Gel {
+            duree: Duree::s(60),
+        }],
+        controles: vec![IdControle::E4, IdControle::E6, IdControle::E7],
+        ..Plan::court(GRAINE)
+    };
+    let r = eprouver("sain", &mut FabriqueNative::<jeux::Sain>::new(), &plan);
+    for c in [IdControle::E4, IdControle::E6, IdControle::E7] {
+        let res = r.resultat(c).expect("au rapport");
+        assert_eq!(res.issue, IssueControle::PasExecute, "{c}\n{}", lisible(&r));
+        assert!(res.detail.contains("gel de 60000 ms"), "{}", res.detail);
+    }
+    assert_eq!(r.code_de_sortie(), 3);
+}
+
+/// `zero_evaluation_n_est_pas_un_succes` (OUT-07) : une soirée trop courte pour qu'une
+/// entrée soit acceptée n'évalue aucun invariant ; E4 n'y est pas réussi.
+#[test]
+fn zero_evaluation_n_est_pas_un_succes() {
+    let plan = Plan {
+        soirees: 1,
+        duree: Duree::pas(20),
+        pannes: Vec::new(),
+        controles: vec![IdControle::E4],
+        ..Plan::court(GRAINE)
+    };
+    let r = eprouver("sain", &mut FabriqueNative::<jeux::Sain>::new(), &plan);
+    let e4 = r.resultat(IdControle::E4).expect("au rapport");
+    assert_eq!(e4.evaluations, 0, "{}", lisible(&r));
+    assert_eq!(e4.issue, IssueControle::PasExecute);
+    assert!(e4.detail.contains("OUT-07"), "{}", e4.detail);
+    // Hors du plan, chaque autre contrôle figure au rapport, « pas exécuté » (OUT-10).
+    assert_eq!(r.controles.len(), 19);
+    for c in &r.controles {
+        if c.id != IdControle::E4 {
+            assert_eq!(c.issue, IssueControle::PasExecute, "{}", c.id);
+        }
+    }
+}
+
+/// `rejeu_refait_la_faute` (HIS-06, HIS-07) : le rejeu que le rapport du fautif de
+/// E13 porte, rejoué seul sur une instance neuve, refait la même panique.
+#[test]
+fn rejeu_refait_la_faute() {
+    let (moteur, octets) = modules::module("octet-qui-panique");
+    let charge = moteur.charger(&octets).expect("le module se charge");
+    let plan = Plan {
+        controles: vec![IdControle::E13],
+        ..Plan::court(GRAINE)
+    };
+    let r = epreuve::eprouver(&charge, None, &plan);
+    let e13 = r.resultat(IdControle::E13).expect("au rapport");
+    assert_eq!(e13.issue, IssueControle::EchecDuJeu, "{}", lisible(&r));
+    let rejeu = e13.rejeu.as_ref().expect("un rejeu");
+    let refaite = epreuve::rejouer(&charge, rejeu).expect("la faute se refait");
+    assert!(
+        matches!(&refaite.faute, Faute::Panique { message } if message.contains("index out of bounds")),
+        "{refaite:?}"
+    );
+    let premiere = rejeu
+        .journal
+        .entrees()
+        .find(|e| matches!(e.issue, partie::IssueJournal::Ecartee { .. }))
+        .expect("une entrée écartée");
+    assert_eq!(
+        partie::IssueJournal::Ecartee {
+            faute: refaite.faute.clone()
+        },
+        premiere.issue
+    );
+}
+
+/// Le binaire : son code de sortie et son rapport JSON.
+#[test]
+fn le_binaire_rend_un_code_et_un_json() {
+    let bin = env!("CARGO_BIN_EXE_soiree-epreuve");
+    let dossier = std::env::temp_dir().join(format!("soiree-epreuve-{}", std::process::id()));
+    std::fs::create_dir_all(&dossier).expect("dossier");
+    for (nom, code) in [("devine", 0), ("declaration-incoherente", 1)] {
+        let chemin = dossier.join(format!("{nom}.wasm"));
+        std::fs::write(&chemin, modules::module(nom).1).expect("écrire le module");
+        let json = dossier.join(format!("{nom}.json"));
+        let sortie = std::process::Command::new(bin)
+            .arg(&chemin)
+            .args(["--court", "--controles", "E1", "--json"])
+            .arg(&json)
+            .output()
+            .expect("lancer soiree-epreuve");
+        let texte = String::from_utf8_lossy(&sortie.stdout);
+        assert_eq!(sortie.status.code(), Some(code), "{nom} :\n{texte}");
+        assert!(texte.contains("E1 Constat"), "{texte}");
+        // Un code 0 ne se lit pas comme l'épreuve entière du contrat : les étapes que
+        // le binaire n'exécute pas sont nommées, et la copie native absente aussi.
+        for etape in ["1. compiler", "3. examiner", "5. injecter", "6. revérifier"] {
+            assert!(texte.contains(etape), "{etape} : {texte}");
+        }
+        assert!(texte.contains("Copie native absente"), "{texte}");
+        let j = std::fs::read_to_string(&json).expect("le rapport JSON");
+        assert!(j.contains("\"etapes_non_executees\""), "{j}");
+        assert!(j.contains(&format!("\"code_de_sortie\": {code}")), "{j}");
+        for c in IdControle::TOUS {
+            assert!(
+                j.contains(&format!("\"id\": \"{c}\"")),
+                "{c} absent du JSON"
+            );
+        }
+    }
+    let mal = std::process::Command::new(bin)
+        .arg("--inconnue")
+        .output()
+        .expect("lancer soiree-epreuve");
+    assert_eq!(mal.status.code(), Some(64));
+    std::fs::remove_dir_all(&dossier).expect("nettoyer");
+}

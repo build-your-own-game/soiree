@@ -1,0 +1,7 @@
+# La version de Rust du commun et de tous les jeux (CONTRAT, « Le cadre technique »).
+# Reprise de `outil/regles/rust-toolchain.toml`, que `soiree new` écrit dans un jeu.
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
+# Le module d'un jeu (§ 3.1 d'INTERFACE.md).
+targets = ["wasm32-unknown-unknown"]

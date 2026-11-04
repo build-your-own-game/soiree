@@ -1,0 +1,23 @@
+[package]
+name = "partie"
+description = "Le cœur de la partie qui fait foi, sans entrées-sorties."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+# Les messages du jeu modèle (`partie::modele`), encodés comme ceux d'un vrai jeu.
+serde.workspace = true
+# Compter une saisie de l'écran en graphèmes, comme la page la compte, pour refuser
+# un texte au-delà de la limite de son champ (SAL-152, TL-27).
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+# Les propriétés des règles : placer, ordonner, demandes, cible (§ 8.6).
+proptest.workspace = true
+
+[lints]
+workspace = true

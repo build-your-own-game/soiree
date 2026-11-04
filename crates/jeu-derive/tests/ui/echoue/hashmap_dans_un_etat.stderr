@@ -1,0 +1,13 @@
+error: `HashMap` ne peut pas vivre dans un #[jeu::etat] : ordre d'itération différent entre natif et WebAssembly : `BTreeMap`
+ --> tests/ui/echoue/hashmap_dans_un_etat.rs:6:16
+  |
+6 |     pub champ: HashMap<u8, u8>,
+  |                ^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> tests/ui/echoue/hashmap_dans_un_etat.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

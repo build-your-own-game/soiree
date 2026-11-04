@@ -1,0 +1,44 @@
+[package]
+name = "epreuve"
+description = "La soirée simulée et ses contrôles, et le binaire soiree-epreuve."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "soiree-epreuve"
+path = "src/bin/soiree-epreuve.rs"
+
+[dependencies]
+jeu-abi.workspace = true
+partie.workspace = true
+moteur-wasmtime.workspace = true
+reecriture.workspace = true
+# Les empreintes des soirées et des rapports, comme celles du moteur.
+blake3.workspace = true
+# Encoder les messages du commun (présences, appels) comme le cœur les encode.
+serde.workspace = true
+
+[dev-dependencies]
+# La copie native d'un jeu, comparée au module (E9, § 8.9 étape 3).
+jeu-natif.workspace = true
+# Le jeu d'exemple, joué par la partie sur ses deux instances.
+devine.workspace = true
+# Ses types, pour écrire les gestes d'une soirée de test.
+jeu.workspace = true
+# Les jeux fautifs : un contrôle négatif par contrôle (§ 7.2, § 8.8).
+fautifs.workspace = true
+# Le jeu d'exemple sans téléphone : pannes sans objet, colle, pile laissée (besoins
+# 1 à 3 des jeux, `conception/BESOINS-DES-JEUX.md`).
+ardoise.workspace = true
+# Le module brut, sans réécriture : la référence de « la réécriture garde le sens ».
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+
+# L'épreuve avec la copie native de `devine` ou d'un fautif.
+[[example]]
+name = "natif"
+
+[lints]
+workspace = true

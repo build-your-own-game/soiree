@@ -1,0 +1,5 @@
+error: #[serde(serialize_with)] est refusé : un décodage doit être strict et sans ambiguïté (REM-60, PUN-91, SAL-119)
+ --> tests/ui/echoue/serde_serialize_with.rs:5:13
+  |
+5 |     #[serde(serialize_with = "s")]
+  |             ^^^^^^^^^^^^^^

@@ -1,0 +1,22 @@
+[package]
+name = "ardoise"
+description = "Un jeu d'exemple sans téléphone : l'écran seul écrit sur une ardoise."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu.workspace = true
+
+[dev-dependencies]
+# La copie native d'`ardoise`, pour piloter la colle sans WebAssembly (§ 8.4).
+jeu-natif.workspace = true
+# Le contrat `Instance`, que la copie native implémente.
+partie.workspace = true
+# Les octets échangés : encoder un appel, décoder un retour.
+jeu-abi.workspace = true
+
+[lints]
+workspace = true
