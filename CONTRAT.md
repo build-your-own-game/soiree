@@ -109,7 +109,7 @@ Deux sortes de garanties en découlent. Celles qui portent sur la logique sont a
 
 Une coupure ne se promet pas impossible. Elle se rattrape seule, sans que personne ait rien à faire, et sans rien perdre.
 
-Les leçons de salon, dans `salon/LEARNINGS.md`, viennent de ce réel. Reconstruire le code ne veut pas dire les perdre.
+Les leçons de l'ancien salon, dans [`lecons/sources/salon.md`](lecons/sources/salon.md), viennent de ce réel. Reconstruire le code ne veut pas dire les perdre.
 
 ## La page téléphone
 
@@ -205,7 +205,7 @@ Points de départ :
 - **Rendu :** wgpu, Bevy, Godot, three.js, Filament.
 - **Moteurs complets :** Bevy, Godot, Phaser, id Tech.
 - **Physique :** Rapier, Box2D, Jolt.
-- **Réseau :** les leçons de salon, dans `salon/LEARNINGS.md`, le netcode de Quake 3, la documentation réseau du Source Engine, GGPO, Colyseus, les articles de Glenn Fiedler.
+- **Réseau :** les leçons de l'ancien salon et de l'ancienne app iPhone, dans [`lecons/sources/salon.md`](lecons/sources/salon.md) et [`lecons/sources/remote.md`](lecons/sources/remote.md), le netcode de Quake 3, la documentation réseau du Source Engine, GGPO, Colyseus, les articles de Glenn Fiedler.
 - **Entrées :** SDL et sa base de manettes, la Gamepad API, Steam Input.
 - **Sensation de jeu :** les écrits de Maddy Thorson sur Celeste, le talk *Juice it or lose it*, le livre *Game Feel* de Steve Swink.
 - **Simulation de pannes et vérification :** les outils qui éprouvent le code des autres, avec leurs scénarios, leurs garanties et leurs limites.
@@ -283,7 +283,7 @@ Nos propres frontières, nous les cassons librement, mais en le disant : chaque 
 
 Une app remplit le contrat d'un appareil quand elle apporte une capacité que le navigateur n'a pas, comme la vibration sur iPhone. Elle passe les mêmes pressions qu'une page, et suit la même méthode : une définition unique entre Rust et sa propre langue, des formes qui suppriment des familles de bugs, des pressions. Sur iPhone, une app ne peut pas compiler de code à la volée : pour faire tourner le module, elle passe par une vue web ou par un interpréteur. Un jeu reste toujours jouable dans un navigateur. Un changement du protocole d'une app se coordonne avant qu'on joue.
 
-Le contrat de l'app iPhone est dans [`remote/CONTRAT.md`](remote/CONTRAT.md).
+Le contrat de l'ancienne app iPhone est devenu des leçons, dans [`lecons/sources/remote.md`](lecons/sources/remote.md). Celui de la nouvelle app s'écrira avec elle.
 
 ## Le matériel
 
