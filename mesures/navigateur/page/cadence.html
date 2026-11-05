@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cadence en arrière-plan</title>
+<style>
+  :root { --fond: #fff; --texte: #111; }
+  @media (prefers-color-scheme: dark) { :root { --fond: #111; --texte: #eee; } }
+  body { background: var(--fond); color: var(--texte); font: 14px/1.4 ui-monospace, monospace; margin: 16px; }
+</style>
+</head>
+<body>
+<h1>Cadence en arrière-plan</h1>
+<p>Note chaque réveil de quatre horloges (setTimeout, requestAnimationFrame, un Worker, et un AudioContext muet dans la variante « audio ») pendant que le banc passe l'onglet derrière un autre. Voir <code>mesures/navigateur/README.md</code>.</p>
+<pre id="etat"></pre>
+<script type="module" src="cadence.js"></script>
+</body>
+</html>

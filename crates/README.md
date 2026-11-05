@@ -16,7 +16,8 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
 | `epreuve` | la soirée simulée, les contrôles E1 à E19, l'étape 1 qui part des sources (règles d'écriture, module et copie native compilés), le binaire `soiree-epreuve` | sans `unsafe` | E1 à E19 écrits, chacun avec son contrôle négatif, sur le plan court et le plan standard ; les sept étapes du CONTRAT au rapport ; `tests/deux_instances` joue `devine` sur les deux instances |
 | `exemples/devine` | le jeu d'exemple (§ 9) ; sa crate de module dans `devine/module` | `no_std` | écrit, testé ; le module se compile, sans import |
 | `exemples/ardoise` | un jeu sans téléphone, écran seul ; son état garde des valeurs à bourrage copiées depuis la pile (besoins 1 à 3 de `../conception/BESOINS-DES-JEUX.md`) ; sa crate de module dans `ardoise/module` | `no_std` | écrit, testé ; passe l'épreuve (code 0) |
-| `exemples/fautifs` | un petit jeu sain (`Socle<Sain>`), le même avec une fenêtre (`Socle<AvecFenetre>`), et un fautif par contrôle, chacun à une règle près ; leurs crates de module dans `fautifs/modules/<nom>` | `no_std` | écrit ; chaque fautif fait échouer exactement son contrôle, par son module et sa copie native (`epreuve/tests/epreuve`, plan court et plan standard). Depuis ses sources, chacun échoue aussi l'étape 1 : la crate `fautifs` tient les `static` de cinq défauts, que la règle « rien hors de l'état » refuse, et `sain` comme `avec-fenetre` rendent 1 (contrôle final de la phase 2) |
+| `exemples/fautifs` | un petit jeu sain (`Socle<Sain>`), le même avec une fenêtre (`Socle<AvecFenetre>`), et un fautif par contrôle, chacun à une règle près ; leurs crates de module dans `fautifs/modules/<nom>` ; aucun `static` | `no_std` | écrit ; chaque fautif fait échouer exactement son contrôle, par son module et sa copie native (`epreuve/tests/epreuve`, plan court et plan standard). Depuis leurs sources, `sain` et `avec-fenetre` rendent 0 et un fautif sans `static` ne fait échouer que son contrôle (`epreuve/tests/sources.rs`, `sain_et_un_fautif_sans_static_depuis_leurs_sources`) |
+| `exemples/fautifs-statiques` | les cinq défauts dont la faute est un `static` (E6 `refuse-apres-avoir-ecrit` et `retient-un-refus`, E7 `vue-qui-ecrit`, E8 `secret-dans-un-static`, E14 `etat-hors-enveloppe`), sur le socle de `fautifs` ; leurs crates de module restent dans `fautifs/modules/<nom>` | `no_std` | écrit ; à part pour que la règle « rien hors de l'état » ne lise leurs `static` que chez eux (RESTE-PHASE-2, point 1). Depuis leurs sources, chacun échoue l'étape 1, qui nomme son `static`, et son contrôle : la forme les attrape avant la pression (`epreuve/tests/sources.rs`, `un_fautif_a_static_echoue_l_etape_1_en_nommant_le_static`) |
 
 ## Le graphe
 
@@ -37,8 +38,9 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
 | `partie` | `jeu-abi` |
 | `jeu-natif` | `jeu-abi`, `jeu`, `partie` |
 | `moteur-wasmtime` | `jeu-abi`, `partie`, `reecriture` |
-| `epreuve` | `jeu-abi`, `partie`, `moteur-wasmtime`, `reecriture` ; en test et dans l'exemple `natif`, `jeu-natif`, `devine`, `ardoise`, `fautifs`. Le binaire que l'étape 1 écrit pour un jeu dépend de `epreuve`, `jeu-natif` et de la crate de règles du jeu |
+| `epreuve` | `jeu-abi`, `partie`, `moteur-wasmtime`, `reecriture` ; en test et dans l'exemple `natif`, `jeu-natif`, `devine`, `ardoise`, `fautifs`, `fautifs-statiques`. Le binaire que l'étape 1 écrit pour un jeu dépend de `epreuve`, `jeu-natif` et de la crate de règles du jeu |
 | `devine`, `ardoise`, `fautifs` | `jeu` ; leurs crates de module, `jeu` et leur jeu |
+| `fautifs-statiques` | `jeu`, `fautifs` ; ses crates de module, `jeu` et `fautifs-statiques` |
 
 **Le moteur et le cœur ne dépendent jamais de `jeu`** : ils ne connaissent aucun type de jeu (D6).
 
@@ -91,7 +93,7 @@ Les trois jeux reconstruits ont rapporté ce que le commun ne leur donnait pas. 
 - Les dépendances tierces sont déclarées une fois, avec leur raison, dans `[workspace.dependencies]` : un membre écrit `serde.workspace = true` et peut y ajouter des fonctionnalités.
 - Une crate de module se compile pour WebAssembly avec le profil `module` (`panic = "abort"`, LTO, débordements vérifiés) :
   `cargo build -p devine-module --target wasm32-unknown-unknown --profile module`. En natif, elle se compile avec `std` et `jeu::module!` n'y écrit rien.
-- Un fautif de plus : sa crate de module va dans `exemples/fautifs/modules/<nom>/`, que le workspace prend par motif.
+- Un fautif de plus : sa crate de module va dans `exemples/fautifs/modules/<nom>/`, que le workspace prend par motif. Son défaut va dans `fautifs` ; s'il tient un `static`, dans `fautifs-statiques`, jamais dans `fautifs`, que la règle « rien hors de l'état » lit pour chaque fautif.
 - `../outil/` reste un workspace à part.
 
 ## Constaté pour les crates à venir

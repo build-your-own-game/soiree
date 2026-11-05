@@ -1,0 +1,867 @@
+# Phase 3 : jouer une vraie soirée
+
+> **Statut.** Conception retenue pour la phase 3, écrite le 2026-11-05, puis reprise le même jour d'après une critique en 49 points (sécurité du lien, garde-fou de chargement, stockage de l'écran, découpage des lots, mesures, questions au mainteneur) : chaque constat a été vérifié dans le code ou les documents avant d'être suivi ; ceux qui ne tenaient pas tels quels sont corrigés ici avec ce que le code dit. Elle part de trois propositions indépendantes (« court », « latence », « réel »), du jugement de deux juges, et des mesures faites dans les navigateurs ([`MESURES-PHASE-3.md`](MESURES-PHASE-3.md)). [`MANIFESTE.md`](../MANIFESTE.md) et [`CONTRAT.md`](../CONTRAT.md) font foi, puis [`INTERFACE.md`](INTERFACE.md) et [`REPONSES-PROVISOIRES.md`](REPONSES-PROVISOIRES.md). Ce document se corrige s'il les contredit. Le mainteneur seul modifie INTERFACE.md et CONTRAT.md : les écarts qu'on y lit sont des questions (§ 9.1) et sont réunis au § 9.2, pas des changements faits.
+>
+> **Mesures.** Les chiffres mesurés viennent de `MESURES-PHASE-3.md` (2026-11-05, MacBook Apple M5, 16 Go, macOS 26.6.2, Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface ; Safari 27.2 non mesuré) et de `MESURES-PHASE-1.md`. Une seule mesure est nouvelle ici : la compilation de `partie` et `reecriture` pour `wasm32` (§ 1). Tout autre chiffre est choisi, estimé ou calculé, et le dit.
+>
+> **Sources.** Les leçons de `lecons/sources/` sont citées par identifiant (`SAL-`, `REM-`, `OUT-`, `HIS-`, `CAT-`, `PUN-`, `SQ-`, `TL-`).
+
+## 0. En une page
+
+**Ce que la phase 3 livre.** Une soirée qu'on joue avec les trois jeux : la télé dessinée sur GPU, les téléphones dans le navigateur, un relais local, tout chiffré de bout en bout. Elle est vérifiée par des machines, et chaque milliseconde entre le geste et le pixel est mesurée.
+
+**Ce qui simplifie tout.** Aucun des trois jeux n'a de fenêtre, de prédiction ni de manette (`fenetre`, `prediction` et `manettes` à `SansObjet`). Une seule instance fait foi. Il n'y a ni tête séparée, ni Gamepad API, ni prédiction sur appareil.
+
+1. **L'autorité tourne dans un Worker dédié** du navigateur de l'ordinateur de la soirée. La page garde le dessin, le DOM, les entrées et le son. Mesuré : caché, un Worker se réveille encore 45 à 56 fois par seconde dans Chrome et Firefox ; la page, une fois par minute dans Chrome (mesure 6).
+2. **Un seul protocole d'appel**, dans une crate `moteur-commun`, pour wasmtime et pour le navigateur. Le harnais de mesure l'a recopié en JavaScript ; la phase 3 supprime cette seconde définition.
+3. **Le navigateur devient le second moteur de l'épreuve** (E20). Mesuré : sur 116 775 appels, le carburant, l'issue et le retour sont identiques dans wasmtime, V8 et SpiderMonkey.
+4. **Le relais est un petit programme Rust**, `soiree-relais`, sur un port fixe, en WebSocket seul. Il fait passer des trames qu'il ne sait pas lire, et garde sur disque un état récent chiffré.
+5. **Le chiffrement est Noise NKpsk0.** Le fragment du QR code porte un secret d'entrée et la clé publique de l'autorité. Un invité qui a scanné et **écoute** le Wi-Fi ne lit pas les autres téléphones et ne se fait pas passer pour la télé. Un invité qui **agit** sur le Wi-Fi (usurpation ARP) peut servir aux téléphones une page modifiée, puisqu'elle arrive en `http` sans authentification : cette limite est dite (§ 2.5) et posée au mainteneur (question 18). La clé de la garde n'est pas dans le QR, ni dans aucune adresse.
+6. **Une seule façon de repartir** : onglet rechargé, Worker tué, relais relancé. On relit au relais le dernier point et le journal qui le suit, puis `Partie::reprendre`. Un geste n'est accusé au téléphone qu'une fois écrit sur disque.
+7. **La page téléphone est une fonction du module du jeu**, `Jeu::page`, une lecture sans état comme `Valider`. Elle tourne enfermée sur le téléphone. Le commun la dessine en DOM, avec de vrais champs. Aucun jeu n'écrit de JavaScript.
+8. **La télé** : `wgpu` (WebGPU, repli WebGL2), `glyphon` pour le texte, `cosmic-text` pour la mesure. La même mesure tourne dans l'épreuve : E16 voit enfin les débordements.
+9. **Une seule montée d'ABI**, à 4 : la boîte des composants, le sélecteur nommé, `Telecharger` d'un bloc, la page.
+10. **Rien ne change de pas.** Un arriéré garde sa place ; un pas trop chargé se finit sur plusieurs tours du Worker.
+
+**Les pièces.** Onze crates nouvelles : `moteur-commun`, `moteur-navigateur`, `liaison`, `salle`, `relais`, `mise-en-page`, `rendu`, `autorite`, `ecran`, `telephone`, `banc`. Un second workspace, `web/`, pour ce qui ne sert que dans le navigateur ou tire `wgpu`. Un fichier JavaScript écrit à la main, de quelques dizaines de lignes : le démarrage. Dix-neuf lots, faits l'un après l'autre (§ 7), et quinze mesures nommées, M1 à M15 (§ 8.6).
+
+---
+
+## 1. D'où vient cette conception
+
+**La base est « réel ».** Les deux juges l'ont classée première, sur la faisabilité, l'exactitude et la fidélité au CONTRAT. Elle seule authentifie l'autorité (NKpsk0), ferme la perte au redémarrage par l'accusé durable, garde un journal borné, ne change pas le pas d'une entrée, et vérifie que le chien de garde a lui-même tourné (REM-02).
+
+**Ce qui est greffé**, comme les juges l'ont désigné :
+
+- de « court » : le code de salle en 8 chiffres hexadécimaux, gardé (cahier de Sidequest, § 8) ; une seule montée d'ABI et une page sans état ; le module aux téléphones par la connexion chiffrée ; les gestes non accusés gardés dans `sessionStorage` ; le détail du trait `Machine` ; `SILENCE_MAX`, la redite et les budgets de la soirée définis une fois ; le test du graphe des dépendances du relais ; le catalogue au seul code 0 ; la borne de taille d'un module ; les coups des bots joués par le vrai chemin, et le singe de page ; le banc `soiree-complete` ; l'aide après 60 s sans téléphone ; l'adresse réellement jointe ; la question `unsafe` de `wasm-bindgen` ; la question de la coupure chez Sidequest ;
+- de « latence » : le budget segment par segment, le pas joué au signal de l'image, le type `Trace`, le diagnostic par segment avec le matériel à part ; `InternalError` de Firefox classé comme la pile native ; les scénarios précis du banc ; la page de mesure du vrai Wi-Fi, qui tranche WebRTC ; seuls les vrais arriérés comptent dans le budget d'un tour.
+
+**Ce qui est corrigé**, parce que les juges ou le code le montrent :
+
+- L'instantané exclut exactement les quatre zones. Il ne garde pas « les pages non nulles » : le brouillon garde le reste du dernier appel au moment d'un point (`interieur.rs`, `preparer`, l. 236 à 262).
+- `Partie::reprendre` refuse un point au-delà du journal (`partie.rs`, l. 409, `PointHorsJournal`) : un journal tronqué demande une base d'indices, nommée ici (P10).
+- L'écriture durable sous macOS demande `F_FULLFSYNC`, pas seulement `fsync`.
+- `compileStreaming` ne laisse pas hacher avant de compiler : on lit les octets, on les hache, puis `WebAssembly.compile`.
+- L'empreinte est notée toutes les 256 **entrées** (`journal.rs`, l. 9 ; `pas.rs`, l. 372), pas tous les 256 pas.
+- Comparer le carburant de chaque appel demande un relevé côté wasmtime : le journal ne le note pas. Le harnais de `mesures/navigateur/capture` le fait déjà ; E20 en part.
+- Sidequest déclare 71 appareils (`Places::joueurs(0, 71).appareils(71)`), pas 72.
+- Tier list déclare `diagnostic: CodeTouche::F8` (`games/tier-list/crates/tier-list/src/lib.rs`, l. 909) : F8 est la touche du commun (REPONSES-PROVISOIRES 14). Réglé en P33. Les sources des trois jeux sont toutes sous un dossier `crates/` (`games/<jeu>/crates/<jeu>/src/…`) : c'est ainsi qu'on les cite ici.
+- Le point 16 de RESTE-PHASE-2, qu'aucune proposition ne traitait : traité en P5, par une mesure (M10) et non par un calcul.
+- `wasm-bindgen` 0.2.129 est déjà installé : rien à télécharger ; on épingle la crate sur cette version (REM-156).
+- Le lot 0 de « court » est fait : les points 1 et 2 de RESTE-PHASE-2 sont cochés.
+- `Network.emulateNetworkConditions` ne vaut pas pour une WebSocket déjà ouverte (à constater) : les pannes du réseau passent par un mandataire TCP en Rust (§ 8.2).
+
+**Ce que j'ai vérifié moi-même**, en lecture : les lignes citées ci-dessus ; `jeu_abi::ABI` vaut 3 (`enveloppe.rs`, l. 32) ; `Valider` s'exécute sans enveloppe (`colle.rs`) ; `PointDeReprise` chaîne `sain` et `periodique` par `Arc` ; `InstantaneWasm` copie toute la mémoire ; `Partie::regarder(&[RegardFil])`, `numero_tenu`, `point`, `pause` et `Ouverture::salle` existent ; `SILENCE_MAX` vaut 180 pas et `RAPPEL_TENU` 15 ; `BUDGET_DE_CHARGEMENT` vaut 2³² et `garde_fou_murale_ms` 1 000 dans `PHASE_1` ; `reecriture::Reglages::PHASE_1` permet 4 096 étages de 4 096 octets ; les contrôles vont de E1 à E19 ; `ContexteNonSecurise` existe.
+
+**Et, à la reprise**, en lecture : `ARRIERE_PAS` vit dans `epreuve::budgets` (`budgets.rs`, l. 269), où `partie` ne peut pas le lire ; `regles::placer` place une arrivée à `max(fait.pas, définitif + 1)` (`regles.rs`, l. 64 à 75) ; `OCTETS_PAR_ETAGE = 4096` est un « point de départ, non mesuré » sur Cranelift (`reecriture/src/passes.rs`, l. 248 à 256), et `soiree_profondeur` ne garde pas le maximum atteint ; le test de `Bonjour` qui boucle est un module WAT (`loop $l (br $l)`) écrit dans `moteur-wasmtime/tests/moteur/charger.rs`, l. 141, pas un fautif ; Tier list filtre `Composant::Fichiers { geste, fichiers: f }` sans `..` (`lib.rs`, l. 929), et `Composant` est le type même de `jeu-abi` (`entrees.rs`, l. 181) ; `Demande::Telecharger { nom, octets: &[u8] }` de `jeu` (`traits.rs`, l. 219) a déjà la forme d'un bloc ; Tier list borne les images d'un plateau à 1 Mio (`plateau.rs`, l. 81) et sa sauvegarde à 2 Mio (`sauvegarde.rs`, l. 59), et sa mémoire à 4 096 pages (`module/build.rs`) ; `epreuve::soiree::POINT_TOUS_LES` vaut 600 pas (`soiree.rs`, l. 69) ; seul `getrandom` 0.4.3 est dans le `Cargo.lock` du commun, qui n'a ni `chacha20poly1305` ni `naga` ; `jeu-abi` a un appel `Ressources`, qui est une lecture sur un état créé.
+
+**Et par une commande**, le 2026-11-05 à 07 h 35 sur la machine de l'hôte (charge 1,9, 41 % de mémoire libre) : `CARGO_BUILD_JOBS=4 cargo build -p partie -p reecriture --target wasm32-unknown-unknown --release`, dans un dossier de compilation neuf. Résultat : compilé en 8,3 s, mémoire résidente maximale 0,61 Go. `partie` et `reecriture` se compilent pour le navigateur tels qu'ils sont.
+
+---
+
+## 2. L'architecture
+
+### 2.1 Vue d'ensemble
+
+```
+            ordinateur de la soirée                                         Wi-Fi
+ ┌───────────────────────────────────────────────────────────┐
+ │ navigateur, http://localhost:7878/  (contexte sécurisé)    │
+ │  ┌ page « écran » (fil principal) ── crate ecran ───────┐  │
+ │  │ rendu wgpu + glyphon, composants DOM, entrées, son,   │  │
+ │  │ plein écran, verrou d'écran, chien de garde, diagnostic│  │
+ │  └────────────▲───── postMessage (salle::ecran) ────────┘  │
+ │  ┌ Worker « autorité » ── crate autorite ┴──────────────┐  │
+ │  │ partie + moteur-navigateur + reecriture + salle      │  │
+ │  │ (Noise, sessions, accusés, garde) ; boucle à 60 pas  │  │
+ │  └── ws://localhost:7878/ws « temps réel » ─ « garde » ─┘  │
+ │                 │                                           │
+ │  soiree-relais (Rust natif, port 7878) ─────────────────────┼── ws://192.168.x.y:7878/s/3FA9C2D1 ── téléphones
+ │  page de démarrage, trames opaques, garde chiffrée sur     │    (http, contexte NON sécurisé)
+ │  disque ; en boucle locale : catalogue, modules, flux      │    crate telephone (Rust → wasm, DOM)
+ └───────────────────────────────────────────────────────────┘    + module du jeu pour Jeu::page
+```
+
+| Où | Ce qui y tourne | Pourquoi là |
+|---|---|---|
+| **Worker « autorité »** (`autorite`) | `partie::Partie<FabriqueNavigateur>` ; la réécriture du module ; `salle::Autorite` (Noise, sessions, dédoublonnage, accusés, horloges des téléphones) ; les deux WebSocket vers le relais ; la boucle ; la garde ; les traces | Ses minuteries ne sont pas bridées quand l'onglet est caché (mesure 6). C'est le seul fil qu'on peut tuer (`terminate`) : un appel WebAssembly ne s'interrompt pas sur son propre fil. L'instanciation synchrone d'un module y est permise |
+| **Page « écran »** (`ecran`) | `rendu` sur la toile ; les composants DOM (`Champ`, `EnPlace`, `Selecteur`, `Modale`, `Lien`, `Deplacables`) ; clavier, pointeur, molette, collage, dépôt ; le son ; le plein écran ; `navigator.wakeLock` ; les demandes `Rendu`, `Image`, `Lire`, `Telecharger` ; les octets des fichiers reçus ; le chien de garde ; le diagnostic | Le DOM, la toile, `AudioContext` et le sélecteur de fichiers n'existent que là. `localhost` est un contexte sécurisé : WebGPU et le verrou d'écran y sont disponibles |
+| **Page « téléphone »** (`telephone`) | `salle::Appareil` ; une instance du module pour `Appel::Page` ; le rendu DOM de la page ; la redite des tenus ; les effets ; les écrans du commun | Une page en `http://192.168.x.y` n'est pas un contexte sécurisé : ni WebGPU, ni `crypto.subtle`, ni verrou d'écran (SAL-97, OUT-211) |
+| **`soiree-relais`** (`relais`) | le routage des trames ; la garde sur disque ; la page de démarrage ; en boucle locale, le catalogue, les modules et les flux | Une page ne peut pas accueillir de connexions (CONTRAT, « Le cadre technique ») |
+
+### 2.2 Les crates
+
+| Crate | Workspace | Dépend de, dans le commun | Rôle |
+|---|---|---|---|
+| `moteur-commun` | commun | `jeu-abi`, `partie` | le trait `Machine`, le protocole d'un appel (§ 3.4 d'INTERFACE), le classement d'une faute, l'instantané hors des zones, l'empreinte, les vérifications du chargement ; `no_std` + `alloc` |
+| `moteur-wasmtime` | commun | `moteur-commun`, `reecriture` | réduit à `impl Machine` sur wasmtime, l'époque et le fil |
+| `liaison` | commun | `jeu-abi` | les trames **en clair** entre le relais et les bouts ; `SILENCE_MAX_MS`, `BATTEMENT_MS`, `periode_de_redite` ; `no_std` + `alloc` |
+| `salle` | commun | `liaison`, `partie` | sans entrées-sorties : le chiffrement (`chiffre`), les messages chiffrés (`fil`), `Autorite`, `Appareil`, la garde, l'horloge, les messages entre la page et le Worker (`ecran`). **Le hasard y entre en paramètre**, comme le temps : un générateur donné par la coque, et un résolveur de `snow` qui le reçoit au lieu de tirer le sien. Ses tests tournent à graine fixe (SAL-09) ; `getrandom` ne sert qu'aux coques de `web/` |
+| `relais` | commun | `liaison` seulement | le binaire `soiree-relais`, cœur sans entrées-sorties et coque `std` |
+| `mise-en-page` | commun | `jeu-abi` | la mesure des textes et `Taille::Budget`, sur `cosmic-text`, sans GPU ; sert l'épreuve et la télé |
+| `banc` | commun | `salle`, `liaison`, `partie`, `moteur-wasmtime` | le binaire `soiree-banc` : pilotes des navigateurs, soirée native, mandataire de pannes, rejeu de E20, `rejouer-garde` (§ 2.4), mesures |
+| `moteur-navigateur` | `web/` | `moteur-commun` | `impl Machine` sur `WebAssembly.Module`, `Instance`, `Memory`, `Global` |
+| `autorite` | `web/` | `salle`, `partie`, `reecriture`, `moteur-navigateur` | le Worker |
+| `rendu` | `web/` | `mise-en-page`, `jeu-abi` | `wgpu`, `glyphon`, `qrcodegen` ; natif (Metal) pour ses tests, `wasm32` pour la télé |
+| `ecran` | `web/` | `rendu`, `salle` (module `ecran`) | la page de la télé |
+| `telephone` | `web/` | `salle`, `moteur-navigateur` | la page du téléphone ; ne tire pas `wgpu` |
+
+`epreuve` gagne `mise-en-page` (E16) et `liaison` (les constantes du monde simulé). Elle appelle `soiree-banc` en sous-processus pour E20 : son binaire ne tire pas les dépendances du banc.
+
+### 2.3 L'autorité dans le Worker
+
+**Le protocole d'appel, une seule fois.** `moteur-commun` prend de `moteur-wasmtime/src/interieur.rs` tout ce qui ne dépend pas de wasmtime. Le moteur ne fournit que des primitives :
+
+```rust
+/// Ce qu'un moteur WebAssembly sait faire d'une instance du module réécrit ;
+/// le reste est le protocole du commun (§ 3.4 d'INTERFACE).
+pub trait Machine {
+    fn pages(&mut self) -> u64;
+    fn lire(&mut self, adresse: u32, dans: &mut [u8]) -> Result<(), PanneOutil>;
+    fn ecrire(&mut self, adresse: u32, octets: &[u8]) -> Result<(), PanneOutil>;
+    fn remplir_de_zeros(&mut self, adresse: u32, longueur: u32) -> Result<(), PanneOutil>;
+    fn grandir_jusqu_a(&mut self, pages: u64) -> Result<(), PanneOutil>;
+    fn globale(&mut self, nom: &str) -> Result<Bits, PanneOutil>;
+    fn poser_globale(&mut self, nom: &str, b: Bits) -> Result<(), PanneOutil>;
+    fn boite(&mut self, taille: i32, sorte: i32) -> Result<i32, Piege>;
+    fn appel(&mut self, taille: i32) -> Result<i64, Piege>;
+}
+/// Un piège brut, que le protocole classe après les globales et la zone de panique.
+pub enum Piege { HorsMemoire, PileNative, Interrompu, Autre(String) }
+pub struct Protocole<M: Machine> { /* zones, pile initiale, globales, plafonds */ }
+impl<M: Machine> partie::Instance for Protocole<M> { type Instantane = Instantane; /* … */ }
+/// La mémoire hors des quatre zones remises à zéro, et les globales mutables d'origine.
+pub struct Instantane { module: [u8; 32], pages: u64, plages: Vec<(u32, Vec<u8>)>, globales: Vec<Bits> }
+pub fn verifier_chargement<M: Machine>(m: &mut M, …) -> Result<Charge, RefusModule>;
+```
+
+- Le classement garde l'ordre d'aujourd'hui : garde-fou, croissance refusée, carburant, profondeur, croissance bornée, panique, hors mémoire, pile native, autre. Un test fait rougir `moteur-commun` si l'ordre change.
+- **Dans le navigateur** (`moteur-navigateur`) : le module n'importe rien, on l'instancie avec un objet d'imports vide. La mémoire se lit par `Uint8Array` sur `memory.buffer`, relu à chaque appel : un `grow` détache l'ancien tampon. `remplir_de_zeros` passe par `Uint8Array::fill`. Les globales `i64` passent par `BigInt`.
+- Un `RangeError` (V8, JavaScriptCore) ou un `InternalError: too much recursion` (SpiderMonkey) donne `Piege::PileNative`, donc une **panne de l'outil** : la profondeur réécrite devait piquer avant. Le message d'un `RuntimeError` ne sert qu'en dernier recours ; il diffère d'un navigateur à l'autre (à constater).
+- **La pile d'un Worker n'est pas celle de wasmtime.** `PHASE_1` permet 4 096 étages de 4 096 octets, soit 16 Mio de pile native dans wasmtime. Mais `OCTETS_PAR_ETAGE` estime les cadres de Cranelift, « point de départ, non mesuré » (`passes.rs`, l. 248 à 256) ; les cadres de V8 (Liftoff, TurboFan) et de SpiderMonkey ont d'autres tailles, et la pile d'un fil de navigateur est de l'ordre du Mio (lu, non mesuré). `PHASE_3` pourrait donc devoir descendre d'un facteur dix sous `PHASE_1`, et un jeu qui passe aujourd'hui tomber en faute `Profondeur`. Le lot 3c mesure donc deux choses (M9) : la profondeur que tient chaque navigateur, par le fautif de profondeur, et **la profondeur que les trois jeux atteignent**, par une variante de la passe de profondeur réservée au banc qui garde le maximum dans une seconde globale (la globale `soiree_profondeur` ne le garde pas). `ReglagesMoteur::PHASE_3` se règle entre les deux, s'il y a de la place ; sinon, c'est une question au mainteneur, pas un réglage silencieux. **Changer `profondeur_max` change toutes les empreintes réécrites**, donc les rapports, les catalogues et les relevés de E20 : le lot 3c relance l'épreuve des trois jeux sous `PHASE_3`. Le module tourne aussi sur les téléphones, sur le fil principal de Safari iOS et de Chrome Android, que le banc ne mesure pas : leur pile va sur la fiche humaine (§ 8.5).
+
+**La boucle.** Le cœur est écrit une fois, sans entrées-sorties : `salle::Autorite<F: Fabrique>`. Le Worker n'en est que la coque ; les tests natifs la font tourner sur wasmtime.
+
+```
+à chaque réveil (signal d'image de la page, trame reçue, ou minuterie de secours) :
+  t ← performance.timeOrigin + performance.now() ; recoupé avec Date.now() (SAL-51)
+  pour chaque trame reçue : salle.recevoir(t, trame) → arrivées déchiffrées, dédoublonnées
+  pour chaque arrivée et chaque entrée de l'écran : partie.arriver(a, recu)
+      (pendant un pas inachevé, une arrivée va au pas suivant au plus tôt : P7)
+  avant chaque appel Entree : l'IdGeste en cours → page                (P39)
+  avancee ← partie.avancer_borne(pas_de(t), ARRIERES_PAR_TOUR)          (P7)
+  salle.traiter(&avancee) : avis, écartés, oublier/retirer, demandes, fautes
+  si la définitive a bougé :
+      vues ← partie.regarder([Ecran, chaque téléphone présent])         (un seul appel)
+      scène → page (ArrayBuffer transféré) ; vue changée → trame remplaçable (SAL-112, SAL-113)
+  garde : une case de journal toutes les 100 ms qui ont écrit (choisi, M11) ;
+          un point tous les POINT_TOUS_LES pas (600, repris de l'épreuve, M12)
+  battement → page
+```
+
+- **Le pas se joue au signal de l'image** (P6). À chaque `requestAnimationFrame`, la page poste `DeLaPage::Image { t_us, periode_us }`. Le Worker joue alors le pas que l'horloge a atteint et renvoie la scène avant l'image suivante. Le temps de la partie ne suit pas l'écran : il suit l'horloge monotone (D13). Raison mesurée : `setTimeout(16)` ne réveille un Worker que 46 fois par seconde environ (intervalle de 22 ms), dans Chrome comme dans Firefox, même au premier plan (mesure 6).
+- **Onglet caché** : plus d'images. Le Worker revient à sa minuterie, et `partie` fait plusieurs pas par réveil (rattrapage, puis saut ; CAT-15, SQ-62).
+- **Une trame qui arrive** est donnée à `arriver` tout de suite, avec son instant de réception.
+- **Le budget de carburant de la soirée** a une seule définition, `partie::BUDGETS_DE_SOIREE`, déplacée depuis `epreuve::soiree::BUDGETS` (P27).
+
+**Deux garde-fous muraux** (P5).
+
+- **Pendant un appel de la partie**, le Worker bat à chaque tour. La page le tue (`terminate`) si aucun battement n'arrive pendant `GARDE_FOU_PARTIE_MS` (2 000, choisi), **à condition que ses propres minuteries aient tourné** dans cet intervalle (REM-02). Caché, la page de Chrome ne se réveille qu'une fois par minute (mesure 6) : le chien de garde y est donc presque suspendu, et le dit au diagnostic. Un nouveau Worker reprend depuis la garde (§ 2.4). C'est une panne de l'outil (`GardeFouMural`), jamais une faute du jeu (OUT-11, HIS-06). Trois relances en une minute (choisi) : l'écran dit « Le commun est en panne » et propose les deux reprises du § 4.6 d'INTERFACE.
+- **Une entrée qui bloque est écartée** (P39). Le CONTRAT (« La forme d'un jeu ») veut qu'« une entrée qui fait échouer le jeu » soit « isolée et écartée, pour que la reprise ne rejoue pas la même faute en boucle ». Sans précaution, ce n'est pas le cas : le Worker tué n'a pas écrit l'entrée en cours au journal ; le téléphone, sans accusé, la renvoie ; elle bloque de nouveau. Donc, avant chaque appel `Entree`, le Worker poste à la page l'`IdGeste` en cours (`VersPage::EnCours`). Après un **deuxième** arrêt mural sur la même entrée (choisi : le premier peut venir d'une pause de la machine), la page demande au Worker neuf de l'écarter (`DeLaPage::Commande(Reprendre { ecarter })`) : la salle la refuse au téléphone par `Ecarte`, et le rapport le dit comme une panne de l'outil, avec l'entrée nommée (le carburant aurait dû l'arrêter ; HIS-06). Tenu par `une_entree_qui_bloque_deux_fois_est_ecartee` (lot 10a).
+- **Pendant le chargement** (`Bonjour`, `Decrire`, `Creer`), le garde-fou se dérive du budget : `BUDGET_DE_CHARGEMENT` × la durée d'une unité **sur une boucle vide** × `MARGE_MACHINE`. L'unité qui compte n'est pas celle des appels lourds : les 678 ps de Firefox viennent d'appels d'au moins 10⁶ unités de vrai code de jeu (MESURES-PHASE-3, « La durée d'une unité ») ; une boucle vide coûte environ 480 ps par unité dans wasmtime (2³² unités en 2,07 s), environ 680 sous la charge de quatorze `yes` (2,93 s ; RESTE-PHASE-2, point 2), soit dix fois la médiane des appels lourds (43 ps). Dans les navigateurs, la boucle vide n'est pas mesurée : si le facteur de 4 à 12 des queues de Firefox s'y appliquait, 2³² unités y prendraient de 8 à 25 s (calculé), et le point 16 reviendrait tel quel. Ce que la première version disait (« 2³² × 700 ps × 2 ≈ 6 s ») ne laissait qu'un facteur 2 dans wasmtime chargé. Donc : **M10 mesure le module de `Bonjour` qui boucle**, en ps par unité, dans wasmtime sous charge (lot 2) et dans chaque navigateur (lot 3c, `etalonner`) ; puis l'on choisit entre deux voies, au lot 2 pour wasmtime et au lot 3c pour les navigateurs : **baisser `BUDGET_DE_CHARGEMENT`** (préférée : un garde-fou court dépend moins de la machine), à condition que le carburant de `Bonjour`, `Decrire` et `Creer` des cinq modules, mesuré au lot 2, y tienne largement ; ou **dériver le garde-fou** du maximum de M10. Une boucle dans `Bonjour` épuise ainsi son carburant avant le garde-fou : c'est la faute `Budget` du jeu. La même règle vaut pour `ReglagesMoteur` de `soiree-epreuve` (point 16 de RESTE-PHASE-2). Une conséquence va jusqu'aux budgets : **la durée d'une unité dépend de la forme du code**, d'un facteur dix entre une boucle vide et le code d'un jeu (question 4).
+
+**L'arrière-plan.** Mesuré sans interface : le Worker n'est pas bridé ; `requestAnimationFrame` s'arrête ; un `AudioContext` muet ne protège la page que dans Firefox (mesure 6). Donc :
+
+1. La partie qui fait foi vit dans le Worker : elle continue tant que le navigateur garde l'onglet, ce que l'épreuve vérifie (§ 8.3, `arriere-plan`). Le commun ne la **garantit** pas au-delà : l'économiseur de mémoire de Chrome peut abandonner un onglet caché, ce qui tue le Worker (lu, à constater). Alors, la partie s'arrête jusqu'au retour sur l'onglet ; entre-temps, le relais montre `AutoriteAbsente` aux téléphones (« Un instant… ») ; au retour, la page lit `document.wasDiscarded`, le dit à l'écran et au journal, et reprend par le seul chemin du § 2.4. La fiche de la veille ajoute `localhost:7878` aux sites toujours actifs de Chrome (§ 8.5).
+2. Le Worker mesure lui-même le retard de ses réveils. S'il dépasse 100 ms trois fois de suite (choisi, M6), il le **signale** : bandeau du commun sur les téléphones, marque au journal.
+3. Ce qui n'est pas mesuré : une fenêtre recouverte ou réduite, l'App Nap de macOS avec interface (SAL-131, SAL-132), les modes d'économie de Chrome, plus de sept minutes, Safari. Le lot 13 le mesure avec interface (M6).
+
+### 2.4 Points de reprise, garde, reprise
+
+**Ce que `partie` gagne** (lot 1) :
+
+- `partie::persistance` : encoder et décoder un point (sa chaîne `sain` et `periodique` aplatie et dédoublonnée), l'`EtatCoeur`, l'`Ouverture` et les lignes du `Journal`. L'encodage est versionné (`VERSION_GARDE`), ses octets figés par un test comme `forme_figee`, avec une seconde lecture indépendante (SAL-90).
+- `Journal::tronquer_avant(indice)`, avec une base d'indices absolue, et `Partie::reprendre` qui accepte un journal à base (P10). Le Worker garde le journal depuis le plus vieux point que la garde tient.
+- L'instantané hors des quatre zones (`moteur-commun`, lot 2). Chez Tier list, **sur un plateau presque vide** : 406 pages (25,4 Mio, MESURES-PHASE-1, mesurées sur les soirées de l'épreuve, où les images sont des PNG unis de quelques centaines d'octets et l'état vivant tient en moins de 335 Ko) moins 26 284 032 octets de zones laissent environ 0,31 Mio. Calculé, et vrai pour ce plateau seulement. Une vraie soirée Tier list porte jusqu'à 1 Mio d'images (`plateau::IMAGES_MAX_OCTETS`), des sauvegardes de 2 Mio (`sauvegarde::TAILLE_MAX`), et sa mémoire peut monter à 4 096 pages (`module/build.rs`). **M3 se mesure sur le pire cas : plateau plein d'images, une sauvegarde lue.** C'est sur cette mesure que P8, P9 et R2 se jugent : chiffrer ce point en XChaCha20-Poly1305 dans le Worker, sur le fil de la partie.
+
+**La garde est au relais, sur disque** (P9). L'autorité ouvre une seconde WebSocket, « garde », pour qu'un gros point ne retienne pas le temps réel ; les modules envoyés aux téléphones, qui passent par le temps réel, y vont par fenêtre (§ 2.5).
+
+- `Case::Point(n)` : le point, l'`Ouverture` et le registre de la salle (empreinte de jeton → `Appareil`, onglets, derniers numéros de geste et de tenu). Sans le registre, un geste en vol pendant la mort de l'autorité compterait deux fois (SAL-57).
+- `Case::Journal(n)` : un morceau de lignes, et ce que la salle a appris pendant ce temps.
+- Chaque case est chiffrée en XChaCha20-Poly1305, d'une clé dérivée de la **clé de garde G**. Les données associées portent `(salle, sorte, n, empreinte de la case précédente)` : le relais ne peut ni lire, ni modifier, ni intervertir, ni rejouer une case. Il peut seulement retenir la dernière ; l'autorité garde le dernier `n` et refuse une garde plus vieille. Ce `n` vit dans **IndexedDB** de l'origine `http://localhost:7878`, que le Worker lit lui-même : un Worker n'a ni `localStorage` ni `sessionStorage`. Il y vit avec G et la clé privée de l'autorité (P37), dans le même enregistrement : ils se perdent ensemble (fenêtre privée fermée, données du site effacées, autre navigateur ou autre profil). Sans G, la garde ne se lit plus, et le refus d'une garde plus vieille n'a plus d'objet : l'écran le dit (« Cette salle a été ouverte dans un autre navigateur, ou ses données ont été effacées ») et propose la reprise de salle par le terminal (P41).
+- **Une case de journal toutes les 100 ms** qui ont écrit (choisi ; ou 64 Kio, au premier atteint), **un point tous les `POINT_TOUS_LES` pas** (600, soit 10 s, repris de l'épreuve, choisi ; M12), et `Effacer { avant }` après chaque point écrit, jusqu'au point d'avant : la garde tient au plus deux points et une centaine de cases, pas des dizaines de milliers de fichiers en une soirée.
+- Le relais écrit dans un fichier temporaire, le synchronise par `File::sync_all`, le renomme (SAL-27), puis synchronise le dossier, avant de répondre `Ecrit { case }` (SAL-26). Sous macOS, `File::sync_all` de `std` fait déjà `fcntl(F_FULLFSYNC)` (lu dans `std`, à constater au lot 5) : ni `libc` ni code `unsafe`. Que la synchronisation d'un dossier ouvert en lecture marche sous macOS est aussi à constater. Le coût d'une case (fichier temporaire, synchronisation, renommage, synchronisation du dossier) n'est pas mesuré ; plusieurs ms sur un SSD Apple seraient plausibles : c'est **M11**, au lot 5.
+
+**L'accusé durable.** Un geste reste dans la file du téléphone jusqu'à ce que la case de journal qui le contient soit écrite. Sans cela, un vote accusé puis perdu avant l'écriture disparaîtrait (SAL-56, REM-07). L'accusé ne retarde pas le pixel, seulement la file du téléphone : un geste y reste au plus 100 ms plus M11 de plus qu'avec un accusé immédiat. La file de Sidequest tient 32 gestes (`limites.file`) : il faudrait plus de 32 gestes d'un même téléphone pendant ce temps pour qu'elle se remplisse, ce qu'aucun cahier ne décrit ; le lot 12 compte les `FilePleine` pour le vérifier. Il reste une fenêtre, dite : un geste appliqué puis perdu avant l'écriture est rejoué plus tard depuis le point, et son issue peut changer (une échéance passée). Elle est de l'ordre d'une case, 100 ms plus M11.
+
+**Une seule autorité par salle** (P36 ; INTERFACE, question 9, qui n'est plus sans objet). Un second onglet de `localhost:7878`, ou un `soiree-relais jouer` relancé qui en ouvre un, donne un second Worker avec le même G et la même preuve. Sans exclusion, un `Ecrire` de l'ancien Worker arriverait après le `Lister` du nouveau, et la chaîne de la garde se casserait. Donc : **la plus récente gagne**, dans l'ordre où le relais a ouvert les liens (SAL-18, SAL-19). Le lien `Garde` nomme le lien `Autorite` dont il dépend ; quand une autorité plus récente se présente, l'ancienne reçoit `Refus(Remplacee)` sur ses deux liens et s'arrête (son écran dit « Cette salle est maintenant ouverte dans un autre onglet — Reprendre ici », SAL-21), et le relais refuse tout `Ecrire` d'un lien de garde d'une autorité passée (SAL-20). Tenu par `relais/tests/`, `une_seconde_autorite_remplace_la_premiere_sal18` et `un_ecrire_d_une_autorite_remplacee_est_refuse_sal20`.
+
+**Reprendre**, par un seul chemin :
+
+1. G, la clé privée de l'autorité, le dernier `n` et le code de salle vivent dans IndexedDB de `http://localhost:7878` (port fixe, donc origine stable : P14), **jamais dans l'adresse** (P37). Un fragment se garde dans l'historique et la restauration de session, s'affiche dans la barre d'adresse (sur la télé, hors plein écran), et peut partir vers la synchronisation de Chrome ou de Firefox (lu, à constater) ; or G lit tous les points, donc tous les secrets. Le stockage de l'origine suffit à survivre au rechargement.
+2. Le Worker neuf ouvre la garde, liste les cases, lit le dernier point et les morceaux qui le suivent.
+3. Il récupère le module par son empreinte (`/jeux/<empreinte>.wasm`, boucle locale), le réécrit, vérifie l'empreinte réécrite.
+4. `Partie::reprendre(fabrique, ouverture, point, journal)` vérifie chaque empreinte notée ; un écart est une panne de l'outil (SAL-158).
+5. Le temps du rechargement devient un saut (D14). Le pas que les téléphones estiment ne recule jamais (PUN-39).
+6. Les téléphones, restés liés au relais, ont reçu `AutoriteAbsente` et montré « Un instant… » (SAL-23). Ils reçoivent leur vue entière (SAL-28), renvoient leurs gestes non accusés, que le registre restauré reconnaît (SAL-56, SAL-57).
+7. **Après un rechargement de l'écran**, le plein écran est perdu, l'`AudioContext` suspendu et le verrou d'écran rendu ; aucun ne revient sans geste. La partie reprend tout de suite dans le Worker ; l'écran montre par-dessus la scène un écran du commun, « Cliquer pour reprendre », dont le clic rend les trois. Les effets sonores tombés entre-temps sont comptés perdus, et le diagnostic le dit (INTERFACE § 6.4).
+
+**La durée d'une reprise** n'est pas bornée, ni mesurée : télécharger et réécrire le module (de 30 à 82 ms de réécriture en natif pour les cinq modules, de 65 à 82 ms pour les trois jeux, MESURES-PHASE-3, mesure 4), compiler, puis rejouer jusqu'à `POINT_TOUS_LES` pas de journal dans le navigateur. C'est **M12**, au lot 10a, sur les trois jeux, au pire moment (juste avant un point) ; `POINT_TOUS_LES` se règle d'après elle.
+
+**Ce qui casse se rejoue** (MANIFESTE, « La méthode » : « Ce qui casse pendant une partie s'enregistre, pour devenir facilement une nouvelle pression »). `soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G>` prend la garde d'une vraie soirée, la déchiffre, rejoue la soirée par `Partie::reprendre` dans wasmtime jusqu'à chaque marque F8, et écrit pour chacune un journal que l'épreuve sait rejouer comme un test. L'écran exporte G vers un fichier sur une commande du diagnostic, jamais d'elle-même. Lot 10a.
+
+### 2.5 Le relais
+
+- **Un cœur sans entrées-sorties** (`relais/src/coeur.rs`) : salles, liens, quotas, files, garde, avec le temps en entrée (SAL-01, SAL-04). Testé sur une horloge simulée (SAL-09).
+- **Une coque `std`, sans runtime asynchrone** : un fil de lecture et un fil d'écriture par lien, des trames entières (SAL-145, SAL-146) ; un fil qui possède les salles (SAL-141) ; l'admission décidée avant de créer un fil, avec des places réservées à la boucle locale (SAL-143) ; `TCP_NODELAY` (REM-22) ; chaque lien sous `catch_unwind` (SAL-79). Pas de tokio : SAL-195 dit une seule salle, et c'est ce qui compte ici ; mais le nombre de liens n'est pas « quinze amis » : Sidequest déclare 71 appareils, soit environ 150 fils à deux fils par lien (estimé). Leur mémoire et leur coût sont mesurés au lot 5 (**M15**) ; s'ils gênent, un fil de lecture commun par `poll` remplacerait les fils de lecture, sans changer le cœur.
+- **Les files** : une file fiable bornée en octets par lien, une place par canal remplaçable, le dernier gagne (SAL-06, SAL-07, SAL-70, SAL-122). Une file fiable pleine ferme le lien : le téléphone revient et reçoit l'état entier. **Le module passe par cette file** : sa borne est donc au-dessus de `TAILLE_MODULE_MAX` compressé plus la vue maximale de la salle, sans quoi un téléphone qui revient tournerait en boucle sans jamais entrer (comme SAL-120 : une limite au-delà de ce que le découpage porte). Et l'autorité envoie le module **par fenêtre** : au plus deux morceaux non accusés par téléphone (`VersAutorite::ModuleRecu { empreinte, morceau }`), moins encore si le relais dit `Encombre` ; sa WebSocket vers le relais, qui porte le temps réel de tous, n'est jamais pleine d'un module. Tenu au lot 12 : un téléphone qui rejoint Sidequest en pleine partie, à 71 appareils, ne retarde la vue d'aucun autre au-delà d'une image.
+- **Les échéances** (SAL-49) : un lien sans `Bonjour` en 10 s est fermé (choisi) ; les nouveaux liens sont limités par seconde (SAL-78). Le relais ne connaît pas `places.appareils` : il ne dépend que de `liaison` et ignore le jeu. Donc l'autorité lui envoie `VersRelais::Limites { liens_max }` (`places.appareils + 4`, les 4 pour les onglets jumeaux et les reconnexions, choisi) ; tant qu'elle ne l'a pas fait, la borne est fixe (`liaison::LIENS_MAX_SANS_AUTORITE`, 16, choisi). Battements toutes les 250 ms dans les deux sens (SAL-43) ; un lien muet est absent après `liaison::SILENCE_MAX_MS`.
+- **Le port est fixe** (7878 par défaut). Le relais écoute sur `127.0.0.1` **et** `[::1]` en boucle locale (Chrome essaie aussi `::1` pour `localhost`), plus l'adresse du réseau local. Si le port est pris **dans l'une des deux familles**, le relais refuse de démarrer, haut et clair : un autre programme sur `[::1]:7878` capterait sinon `localhost`. Un relais relancé garde l'adresse du QR (P14).
+- **Une machine sans adresse sur le réseau local** (Wi-Fi coupé, pas de câble) n'empêche pas le relais de démarrer : il écoute en boucle locale seulement, l'écran n'affiche pas de QR et dit « Pas de réseau : les téléphones ne peuvent pas se relier ; Tier list se joue sans eux ». Le refus d'une adresse qu'on n'écoute pas (SAL-77) ne vaut que pour `--adresse`.
+- **HTTP sans chemin de fichier** : une table en mémoire construite au lancement, nommée par empreinte (SAL-150, SAL-41). En-têtes : `Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`. La page et le Worker de l'écran se relient à `ws://localhost:7878/ws`, de la même origine que la page (`http://localhost:7878`) : `'self'` ne couvrirait pas `127.0.0.1:7878`, qui est une autre origine. Que `'self'` couvre `ws://` de la même origine se constate au lot 10a dans Chrome et Firefox, au lot 12 dans Safari. COOP et COEP sur la page de l'écran (SAL-149 ; mesuré : `performance.now()` à 5 µs dans Chrome, 20 µs dans Firefox) ; `no-store` sur le HTML, `immutable` sur ce qui porte une empreinte.
+- **Qui parle au relais** (SAL-33 : « un `Host` local, sans `Origin` étranger ni en-tête de proxy »). Vérifier l'adresse d'où vient la connexion ne suffit pas : n'importe quel site ouvert sur l'ordinateur de la soirée peut ouvrir `ws://127.0.0.1:7878/ws`, puisqu'une WebSocket n'est pas soumise au CORS ; et un rebond DNS atteint les routes `GET` de boucle locale. Donc, pour les rôles `Autorite` et `Garde` et les routes de boucle locale : connexion venue de la boucle, `Host` parmi `localhost:7878`, `127.0.0.1:7878` et `[::1]:7878`, `Origin` exactement `http://localhost:7878` (ou absent pour les outils natifs du banc, en boucle locale et avec `--banc` seulement), aucun en-tête de mandataire (`Forwarded`, `X-Forwarded-For`, `Via`). Sinon `Refus(HorsBoucleLocale)`. Pour le rôle `Appareil`, l'`Origin` doit être celle d'une adresse que le relais annonce. Tenu par `relais/tests/`, `un_site_etranger_ne_prend_pas_la_salle_sal33` et `un_rebond_dns_est_refuse_sal33`.
+
+| Route | Qui | Ce qu'elle sert |
+|---|---|---|
+| `GET /` | boucle locale | la page de démarrage, en mode écran |
+| `GET /s/<salle>` | tous | la même page, en mode téléphone |
+| `GET /web/<empreinte>/…` | tous | le paquet de la page (colle, `.wasm` de `ecran`, `autorite`, `telephone`, polices du commun) |
+| `GET /ws` | tous | la WebSocket ; le rôle se dit dans le `Bonjour` |
+| `GET /jeux/catalogue`, `GET /jeux/<empreinte>.wasm` | boucle locale | le catalogue et les modules livrés, pour l'écran (P16) |
+| `GET /salle` | boucle locale | le code de salle que le relais garde (P41) : il n'est pas secret, et un écran neuf le retrouve ainsi |
+| `GET /banc`, `POST /banc/rapport` | boucle locale, avec `--banc` | le canal du banc (§ 8) |
+
+Le paquet de la page se construit une fois par `soiree-relais preparer` : le workspace `web/` pour `wasm32`, puis la CLI `wasm-bindgen` 0.2.129, dans `<cible>/soiree-web/<empreinte>/`. Le relais le charge en mémoire au lancement ; rien d'autre ne se lit du disque pour être servi.
+
+**Ce que le relais voit, et ne voit pas.**
+
+| Il voit | Il ne voit pas |
+|---|---|
+| le code de salle, les liens, les adresses IP, l'adresse locale que chaque téléphone a jointe (SAL-75), la taille, l'instant et la classe des trames, les clés éphémères de Noise, la taille des cases de garde, quel module l'écran a chargé, les lignes des flux (qu'il écrit sur disque) | le secret d'entrée, la clé privée de l'autorité, G, les jetons, les prénoms, les gestes, les vues, les avis, l'état, les points, le journal |
+
+**Les limites, dites.** Le relais sert la page qui lit le fragment.
+
+- Pour un service en ligne, une page servie par un service qu'on ne croit pas peut voler la clé (question 2).
+- **Pour le relais local aussi, sur un Wi-Fi qu'on partage.** La page du téléphone et son `.wasm` arrivent en `http://192.168.x.y`, sans authentification. Un invité **actif** sur le même Wi-Fi (usurpation ARP, faux point d'accès) peut servir à un autre téléphone une page modifiée, qui lit le fragment du QR, puis tout ce que ce téléphone voit et tape. NKpsk0 protège contre un invité qui écoute, pas contre un invité qui agit. Le CONTRAT dit « tout est chiffré de bout en bout » : c'est vrai du transport, pas de la page qu'on charge. Rien en phase 3 ne ferme cette limite sans `https` sur le réseau local (un certificat que les téléphones croient) ou une app installée (phase 5) : question 18.
+
+**C'est une forme, pas une promesse.** `relais` ne dépend que de `liaison`, qui ne décrit que les trames en clair. Un test de `relais/tests/` lit `cargo metadata` et échoue si `relais` tire `salle`, `snow` ou une crate de chiffrement. Son contrôle négatif : la même fonction de lecture du graphe, appliquée à une crate témoin de `relais/tests/temoins/` qui tire `snow`, doit échouer.
+
+### 2.6 Le chiffrement
+
+- **Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s**, par la crate `snow` (pur Rust, motifs et vecteurs publics). Une session par appareil.
+- **Le fragment du QR** : `http://192.168.1.20:7878/s/3FA9C2D1#<secret d'entrée, 16 octets>.<clé publique de l'autorité, 32 octets>`, en base64url. Un navigateur n'envoie jamais le fragment, ni dans une requête, ni dans le `Referer`.
+- **La psk de Noise fait 32 octets** (spécification de Noise, « Pre-shared symmetric keys » ; `snow` refuse toute autre longueur). Elle se dérive du secret d'entrée : `psk = blake3::derive_key("soiree secret d'entree 1", secret)`, 32 octets. Le secret reste de 16 octets dans le QR, pour un QR plus petit. La dérivation est figée par un test d'octets, comme la preuve d'autorité (`la_psk_derive_du_secret_d_entree_octets_figes`).
+- **Pourquoi NK et un secret d'entrée.** Tous les invités voient le QR. L'échange éphémère protège chaque téléphone d'un voisin qui écoute le Wi-Fi avec le même QR (Punchline envoie des réponses secrètes jusqu'à la révélation). La clé statique empêche un invité de se faire passer pour l'autorité. Le secret d'entrée réserve la salle à ceux qui ont vu le QR. Rien de cela ne tient contre une page modifiée (§ 2.5, « Les limites, dites »).
+- **Aucun effet avant le premier message de transport** (SAL-17 : « Valider le jeton avant tout effet de bord »). En NKpsk0, le premier message de la poignée de main se rejoue, et l'autorité ne sait pas que l'initiateur est vivant avant son premier message de transport : un invité qui capte le premier message d'un autre téléphone (`ws://` en clair, sur un Wi-Fi WPA2 dont tous ont le mot de passe) peut le renvoyer. Si le jeton voyageait dans ce premier message et que « le lien le plus récent gagne » s'appliquait tout de suite, il ouvrirait un lien plus récent, et le vrai téléphone recevrait « Remplacé — Reprendre ici ». Donc la poignée de main ne porte rien : `VersAutorite::Bonjour`, avec le jeton, est **le premier message de transport** de l'initiateur, que seul le détenteur de la clé éphémère sait chiffrer. Ni présence, ni `Remplace`, ni accueil, ni place réservée avant lui ; une poignée de main inachevée en 10 s est coupée. Tenu par `une_poignee_de_main_rejouee_ne_remplace_personne_sal17`.
+- **Un secret d'entrée et une paire de clés par soirée**, tirés à la première ouverture de l'écran et gardés jusqu'à « Nouvelle soirée ». Le code de salle, lui, reste (P13) : un invité d'une soirée passée n'entre plus.
+- **Pas de WebCrypto** : `crypto.subtle` manque hors contexte sécurisé. Tout le chiffrement est en Rust compilé, une seule définition de part et d'autre. Le hasard vient de `crypto.getRandomValues`, par `getrandom` et son moteur pour le navigateur (SAL-93), dans les coques de `web/` seulement ; il entre dans `salle` en paramètre (§ 2.2), et `snow` y reçoit un résolveur qui tire de ce générateur au lieu du sien. `getrandom` 0.4.3 est déjà dans le `Cargo.lock` du commun ; si `snow` ou `rand_core` en tirent une autre version majeure, elle demande son propre réglage pour le navigateur : le lot 4a lance `cargo tree -i getrandom --target wasm32-unknown-unknown` dans `web/` et le dit.
+- **Les trames** : nonce explicite, fenêtre de rejeu de 1 024. La classe de la trame est dans les données associées : le relais ne peut pas la changer. Une trame qui ne se déchiffre pas coupe son seul lien (SAL-117, REM-64).
+- **La clé de garde G n'est pas dans le QR** : tout invité saurait sinon lire les points, qui portent tous les secrets.
+- **L'identité d'un appareil** : un jeton de 32 octets tiré par le téléphone, gardé dans son `localStorage`. Un stockage cassé donne un appareil neuf, jamais une page qui ne s'ouvre pas (SAL-32). Le jeton voyage dans le premier message de transport, chiffré, après la poignée de main (SAL-14, SAL-17). L'autorité tient la table empreinte du jeton → `Appareil`, avec un rang interne tiré à chaque soirée (CAT-27).
+- **Une limite de l'origine, dite.** Le `localStorage` d'un téléphone appartient à `http://<adresse>:7878`. Si l'adresse de l'ordinateur change (bail DHCP), le téléphone revient comme un appareil neuf, et Sidequest ne retrouve pas le personnage retenu. Le relais montre l'adresse jointe ; `--adresse` l'impose. De plus, Safari sur iPhone efface le stockage écrit par script d'un site qu'on n'a pas visité depuis sept jours (ITP ; lu, non mesuré), ce qui est souvent le délai entre deux soirées : **la promesse du cahier de Sidequest (le personnage retenu d'une soirée à l'autre) tiendra mal sur iPhone**. C'est dit à l'agent de Sidequest (`BESOINS-DES-JEUX.md`, au lot 7) et au mainteneur (question 23) ; un appareil neuf reste un appareil qui marche.
+
+### 2.7 Les messages
+
+Trois familles, chacune une définition Rust unique (CONTRAT, « Les types de bout en bout »), en postcard, décodée strictement par `jeu_abi::decoder`, avec une forme figée et une seconde lecture dans ses tests (SAL-88, SAL-90).
+
+**Entre le relais et les bouts, en clair** (`liaison`, `PROTOCOLE_RELAIS: u16 = 1`) :
+
+```rust
+pub struct CodeSalle(pub [u8; 4]);         // affiché en 8 chiffres hexadécimaux
+pub struct Lien(pub u32);
+pub enum Role { Autorite { preuve: [u8; 32] }, Garde { preuve: [u8; 32], autorite: Lien }, Appareil }   // P36
+pub enum Classe { Fiable, Remplacable(u8) }
+pub enum Case { Point(u64), Journal(u64) }
+pub enum VersRelais<'a> {
+    Bonjour { protocole: u16, salle: CodeSalle, role: Role },  // Autorite et Garde : boucle locale seulement (SAL-33)
+    Vers { lien: Lien, classe: Classe, trame: &'a [u8] },      // autorité → un appareil
+    Trame { classe: Classe, trame: &'a [u8] },                  // appareil → autorité
+    Couper { lien: Lien, raison: RaisonCoupure },
+    Echo { t_envoi_us: u64 },                                   // l'aller-retour jusqu'au relais seul
+    AuRevoir,                                                   // lu avant la fermeture (SAL-58)
+    Ecrire { case: Case, octets: &'a [u8] }, Lister, Lire { case: Case }, Effacer { avant: u64 },
+    AjouterLigne { flux: &'a str, ligne: &'a [u8] },           // la demande `Ligne`, écrite sur disque
+    Limites { liens_max: u16 },                                 // autorité : places.appareils + 4
+}
+pub enum DuRelais<'a> {
+    Accueil { epoque: [u8; 16], lien: Lien, adresses: Vec<AdresseAnnoncee> },  // époque neuve à chaque lancement (SAL-25)
+    Refus(RefusRelais),                                         // typé et définitif (SAL-42, SAL-148)
+    Ouvert { lien: Lien, adresse_jointe: [u8; 4] },            // SAL-75
+    De { lien: Lien, classe: Classe, trame: &'a [u8], recu_us: u64, renvoye_us: u64 },
+    Pour { classe: Classe, trame: &'a [u8] },
+    Ferme { lien: Lien, cause: CauseFermeture }, Encombre { lien: Lien, octets_en_attente: u32 },
+    AutoriteAbsente, AutoritePresente,                          // SAL-23
+    Echo { t_envoi_us: u64, t_relais_us: u64 },
+    Ecrit { case: Case }, Cases(Vec<Case>), Lu { case: Case, octets: &'a [u8] },
+}
+pub enum RefusRelais { Protocole { relais: u16 }, SalleInconnue, PreuveFausse, HorsBoucleLocale, Pleine, TropGros, GardePleine,
+                       Remplacee }                              // une autorité plus récente tient la salle (P36)
+pub const TRAME_MAX: u32 = 256 * 1024;      // choisi ; un module voyage en morceaux
+pub const BATTEMENT_MS: u32 = 250;          // SAL-43
+pub const SILENCE_MAX_MS: u32 = 3_000;      // aujourd'hui `epreuve::telephone::SILENCE_MAX` ; SAL-44 suggère 5 à 6 s (M5)
+pub fn periode_de_redite(r: &ReglesTenuFil) -> Option<Duree>;   // P27
+```
+
+La preuve est `blake3::derive_key("soiree preuve d'autorite 1", G)`. La première autorité d'une salle l'enregistre avec la garde ; une autre preuve est refusée. Un autre programme de la machine ne prend pas la salle, ni un site ouvert dans le navigateur (§ 2.5, SAL-33).
+
+**Une salle ne se perd pas pour toujours** (P41). Le code de salle reste d'une soirée à l'autre (P13), mais G ne vit que dans le stockage d'un profil de navigateur. Que l'hôte ouvre la télé dans un autre navigateur, dans une fenêtre privée, ou efface les données du site, et G change : ce code de salle répondrait `PreuveFausse` pour toujours, il faudrait un code neuf, et Sidequest perdrait le personnage retenu et le nom de ses résultats. Donc : **le relais garde le code de salle** (il n'est pas secret ; `GET /salle`, boucle locale), et `soiree-relais oublier <salle>`, tapé dans le terminal de l'ordinateur de la soirée, efface la preuve enregistrée et la garde de cette salle : être au clavier prouve la présence. L'autorité suivante enregistre sa preuve, le code ne change pas, les téléphones rescannent le QR (secret et clés neufs). L'écran qui reçoit `PreuveFausse` affiche cette commande, exacte.
+
+**Entre l'autorité et un appareil, chiffré** (`salle::fil`, `PROTOCOLE: u32`) :
+
+```rust
+pub enum VersAutorite<'a> {
+    Bonjour { protocole: u32, jeton: [u8; 32], onglet: u64, capacites: CapacitesFil, module_connu: Option<[u8; 32]> },
+    Geste { onglet: u64, numero: u64, octets: &'a [u8], fait: Instant, vu: Pas, trace: TraceTelephone },
+    Tenu { numero: u64, octets: &'a [u8], fait: Instant },
+    Echo { t_us: u64, echo_us: u64 },
+    ModuleRecu { empreinte: [u8; 32], morceau: u32 },          // accuse chaque morceau : la fenêtre du § 2.5
+}
+// `Bonjour` est le premier message de transport, jamais une charge de la poignée de main (§ 2.6, SAL-17).
+pub enum VersAppareil<'a> {
+    Accueil { session: u32, dernier_geste: u64, dernier_tenu: Option<u64>, pas: Pas, heure: u64,
+              module: Option<[u8; 32]>, limites: LimitesSalle },          // SAL-36, SAL-38
+    Refus(RefusSalle),                       // Protocole, Pleine, Fermee, Remplace : typé, lisible (SAL-42, REM-77)
+    Module { empreinte: [u8; 32], morceau: u32, total: u32, octets: &'a [u8] },
+    Ressource { cle: u64, octets: &'a [u8] },  // polices et images de la page, dans la même fenêtre (§ 2.10)
+    Vue { pas: Pas, montre: &'a [u8] },      // la vue confirmée, entière (SAL-28)
+    Avis { octets: &'a [u8] }, Ecarte { numero: u64 }, Accuse { jusqu_a: u64 },
+    Attente(AttenteCommun),                  // jeu en chargement, en panne, autorité qui reprend
+    Echo { t_us: u64, echo_us: u64 },
+    Banc(CoupBanc<'a>),                      // les coups d'un bot, en mode banc seulement (§ 8.1)
+    // Réservé à la phase 4 : Projection { pas, morceaux, inclus_geste, inclus_tenu }.
+}
+```
+
+- L'identité d'un geste : `IdGeste = blake3(rang interne ‖ onglet ‖ numero)`, tronqué à 8 octets. Stable à travers les renvois ; un téléphone ne vise pas l'espace d'un autre. La salle sait ce qui est placé par `(appareil, onglet) → jusqu'à numero`, pour les 8 derniers onglets (SAL-37), et le garde.
+- L'horloge : le téléphone estime l'instant de l'autorité par l'écho, au plus petit aller-retour (SAL-127, SAL-128). L'autorité mesure elle-même la demi-latence : un appareil peut la grossir, pas la réduire (SAL-129, `regles::placer`).
+
+**Entre la page et le Worker** (`salle::ecran`) :
+
+```rust
+pub enum VersPage { Scene { pas: Pas, t_us: u64, octets: Vec<u8> }, Ressource { cle: Cle, octets: Vec<u8> },
+                    Demande { id: IdDemande, quoi: DemandeArrivee }, EtatSalle(EtatSalle),
+                    Battement { pas: Pas, retard_ms: u32 }, Panne(RapportPanne), Traces(Vec<Trace>),
+                    EnCours(Option<IdGeste>) }   // posté avant chaque appel `Entree` (P39)
+pub enum DeLaPage { Ecran { quoi: EcranArrivee, vu: Pas, t_us: u64 }, Image { t_us: u64, periode_us: u32 },
+                    Fichiers(Vec<FichierRecu>), Reponse { id: IdDemande, quoi: ReponseArrivee },
+                    Commande(CommandeEcran) }   // ChangerDeJeu, NouvelleSoiree, Reprendre { ecarter }, Marque (F8)
+```
+
+Les octets passent par un `ArrayBuffer` transféré, sans copie. Tous les instants sont dans la base `performance.timeOrigin + performance.now()`. Chaque contexte (la page, le Worker, une autre page) ancre son `timeOrigin` sur l'heure murale à sa création : que cette base soit commune à la page et au Worker à la granularité près, et entre deux processus de navigateur, est **à constater** (M14, § 8.4).
+
+### 2.8 La page de démarrage, le catalogue, le chargement
+
+- **On ne joue qu'un module éprouvé** (P17). Un code 0 **sans E20** suffit pour jouer : E20 est un contrôle long, et le CONTRAT dit « Seule la publication attend les longs ». La publication (l'étiquette d'un jeu) attend E20 réussi dans chaque navigateur visé (question 20). `soiree-epreuve <jeu> --catalogue <dossier>` y dépose, sur un code 0 seulement, `<empreinte>.wasm` (le livré) et `<empreinte>.json` (empreinte livrée, empreinte réécrite et `reecriture::VERSION`, date, plan, nom, places, verdict). `soiree-epreuve --construire <jeu>` ne fait que l'étape 1 et rend l'empreinte, avec la même invocation de cargo : une même source ne donne les mêmes octets que par le même chemin de compilation.
+- **La commande unique** (P35), dans le README de chaque jeu : `soiree-relais jouer .`. Elle construit le module, cherche son rapport par empreinte, lance le relais et ouvre `http://localhost:7878/` (`open`). Un module sans rapport ne se lance qu'avec `--non-eprouve`, et l'écran affiche « NON ÉPROUVÉ » en permanence. Un ami qui clone un jeu doit donc d'abord le faire passer l'épreuve chez lui (562 s pour Sidequest, mesuré sur la machine de l'hôte), ou jouer `--non-eprouve`, et le README le dit. **Ce que suppose « une installation unique »** n'existe pas encore : le nouveau commun n'a aucune étiquette (AGENTS.md du commun), les jeux en dépendent par chemin (`../../soiree/crates/…`), et rien ne dit comment un ami obtient la cible `wasm32-unknown-unknown`, la CLI `wasm-bindgen` 0.2.129 et le paquet `web/`. Réponse provisoire, jusqu'à celle du mainteneur (question 19) : la première étiquette du nouveau commun se pose à la fin du lot 14 ; les jeux passent alors à une dépendance git sur elle (étape 4 de l'AGENTS.md de l'hôte) ; l'ami installe `soiree-relais`, `soiree-epreuve` et la cible par `cargo install --git … --tag …` et `rustup target add`, et construit le paquet `web/` chez lui par `soiree-relais preparer`, ce qui demande la CLI `wasm-bindgen` à la même version.
+- **L'écran de démarrage est une scène du commun**, du Rust qui produit une `SceneFil`, dessinée par `rendu`. Elle montre la liste des jeux (nom, places, date de l'épreuve), le QR, l'adresse, le code de salle, les téléphones reliés, l'aide. Le clic sur « Jouer » est le geste qu'exigent le plein écran, le son (SAL-174, SAL-175) et le verrou d'écran ; après un rechargement, c'est « Cliquer pour reprendre » (§ 2.4, point 7).
+- **L'aide** (CONTRAT, « Le jour où l'on joue » : « Le commun vérifie que les appareils se rejoignent, et dit clairement quoi faire sinon ») : un `GET /s/…` venu du réseau sans WebSocket ensuite donne « Un téléphone a ouvert la page mais n'a pas pu se relier » ; aucun téléphone 60 s après le QR (choisi) donne « Certains Wi-Fi isolent les appareils » (SAL-99, SAL-100) ; l'état du pare-feu de macOS, lu sans droits par `socketfilterfw`, donne « Autorise soiree-relais » (SAL-95, REM-150) ; aucune adresse sur le réseau local donne « Pas de réseau » sans QR (§ 2.5). Tier list, sans téléphone, reste jouable sans réseau. Chaque message a son scénario du banc (lot 10b, § 8.2, `aide`).
+- **L'adresse du QR** : le relais énumère les interfaces (`if-addrs`), écarte la boucle, `utun`, `awdl`, `llw` et les ponts, préfère une IPv4 privée. C'est une supposition (SAL-76) : `--adresse` l'impose, validée. Une adresse qu'on n'écoute pas est refusée à voix haute (SAL-77). Pas de mDNS (OUT-210).
+- **Charger un jeu**, dans le Worker :
+  1. `GET /jeux/<empreinte>.wasm` ; lire les octets ; vérifier le blake3 ; refuser au-delà de `TAILLE_MODULE_MAX` (4 Mio livrés, choisi ; les modules font de 227 à 780 ko, mesure 4). Cette borne fait aussi **échouer l'épreuve** (E1, au chargement), sinon un module éprouvé pourrait être refusé le soir même ; son contrôle négatif est un fautif `module-trop-gros` (§ 8.3). La compilation sur un téléphone reste sans borne de temps mesurée : elle va sur la fiche humaine (§ 8.5) ;
+  2. `reecriture::reecrire` ; vérifier l'empreinte réécrite contre le rapport ;
+  3. `WebAssembly.compile` (mesuré : 0,5 à 4,9 ms), puis `moteur_commun::verifier_chargement`, puis `Partie::ouvrir`, avec les téléphones déjà là comme présents et une graine de `getRandomValues` ;
+  4. le module réécrit part aux téléphones par la connexion chiffrée (P18).
+- **Changer de jeu** : une commande du commun, jamais du jeu. Nouvelle `Partie`, nouvelle chaîne de garde, mêmes liens, même registre. « On rejoue » reste la sortie `NouvellePartie` du jeu.
+
+### 2.9 La télé
+
+- **`rendu`** : `wgpu`, WebGPU quand le navigateur l'expose, WebGL2 sinon, Metal en natif pour les tests. Rectangles instanciés, quads texturés, `glyphon` pour le texte. Décalage des groupes, opacité, `pixel_entier` (SQ-52), échelle entière de `FormeEcran::Scene`, zone sûre (HIS-46, PUN-51). `FormeEcran::Page` (Tier list) : une toile fixe au-dessus d'un espaceur de la hauteur de la scène ; le défilement est celui du navigateur. Le code de rendu s'exempte, en tête de crate et avec sa raison, des règles de déterminisme et d'arithmétique (CONTRAT, « Les règles d'écriture »).
+- **Les données envoyées au GPU** ont leur structure Rust `#[repr(C)]`. Un test lit les WGSL par `naga` (tiré par `wgpu`) et compare tailles et décalages (CONTRAT, « Les types de bout en bout »).
+- **`mise-en-page`** : `cosmic-text`, avec un `FontSystem` sans les polices du système : seulement les assets du jeu et les polices du commun. La mise en forme se fait dans le repère de la scène, sans hinting. `Taille::Budget { max, min }` : la plus grande taille, au 1/256 près, où le texte tient dans sa boîte avec ses `Lignes` et sa `Coupe`. `Coupe::Mots` colle à son mot le signe isolé, avec une espace fine insécable devant `?!:;` (SQ-46). Le résultat se met en cache par (clé, texte, style, boîte). **Le rendu dessine exactement cet agencement** ; le jeu ne lit jamais une mesure (CONTRAT, « Le GPU »).
+- **E16 mesure les débordements** : un pire cas dont un texte ne tient pas, même à `min`, échoue en nommant la clé et le texte. Fautif : `texte-qui-deborde`.
+- **Les polices sont des fichiers sfnt** (TTF ou OTF), validés au chargement par E1 (P22). La police du commun (`Cle::POLICE_DU_COMMUN`) est une police libre (OFL) à large couverture latine, plus une police d'emoji monochrome. Pas de CJK : un glyphe absent se dessine comme une boîte et se compte au diagnostic.
+- **Les images** : décodées par le navigateur (`createImageBitmap` ; un SVG par un élément `<img>`), copiées dans une texture (P23). En natif, PNG par le code de `epreuve/src/fichiers.rs`.
+- **Glisser entre deux pas** : par clé, les nœuds `glisse` sans `rupture` (SQ-56, SQ-58). À 60 Hz et pas calé sur l'image, la télé dessine la dernière scène, sans le pas de retard ; à 120 Hz ou avec des pas doublés, elle glisse. Mesuré avec et sans au lot 13. Tier list ne glisse pas.
+- **Le compte à rebours** se calcule à chaque image depuis l'échéance et le pas estimé, qui ne recule jamais (PUN-39, SQ-36). Les animations `anime` partent d'un instant de la partie (REM-12).
+- **Le QR** : `qrcodegen`, dessiné en carrés (SAL-191). Un test le relit par `rqrr` et retrouve l'adresse.
+- **Le travail du GPU fini se compte** (`onSubmittedWorkDone`), pas les tours de `requestAnimationFrame` (OUT-33). Ce rappel dit que la file du GPU a fini le travail soumis, **pas** qu'une image a été composée et présentée ; aucune API du web ne signale une image perdue par le compositeur ; sur le repli WebGL2 de `wgpu`, le rappel est même émulé par des barrières relevées au `poll`. On l'appelle donc « travail du GPU fini », comme au § 8.4. Les images perdues se mesurent **dans Chrome seulement**, par la trace de CDP (catégories de la composition ; à constater au lot 9) ; Firefox et Safari ne permettent pas cette mesure, et le rapport le dit. On ne dessine que si quelque chose change. INTERFACE § 6.2 compte « ses présentations réussies côté GPU » : c'est un écart, au § 9.2.
+- **GPU perdu** (`device.lost`) : recréer l'appareil et les atlas, redessiner la dernière scène (CONTRAT, « Le GPU »).
+- **Les composants**, de vrais éléments posés sur la toile à la boîte de leur nœud (ABI 4). `Champ` et `EnPlace` gardent contenu, curseur, sélection et composition tant que leur clé existe (TL-33, PUN-40, HIS-47) ; pendant une composition, aucune touche n'est un raccourci (TL-32) ; un raccourci cède au champ qui a le focus (TL-34). `Deplacables` est du Rust du commun, sur les rectangles dessinés (TL-36 à TL-47). `Selecteur` et `Lien` agissent dans le gestionnaire du clic, sans aller-retour vers le Worker (P24) ; une demande `Telecharger` hors d'un geste montre un bouton du commun.
+- **Échap en plein écran** (P38). Punchline (« Annuler (Échap) », CAHIER, l. 248 et 309) et Tier list (fermer la fenêtre, annuler un glisser, CAHIER, l. 37, 38, 134 et 268) s'en servent. En plein écran, le navigateur garde Échap pour sortir du plein écran. Réponse provisoire : dans Chrome, l'écran demande `navigator.keyboard.lock(["Escape"])` à l'entrée en plein écran (Keyboard Lock : Échap arrive alors au jeu, et un appui long sur Échap sort du plein écran ; lu, à constater au lot 10b) ; dans Firefox et Safari, qui n'ont pas cette API (lu, à constater), le premier Échap sort du plein écran sans arriver au jeu, et l'écran du commun montre « Plein écran quitté — cliquer pour revenir » ; le jeu ne reçoit rien de ce changement. C'est dit aux agents de Punchline et de Tier list dans `BESOINS-DES-JEUX.md` (lot 10b), et posé au mainteneur (question 21).
+- **Les demandes** : `Rendu` se dessine hors écran, par lots, avec une image présentée entre deux (TL-57), et sa réponse dit combien d'images n'ont pas pu être dessinées (TL-56, ABI 4) ; `Image` par `createImageBitmap`, recadrée et réduite par le GPU ; `Lire` sur les octets gardés par la page. Après un rechargement, ces octets sont perdus : la demande relancée rend `Err(Interne)`, et on le dit.
+- **Le son** : les quatre `Signal` synthétisés, `Son::Asset` décodé par `decodeAudioData`. Seul un contexte `running` joue (SAL-174) ; programmé à `quand` corrigé de `outputLatency` (SAL-176) ; une identité d'effet ne rejoue pas (SAL-167, PUN-66).
+- **Le diagnostic** s'ouvre par la touche que déclare le jeu. F8 pose une marque au journal (SAL-162). Il montre, par source (clavier, souris, chaque téléphone), une barre par segment pour les 200 derniers gestes ; les 50ᵉ, 95ᵉ et 99ᵉ centiles par segment et la ligne du budget ; l'histogramme des pas par image ; le moteur de dessin ; les débordements et les glyphes absents ; **une ligne à part pour le matériel**, réglée à la répétition, jamais mêlée au reste. Son texte part aussi au banc.
+
+### 2.10 Les pages téléphone
+
+**La page est une fonction du module** (P19). Elle tient ensemble « Chaque jeu code la page de téléphone qu'il veut » (CONTRAT) et « Ce qu'on joue tourne enfermé » : une page compilée à part avec `web-sys` atteindrait le réseau et le DOM. C'est un écart à INTERFACE § 6.6, qui prévoyait une crate `<jeu>-page` (question 1).
+
+```rust
+// jeu, trait Jeu : une méthode de plus. Sa valeur par défaut rend une page vide ;
+// E21 refuse la page vide d'un jeu qui a des téléphones (armé au lot 7).
+/// La page du téléphone : une fonction de la vue reçue et de ce que le joueur fait en ce
+/// moment sur sa page. Elle ne lit pas l'état, ne prédit rien, ne gère pas la connexion.
+fn page(vue: &Recue<Self::VueTelephone>, l: &Locaux, p: &mut Page<Self>) {}
+
+pub struct Recue<V> { pub montre: Montre<V>, pub pas: Pas, pub confirmee: Oui }   // toujours Oui en phase 3
+impl Locaux {
+    pub fn ecran(&self) -> EcranTelephone;                   // largeur, hauteur (px CSS), marges sûres, orientation
+    pub fn texte<L: Limite>(&self, champ: Cle) -> Option<Texte<L>>;   // nettoyé par la fonction unique (D22)
+    pub fn choix(&self, cle: Cle) -> Option<u32>;
+    pub fn appuye(&self, cle: Cle) -> Oui;                    // un `Maintenu` sous le doigt
+    pub fn direction(&self, croix: Cle) -> Direction8;
+    pub fn retenu(&self) -> Option<&[u8]>;                    // ce que la page a retenu pour cette salle
+    pub fn capacites(&self) -> &Capacites;
+}
+impl<J: Jeu> Page<'_, J> {
+    pub fn colonne(&mut self, cle: Cle, f: impl FnOnce(&mut Self));
+    pub fn rangee(&mut self, cle: Cle, f: impl FnOnce(&mut Self));
+    pub fn grille(&mut self, cle: Cle, colonnes: u8, f: impl FnOnce(&mut Self));
+    pub fn texte(&mut self, cle: Cle, t: &str, s: StylePage);
+    pub fn image(&mut self, cle: Cle, image: Cle, h: TaillePage);
+    pub fn compte_a_rebours(&mut self, cle: Cle, e: Echeance, s: StylePage);
+    pub fn bouton(&mut self, cle: Cle, nom: &str, geste: J::GesteTelephone, quand: Declencheur, s: StylePage);
+    pub fn maintenu(&mut self, cle: Cle, nom: &str, s: StylePage);
+    pub fn croix(&mut self, cle: Cle, d: Directions);          // Quatre | Huit (REM-121 à REM-124)
+    pub fn champ(&mut self, cle: Cle, c: ChampPage<J::GesteTelephone>);   // limite, unité, exemple, clavier, geste sur Entrée
+    pub fn choix(&mut self, cle: Cle, options: &[(Cle, &str)], balayable: Oui);
+    pub fn tenir(&mut self, t: J::TenuTelephone);              // l'état tenu que la page déclare maintenant
+    pub fn retenir(&mut self, octets: &[u8]) -> Result<(), Envoi>;   // ≤ 1 Kio, par salle et par jeu
+}
+pub enum Declencheur { Contact, Relache }                       // un buzzer réagit au contact (REM-125)
+```
+
+**Sur le fil, en ABI 4** (ajoutés à la fin de leurs enums) : `Appel::Page { montre: &[u8], pas: Pas, locaux: LocauxFil }` et `Retour::Page(PageFil)`. C'est une lecture sans état : la colle la traite comme `Valider`, sans enveloppe.
+
+- **Ce que le téléphone appelle** : `Bonjour` et `Decrire` au chargement, pour connaître les zones, les limites et les assets déclarés ; puis `Page`, et rien d'autre. Il n'appelle jamais `Creer`, ni `Ressources`, qui est une lecture sur un état créé.
+- **Les octets des polices et des images** que la page charge (par `FontFace` et des `Blob`) viennent de l'autorité, par la connexion chiffrée (`VersAppareil::Ressource`), dans la même fenêtre que le module (§ 2.5), une fois par module : l'autorité les tient de `Ressources`. La page n'en demande aucun par HTTP : le relais ne sait pas quel jeu se joue (P18).
+- **Le budget de `Page`.** Elle tourne sur le fil principal du téléphone, à chaque vue, chaque frappe et chaque changement de taille, sans Worker : un `Page` long gèle la page. Aucun budget ni aucune durée ne visent encore un téléphone, dont le processeur est plus lent qu'un M5 (de combien, ce n'est pas mesuré). E19 juge donc `Page` comme une **nouvelle sorte d'appel**, avec un budget que le mainteneur fixe (REPONSES-PROVISOIRES 12 ; question 22) ; provisoirement, celui d'une lecture, divisé par la marge du téléphone, choisie à 4 jusqu'à la mesure sur de vrais téléphones (§ 8.5).
+- **Un `Page` en faute** (panique, budget, page invalide) : le téléphone garde la page précédente, comme INTERFACE § 6.1 le fait pour une vue, et le compte au diagnostic que la télé montre ; il ne tombe jamais sur une page blanche. Les gestes déjà en file partent.
+
+- `LocauxFil` : l'écran, les marges, l'orientation, les champs `(Cle, &str)`, les choix `(Cle, u32)`, les maintenus, les croix, le retenu, les capacités. **Les locaux appartiennent au commun**, pas au jeu : c'est lui qui les garde entre deux appels. Le carrousel de Sidequest est un `choix` balayable ; aucun jeu n'a besoin d'un état de page à lui. **Mais le vocabulaire ne suffit pas encore à ce carrousel** : son cahier (l. 242) veut « le héros au centre, ses voisins de chaque côté (dans leur couleur) », avec ses accessoires ; `PageFil` place des images en flux, sans superposition ni teinte, ce qui demanderait un asset par combinaison de personnage, de couleur et d'accessoires. **Le lot 6 tranche, avec l'agent de Sidequest, avant d'écrire l'ABI** : provisoirement, un nœud `pile` (des enfants superposés dans la même boîte, dans l'ordre) et une `teinte: Option<Couleur>` sur `image`, appliquée par le commun (un filtre CSS ou une toile).
+- `PageFil` : un arbre **en flux**, pas en coordonnées (la taille des téléphones varie, le clavier réduit la hauteur visible), chaque nœud après son parent ; chaque `Bouton` porte les octets de son geste déjà encodés ; `tenu: Option<{ octets, relache }>` calculé par `Tenu::relache` dans le module ; `retenir: Option<octets>`. Le commun valide `PageFil` comme une entrée venue de l'extérieur : clés uniques parmi les frères, profondeur, tailles (REM-57).
+- Un bouton porte un geste encodé : l'autorité le revalide (`Valider`, CONTRAT : « Ce qui vient de l'extérieur est validé à l'entrée »).
+
+**Ce que fait le commun sur le téléphone** (`telephone`) :
+
+- **Le rendu DOM** : réconciliation par clé, jamais par position (SAL-165) ; `textContent`, jamais `innerHTML` (REM-56). Un champ ne voit jamais sa valeur réécrite pendant qu'il a le focus ou qu'il compose. Champs d'au moins 16 px (sinon iOS zoome). `visualViewport` suivi ; `env(safe-area-inset-*)` appliqué ; polices des assets par `FontFace`.
+- **Le recalcul** : `Appel::Page` à chaque vue reçue, à chaque changement de saisie, à chaque changement de taille ou d'orientation (REM-44), au plus une fois par image. L'état appuyé s'affiche dans le même gestionnaire, sans attendre aucun aller-retour (REM-90, REM-116).
+- **Les composants difficiles, écrits une fois** : `Maintenu` et `Croix` avec capture du pointeur, `pointercancel`, `lostpointercapture`, `blur`, glisser d'un bouton à l'autre (REM-99, REM-103, REM-105).
+- **Un geste tenu quand la page change** (INTERFACE § 6.6 : « un geste en cours finit quand la vue change » ; REM-23). Si la nouvelle page garde la clé du `Maintenu` ou de la `Croix` sous le doigt, le geste continue. Si la clé disparaît, le commun lâche ce doigt avant de poser la nouvelle page : la page recalcule son tenu relâché, qui part aussitôt (`numero + 1`), et le doigt resté sur l'écran ne compte plus jusqu'à ce qu'il se relève. Tenu par `un_maintenu_dont_la_cle_disparait_est_relache_rem23`.
+- **Les tenus** : la page compare le tenu rendu au dernier envoyé ; s'il a changé, elle l'envoie avec `numero + 1`, au plus `debit_max` fois par seconde (REM-13, REM-15). Tant qu'il n'est pas relâché, elle le redit à `liaison::periode_de_redite` : 150 ms pour Sidequest, rien pour Punchline (P27). Si `bufferedAmount` monte, seul le dernier tenu part (SAL-70).
+- **Les gestes** : une file bornée par `limites.file` (32 chez Sidequest) ; une file pleine se dit (`Envoi::FilePleine`, SAL-07). Un geste reste dans la file jusqu'à son accusé durable.
+- **L'arrière-plan** : sur `visibilitychange` caché, `pagehide`, `freeze` ou `blur`, le commun lève les maintenus et les croix ; la page calcule son relâchement, qui part aussitôt ; puis plus rien ne se redit (REM-11).
+- **La coupure** (P28). INTERFACE § 6.6 dit que la page ne relâche « jamais sur une coupure du réseau » (REM-10) ; REPONSES-PROVISOIRES 7, pour les relâchements forcés de Sidequest, dit « On suit le cahier de Sidequest », et le cahier (§ 4.3, l. 104) relâche côté téléphone « quand la connexion tombe ». Les deux font foi au même rang ; REPONSES-PROVISOIRES 7 est la plus précise, et PHASE-3 vient après les deux. Donc, jusqu'à la réponse du mainteneur (question 7) : **pour un tenu qui déclare une fraîcheur** (Sidequest), la page relâche quand l'écho du retour reste sans réponse 1,5 s, et le tenu reste relâché après la reconnexion jusqu'à un nouvel appui ; pour un tenu sans fraîcheur (Punchline), rien ne se relâche sur une coupure, comme le veut INTERFACE § 6.6. Côté autorité, la fraîcheur relâche de toute façon après 450 ms chez Sidequest.
+- **Le retour** : sur `visibilitychange` visible, `pageshow`, `resume` (SAL-52), `focus`, `online`, un écho ; sans réponse en 1,5 s, on reconnecte, à intervalle croissant avec du hasard (SAL-47), sans jamais abandonner tant que la page est visible (SAL-48), en abandonnant les tentatives lancées avant le sommeil (SAL-50).
+- **Le rechargement** : même jeton, donc même `Appareil` (`Presence::Retour`). L'accueil réaligne les numéros (`Partie::numero_tenu`, SAL-38). Les gestes non accusés et les identités d'effet déjà jouées sont gardés dans `sessionStorage`, bornés (P26, SAL-56, SAL-167). Le module revient par la connexion (P18).
+- **Deux onglets** : le lien le plus récent gagne, dans l'ordre d'ouverture que le relais numérote (SAL-18, SAL-19). L'ancien reçoit `Remplace` et attend « Reprendre ici » (SAL-21).
+- **Les capacités, dites honnêtement** : hors contexte sécurisé, `ecran_allume`, `mouvement` et `micro` valent `Non(ContexteNonSecurise)` (SAL-97, OUT-211) ; `navigator.vibrate` là où il existe, pas dans Safari sur iPhone (REM-79).
+- **Les écrans du commun** : « Connexion à la télé… », « Un instant… », « Remplacé — Reprendre ici », « Version différente, recharge », « Salle pleine », « Scanne le nouveau QR code ». Un seul message à la fois, qui nomme la vraie cause (REM-69).
+
+**Les pages des trois jeux** (lot 7, par leurs agents) : Punchline, prénom, grille des personnages, écriture (le brouillon en tenu à chaque frappe), vote ; Sidequest, sélecteur (carrousel balayable, couleurs, accessoires, prénom, personnage retenu pour la salle), puis manette (croix en huit directions, saut au contact, message) ; Tier list, aucune page.
+
+### 2.11 Les arriérés et les gros états
+
+**Les arriérés gardent leur pas** (P7). Étaler sur plusieurs pas changerait le sens : une réponse de Punchline faite à temps pourrait passer après le `Temps` de l'échéance, qui vient après les entrées de son pas.
+
+- `Partie::avancer_borne(cible, ARRIERES_PAR_TOUR)` : un pas dont les arriérés dépassent le budget se finit sur plusieurs tours du Worker. `Temps` vient toujours après eux. Le retard pris se rattrape ensuite par les règles existantes.
+- **Seuls les vrais arriérés comptent** : une arrivée faite sur une vue de plus de `ARRIERE_PAS` pas (une seconde) avant sa réception. Une entrée fraîche n'est jamais retardée : les 71 tenus de Sidequest ne mettent pas la partie en retard permanent. `ARRIERE_PAS` vit aujourd'hui dans `epreuve::budgets` (l. 269), dont `partie` ne peut pas dépendre : **le lot 1 le déplace dans `partie`**, qui en garde la seule définition, et `epreuve` le relit, comme `BUDGETS_DE_SOIREE` (P27).
+- `ARRIERES_PAR_TOUR` vaut 8 (choisi), une constante de `partie`, indépendante de la machine : le rejeu ne dépend pas d'une durée.
+- **Les arrivées d'un pas se figent au tour où il commence.** Sans cela, le journal changerait avec le découpage : `regles::placer` place une arrivée à `max(fait.pas, définitif + 1)` (l. 64 à 75) ; pendant qu'un pas se finit sur plusieurs tours, le définitif n'avance pas, et une arrivée nouvelle tomberait dans ce même pas inachevé, parfois avec un `fait` antérieur à des entrées déjà appliquées : l'ordre différerait d'un traitement d'un seul tour. Donc l'ensemble des arrivées d'un pas est arrêté au tour où son traitement commence ; une arrivée suivante va au pas suivant au plus tôt (`max(fait.pas, pas_en_cours + 1)`).
+- Le journal est alors le même quel que soit le découpage (CAT-14). La propriété `meme_journal_quel_que_soit_le_budget_de_tour` le tient **en injectant des arrivées pendant un pas découpé**. La règle de E19 qui excluait le coût fixe des arriérés tombe ; E19 juge chaque tour.
+- Ce que la mesure en dit : dans le navigateur, le coût fixe d'un appel est la remise à zéro des zones (6,2 à 7,0 ns par Kio) et 0,3 à 0,5 µs de reste. Chez Punchline (2 116 Kio de zones), 56 arriérés coûtent environ 0,8 ms de fixe (calculé). Chez Tier list, 225 entrées en coûteraient 37 ms (mesure 1).
+
+**La mémoire entière reste l'état** (D23, P8), avec trois allègements qui ne changent pas l'interface :
+
+1. l'instantané et la garde hors des quatre zones ;
+2. le travail long reste un seul appel, dans le Worker : la télé dessine sur un autre fil, les comptes à rebours courent, les champs répondent ; c'est la partie qui prend du retard ; le plafond d'un appel (2²⁸) et le garde-fou (2 s) le bornent ; « rien ne saute » (cahier de Tier list) se mesure par les images perdues que montre la trace de CDP, dans Chrome seulement, et par le travail du GPU fini ailleurs (M8 ; § 2.9) ;
+3. un point ne part à la garde que si l'empreinte a changé depuis le dernier.
+
+`Telecharger` s'écrit d'un bloc dans l'ABI 4, avec les mêmes octets postcard que le `Vec<u8>` du besoin 15 : 42 unités par octet de moins chez Tier list (BESOINS-COMMUN § 5).
+
+---
+
+## 3. Le budget de latence
+
+Le CONTRAT demande 99 % des gestes en moins de 50 ms depuis un clavier, 80 ms depuis un téléphone en Wi-Fi local, en distribution, le matériel à part. **Aucune de ces valeurs n'est mesurée** ; la table dit ce qu'on sait.
+
+| Segment | Clavier → télé | Téléphone → télé | Ce qu'on en sait |
+|---|---|---|---|
+| Matériel d'entrée | 1–8 ms | 20–50 ms (dalle tactile) | estimé ; **séparé**, mesuré à la caméra |
+| Événement → gestionnaire | 1–4 | 1–4 | estimé ; `event.timeStamp` contre l'horloge |
+| Page → Worker | < 1 | — | estimé |
+| Chiffrement, envoi, relais, boucle locale | — | < 1 | estimé ; horodatages du relais en clair |
+| Wi-Fi montant | — | **inconnu au 99ᵉ centile** | SAL-65 : aller-retour p99 de 67 ms, sur un DataChannel WebRTC et un partage de connexion ; SAL-102 : rien de mesuré sur un vrai Wi-Fi de soirée |
+| Attente du pas | ≈ la marge si calé ; jusqu'à 22 ms + 16,7 sinon | idem | la minuterie d'un Worker : 46 réveils par seconde (mesure 6) |
+| Pas et vues | dépend du jeu | idem | E19 ; une vue de pire cas de Tier list : 1,16 ms dans Chrome, 4,96 ms dans Firefox au plus (mesure 1) |
+| Worker → page, dessin, GPU | 1–5 | idem | estimé ; travail du GPU fini (`onSubmittedWorkDone`) |
+| Composition, présentation | 16,7–33 | idem | estimé |
+| Écran de la télé | 10–100 et plus | idem | **séparé**, mesuré à la caméra |
+
+Les pires de chaque ligne dépassent 50 ms même sans le matériel. Le budget ne tient au 99ᵉ centile qu'à trois conditions : le pas calé sur l'image, pas de glisser à 60 Hz, une seule image de composition. Pour le téléphone, il reste environ 30 ms au Wi-Fi : c'est l'inconnue principale, que tranche la page de mesure (lot 14).
+
+D'où cinq règles :
+
+- **R1.** Toute attente sur le chemin d'une entrée a un nom et se mesure (`Trace`, § 8.4).
+- **R2.** Rien de lourd sur le fil de la partie : le chiffrement d'un point se mesure sur le pire cas, plateau de Tier list plein d'images (M3) ; s'il dépasse 2 ms (choisi), il part dans un second Worker (P9). La part du commun à chaque tour (`regarder` pour 71 téléphones, 71 chiffrements à chaque pas chez Sidequest) se mesure aussi (M13) : elle doit tenir dans la moitié de l'image que E19 laisse au commun.
+- **R3.** Le dessin ne dépend pas du pas : la page dessine seule comptes à rebours, animations et glisser.
+- **R4.** Le pas se joue au signal de l'image (P6).
+- **R5.** Les gestes des téléphones vont droit au Worker, par sa WebSocket, sans passer par la page.
+
+---
+
+## 4. Les décisions
+
+| # | Décision | Raison | Ce qui changerait sinon |
+|---|---|---|---|
+| P1 | L'autorité vit dans un Worker dédié ; la page dessine | Mesure 6 : caché, le Worker se réveille 45 à 56 fois par seconde, la page de Chrome une fois par minute. C'est le seul fil qu'on peut tuer | Tout sur le fil principal : environ une image de latence en moins, mais une partie arrêtée onglet caché dans Chrome, et aucun garde-fou mural |
+| P2 | Un seul protocole d'appel, `moteur-commun`, sous le trait `Machine` ; wasmtime et le navigateur n'en fournissent que les primitives | « Deux morceaux qui s'accordent n'ont qu'une définition » ; le harnais l'a recopié en JavaScript (`banc-coeur.js`, 364 lignes), que le lot 3c supprime | Deux protocoles qui dérivent ; E20 comparerait deux codes, pas deux moteurs |
+| P3 | L'instantané exclut exactement les quatre zones ; la restauration les remet à zéro | Elles sont remises à zéro avant chaque appel et l'empreinte les exclut déjà (`interieur.rs`, `preparer` et `empreinte`). Point de Tier list sur un plateau presque vide : environ 0,31 Mio au lieu de 25,4 Mio (calculé) ; sur un plateau plein, à mesurer (M3) | Des points de 25 Mio, une garde coûteuse, les blocs immuables tout de suite |
+| P4 | Un réglage de réécriture unique pour wasmtime et les navigateurs (`PHASE_3`), dont la profondeur pique avant la pile du Worker le plus court, et au-dessus de la profondeur que les trois jeux atteignent | `PHASE_1` permet 16 Mio de pile native dans wasmtime, sur une taille de cadre estimée pour Cranelift ; la pile d'un Worker est plus petite et non mesurée (M9). Le module réécrit doit être le même partout ; toutes les empreintes réécrites changent | Un même jeu en faute `Profondeur` dans wasmtime et en panne de l'outil dans un navigateur |
+| P5 | Deux garde-fous muraux : chargement dérivé d'une unité **de boucle vide** mesurée sous charge (M10), ou `BUDGET_DE_CHARGEMENT` baissé ; partie à 2 s jugé par la page si ses propres minuteries ont tourné | Point 16 de RESTE-PHASE-2 : une boucle dans `Bonjour` doit être une faute du jeu (HIS-06) ; une boucle vide coûte dix fois l'unité d'un appel lourd (480 à 680 ps dans wasmtime) ; REM-02 : « je n'ai pas tourné » n'accuse pas l'autre | Une boucle de chargement comptée panne de l'outil ; un Worker sain tué après un gel de la page |
+| P6 | Le pas se joue au signal de l'image, la minuterie du Worker en secours ; `t0` fixe | Mesure 6 : `setTimeout` d'un Worker toutes les 22 ms environ. Une entrée reçue avant le réveil entre dans le pas courant (`place = max(fait.pas, définitif + 1)`). À mesurer avec et sans (M2) | Une attente uniforme jusqu'à 22 ms en plus ; ou une horloge asservie à l'écran, qui réécrit D13 |
+| P7 | Les arriérés gardent leur pas ; un pas se finit sur plusieurs tours (`avancer_borne`) ; ses arrivées se figent au tour où il commence ; seuls les vrais arriérés comptent (`ARRIERE_PAS`, déplacé dans `partie`), 8 par tour | Étaler change le sens (une entrée après `Temps`) ; le journal reste le même (CAT-14) si aucune arrivée n'entre dans un pas inachevé ; les tenus frais de Sidequest ne prennent pas de retard | `regles::etaler` et son changement de sens ; ou `Appel::Entrees` (ABI) et l'isolement d'une faute par bissection |
+| P8 | La mémoire entière reste l'état (D23) ; le travail long reste un seul appel dans le Worker | Le Worker sépare le dessin de la partie ; P3 allège la garde | Des blocs immuables par empreinte dans `jeu-abi` et les moteurs, si M3 montre un point trop lourd |
+| P9 | La garde vit au relais, sur disque (temporaire, `sync_all`, renommage, dossier synchronisé), une case toutes les 100 ms ; un geste n'est accusé qu'après `Ecrit` ; pas de second Worker tant que M3 ne le demande pas | Survit à l'onglet rechargé, au navigateur relancé, au relais relancé (SAL-26, SAL-27, SAL-56, SAL-57) ; pas à la perte de G (fenêtre privée fermée, données effacées, autre navigateur), qui demande la reprise de salle (P41). Le relais est en boucle locale : relire la garde y coûte peu | IndexedDB à côté (perdu en fenêtre privée) ; une garde en mémoire du relais, perdue s'il redémarre ; un accusé au pas définitif, qui perd un vote |
+| P10 | Le journal se tronque avant le plus vieux point gardé ; `reprendre` accepte un journal à base | `Journal::lignes` grandit toute la soirée (Sidequest : 94 709 lignes en 180 s, MESURES-PHASE-1) ; `partie.rs`, l. 409 | Une mémoire qui grandit sans borne (CONTRAT, « Mémoire bornée ») |
+| P11 | WebSocket seul ; trames en datagrammes (nonce explicite, accusés au-dessus) ; WebRTC tranché par la mesure du Wi-Fi, en phase 4 par défaut | SAL-73 ; WebRTC coûte str0m, un certificat qui signe, l'UDP au pare-feu (SAL-87, SAL-91, SAL-95) ; aucun jeu ne prédit ; un jeu reste correct sur le pire canal | str0m en ICE-lite dans le relais, DataChannel non ordonné entre téléphone et relais ; `salle` ne change pas |
+| P12 | Noise NKpsk0 par `snow` ; psk de 32 octets dérivée du secret d'entrée ; secret d'entrée et clé publique dans le fragment ; aucun effet avant le premier message de transport ; G hors du QR ; secret et clés neufs à chaque soirée | Authentifie l'autorité, isole chaque téléphone d'un invité qui écoute, ferme la salle aux invités d'hier ; une poignée de main rejouée ne déloge personne (SAL-17) ; ne protège pas d'un invité actif qui sert une page modifiée (question 18) | Une clé partagée : un invité lit les autres et vole leurs jetons ; NNpsk0 : un invité actif se fait passer pour la télé |
+| P13 | Le code de salle : 8 chiffres hexadécimaux, tiré une fois, gardé | Cahier de Sidequest, § 8 : il nomme les résultats, et le téléphone retient son personnage sous lui ; donné par `Ouverture::salle` (REPONSES-PROVISOIRES 15) | Un code par soirée : les résultats ne se rangent plus sous un nom stable |
+| P14 | Le port est fixe (7878), écouté sur `127.0.0.1` et `[::1]` ; le relais refuse de démarrer s'il est pris dans l'une des deux familles | Un relais relancé garde le QR ; l'origine `localhost:7878` reste la même, donc l'IndexedDB de l'écran ; Chrome essaie aussi `::1` pour `localhost` | Un port au hasard : chaque relance casse les QR et perd les secrets de l'écran |
+| P15 | `relais` ne dépend que de `liaison` ; un test du graphe le tient | « Le relais ne lit ni ne modifie la partie » devient une forme | Une promesse que rien ne vérifie |
+| P16 | Le relais sert aussi, en boucle locale seulement, le catalogue, les modules livrés à l'écran, et écrit les flux | L'écran doit obtenir le module ; rien de cela n'atteint le réseau | Un autre programme ou un fichier choisi à la main ; c'est un écart à « Il ne sert qu'une page de démarrage » (question 3) |
+| P17 | On ne joue qu'un module éprouvé (code 0, par empreinte, E20 non exigé) ; `--non-eprouve` l'affiche en permanence ; la publication attend E20 | CONTRAT : « Avant qu'on y joue, chaque jeu passe l'épreuve » et « Seule la publication attend les longs » | Tout module se joue ; l'épreuve devient un conseil ; ou E20 exigé pour jouer, et une soirée qui attend un contrôle long (question 20) |
+| P18 | Le module réécrit arrive aux téléphones par la connexion chiffrée, en morceaux, compressé (`miniz_oxide`) ; pas de cache en phase 3 | Lettre du CONTRAT ; 74 à 355 ko après gzip (mesure 4) ; rien à invalider (SAL-41) | Le module par HTTP, vérifié par empreinte (le relais saurait quel jeu se joue) ; un cache IndexedDB |
+| P19 | La page téléphone est `Jeu::page`, une lecture sans état dans le module, sur le téléphone ; ses locaux appartiennent au commun | D25 et l'enfermement ; Valider prouve qu'un appel sans enveloppe marche ; la phase 4 trouvera le module chargé | Une crate `web-sys` par jeu, non enfermée ; ou un état de page dans l'enveloppe (deux appels d'écriture et une ABI 5) |
+| P20 | La page est rendue en DOM, en flux, par le commun ; ses débordements se mesurent dans les navigateurs du banc, à trois tailles | Pas de WebGPU hors contexte sécurisé ; de vrais champs ; une page qu'on utilise sans la regarder (REM-107 à REM-113) ; rien de `wgpu` à télécharger | La scène dessinée par `wgpu` en WebGL2 sur chaque téléphone : une mesure en natif, mais un paquet lourd et non estimé, et une mise en page absolue |
+| P21 | La télé : `wgpu` (WebGPU, repli WebGL2) et `glyphon` ; la mesure par `cosmic-text`, polices embarquées seulement | Décision du mainteneur ; la mesure et le dessin passent par la même mise en forme ; `glyphon` tient sur WebGL2, `vello` non | Un atlas à nous sur `cosmic-text`, si `glyphon` ne suit plus `wgpu` |
+| P22 | Les polices sont sfnt (TTF ou OTF) ; police du commun libre, plus une police d'emoji ; pas de CJK | `cosmic-text` ne lit pas le WOFF2 ; Punchline déclare trois `.woff2` | Un décodeur WOFF2 dans `mise-en-page` |
+| P23 | Les images de la télé sont décodées par le navigateur | Les SVG de Tier list passent tels quels ; rien de plus à compiler | `resvg` et un décodeur PNG en Rust, mesurables en natif |
+| P24 | `Selecteur`, `Lien` et le téléchargement agissent dans le gestionnaire du geste, sans passer par le Worker | Un aller-retour peut perdre l'activation du geste (INTERFACE, question 10) | Une demande différée et un bouton de plus à chaque fois |
+| P25 | Les manettes sont différées | Aucun jeu n'en déclare | La Gamepad API sur la page, relayée au Worker |
+| P26 | Les gestes non accusés et les effets joués d'un téléphone sont gardés dans `sessionStorage`, bornés | Un vote fait juste avant un rechargement n'est pas perdu (SAL-56), un effet ne rejoue pas (SAL-167) | Les gestes en vol d'une page rechargée sont perdus |
+| P27 | `periode_de_redite = clamp(min(fraicheur, age_max) / 3, 100 ms, 250 ms)`, rien sans fraîcheur ni âge ; `SILENCE_MAX_MS` et la redite dans `liaison`, `BUDGETS_DE_SOIREE` dans `partie`, relus par l'épreuve | Sidequest : 450 / 3 = 150 ms, SQ-01 ; une seule définition pour le monde simulé et la vraie pile | Une constante, ou une période déclarée par le jeu ; des valeurs qui divergent entre l'épreuve et la soirée |
+| P28 | Le départ du premier plan relâche tout ; une coupure (écho sans réponse 1,5 s) relâche côté page un tenu qui déclare une fraîcheur (Sidequest), et rien d'autre ; la fraîcheur relâche côté autorité | REPONSES-PROVISOIRES 7 (« On suit le cahier de Sidequest ») et le cahier (§ 4.3, l. 104) ; INTERFACE § 6.6 et REM-10 pour les tenus sans fraîcheur ; REM-11 | INTERFACE § 6.6 partout, qui ne relâche jamais à la coupure : c'était la première version de ce document, qui s'écartait de REPONSES-PROVISOIRES 7 sans le dire (question 7) |
+| P29 | Le navigateur est le second moteur de l'épreuve (E20, contrôle long), pas `wasmi` | Mesuré : 0 écart sur 116 775 appels dans V8 et SpiderMonkey ; c'est le moteur où l'on joue | Une crate `moteur-wasmi` sur `Machine` (elle reste possible pour l'app iPhone, phase 5) |
+| P30 | Le banc est en Rust, sans pilote téléchargé : CDP pour Chrome, WebDriver BiDi pour Firefox, `safaridriver` pour Safari ; il remplace le harnais `node` à parité | Les rapports partagent leurs types avec l'épreuve ; le harnais a prouvé que CDP et BiDi suffisent sans `chromedriver` ni `geckodriver` ; Playwright n'est pas Safari (OUT-50, OUT-51) | Garder le harnais `node` : moins de code, mais une seconde langue pour les outils et des types écrits deux fois |
+| P31 | Un second workspace, `soiree/web/`, pour ce qui ne sert que dans le navigateur ou tire `wgpu` ; ses lints et son `clippy.toml` vérifiés égaux à ceux du commun, comme ceux d'un jeu | `cargo test --workspace` prend déjà 575 s ; `wgpu` en natif l'alourdirait sur 16 Go | Tout dans un workspace : une règle de moins, une compilation de `wgpu` à chaque `cargo test --workspace` (question 9) |
+| P32 | `wasm-bindgen` épinglé à 0.2.129, la version de l'outil installé ; ses exports regroupés dans un module sous `#[expect(unsafe_code, reason = "…")]` si la macro l'exige | REM-156 ; AGENTS.md n'admet que deux endroits `unsafe` | De la colle écrite à la main (question 5) |
+| P33 | F8 est au commun ; une déclaration `diagnostic: F8` est refusée au chargement (E1), règle armée au lot 7 avec le changement de touche de Tier list ; fautif `diagnostic-f8` | REPONSES-PROVISOIRES 14 ; Tier list déclare F8 (`games/tier-list/crates/tier-list/src/lib.rs`, l. 909) : armée au lot 6, la règle ferait échouer Tier list jusqu'au lot 7 | Une touche qui fait deux choses, ou une marque perdue |
+| P34 | Un paquet par rôle : `ecran`, `autorite`, `telephone` | Le téléphone ne télécharge pas `wgpu` ; le Worker ne tire pas le DOM | Un seul paquet à trois entrées, si la taille ne gêne pas (M4) |
+| P35 | La commande unique : `soiree-relais jouer .` depuis le dépôt d'un jeu, après une installation unique depuis l'étiquette du commun, qui n'existe pas encore (première étiquette à la fin du lot 14, question 19) | CONTRAT, « Le jour où l'on joue » ; un ami qui clone le jeu seul n'a pas le dossier de l'hôte | `--manifest-path ../../soiree`, qui suppose le dossier de l'hôte ; ou la commande hors de la phase 3 |
+| P36 | Une seule autorité par salle : la plus récente gagne ; l'ancienne reçoit `Remplacee` et s'arrête ; le relais refuse les `Ecrire` d'une autorité passée | SAL-18, SAL-19, SAL-20 ; deux Workers sur la même garde casseraient sa chaîne ; INTERFACE, question 9, n'est plus sans objet | Un second onglet qui regarde en lecture seule ; ou un refus du second |
+| P37 | G, la clé privée de l'autorité, le dernier `n` et le code de salle vivent dans IndexedDB de `localhost:7878`, jamais dans l'adresse | Un fragment se garde dans l'historique, s'affiche sur la télé et peut partir vers la synchronisation du navigateur ; G lit tous les secrets ; un Worker n'a pas de `localStorage` | G dans le fragment (la première version) |
+| P38 | Échap en plein écran : Keyboard Lock dans Chrome ; ailleurs, le premier Échap sort du plein écran sans arriver au jeu | Punchline et Tier list s'en servent ; le navigateur la garde en plein écran (lu, à constater) | Une autre touche pour les jeux ; ou un événement du commun « sortie du plein écran » (question 21) |
+| P39 | Avant chaque `Entree`, le Worker poste l'`IdGeste` en cours ; après deux arrêts muraux sur la même entrée, la reprise l'écarte | CONTRAT : « Une entrée qui fait échouer le jeu est isolée et écartée » ; sans cela, le téléphone la renvoie et elle bloque en boucle | « Le commun est en panne » au bout de trois relances, l'entrée jamais écartée |
+| P40 | Le relais vérifie `Host`, `Origin` et l'absence d'en-tête de mandataire pour les rôles et routes de boucle locale | SAL-33 ; une WebSocket n'est pas soumise au CORS ; rebond DNS | Un site quelconque ouvert sur l'ordinateur de la soirée prend une salle neuve ou écrit dans les flux |
+| P41 | Le relais garde le code de salle ; `soiree-relais oublier <salle>` efface sa preuve et sa garde | G ne vit que dans un profil de navigateur ; sans reprise, un code de salle répondrait `PreuveFausse` pour toujours, et Sidequest perdrait ses noms de résultats | Un code neuf à chaque perte de G |
+
+---
+
+## 5. Ce qui est réservé aux phases 4 et 5
+
+- **Phase 4, la prédiction.** `Recue::confirmee` existe : la page ne changera pas. `VersAppareil::Projection` est réservé, à la fin de l'enum. Le téléphone a déjà le module et `moteur-commun`. Les trames portent leur nonce : un DataChannel non fiable s'y branchera. La `Trace` mesure déjà le geste au pixel sans prédiction : c'est la base de la comparaison de l'étape 4. Le monde simulé de l'épreuve converge vers la vraie `salle` (SAL-10, question 12).
+- **Phase 5, l'app iPhone.** `salle::fil` est une définition Rust unique ; ses liaisons Swift se généreront. La page décrit des intentions (`Croix`, `Maintenu`, `Champ`), pas du DOM : une app pourra les rendre en natif. L'app ne compile pas à la volée : elle fera tourner le module dans une vue web, ou par un interpréteur qui implémente `Machine` (REM-81).
+
+**Hors de la phase 3** : WebRTC (sauf mesure, P11), le relais en ligne, la prédiction, l'app iPhone, le Component Model, les manettes, l'accessibilité, le texte multiligne, la zone d'avertissements qui prend sa hauteur, les info-bulles, les polices CJK, le regroupement des entrées, les blocs immuables, plusieurs salles à la fois, la saisie d'un code sans caméra.
+
+---
+
+## 6. Le langage de scène en ABI 4 (point 11 de RESTE-PHASE-2)
+
+On n'ajoute que ce qu'un jeu demande pour être jouable, avec ce jeu comme consommateur. `jeu_abi::ABI` passe à 4 ; `forme_figee` rougit et ses octets se réécrivent à la main ; chaque variant s'ajoute à la fin.
+
+| Besoin | En ABI 4 | Pour qui |
+|---|---|---|
+| La mesure d'un texte | rien dans la forme : `mise-en-page` tient `Taille::Budget`, E16 juge | les trois |
+| Une boîte pour un composant | `SorteNoeud::Composant { boite: Rect, composant }` ; `panneau: Rect` sur `Modale` | Tier list (BESOINS-COMMUN § 7), le chat de Sidequest |
+| Le sélecteur d'où viennent des fichiers | `Composant::Fichiers { selecteur: Option<Cle>, … }` (`None` : dépôt ou collage) | Tier list (§ 8) |
+| Le nom de fichier d'un `Lien` | `fichier: TexteCourt` | Tier list |
+| `Telecharger` d'un bloc | mêmes octets postcard qu'un `Vec<u8>` ; l'API de `jeu` ne change pas (`Demande::Telecharger { nom, octets: &[u8] }` l'est déjà) | Tier list (§ 5) |
+| Le nombre d'images que `Rendu` n'a pas dessinées | un compte dans la réponse de `Rendu` : le rendu le produit maintenant | Tier list (TL-56, besoin 20) |
+| Un `Champ` d'une seule ligne | `ComposantVu::Champ.lignes` n'admet plus qu'une ligne, validée à l'entrée (une vue qui en demande plus est invalide) : aucun `Texte<L>` n'en tient plus d'une (besoin 17) ; le champ reste, pour le multiligne | Tier list, Sidequest |
+| La page téléphone | `Appel::Page`, `Retour::Page`, `LocauxFil`, `PageFil`, avec `pile` et `teinte` si le lot 6 les retient (§ 2.10) ; `VersAppareil::Ressource` hors de l'ABI des jeux | Punchline, Sidequest |
+| Le texte multiligne, la zone d'avertissements qui prend sa hauteur, l'info-bulle, le nom accessible, le texte de remplacement, les coins arrondis | **différés** : les cahiers ne s'accordent pas (Sidequest retire les retours, Tier list les garde) ; aucun ne rend une soirée injouable ; l'accessibilité est une dette dite | — |
+| La pâte de Punchline (filtres, formes irrégulières, bulles taillées) | **différée** : rien ne la rend injouable ; Punchline se dessine sans elle | Punchline (besoin 20) |
+| Les états de connexion de Punchline (« Un instant… », « Reprendre ici », « Recharger ») | rien dans la forme : ce sont les écrans du commun (§ 2.10) | Punchline (besoin 20) |
+
+**La compatibilité des sources.** Les jeux dépendent du commun par chemin : un lot qui casse leur compilation casse leur dépôt pour leur agent jusqu'au lot suivant. Le lot 6 garde donc les sources compatibles là où il le peut : `Telecharger` ne change pas dans `jeu` ; la boîte d'un composant s'ajoute par une méthode de plus (`Scene::composant_dans(cle, boite, c)`), `Scene::composant` restant ce qu'il est. Le reste casse Tier list, seul jeu à s'en servir : il écrit `ComposantVu::Modale { … }` champ à champ (`vue.rs`, l. 830), auquel s'ajoute `panneau` (aucun jeu n'écrit encore `ComposantVu::Lien` : `fichier` ne casse rien), et filtre `Composant::Fichiers { geste, fichiers: f }` sans `..` (`lib.rs`, l. 929), auquel s'ajoute `selecteur`. **Le lot 6 adapte donc Tier list dans le même lot**, par son agent et dans son dépôt (un commit dans chaque dépôt), avec les valeurs qui gardent son comportement (`panneau` à la boîte d'aujourd'hui, `..` dans le filtre), et le prouve en compilant les trois jeux. Le vrai usage de ces champs vient au lot 7.
+
+**Le coût d'un nœud de scène** (point 12 de RESTE-PHASE-2 : de 4 500 à 4 800 unités, ce qui borne Tier list à 300 tuiles) n'est pas traité par l'ABI 4 : ce coût vient de `jeu::Scene`, le code du commun qui tourne dans le module, pas de la forme sur le fil ; il se réduit sans monter l'ABI. Le lot 6 le mesure avant et après, pour que l'ABI 4 ne l'aggrave pas ; le réduire attend les budgets (question 4) : avec 150 ps par unité, Tier list gagnerait un facteur 2,67 sans y toucher.
+
+---
+
+## 7. Les lots de construction
+
+**Règles de chaque lot.** Un agent à la fois. Chaque `cargo` est préfixé de `CARGO_BUILD_JOBS=4`. Une seule commande lourde à la fois ; avant chacune, `memory_pressure | tail -1` : sous 20 % de mémoire libre, attendre ou renoncer, et le dire. Aucune commande au premier plan de plus de 10 minutes : **dans chaque lot**, `cargo test --workspace` (575 s aujourd'hui, et il grossira avec `salle`, `relais`, `banc` et `mise-en-page`), les épreuves depuis les sources et les scénarios longs du banc partent en arrière-plan et se surveillent. Jamais de navigateur pendant une compilation : une machine chargée fausse les mesures sans un mot (OUT-89), et des tests de navigateur concurrents se gênent (OUT-115). **Un scénario du banc à la fois** : un scénario peut ouvrir plusieurs navigateurs ensemble (la télé dans Chrome et des pages dans Firefox et Safari), jamais deux scénarios ensemble. Chaque lot donne la mémoire qu'il attend (colonne de droite, estimée) et mesure la sienne en premier (`/usr/bin/time -l`, mémoire résidente maximale) ; les téléphones natifs partagent un seul `Engine` et un seul `Module` de wasmtime. Un lot finit sur ses tests verts, ses contrôles négatifs rouges, et ses mesures écrites dans `MESURES-PHASE-3.md` avec date, machine, navigateur, version, charge et la commande qui les refait. Un lot qui casse un jeu le dit dans `CHANGELOG.md` et `BESOINS-DES-JEUX.md`, avec « Passer à cette version ».
+
+**Le plan court ou le plan standard.** « Les trois jeux au code 0 » sur le plan standard, depuis leurs sources, coûte environ 25 minutes (Sidequest seul : 562 s, mesuré). Il n'est exigé qu'aux lots qui changent ce que l'épreuve joue ou juge : 1 (`partie`), 2 (le moteur), 3c (`PHASE_3` change toutes les empreintes réécrites), 7 (l'ABI 4 dans les jeux), 8 (E1 et E16) et 7b (les débordements corrigés). Les autres lots se contentent du plan court sur les trois jeux (`--court`, visible dans le rapport), plus le plan standard de `devine` quand ils touchent `jeu` ou `jeu-abi` (lot 6). Un lot qui relit des constantes sans en changer la valeur (4a) le prouve par un test d'égalité, pas par une épreuve.
+
+**Les coûts de compilation.** Mesurés : `cargo test --workspace` prend 575 s depuis `cargo clean`, dont 289 s pour `tests/epreuve` et 134 s pour `tests/sources.rs` ; l'épreuve standard de Sidequest 562 s (RESTE-PHASE-2, point 14) ; `partie` et `reecriture` pour `wasm32`, 8,3 s et 0,61 Go (§ 1). Le reste de la colonne est **estimé**, et chaque lot mesure le sien en premier.
+
+| Lot | Contenu et fichiers | Ce qui le prouve fini | Compilation et mémoire (estimées sauf mention) |
+|---|---|---|---|
+| **1. Le cœur prêt pour le monde** | `partie/src/persistance.rs` (nouveau, `VERSION_GARDE`) ; `journal.rs` (`tronquer_avant`, base d'indices) ; `partie.rs` (`reprendre` à base) ; `pas.rs` (`avancer_borne`, `ARRIERES_PAR_TOUR`, arrivées figées au tour où un pas commence) ; `ARRIERE_PAS` et `BUDGETS_DE_SOIREE` déplacés dans `partie`, relus par `epreuve` ; `epreuve/src/budgets.rs` et `soiree.rs` (règle des arriérés de E19) ; le fautif `etale-mal` (un arriéré placé avant une entrée plus ancienne du même appareil fait échouer E12) | `point_et_journal_aller_retour` ; `reprendre_depuis_un_point_decode_meme_empreinte` sur `devine` et les trois jeux ; `reprendre_sur_un_journal_tronque` ; `meme_journal_quel_que_soit_le_budget_de_tour` (propriété, CAT-14), **avec des arrivées injectées pendant un pas découpé** ; octets figés de la garde et seconde lecture ; le fautif rouge ; longueur du journal mesurée sur la soirée longue de Sidequest ; les trois jeux au code 0, plan standard (arrière-plan) | léger : `partie` et `epreuve` ; 2 à 3 Go pour `cargo test -p partie -p epreuve` ; `cargo test --workspace` en arrière-plan |
+| **2. Le moteur en deux** | `crates/moteur-commun` (nouveau : `Machine`, `Protocole`, `Instantane` hors zones, `verifier_chargement`) ; `moteur-wasmtime` réduit à `impl Machine` ; le carburant de `Bonjour`, `Decrire` et `Creer` des cinq modules relevé ; M10 dans wasmtime, sous charge ; puis `BUDGET_DE_CHARGEMENT` baissé, ou le garde-fou de chargement dérivé, dans `ReglagesMoteur` (point 16, P5) ; le module WAT de `Bonjour` qui boucle déplacé là où le banc le trouvera ; `Cargo.toml` du commun | tous les tests de `moteur-wasmtime` inchangés et verts ; `epreuve --test deux_instances` vert ; empreintes de la soirée de `devine` identiques avant et après ; `instantane_sans_zones_meme_empreinte` ; `classer_garde_son_ordre` ; `bonjour_qui_boucle_est_une_faute_avec_le_garde_fou_de_chargement`, **au garde-fou retenu, sous la charge de quatorze `yes`** qui occupent les dix cœurs (comme au point 2 de RESTE-PHASE-2) ; taille du point de Tier list mesurée **sur le pire cas, plateau plein d'images** (M3, wasmtime) ; les trois jeux au code 0, plan standard | moyen : `moteur-wasmtime` et ses dépendants se recompilent, wasmtime déjà compilé ; 3 à 4 Go |
+| **3a. Le moteur du navigateur** | `soiree/web/` (workspace : `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`) ; `web/moteur-navigateur` ; la règle « mêmes lints » appliquée à `web/`, avec son témoin ; dans `banc`, un pilote CDP minimal et une page de test servie par un petit serveur | les tests de `Machine` (lire, écrire, remplir, grandir, globales `i64`, pièges classés) joués dans Chrome par CDP, rapportés par `POST /banc/rapport` ; un témoin de `web/` aux lints différents fait échouer la règle | léger pour `wasm32` (8,3 s mesurés pour `partie` et `reecriture`, plus `js-sys` et `wasm-bindgen`) ; Chrome sans interface, environ 1 Go |
+| **3b. Le second moteur de l'épreuve** | `banc` : pilotes CDP et BiDi complets, capture des traces depuis `mesures/navigateur/capture`, `soiree-banc rejouer` ; E20 dans `epreuve` et son moteur fautif (`fausser_apres(n)`) | E20 réussi pour `devine`, `ardoise` et les trois jeux dans Chrome et Firefox ; le moteur fautif fait échouer E20 seul ; chaque fautif classé pareil dans chaque navigateur ; la durée de E20 par jeu et par navigateur mesurée et écrite (point 14 de RESTE-PHASE-2) | `banc` natif léger (`tungstenite`) ; un navigateur à la fois, environ 1 Go ; E20 en arrière-plan |
+| **3c. Étalonner, la profondeur, Safari** | `soiree-banc etalonner` (M1, et M10 dans chaque navigateur) ; la variante de la passe de profondeur réservée au banc (M9) ; `ReglagesMoteur::PHASE_3` ; Safari par `safaridriver` ; puis `page/banc-coeur.js` retiré | `etalonner` retrouve la mesure 1 du harnais ; M9 : la profondeur tenue par chaque navigateur et celle atteinte par les trois jeux, `PHASE_3` réglé entre les deux ; le garde-fou de chargement revu d'après M10 ; **les trois jeux au code 0 sous `PHASE_3`**, plan standard (arrière-plan), avec leurs nouvelles empreintes ; E20 relancé ; Safari réussi, échec, ou « pas exécuté » avec le message de `safaridriver` | léger ; un navigateur à la fois |
+| **4a. La liaison et le chiffrement** | `crates/liaison` ; dans `crates/salle`, `chiffre` et `fil` ; `chacha20poly1305` et `snow` déclarés ; `epreuve/src/telephone.rs` relit `liaison::SILENCE_MAX_MS` et `periode_de_redite` | octets figés et seconde lecture de chaque message ; les vecteurs publics de Noise pour `Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s` ; `la_psk_derive_du_secret_d_entree_octets_figes` ; `une_trame_rejouee_par_le_relais_est_refusee` ; décodeurs sans panique sous fuzz (REM-64) ; l'égalité des constantes relues avec celles d'aujourd'hui ; `cargo tree -i getrandom --target wasm32-unknown-unknown` dit | moyen : `snow` et ses dépendances ; 1 à 2 Go |
+| **4b. La salle, sans entrées-sorties** | dans `salle` : `autorite`, `appareil`, `garde`, `horloge`, `ecran` ; le hasard en paramètre ; réseau simulé déterministe ; les téléphones envoient les gestes des bots **directement**, sans page (elle n'existe qu'au lot 6) | les tests du § 8.1, chacun avec sa leçon, dont `une_poignee_de_main_rejouee_ne_remplace_personne_sal17` ; soirées natives en mémoire sur `devine` et les trois jeux, avec pannes et reprise depuis la garde ; « exactement une fois » à travers les redémarrages de l'autorité ; les trois jeux au plan court | moyen : les tests natifs utilisent wasmtime déjà compilé ; 2 à 3 Go |
+| **5. Le relais et la soirée native** | `crates/relais` (`coeur.rs`, coque, HTTP, garde sur disque, `Host` et `Origin`, deux familles d'adresses, `Limites`, une seule autorité, `oublier`, `GET /salle`, sans adresse locale, `--adresse`, `--banc`, `--enregistrer`) ; dans `banc` : autorité native, téléphones natifs (gestes des bots directs), mandataire TCP de pannes | les tests de `relais/tests/` (SAL-06, 07, 18, 19, 20, 23, 33, 42, 43, 75, 76, 77, 143, 146, 148, 150) ; le test du graphe et son témoin ; `soiree-banc soiree-native` avec Punchline et 8 téléphones sous pannes : partie entière, aucune faute ; `kill -9` du relais et relance ; autorité relancée depuis la garde : même forme canonique ; **aucun secret dans l'enregistrement du relais** ; Sidequest à 71 téléphones, 10 min, avec ses tenus ; M11 (une case écrite et synchronisée) et M15 (fils et mémoire du relais à 71 liens) | léger à compiler ; à l'exécution, 71 instances de wasmtime : de 0,3 à 1,1 Go (de 4 à 16 Mio chacune), plus le relais |
+| **6. L'ABI 4** | `jeu-abi` (§ 6 et § 2.10) ; `jeu` (`Jeu::page`, `Recue`, `Locaux`, `Page`, `Scene::composant_dans`) ; `jeu::colle` (`Page` sans enveloppe) ; le vocabulaire du carrousel tranché avec l'agent de Sidequest (`pile`, `teinte`) ; pages de `devine`, `ardoise`, des fautifs ; E19 juge `Page` comme une sorte d'appel ; E21 « Pages » ; E1 refuse un module au-delà de `TAILLE_MODULE_MAX`, avec son fautif `module-trop-gros` ; fautifs `page-qui-panique` et `page-qui-envoie-un-geste-invalide` ; Tier list adapté dans son dépôt (`panneau`, `..`) ; le coût d'un nœud de scène mesuré avant et après ; `CHANGELOG.md`, `BESOINS-DES-JEUX.md` | `forme_figee` réécrit à la main ; chaque fautif échoue exactement son contrôle ; `devine` au code 0 depuis ses sources, plan standard ; **les trois jeux compilent**, Tier list compris, et passent le plan court | moyen : `jeu-abi` et `jeu` recompilent tout le commun et les modules ; 3 à 4 Go |
+| **7. Les jeux passent à l'ABI 4** | dans chaque dépôt, par l'agent du jeu, l'un après l'autre : Punchline (sa page, ses polices en TTF) ; Sidequest (sa page, la croix, le carrousel, le personnage retenu, et ce que l'ITP de Safari en fait) ; Tier list (boîtes de composants, sélecteur nommé, une police libre en TTF, une autre touche de diagnostic) ; puis la règle F8 de E1 armée, avec son fautif `diagnostic-f8`, et E21 armé contre la page par défaut, avec son fautif `page-vide` | chaque jeu au code 0 depuis ses sources, plan standard (en arrière-plan ; Sidequest 562 s) ; les deux fautifs rouges | par jeu : son module et sa copie native ; 2 à 3 Go |
+| **8. La mesure des textes** | `crates/mise-en-page` ; E1 valide les polices sfnt, avec son fautif `police-woff2` ; E16 mesure les débordements des pires cas de l'écran ; police du commun dans le dépôt, avec sa licence ; le fautif `texte-qui-deborde` | tests SQ-46, TL-55, PUN-53 ; les deux fautifs rouges ; le rapport des trois jeux, plan standard, dont les débordements trouvés retournent à leurs agents, sans être cachés : ils se corrigent au lot 7b | moyen : `cosmic-text` en natif, dans le workspace du commun ; 2 à 3 Go |
+| **9. Le rendu** | `web/rendu` (natif d'abord : Metal, rendu dans une texture, pixels relus ; puis `wasm32`) ; test WGSL par `naga` ; QR ; `web/ecran` qui dessine une scène reçue ; scénario `dessin` du banc, avec son contrôle négatif (une option de test qui oublie un nœud) | tests natifs aux pixels près ; le QR relu par `rqrr` ; `dessin` dans Chrome et Firefox, et Safari réussi, échec ou pas exécuté : moteur rapporté ; **agencement des textes identique au natif**, glyphe par glyphe (même code, mêmes polices ; aucune tolérance) ; quelques pixels relus aux endroits prévus (OUT-30), au repos (OUT-32), à 2 sur 255 près par canal (choisi) ; **aucune image de pire cas au-delà de 33 ms de travail du GPU fini** (CONTRAT, « Les budgets »), sinon échec ; images perdues comptées par la trace de CDP dans Chrome (à constater) ; WebGL2 forcé (`?rendu=webgl2`) ; `device.destroy()` puis image revenue (M8) | **lourd** : `wgpu` en natif puis en `wasm32` ; plusieurs minutes et quelques Go, à mesurer en premier, jamais à côté d'une autre compilation |
+| **10a. L'autorité dans le navigateur, et la reprise** | `web/autorite` (boucle, calage, garde, reprise, deux garde-fous, entrée bloquante écartée, une seule autorité) ; G et la clé dans IndexedDB ; `soiree-banc rejouer-garde` ; routes de boucle locale du relais ; `web/demarrage.js` | `soiree-banc soiree punchline` : écran dans Chrome et Firefox, téléphones natifs (gestes directs), partie jusqu'au podium ; écran rechargé en pleine manche, même forme canonique ; Worker tué par un crochet de test, reprise ; `une_entree_qui_bloque_deux_fois_est_ecartee` ; second onglet de l'écran : le premier reçoit `Remplacee`, la garde reste une chaîne ; journal final rejoué dans wasmtime, chaque empreinte retrouvée ; `rejouer-garde` retrouve chaque marque F8 posée ; `arriere-plan` (§ 8.3) ; `connect-src 'self'` constaté pour `ws://localhost:7878/ws` ; M12 | moyen : `wasm32` de `partie`, `salle`, `snow` ; `rendu` déjà compilé ; un scénario : environ 2 Go avec Chrome |
+| **10b. Le démarrage et le jour J** | écran de démarrage ; `soiree-epreuve --catalogue` et `--construire` ; `soiree-relais jouer` ; l'aide ; plein écran, Échap (P38), verrou d'écran, son ; « Cliquer pour reprendre » | scénario `aide` : un `GET /s/…` sans WebSocket affiche son message ; aucun téléphone en 60 s affiche celui de l'isolation du Wi-Fi ; sans adresse locale, le relais démarre, sans QR, et le dit ; Échap arrive au jeu en plein écran dans Chrome (à constater), et sort du plein écran ailleurs avec l'écran du commun ; un effet tombé avant le geste est compté perdu ; `jouer` refuse un module sans rapport et l'accepte avec `--non-eprouve` affiché | léger ; un scénario : environ 2 Go |
+| **11. Tier list jouable** | dans `ecran` : `Deplacables`, `EnPlace`, `Modale`, `Selecteur`, `Lien`, défilement de `FormeEcran::Page` ; demandes `Rendu` (avec le compte TL-56), `Image`, `Lire`, `Telecharger`, `Ligne` | `soiree-banc ecran tier-list` : import (`DOM.setFileInputFiles`), glisser (`Input.dispatchMouseEvent`), édition en place, export capté, sauvegarde et restauration, rechargement en cours de route, avec son contrôle négatif (une option de test qui perd l'activation du geste de `Telecharger`) ; WebGL2 forcé ; plateau plein d'images : point et chiffrement mesurés dans le Worker (M3), travail long mesuré (M8) | léger à moyen ; un scénario : environ 2 Go |
+| **12. Les téléphones** | `web/telephone` (DOM, redite, arrière-plan, coupure, rechargement, `sessionStorage`, module et ressources par la connexion, effets, écrans du commun, geste tenu quand la page change) ; les téléphones natifs passent désormais **par la page** (`Page` dans wasmtime) ; scénario `pages` du banc (débordements des pages à 360 × 640, 390 × 844, 768 × 1024, choisis) | `soiree-banc soiree punchline` avec trois pages dans les navigateurs (Chrome en émulation tactile, Firefox, Safari si permis) et cinq natives, jusqu'au podium puis « On rejoue » ; téléphone rechargé en pleine écriture, aucun vote perdu ; onglet jumeau ; Sidequest 5 min, croix tenue par `Input.dispatchTouchEvent`, redite mesurée (M7), coupure : relâchement côté page (P28) ; un téléphone qui rejoint Sidequest à 71 appareils ne retarde personne ; `FilePleine` comptés ; changer de jeu sans rien relancer ; aucun secret au relais ; module compilé sur la page mesuré (M4, sur la machine) ; part du commun dans le Worker à chaque tour (M13) | léger : le paquet `telephone` ne tire pas `wgpu` ; `soiree sidequest` : 71 téléphones natifs (jusqu'à 1,1 Go), Chrome et deux pages, environ 3 à 4 Go |
+| **7b. Les jeux corrigent leurs pages et leurs textes** (après le lot 12) | dans chaque dépôt, par l'agent du jeu : les débordements que E16 a trouvés au lot 8 et le scénario `pages` au lot 12 | E16 et `pages` verts pour les trois jeux ; chaque agent a vu sa page dans un navigateur (capture du banc jointe au rapport) ; chaque jeu au code 0, plan standard | par jeu : son module |
+| **13. Latence et diagnostic** | `Trace` de bout en bout ; panneau de diagnostic ; calage réel ; glisser à 120 Hz ; `soiree-banc mesures` | **un rapport, pas une porte** : distributions par segment, avec et sans calage, avec et sans glisser, dans Chrome et Firefox (Safari si permis), dans `MESURES-PHASE-3.md` (M2) ; l'écart des horloges entre processus mesuré par un écho entre pages avant tout découpage (M14) ; arrière-plan avec interface : fenêtre recouverte, réduite, plus de sept minutes (M6). Si le 99ᵉ centile dépasse 50 ms (clavier) ou 80 ms (téléphone), le segment fautif est nommé, et cela va dans `RESTE-PHASE-3.md` et au mainteneur, sans être caché ni « corrigé » par un seuil | aucune nouvelle crate ; un scénario à la fois, machine au repos |
+| **14. Le jour de la soirée** | page `/#mesure` du Wi-Fi ; `soiree-banc soiree-complete`, avec son contrôle négatif (une option de test qui oublie de rendre le plein écran après « On rejoue ») ; une fiche de répétition neuve ; `conception/RESTE-PHASE-3.md` ; budgets proposés au mainteneur ; la première étiquette du nouveau commun, si le mainteneur l'accorde (question 19) | `soiree-complete` dans Chrome (les trois jeux à la suite depuis l'écran de démarrage, « On rejoue » deux fois chacun), dans Firefox et dans Safari : pour chacun, **réussi, échec ou pas exécuté, avec la raison** ; ce qui n'est pas fait, dit non fait. La soirée réelle et les mesures du Wi-Fi et de la caméra sont humaines | aucune nouvelle crate ; environ 2 Go |
+
+**Indispensable à la soirée** : les lots 1, 2, 3a, 3c pour `PHASE_3` (la profondeur que tient un Worker), 4a à 12, et 7b. **Pour vérifier seulement** : 3b (E20), `etalonner` dans 3c, le lot 13, et l'essentiel de `banc`. On les garde : une soirée non vérifiée ne prouve rien (MANIFESTE).
+
+**Deux pièges de construction**, à vérifier dans chaque crate de `web/` : `std::time::Instant::now` panique sur `wasm32-unknown-unknown` (le temps y entre toujours en paramètre) ; `getrandom` a besoin de son moteur pour le navigateur.
+
+---
+
+## 8. Vérifier sans humain
+
+### 8.1 En natif, à vitesse machine
+
+- **Les cœurs sans entrées-sorties** (`salle`, cœur de `relais`, `partie::persistance`) : horloge simulée qui saute d'échéance en échéance, hasard en paramètre, graine fixe (SAL-09) ; propriétés ; fuzz des décodeurs ; octets figés et seconde lecture (SAL-90). Chaque test cite sa leçon : `rejoindre_est_idempotent_sal29`, `le_lien_le_plus_recent_gagne_sal19`, `une_poignee_de_main_rejouee_ne_remplace_personne_sal17`, `l_accueil_realigne_les_tenus_sal38`, `un_geste_compte_une_fois_a_travers_le_redemarrage_de_l_autorite_sal57`, `une_trame_rejouee_par_le_relais_est_refusee`, `un_secret_d_une_autre_soiree_refuse_l_entree`, `un_invite_ne_se_fait_pas_passer_pour_l_autorite`, `une_case_de_garde_intervertie_est_refusee`, `la_psk_derive_du_secret_d_entree_octets_figes`, `un_maintenu_dont_la_cle_disparait_est_relache_rem23` ; et dans `relais/tests/`, `une_seconde_autorite_remplace_la_premiere_sal18`, `un_ecrire_d_une_autorite_remplacee_est_refuse_sal20`, `un_site_etranger_ne_prend_pas_la_salle_sal33`, `un_rebond_dns_est_refuse_sal33`.
+- **La soirée native par le vrai relais** (`soiree-banc soiree-native`) : le vrai binaire du relais ; l'autorité native (`salle::Autorite` sur `moteur-wasmtime`) ; des téléphones natifs (`salle::Appareil`) ; de vraies WebSocket sur la boucle ; le vrai chiffrement (SAL-86). Les téléphones natifs partagent un seul `Engine` et un seul `Module` de wasmtime.
+- **Les coups des bots** : en mode banc, l'autorité calcule pour chaque téléphone les coups du bot du jeu (`Appel::Bot`) et les envoie par `VersAppareil::Banc`. **Aux lots 4b et 5**, avant que la page n'existe, le téléphone les envoie tels quels, par numérotation, file, chiffrement et relais. **À partir du lot 12**, il les joue par son vrai chemin, page comprise : l'instance du téléphone appelle `Page` dans wasmtime, et le geste part du bouton qui le porte. La partie va jusqu'à ses fins (E2) à travers la vraie pile. Un **singe de page** tiré à graine (lot 12) appuie sur les boutons de la `PageFil`, tape le corpus hostile dans les champs, tient les croix.
+- **Le mandataire de pannes** (`banc::mandataire`), entre les téléphones et le relais : coupe, retient, retarde, groupe par rafales, ferme lentement, garde une fermeture derrière les données (SAL-60, SAL-61). Ses valeurs sont **aujourd'hui** celles du monde simulé de l'épreuve, faute de mieux ; le sens voulu est l'inverse (RESTE-PHASE-2, « devra mesurer » 5) : une mesure du vrai Wi-Fi (M5) les remplace, dans `telephone.rs` comme dans le mandataire. `kill -9` du relais ; autorité relancée depuis la garde ; téléphone rechargé.
+- **Les propriétés éprouvées** : chaque geste compte exactement une fois ; la numérotation se réaligne ; une trame rejouée, une mauvaise clé ou un autre protocole sont refusés, typés ; la partie n'est jamais figée ; le journal final, rejoué par `Partie::reprendre` sur une autre instance, retrouve chaque empreinte.
+- **Les contrôles négatifs** : une option de test qui désactive le chiffrement fait échouer `le_relais_ne_voit_aucun_secret`, qui cherche dans l'enregistrement du relais le secret d'entrée, G, les jetons, les prénoms tapés, les réponses de Punchline ; une option qui accuse avant `Ecrit` fait perdre un vote au redémarrage, et le test échoue ; une option qui place le jeton dans la poignée de main fait échouer `une_poignee_de_main_rejouee_ne_remplace_personne_sal17` ; une option qui ne vérifie pas l'`Origin` fait échouer `un_site_etranger_ne_prend_pas_la_salle_sal33` ; une option qui ne relâche pas au départ du premier plan fait échouer le scénario de gel.
+
+### 8.2 Dans les navigateurs sans interface
+
+**Les pilotes**, écrits en Rust dans `banc`, sans pilote téléchargé :
+
+- Chrome par CDP (`--headless=new --remote-debugging-port`, profil neuf) ;
+- Firefox par WebDriver BiDi (`--headless --remote-debugging-port`, profil neuf) ; le harnais de mesure l'a fait marcher sans `geckodriver` le 2026-11-05 ;
+- Safari par `safaridriver`, avec une vraie fenêtre : il n'a pas de mode sans interface. Il faut que l'hôte coche « Autoriser l'automatisation à distance » ; sans cela, chaque contrôle Safari est « pas exécuté » avec le message de `safaridriver`, jamais réussi (OUT-01).
+
+Les pages rapportent par `POST /banc/rapport`. Le banc ne retente jamais une mesure (OUT-91). **Un scénario à la fois** (OUT-89, OUT-115) : un scénario peut ouvrir plusieurs navigateurs, jamais deux scénarios ensemble, et jamais à côté d'une compilation. Les entrées passent par la chaîne du navigateur (`Input.dispatchKeyEvent`, `Input.dispatchMouseEvent`, `Input.dispatchTouchEvent`, `input.performActions`), jamais par `dispatchEvent`. La mémoire est estimée, à mesurer à la première exécution de chaque scénario.
+
+| Scénario | Ce qu'il fait | Contrôle négatif | Mémoire (estimée) |
+|---|---|---|---|
+| `rejouer` (E20) | le Worker reprend les journaux de l'épreuve depuis la création, compare carburant, issue et retour de chaque appel au relevé de wasmtime, chaque empreinte notée, la forme canonique finale ; puis chaque fautif, classé pareil | le moteur fautif `fausser_apres(n)` | 1 Go, un navigateur |
+| `dessin` | les pires cas de chaque jeu sur la télé : moteur de dessin, agencement des textes identique au natif, quelques pixels relus là où l'action devait agir (OUT-30), au repos (OUT-32) ; aucune image au-delà de 33 ms de travail du GPU fini ; images perdues par la trace de CDP (Chrome) ; `?rendu=webgl2` ; `device.destroy()` | une option de test de `rendu` qui oublie un nœud : les pixels relus échouent | 1 à 2 Go |
+| `pages` | chaque page de pire cas à trois tailles de téléphone : un élément qui déborde de sa boîte (`scrollWidth` contre `clientWidth`) échoue en nommant sa clé | un fautif de page au texte trop long | 1 Go |
+| `soiree <jeu>` | télé dans un navigateur, téléphones natifs en nombre (jusqu'à 71 pour Sidequest), 3 à 5 pages dans de vrais navigateurs en émulation mobile, bots et singe ; rechargement d'un téléphone, de la télé ; Worker tué ; relais relancé ; second onglet de l'écran ; la garde finale rejouée dans wasmtime ; **compte les images de plus de 33 ms** (travail du GPU fini, faute de mieux ; et les images perdues dans Chrome) et échoue au-delà de zéro en jeu (CONTRAT, « Les budgets ») ; note la charge de la machine avant et après ; mesure la part du commun dans le Worker à chaque tour (M13) | les options de test du § 8.1 | jusqu'à 3 à 4 Go (Sidequest) |
+| `aide` | un `GET /s/…` sans WebSocket ensuite ; aucun téléphone en 60 s ; un relais sans adresse locale ; à chaque fois, le message attendu à l'écran | une option qui tait l'aide : le scénario échoue | 1 Go |
+| `gel` | `Page.setWebLifecycleState { frozen }` sur un téléphone qui tient la croix (Chrome demande peut-être que la page soit d'abord cachée : à constater) : le relâchement doit arriver **comme un tenu envoyé par le téléphone** (`numero + 1`), **avant** que la fraîcheur de l'autorité n'expire (450 ms chez Sidequest) | l'option qui ne relâche pas au départ du premier plan : sans tenu `numero + 1`, l'autorité relâche par la fraîcheur, et le scénario échoue au lieu de réussir | 1 Go |
+| `ecran tier-list` | import, glisser, édition en place, export, sauvegarde et restauration, rechargement | une option de test qui perd l'activation du geste de `Telecharger` : l'export capté manque | 1 à 2 Go |
+| `soiree-complete` | les trois jeux à la suite depuis l'écran de démarrage, « On rejoue » deux fois chacun | une option de test qui oublie de rendre le plein écran après « On rejoue » | 2 Go |
+
+### 8.3 L'épreuve s'étend au navigateur
+
+- `soiree-epreuve <jeu> --navigateurs chrome,firefox,safari` joue le plan habituel dans wasmtime, avec un relevé du carburant de chaque appel, puis appelle `soiree-banc rejouer` en sous-processus. Le résultat entre au rapport comme **E20, Deux moteurs**, un résultat par navigateur : réussi, échec (la première entrée qui diverge), panne de l'outil, ou pas exécuté. C'est un contrôle long : il ne tourne pas à chaque changement, et un code 0 sans lui suffit pour jouer (P17) ; la publication l'attend.
+- **E21, Pages** : chaque vue de téléphone vue en soirée donne une page valide ; des locaux tirés au hasard ne font jamais fauter ; les gestes et tenus d'une page passent `Valider` ; un jeu qui a des téléphones et la page par défaut (vide) échoue. Contrôle rapide, en natif. Ses débordements se mesurent dans le scénario `pages`.
+- **E19 juge `Page`** comme une sorte d'appel à part, au budget que fixe le mainteneur (§ 2.10, question 22).
+- **La pression de l'arrière-plan** (`soiree-banc arriere-plan`, d'après `cadence.mjs`) : la vraie autorité, onglet caché six minutes, dans chaque navigateur visé. Elle échoue si le journal note un `Saut` pendant que l'onglet est caché, ou si la page ne signale pas un retard injecté.
+- `soiree-banc etalonner` refait la mesure 1 dans chaque navigateur : picosecondes par unité, coût fixe, remise à zéro par Kio, instantané, restauration, compilation ; et la boucle vide (M10). Ce sont les entrées des budgets que fixe le mainteneur.
+
+**Les contrôles négatifs nouveaux.** Chaque contrôle de l'épreuve a le sien (AGENTS.md, « Les contrôles et leurs négatifs ») ; chacun a sa crate de module dans `exemples/fautifs/modules/<nom>/`, son entrée dans l'exemple `natif` et son test dans `epreuve/tests/epreuve`, sauf mention.
+
+| Contrôle | Contrôle négatif | Lot |
+|---|---|---|
+| E1, polices sfnt | `police-woff2` : une police déclarée en WOFF2 | 8 |
+| E1, F8 réservé au commun | `diagnostic-f8` : `diagnostic: CodeTouche::F8` | 7 |
+| E1, taille du module | `module-trop-gros` : un module livré au-delà de `TAILLE_MODULE_MAX` | 6 |
+| E12, l'ordre d'un appareil à travers un pas découpé | `etale-mal` | 1 |
+| E16, débordements | `texte-qui-deborde` | 8 |
+| E20, deux moteurs | le moteur fautif `fausser_apres(n)` (pas une crate de module) | 3b |
+| E21, pages | `page-qui-panique`, `page-qui-envoie-un-geste-invalide` (lot 6) ; `page-vide` : un jeu à téléphones dont la page est vide (lot 7) | 6, 7 |
+| « mêmes lints » pour `web/` | une crate témoin de `web/` aux lints différents | 3a |
+| le graphe de `relais` | une crate témoin de `relais/tests/temoins/` qui tire `snow` | 5 |
+| scénarios du banc | la dernière colonne du § 8.2 | 9 à 14 |
+
+### 8.4 De l'entrée au pixel
+
+Tout tourne sur une seule machine. Que `performance.timeOrigin + performance.now()` se compare d'un processus de navigateur à l'autre, à la granularité près (mesurée à 5 µs dans Chrome et 20 µs dans Firefox, pages isolées ; plus grossière sur les téléphones en `http`, non isolés), **n'est pas mesuré** : chaque processus ancre son `timeOrigin` sur l'heure murale à son départ, et des écarts de l'ordre de la ms entre processus ou entre navigateurs sont possibles (lu, à constater). Avant de découper la latence en segments d'un processus à l'autre, le lot 13 mesure cet écart par un écho entre pages (M14) ; un segment qui franchit deux processus porte cet écart dans son incertitude.
+
+```rust
+pub struct Trace {
+    pub id: IdTrace,                                  // (écran | appareil, numéro)
+    pub evenement_us: u64, pub envoi_us: u64,         // horloge de l'émetteur, ramenée par l'écart estimé
+    pub relais: Option<(u64, u64)>,                   // reçu, renvoyé (en clair, horloge du relais)
+    pub recu_us: u64, pub place: Pas,
+    pub pas_debut_us: u64, pub pas_fin_us: u64, pub vue_fin_us: u64,
+    pub page_recue_us: u64, pub soumis_us: u64, pub gpu_fini_us: u64,
+    pub incertitude_us: u32,                          // un demi-aller-retour pour un téléphone, plus M14
+}
+```
+
+- Pour le clavier, la chaîne part de `keydown` (`event.timeStamp`). Pour un téléphone, du `pointerdown`, ramené à l'horloge de l'autorité, avec son incertitude dite.
+- Le rapport donne la distribution (médiane, 99ᵉ centile, maximum), jamais une moyenne, et sa décomposition par segment.
+- **Le « pixel » mesuré ici est la fin du travail du GPU**, pas le photon (OUT-88). La part de la dalle tactile, de la télé et de l'enceinte reste au matériel, mesurée à la répétition par une caméra au ralenti ; en mode diagnostic, un carré blanc s'allume dans un coin à chaque entrée, au moins 100 ms (REM-117).
+- Conditions : aucune compilation à côté (OUT-89), sur secteur (OUT-90), sous de vrais gestes (OUT-93). La charge de la machine est notée avant et après.
+
+### 8.5 Ce qui reste humain
+
+Une fiche de répétition neuve ; l'ancienne `REPETITION.md` décrit l'ancien système.
+
+- De vrais téléphones : Safari iOS, Chrome Android (OUT-121). Sur eux : la pile du fil principal (le module y tourne, sous `PHASE_3`) ; le temps de compilation du module (M4, sans borne de temps aujourd'hui) ; la durée de `Page` (son budget, question 22) ; l'effacement du stockage par l'ITP de Safari d'une soirée à l'autre.
+- Un vrai Wi-Fi de soirée avec 8 à 15 téléphones (SAL-102, OUT-131), l'isolation des clients (SAL-99), le plafond du routeur (SAL-100), la page `/#mesure` (M5).
+- Le gel d'iOS au verrouillage et au réveil (SAL-53) ; 45 min de partie (REM-71).
+- Le retard de la télé et du son, filmé (SAL-179).
+- La fenêtre de la soirée vraiment recouverte par une autre application.
+- La demande du pare-feu de macOS au premier lancement (SAL-95).
+- **La veille** : ajouter `localhost:7878` aux sites toujours actifs de Chrome (économiseur de mémoire) ; ouvrir la télé dans le navigateur et le profil habituels (G y vit, P37) ; vérifier Échap en plein écran dans le navigateur retenu.
+- Le plaisir, que seuls les humains jugent (MANIFESTE).
+
+### 8.6 Les mesures nommées
+
+Elles reprennent les huit points de « Ce que la phase 3 devra mesurer » (RESTE-PHASE-2), et y ajoutent ce que cette conception suppose. Chacune s'écrit dans `MESURES-PHASE-3.md`, avec sa date, sa machine (celle de l'hôte, sauf mention), son navigateur, sa version, la charge et la commande qui la refait.
+
+| # | Ce qu'elle mesure | Où et quand | Ce qu'elle remplace |
+|---|---|---|---|
+| M1 | La durée d'une unité de carburant (appels d'au moins 10⁶ unités), le coût fixe d'un appel, la remise à zéro d'un Kio de zones, dans chaque navigateur (« devra mesurer » 1) | `soiree-banc etalonner`, lot 3c ; Chrome, Firefox, Safari | `PS_PAR_UNITE` × `MARGE_NAVIGATEUR` (200 × 2, choisis) ; la proposition de MESURES-PHASE-3, refaite par le banc Rust |
+| M2 | De l'entrée au pixel (travail du GPU fini), par segment, clavier et téléphone (« devra mesurer » 2) | `soiree-banc mesures`, lot 13 ; Chrome, Firefox, Safari si permis | la table estimée du § 3 |
+| M3 | La taille d'un point de reprise hors zones, et le coût de son chiffrement et de son envoi dans le Worker, **sur le pire cas** : plateau de Tier list plein d'images (« devra mesurer » 3) | wasmtime au lot 2 (taille) ; Worker au lot 11 (taille, chiffrement, envoi) | « 0,31 Mio, calculé » (P3) ; le seuil de 2 ms de R2 (choisi) se juge sur elle |
+| M4 | La taille téléchargée par un téléphone, et la compilation du module sur sa page (« devra mesurer » 4) | lot 12, sur la machine ; les vrais téléphones à la fiche humaine | `TAILLE_MODULE_MAX` (4 Mio, choisi) |
+| M5 | Le monde réel : gigue, rafales, pertes du Wi-Fi, horloges des téléphones, fermeture en arrière-plan (« devra mesurer » 5) | page `/#mesure`, lot 14 ; humaine | les constantes de `epreuve/src/telephone.rs` et du mandataire (voir l'annexe des valeurs choisies) |
+| M6 | La partie qui fait foi en arrière-plan, avec interface : fenêtre recouverte, réduite, plus de sept minutes, App Nap (« devra mesurer » 6) | lot 13 | le seuil de « 100 ms trois fois de suite » (choisi) se règle d'après elle |
+| M7 | La redite du tenu par la vraie page (« devra mesurer » 7) | lot 12, Sidequest | `RAPPEL_TENU` (250 ms) du monde simulé ; la période de 150 ms de P27 se vérifie |
+| M8 | Le rendu : temps d'image, images de plus de 33 ms, images perdues (Chrome), coût d'un nœud dessiné, travail long de Tier list (« devra mesurer » 8) | lots 9 et 11 | rien de choisi : le CONTRAT donne le seuil (33 ms) |
+| M9 | La profondeur que tient chaque navigateur, et celle qu'atteignent les trois jeux | lot 3c | `OCTETS_PAR_ETAGE` et `profondeur_max` de `PHASE_1` (4 096 × 4 096, non mesurés) |
+| M10 | La durée d'une unité sur une boucle vide (le module de `Bonjour` qui boucle), en ps par unité, sous charge | wasmtime au lot 2, sous quatorze `yes` ; navigateurs au lot 3c | « 2³² × 700 ps × 2 ≈ 6 s » (P5, calcul faux, retiré) ; ou `BUDGET_DE_CHARGEMENT` (2³², « point de départ, non mesuré ») |
+| M11 | Le coût d'une case de garde : fichier temporaire, `sync_all` (`F_FULLFSYNC`), renommage, dossier synchronisé | lot 5, SSD de la machine | la cadence de 100 ms (choisi) |
+| M12 | La durée d'une reprise au pire moment : module téléchargé, réécrit, compilé, et `POINT_TOUS_LES` pas rejoués dans le navigateur | lot 10a, les trois jeux | `POINT_TOUS_LES` (600, repris de l'épreuve, choisi) |
+| M13 | La part du commun dans le Worker à chaque tour : `regarder` pour 71 téléphones, 71 chiffrements, la garde | lot 12, `soiree sidequest` | rien : elle se juge contre la moitié de l'image que E19 laisse au commun |
+| M14 | L'écart des `timeOrigin + now()` entre la page, le Worker et d'autres processus de navigateur | lot 13, écho entre pages | l'hypothèse « commune à la granularité près » (§ 8.4) |
+| M15 | Les fils et la mémoire du relais à 71 liens | lot 5 | l'estimation de 150 fils (§ 2.5) |
+
+---
+
+## 9. Le mainteneur
+
+### 9.1 Les questions
+
+Chacune a sa réponse provisoire, retenue pour avancer ; elle se remplace par la sienne dès qu'il l'a donnée.
+
+| # | Question | Réponse provisoire |
+|---|---|---|
+| 1 | La page comme fonction du module (P19) remplace la crate `<jeu>-page` d'INTERFACE § 6.6. Est-ce ainsi que vous lisez « chaque jeu code la page qu'il veut », sachant que son allure se borne au vocabulaire de `PageFil` ? | Oui ; le vocabulaire grandit avec les besoins des jeux |
+| 2 | Le jour du service en ligne, d'où vient la page des téléphones, pour que le service n'ait pas à être digne de confiance ? | Sans objet en phase 3 : le relais est local |
+| 3 | Le relais sert, en boucle locale, le catalogue, les modules de l'écran et les flux (P16) : un écart à « Il ne sert qu'une page de démarrage » (CONTRAT, « Le relais reste générique »). L'accordez-vous ? | Oui, en boucle locale seulement |
+| 4 | Les budgets de E19 : 150 ps par unité si l'ordinateur de la soirée n'a que Chrome, 700 ps s'il doit tenir Firefox (MESURES-PHASE-3, proposition) ; à écrire dans `CONTRAT.md`. **À savoir avant de choisir** : la durée d'une unité dépend de la forme du code. Une boucle vide coûte de 480 à 680 ps par unité dans wasmtime (RESTE-PHASE-2, point 2), dix fois la médiane des appels lourds (43 ps) ; un budget en unités ne promet donc une durée que pour du code semblable à celui des trois jeux mesurés. Le budget de `Page` sur le téléphone est une autre question (22) | Les budgets d'aujourd'hui (800 ps) restent, jusqu'à votre choix |
+| 5 | Une exception `unsafe` pour les exports de `wasm-bindgen` (P32) ? AGENTS.md n'en permet que deux | Oui, sous `#[expect]`, dans un seul module, si la macro l'exige (à constater au lot 3a) |
+| 6 | Quels navigateurs l'ordinateur de la soirée doit-il tenir (« chaque navigateur visé ») ? | Chrome et Firefox ; Safari dès que le banc peut le piloter |
+| 7 | Deux questions distinctes chez Sidequest. **(a) La reprise d'une pause** (INTERFACE § 13, question 7) : REPONSES-PROVISOIRES 7 dit de suivre le cahier, qui relâche à la pause et à la reprise. **(b) La coupure du réseau**, que la question 7 d'INTERFACE ne pose pas : le cahier (§ 4.3, l. 104) relâche côté téléphone « quand la connexion tombe » ; INTERFACE § 6.6 et REM-10, jamais. Laquelle l'emporte pour (b) ? | (a) le cahier, comme le dit REPONSES-PROVISOIRES 7. (b) le cahier pour un tenu qui déclare une fraîcheur (écho sans réponse 1,5 s), INTERFACE § 6.6 pour les autres (P28). La première version de ce document retenait l'inverse sans le dire |
+| 8 | Safari dans le banc : l'hôte coche-t-il « Autoriser l'automatisation à distance » (et `safaridriver --enable`, mot de passe administrateur) ? | Non tant qu'il ne l'a pas fait : Safari reste « pas exécuté », dit |
+| 9 | Un second workspace, `web/`, pour ce qui tire `wgpu` (P31) : une exception à « un seul workspace » d'AGENTS.md | Oui, avec ses lints vérifiés égaux à ceux du commun |
+| 10 | Rejoindre sans caméra : un code court à taper (authentification plus faible), ou le QR seul ? | Le QR seul (REM-73 reste une dette dite) |
+| 11 | Les polices en TTF ou OTF seulement (P22) : Punchline convertit ses `.woff2` | Oui |
+| 12 | Le monde simulé de l'épreuve passe-t-il par la vraie `salle` (SAL-10), en phase 3 ou en phase 4 ? | En phase 4, avec la prédiction ; ses constantes sont relues dès la phase 3 (P27) |
+| 13 | Les gros états : des blocs immuables par empreinte si M3, mesuré sur un plateau plein, montre un point trop lourd ? | Non tant que M3 ne le montre pas (P8) |
+| 14 | Le matériel (CONTRAT, « Le matériel ») : la télé et son mode jeu, sa fréquence, l'ordinateur, le routeur, les enceintes | Sans eux, la part du matériel reste inconnue, et `MARGE_MACHINE` reste à 2, choisie |
+| 15 | Signer `soiree-relais` d'une identité stable, pour que le pare-feu de macOS ne redemande pas à chaque compilation ? | Non en phase 3 ; la fiche de la veille le dit |
+| 16 | Un module non éprouvé se lance-t-il, autrement que par `--non-eprouve` affiché en permanence (P17) ? | Non |
+| 17 | La fiche de répétition neuve remplace-t-elle `REPETITION.md` (point 15 de RESTE-PHASE-2) ? | Elle s'écrit à part ; l'ancienne attend votre décision |
+| 18 | « Tout est chiffré de bout en bout » (CONTRAT) : un invité **actif** sur le Wi-Fi peut servir aux téléphones une page modifiée, puisqu'elle arrive en `http` sans authentification, et lire ensuite tout ce qu'un téléphone voit et tape (§ 2.5). Acceptez-vous cette limite pour la phase 3, dite à l'hôte, ou faut-il `https` sur le réseau local (un certificat que les téléphones croient) ? | Acceptée et dite : la fiche de la veille conseille un Wi-Fi dont on connaît les invités ; l'app iPhone (phase 5) la fermera pour ses utilisateurs |
+| 19 | La publication : quand et comment poser la première étiquette du nouveau commun ? Le paquet `web/` se publie-t-il construit (joint à l'étiquette), ou chaque ami le construit-il chez lui (cible `wasm32`, CLI `wasm-bindgen` 0.2.129) ? Un ami doit d'abord faire passer l'épreuve au jeu (562 s pour Sidequest) : est-ce acceptable ? | Première étiquette à la fin du lot 14 ; les jeux passent alors à une dépendance git ; le paquet se construit chez l'ami par `soiree-relais preparer` ; l'épreuve chez l'ami reste exigée (P17) |
+| 20 | E20 est-il exigé pour qu'un module entre au catalogue, ou seulement pour publier ? | Pour publier seulement (« Seule la publication attend les longs ») ; un code 0 sans E20 suffit pour jouer (P17) |
+| 21 | Échap en plein écran : Keyboard Lock dans Chrome, et ailleurs un Échap qui sort du plein écran sans arriver au jeu (P38) ; ou une autre touche pour les jeux ; ou un événement du commun « sortie du plein écran » donné au jeu ? | Keyboard Lock dans Chrome ; ailleurs, l'écran du commun |
+| 22 | Le budget de `Page` sur un téléphone, nouvelle sorte d'appel de E19, sur un processeur plus lent qu'un M5 (de combien, non mesuré) | Celui d'une lecture divisé par une marge de téléphone de 4, choisie, jusqu'à une mesure sur de vrais téléphones |
+| 23 | Le personnage retenu de Sidequest d'une soirée à l'autre tiendra mal sur iPhone : Safari efface en sept jours le stockage d'un site non visité (ITP ; lu, non mesuré). Faut-il que le relais le garde, sous le jeton, ou accepter la perte ? (Posée aussi à l'agent de Sidequest.) | Accepter la perte, dite : un appareil neuf reste un appareil qui marche |
+| 24 | La durée des vérifications (point 14 de RESTE-PHASE-2, proposition 5 de MESURES-PHASE-1) : la phase ajoute E20 (long), E21 (rapide) et un E16 plus lourd. Faut-il borner l'épreuve standard ? | Non tranché ; le lot 3b mesure la durée de E20, le lot 8 celle de E16, et `RESTE-PHASE-3.md` les réunit |
+| 25 | Les effets provisoires (REPONSES-PROVISOIRES 17) : maintenant qu'il y a du son, la question revient-elle ? | Toujours sans objet en phase 3 : un effet n'est provisoire que dans une tête ou une prédiction, et les trois jeux ont `fenetre` et `prediction` à `SansObjet` (§ 0). Elle reviendra avec la phase 4 |
+| 26 | `soiree-relais jouer .` compile le jeu sur l'ordinateur de la soirée : ses `build.rs` y tournent sans borne (RESTE-PHASE-2, point 6). Est-ce la même confiance que cloner et compiler un dépôt, ou faut-il un bac à sable ? | La même confiance, dite au README de chaque jeu ; le bac à sable reste hors de la phase 3 |
+
+### 9.2 Les écarts à INTERFACE et au CONTRAT
+
+Le point 15 de RESTE-PHASE-2 demande de remettre les documents d'accord ; le mainteneur seul modifie INTERFACE.md et CONTRAT.md. Voici ce que cette conception y change, pour qu'il le lise d'un coup.
+
+| Où | Ce qu'il dit | Ce que fait la phase 3 | Où ici |
+|---|---|---|---|
+| INTERFACE § 2.13 | le trait `Jeu` | une méthode de plus, `Jeu::page` | § 2.10, P19 |
+| INTERFACE § 3 | `jeu_abi::ABI` vaut 3 | l'ABI 4 : boîte de composant, sélecteur, nom de fichier d'un `Lien`, `Telecharger` d'un bloc, compte de `Rendu`, `Champ` d'une ligne, la page | § 6 |
+| INTERFACE § 6.2 | la télé dessine « à un instant légèrement passé » ; elle compte « ses présentations réussies côté GPU » | à 60 Hz et pas calé sur l'image, la télé dessine la dernière scène, sans glisser ; on compte le travail du GPU fini, et les images perdues dans Chrome seulement | § 2.9 |
+| INTERFACE § 6.6 | une crate `<jeu>-page` par jeu ; la page ne relâche jamais sur une coupure | la page est une fonction du module ; une coupure relâche un tenu à fraîcheur | § 2.10, P19, P28 ; questions 1 et 7 |
+| INTERFACE § 7.2 | les contrôles E1 à E19 | E1 gagne les polices sfnt, F8 réservé et la taille du module ; E16 mesure les débordements ; E19 juge chaque tour et `Page` ; E20 et E21 sont nouveaux | § 8.3 |
+| INTERFACE § 8 | le découpage en crates, un workspace | onze crates nouvelles et un second workspace, `web/` | § 2.2, P31 ; question 9 |
+| INTERFACE § 13, question 9 | le second onglet de Tier list | une seule autorité, la plus récente gagne | P36 |
+| INTERFACE § 13, question 10 | les gestes qu'exige le navigateur | le composant agit dans le gestionnaire du geste | P24 |
+| INTERFACE § 13, question 13 | un second moteur, `wasmi` | le navigateur, par E20 | P29 |
+| CONTRAT, « Le relais reste générique » | « Il ne sert qu'une page de démarrage » | aussi le catalogue, les modules de l'écran et les flux, en boucle locale | P16 ; question 3 |
+| CONTRAT, « Le relais ne peut ni lire ni modifier la partie » | « tout est chiffré de bout en bout » | vrai du transport ; pas de la page chargée en `http` sur un Wi-Fi qu'un invité actif partage | § 2.5 ; question 18 |
+
+### 9.3 Ce que devient RESTE-PHASE-2
+
+**Ce qui reste dans le commun**, point par point :
+
+| Point | Ce qu'il en advient |
+|---|---|
+| 1, 2 | réglés et cochés avant cette conception |
+| 3, la borne de taille et de temps du chargement | la taille : `TAILLE_MODULE_MAX`, au chargement du Worker **et** dans E1 (§ 2.8) ; le temps : M4 sur la machine, et sur les vrais téléphones à la fiche humaine, sans borne murale (elle dépendrait de la machine) |
+| 4, `Appareil` et `Message` se fabriquent | **différé** : c'est une décision d'API (un trait de représentation scellé), et la phase 3 ne change pas la désérialisation des entrées ; rien dans la soirée ne l'aggrave, la colle restant le seul chemin d'une entrée dans le module |
+| 5, E8 et un secret transformé | **différé** : une décision d'API (des tirages déclarés secrets) ; la phase 3 ne touche pas E8, et E8 réussit sur les trois jeux |
+| 6, les `build.rs` et la transmutation | **différé, et aggravé** : `soiree-relais jouer .` compile le jeu sur l'ordinateur de la soirée, où ses `build.rs` tournent ; c'est dit et posé (question 26). La politique du code tiers reste au mainteneur |
+| 7, E16 et les limites du jeu | **pas réglé** : le lot 8 fait mesurer les débordements à E16, mais E16 compare toujours le plus lourd des pires cas à l'écran le plus lourd que les bots atteignent ; le régler demande que le jeu déclare ses limites, une décision d'API |
+| 8, les étapes 3, 5 et 6 du CONTRAT (et le point 8 de « devra trancher ») | **différé** : l'étape 3 attend une forme des questions des leçons, l'étape 5 un seuil, l'étape 6 un énoncé, que le mainteneur seul peut donner ; l'étape 4 attend la prédiction (phase 4). La phase 3 n'y ajoute aucune preuve, et un code 0 continue de le dire |
+| 9, les arriérés | P7 |
+| 10, les gros états | P3, P8 ; M3 sur le pire cas ; question 13 |
+| 11, la scène | § 6 : la boîte, le sélecteur, le nom de fichier, la mesure ; le reste différé, avec sa raison |
+| 12, le coût d'un nœud | non traité par l'ABI 4, avec sa raison (§ 6) ; mesuré au lot 6, et au lot 9 une fois dessiné (M8) |
+| 13, les valeurs choisies | aggravé : la phase en ajoute une vingtaine ; elles sont réunies dans l'annexe « Les valeurs choisies », chacune avec la mesure qui la remplacera |
+| 14, la durée des vérifications | pas tranché : question 24 |
+| 15, les documents à remettre d'accord | § 9.2 pour INTERFACE et le CONTRAT ; le reste attend le mainteneur |
+| 16, une boucle dans `Bonjour` | P5, M10, lots 2 et 3c |
+
+**Ce que la phase 3 devra mesurer** : les points 1 à 8 sont M1 à M8 (§ 8.6) ; le point 1 a aussi M10, le point 3 M11 et M12. **Ce qu'elle devra trancher** : 1, les budgets, au mainteneur (question 4) ; 2, les gros états, P8 et question 13 ; 3, les arriérés, P7 ; 4, le relais et le chiffrement, § 2.5 à 2.7, P11 à P16, P36, P40, P41 ; 5, la prédiction, en phase 4 (§ 5) ; 6, le langage de scène et la page, § 6 et P19 ; 7, le second moteur, P29 et E20 ; 8, les étapes 3, 5 et 6, différé (ci-dessus) ; 9, les anciens documents, au mainteneur (question 17).
+
+---
+
+## Annexe. Les dépendances tierces nouvelles
+
+Chacune se déclare une fois, dans `[workspace.dependencies]` (du commun ou de `web/`), avec sa raison à côté d'elle. Une crate qu'on utilise directement se déclare, même si une autre la tire déjà : on ne s'appuie pas sur la copie d'une autre. Les versions se fixent au lot qui l'introduit : la plus récente publiée depuis plus de deux semaines, et le même `wgpu` pour `glyphon`.
+
+| Crate | Où | Raison |
+|---|---|---|
+| `wasm-bindgen` (= 0.2.129), `js-sys`, `web-sys`, `wasm-bindgen-futures` | `web/` | la colle générée que le CONTRAT permet ; les API WebAssembly, WebSocket, DOM, IndexedDB, Audio ; l'adaptateur WebGPU est asynchrone ; la version de l'outil installé (REM-156) |
+| `snow` | `salle` | Noise NKpsk0 en pur Rust, motifs et vecteurs publics ; avec un résolveur qui reçoit le hasard de `salle` |
+| `chacha20poly1305` | `salle` | XChaCha20-Poly1305 des cases de la garde, appelé directement : `snow` la tire déjà, mais on ne s'appuie pas sur sa copie |
+| `getrandom` (moteur du navigateur) | `web/` seulement | le hasard des coques (clés, jetons, nonces) par l'API portable (SAL-93) ; `salle` le reçoit en paramètre. 0.4.3 est déjà dans le `Cargo.lock` du commun ; une autre version majeure, tirée par `snow` ou `rand_core`, demanderait son propre réglage (vu par `cargo tree -i getrandom --target wasm32-unknown-unknown`, lot 4a) |
+| `tungstenite` | `relais`, `banc` | WebSocket sur un `TcpStream` de `std`, synchrone, sans runtime (SAL-146) ; CDP et BiDi sont des WebSocket |
+| `httparse` | `relais` | lire la requête (`Host`, `Origin`) avant de choisir entre la page et la WebSocket, sur le seul port du QR ; déjà tiré par `tungstenite` |
+| `if-addrs` | `relais` | lister les interfaces réseau, ce que `std` ne fait pas (SAL-76) |
+| `cosmic-text` | `mise-en-page` | façonnage, bidi, coupure UAX #14, polices de repli, en pur Rust : la même mesure dans l'épreuve et la télé |
+| `wgpu` | `rendu` | le GPU : WebGPU et WebGL2 dans le navigateur, Metal pour les tests ; le CONTRAT le cite |
+| `glyphon` | `rendu` | l'atlas de glyphes de `cosmic-text` sur `wgpu`, qui tient sur WebGL2 |
+| `qrcodegen` | `rendu` | les modules du QR (SAL-191), petit et sans dépendance |
+| `naga` | tests de `rendu` | lire les WGSL et comparer tailles et décalages aux structures `#[repr(C)]` ; appelé directement, donc déclaré, même si `wgpu` le tire ; juge, non livré |
+| `rqrr` | tests de `rendu` | relire le QR dessiné ; juge, non livré (CONTRAT, « Le code tiers ») |
+
+Déjà dans le workspace, qui servent de nouveau : `blake3`, `postcard`, `serde`, `serde_json`, `miniz_oxide`. Outil hors du workspace : la CLI `wasm-bindgen` 0.2.129, déjà installée.
+
+**Ce qui n'entre pas.** Ni `libc` ni code `unsafe` pour `F_FULLFSYNC` : `File::sync_all` de `std` le fait sous macOS (§ 2.4). Ni `wasm-bindgen-test` : en mode navigateur, il demande `chromedriver` ou `geckodriver`, ce que P30 exclut ; et son mode par défaut, Node.js, n'est pas un navigateur. Les crates de `web/` gardent donc leur logique dans des cœurs testés en natif, et ce qui demande le navigateur (`moteur-navigateur`, la coque du Worker, le DOM du téléphone) se teste sur des pages de test servies et pilotées par `banc`, en CDP et en BiDi (lot 3a).
+
+## Annexe. Les valeurs choisies
+
+Le point 13 de RESTE-PHASE-2 s'aggrave : cette conception choisit, sans mesure, les valeurs ci-dessous. Chacune dit la mesure qui la remplacera, ou pourquoi aucune ne le fera.
+
+| Valeur | Choisie | Où | Remplacée par |
+|---|---|---|---|
+| `GARDE_FOU_PARTIE_MS` | 2 000 ms | § 2.3 | M1 et M8 : le plus long appel légitime mesuré dans le navigateur, avec une marge |
+| Relances avant « Le commun est en panne » | 3 en une minute | § 2.3 | aucune mesure : une règle de conduite, à revoir sur une vraie soirée |
+| Arrêts muraux avant d'écarter une entrée | 2 | § 2.3, P39 | aucune mesure : le premier peut être une pause de la machine |
+| Garde-fou de chargement ou `BUDGET_DE_CHARGEMENT` | à fixer au lot 2 | § 2.3, P5 | M10, et le carburant de `Bonjour`, `Decrire`, `Creer` des cinq modules |
+| Retard de réveil signalé | 100 ms, trois fois de suite | § 2.3 | M6 |
+| Cadence d'une case de journal | 100 ms ou 64 Kio | § 2.4 | M11 |
+| `POINT_TOUS_LES` | 600 pas (repris de l'épreuve) | § 2.4 | M12 |
+| Seuil d'un second Worker pour le chiffrement | 2 ms | R2, P9 | M3 sur le pire cas |
+| `TAILLE_MODULE_MAX` | 4 Mio livrés | § 2.8 | M4, sur la machine puis sur de vrais téléphones |
+| Aide sans téléphone | 60 s | § 2.8 | aucune mesure : ce qu'un hôte attend ; à revoir à la répétition |
+| `ARRIERES_PAR_TOUR` | 8 | § 2.11, P7 | M1 (coût fixe d'un arriéré) et M13 |
+| `TRAME_MAX` | 256 Kio | § 2.7 | aucune mesure directe : elle borne la mémoire du relais par trame ; M15 dira si elle gêne |
+| Morceaux de module non accusés | 2 par téléphone | § 2.5 | M13 et le test du téléphone qui rejoint Sidequest à 71 |
+| `LIENS_MAX_SANS_AUTORITE` | 16 | § 2.5 | aucune mesure : la borne avant que l'autorité ne dise `Limites` |
+| Liens de plus que `places.appareils` | 4 | § 2.5 | aucune mesure : onglets jumeaux et reconnexions ; à revoir si un refus `Pleine` apparaît en répétition |
+| Lien sans `Bonjour`, poignée de main inachevée | 10 s | § 2.5, § 2.6 | M5 (poignées de main ratées sur un vrai Wi-Fi) |
+| `BATTEMENT_MS` | 250 ms (SAL-43) | § 2.7 | M5 |
+| `SILENCE_MAX_MS` | 3 000 ms (SAL-44 suggère 5 à 6 s) | § 2.7 | M5 |
+| Fenêtre de rejeu des trames | 1 024 | § 2.6 | M5 (réordonnancements) ; sur WebSocket, aucune trame ne se réordonne |
+| Écho sans réponse avant reconnexion et relâchement (P28) | 1,5 s | § 2.10 | M5 |
+| Tailles de téléphone du scénario `pages` | 360 × 640, 390 × 844, 768 × 1024 | lot 12 | les vrais téléphones de la répétition |
+| Marge du téléphone pour le budget de `Page` | 4 | § 2.10 | les vrais téléphones de la répétition (question 22) |
+| Tolérance des pixels relus | 2 sur 255 par canal | lot 9 | aucune mesure : un juge, que les tests natifs calibrent |
+| `MARGE_MACHINE` | 2 | § 2.3, § 3 | le banc relancé sur l'ordinateur de la soirée (question 14) |
+
+**Les constantes du monde simulé** (`epreuve/src/telephone.rs` et `soiree.rs`, « devra mesurer » 5). La mesure du vrai Wi-Fi (M5, page `/#mesure`, et la répétition) remplacera : `RAFALE` (100 ms), `PERTE_FIABLE` (1 sur 40), `RETRANSMISSION` (200 ms), `SYNCHRO` (5 s), `DERIVE_MAX_PPM` (200), `DECALAGE_MAX` (une minute), `FERME_EN_ARRIERE_PLAN` (5 s), `FERMETURE` (0,5 s), et la gigue de deux pas. M7 remplacera `RAPPEL_TENU` (250 ms). Resteront choisies, parce que la phase 3 n'a pas de WebRTC (P11) : `PERTE_TENU` (1 sur 25, le canal non fiable) et la part des téléphones réduits à WebSocket. `SILENCE_MAX` (180 pas) passe dans `liaison` (P27), et se mesure avec M5. Les autres valeurs de `soiree.rs` (les périodes des bots, les gels de E18) sont des choix de l'épreuve, pas des faits du monde : aucune mesure ne les remplace.

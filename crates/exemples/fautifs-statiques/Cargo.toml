@@ -1,0 +1,15 @@
+[package]
+name = "fautifs-statiques"
+description = "Les cinq jeux fautifs dont la faute tient dans un `static`, à part des autres pour que la règle « rien hors de l'état » ne lise leurs `static` que chez eux."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

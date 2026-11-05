@@ -478,6 +478,7 @@ dependencies = [
  "blake3",
  "devine",
  "fautifs",
+ "fautifs-statiques",
  "jeu",
  "jeu-abi",
  "jeu-natif",
@@ -581,7 +582,7 @@ dependencies = [
 name = "fautif-etat-hors-enveloppe-module"
 version = "0.1.0"
 dependencies = [
- "fautifs",
+ "fautifs-statiques",
  "jeu",
 ]
 
@@ -725,7 +726,7 @@ dependencies = [
 name = "fautif-refuse-apres-avoir-ecrit-module"
 version = "0.1.0"
 dependencies = [
- "fautifs",
+ "fautifs-statiques",
  "jeu",
 ]
 
@@ -733,7 +734,7 @@ dependencies = [
 name = "fautif-retient-un-refus-module"
 version = "0.1.0"
 dependencies = [
- "fautifs",
+ "fautifs-statiques",
  "jeu",
 ]
 
@@ -749,7 +750,7 @@ dependencies = [
 name = "fautif-secret-dans-un-static-module"
 version = "0.1.0"
 dependencies = [
- "fautifs",
+ "fautifs-statiques",
  "jeu",
 ]
 
@@ -757,7 +758,7 @@ dependencies = [
 name = "fautif-vue-qui-ecrit-module"
 version = "0.1.0"
 dependencies = [
- "fautifs",
+ "fautifs-statiques",
  "jeu",
 ]
 
@@ -781,6 +782,14 @@ dependencies = [
 name = "fautifs"
 version = "0.1.0"
 dependencies = [
+ "jeu",
+]
+
+[[package]]
+name = "fautifs-statiques"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
  "jeu",
 ]
 

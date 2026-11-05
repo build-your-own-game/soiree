@@ -36,6 +36,9 @@ devine.workspace = true
 jeu.workspace = true
 # Les jeux fautifs : un contrôle négatif par contrôle (§ 7.2, § 8.8).
 fautifs.workspace = true
+# Les cinq fautifs dont la faute est un `static`, à part des autres (RESTE-PHASE-2,
+# point 1).
+fautifs-statiques.workspace = true
 # Le jeu d'exemple sans téléphone : pannes sans objet, colle, pile laissée (besoins
 # 1 à 3 des jeux, `conception/BESOINS-DES-JEUX.md`).
 ardoise.workspace = true

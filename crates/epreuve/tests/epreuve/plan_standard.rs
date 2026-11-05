@@ -18,6 +18,7 @@ use std::sync::Mutex;
 
 use epreuve::{FabriqueDynamique, IdControle, Plan};
 use fautifs::jeux;
+use fautifs_statiques::jeux as statiques;
 use jeu_natif::FabriqueNative;
 
 use crate::modules;
@@ -49,19 +50,19 @@ fn jeu(nom: &str) -> (Box<dyn FabriqueDynamique>, Option<IdControle>) {
         "invariant-viole" => (n!(jeux::InvariantViole), Some(IdControle::E4)),
         "invariant-jamais-evalue" => (n!(jeux::InvariantJamaisEvalue), Some(IdControle::E4)),
         "attend-un-absent" => (n!(jeux::AttendUnAbsent), Some(IdControle::E5)),
-        "refuse-apres-avoir-ecrit" => (n!(jeux::RefuseApresAvoirEcrit), Some(IdControle::E6)),
-        "retient-un-refus" => (n!(jeux::RetientUnRefus), Some(IdControle::E6)),
-        "vue-qui-ecrit" => (n!(jeux::VueQuiEcrit), Some(IdControle::E7)),
+        "refuse-apres-avoir-ecrit" => (n!(statiques::RefuseApresAvoirEcrit), Some(IdControle::E6)),
+        "retient-un-refus" => (n!(statiques::RetientUnRefus), Some(IdControle::E6)),
+        "vue-qui-ecrit" => (n!(statiques::VueQuiEcrit), Some(IdControle::E7)),
         "vue-qui-fuit" => (n!(jeux::VueQuiFuit), Some(IdControle::E8)),
         "choix-qui-fuit" => (n!(jeux::ChoixQuiFuit), Some(IdControle::E8)),
-        "secret-dans-un-static" => (n!(jeux::SecretDansUnStatic), Some(IdControle::E8)),
+        "secret-dans-un-static" => (n!(statiques::SecretDansUnStatic), Some(IdControle::E8)),
         "pire-cas-trop-leger" => (n!(jeux::PireCasTropLeger), Some(IdControle::E16)),
         "natif-different" => (n!(jeux::NatifDifferent), Some(IdControle::E9)),
         "depend-de-l-appareil" => (n!(jeux::DependDeLAppareil), Some(IdControle::E10)),
         "coupure-qui-compte" => (n!(jeux::CoupureQuiCompte), Some(IdControle::E11)),
         "compte-le-recu" => (n!(jeux::CompteLeRecu), Some(IdControle::E12)),
         "octet-qui-panique" => (n!(jeux::OctetQuiPanique), Some(IdControle::E13)),
-        "etat-hors-enveloppe" => (n!(jeux::EtatHorsEnveloppe), Some(IdControle::E14)),
+        "etat-hors-enveloppe" => (n!(statiques::EtatHorsEnveloppe), Some(IdControle::E14)),
         "fuit-la-memoire" => (n!(jeux::FuitLaMemoire), Some(IdControle::E15)),
         "pire-cas-qui-deborde" => (n!(jeux::PireCasQuiDeborde), Some(IdControle::E16)),
         "nan-dans-l-etat" => (n!(jeux::NanDansLEtat), Some(IdControle::E17)),

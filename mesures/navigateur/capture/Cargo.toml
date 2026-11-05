@@ -1,0 +1,39 @@
+# La capture du banc de mesure dans les navigateurs (`../README.md`) : elle réécrit
+# chaque module comme `moteur-wasmtime` le charge, enregistre les appels d'une soirée
+# et des pires cas, puis les rejoue dans wasmtime, chronométrés. Les pages du banc
+# rejouent la même trace dans chaque navigateur.
+#
+# Un workspace à lui seul : ce n'est pas une crate du commun (le découpage de
+# `soiree/Cargo.toml` est voulu), seulement un outil de mesure qui en dépend par
+# chemin. Il se compile dans `soiree/target`, avec le `Cargo.lock` du commun copié
+# ici, pour reprendre les mêmes versions et ce qui est déjà compilé :
+#   CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=../../../target cargo build --release
+[package]
+name = "capture-navigateur"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+# Le module chargé comme la partie le charge : réécrit, compilé, Bonjour et Decrire.
+moteur-wasmtime = { path = "../../../crates/moteur-wasmtime" }
+# La réécriture seule, chronométrée à part du chargement.
+reecriture = { path = "../../../crates/reecriture" }
+# Le contrat `Instance` et `Fabrique`, que la capture enveloppe pour enregistrer.
+partie = { path = "../../../crates/partie" }
+# Encoder les appels des pires cas et des Bonjour, décoder leurs retours.
+jeu-abi = { path = "../../../crates/jeu-abi" }
+# La soirée du plan court, rejouée entrée par entrée par E9 et E14 sur les instances
+# enregistrées (comme `epreuve/examples/etalonner.rs`).
+epreuve = { path = "../../../crates/epreuve" }
+# La compilation seule du module réécrit, avec les réglages de `moteur-wasmtime`,
+# pour la comparer à `WebAssembly.compile` (mesure 4). La version du commun.
+wasmtime = { version = "50.0.1", default-features = false, features = ["cranelift", "runtime", "std"] }
+# Écrire les métadonnées et les durées que lisent les pages et l'analyse. La version
+# que le commun tire déjà.
+serde_json = "1.0.154"
+
+[profile.release]
+overflow-checks = true

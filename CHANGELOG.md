@@ -21,11 +21,25 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Après la phase 2 : les fautifs à `static` à part, et l'épreuve nomme un `static`
+
+Rien ne change pour un jeu : ni l'ABI, ni l'API de `jeu`, ni ce que l'épreuve juge. Deux points de `conception/RESTE-PHASE-2.md` sont faits (1 et 2) :
+
+- **Les fautifs repassent l'étape 1 depuis leurs sources.** Les cinq défauts dont la faute est un `static` (E6 `refuse-apres-avoir-ecrit` et `retient-un-refus`, E7 `vue-qui-ecrit`, E8 `secret-dans-un-static`, E14 `etat-hors-enveloppe`) quittent `fautifs` pour une crate à eux, `crates/exemples/fautifs-statiques` ; leurs types se nomment `fautifs_statiques::jeux::<Nom>` au lieu de `fautifs::jeux::<Nom>`, et leurs crates de module, qui restent dans `crates/exemples/fautifs/modules/<nom>`, dépendent de `fautifs-statiques`. Depuis leurs sources, `sain` et `avec-fenetre` rendent 0, un fautif sans `static` ne fait échouer que son contrôle ; un fautif à `static` échoue l'étape 1 et son contrôle (tests `sain_et_un_fautif_sans_static_depuis_leurs_sources` et `un_fautif_a_static_echoue_l_etape_1_en_nommant_le_static`, `crates/epreuve/tests/sources.rs`).
+- **La règle « rien hors de l'état » nomme le `static`** qu'elle refuse : ``un `static` `NOM` : une valeur gardée hors de l'état (écrire un `const`)``, au lieu de ``un `static` : …``. Un outil qui lit ce texte dans le rapport doit s'y attendre.
+- **`moteur-wasmtime`, `charger::bonjour_qui_boucle_refuse_avec_sa_faute` ne dépend plus de la charge** : son garde-fou mural passe de 2 s à une minute, et seul le carburant de chargement réel (`BUDGET_DE_CHARGEMENT`) arrête la boucle (OUT-11). Le test prend environ 2 s, plus sous la charge.
+
+#### Passer à cette version
+
+1. Un jeu n'a rien à faire.
+2. Du code qui nomme l'un des cinq fautifs à `static` (`fautifs::jeux::RefuseApresAvoirEcrit`, `RetientUnRefus`, `VueQuiEcrit`, `SecretDansUnStatic`, `EtatHorsEnveloppe`) dépend de `fautifs-statiques` (`fautifs-statiques.workspace = true`) et écrit `fautifs_statiques::jeux::<Nom>`. Le trait `fautifs::defauts::Defaut` et le socle ne changent pas.
+3. Un défaut de plus qui tient un `static` va dans `fautifs-statiques`, jamais dans `fautifs`.
+
 ### Le contrôle final de la phase 2
 
 Rien ne change pour un jeu : ni l'ABI (`jeu_abi::ABI` vaut 3), ni l'API de `jeu`, ni l'épreuve. Le contrôle final (2026-11-05, `conception/RESTE-PHASE-1.md`, « Contrôle final de la phase 2 ») a tout relancé depuis zéro ; ce qui reste après la phase 2, et ce que la phase 3 devra mesurer ou trancher, est dans `conception/RESTE-PHASE-2.md`. Deux choses à savoir en éprouvant :
 
-- **Les fautifs du commun ne passent pas l'étape 1 depuis leurs sources** : la crate `fautifs`, que toutes leurs crates de module partagent, tient cinq `static` (ceux des défauts E6, E7, E8 et E14), que la règle « rien hors de l'état » refuse. `soiree-epreuve crates/exemples/fautifs/modules/<nom>` rend donc 1 même pour `sain` et `avec-fenetre`. Pour voir un fautif échouer exactement son contrôle, l'éprouver par son module et sa copie native (`cargo run --release -p epreuve --example natif -- <nom> <module>`, ou le test `plan_standard`). Un jeu n'est pas touché.
+- **Les fautifs du commun ne passent pas l'étape 1 depuis leurs sources** (corrigé depuis : voir « Après la phase 2 » ci-dessus) : la crate `fautifs`, que toutes leurs crates de module partagent, tient cinq `static` (ceux des défauts E6, E7, E8 et E14), que la règle « rien hors de l'état » refuse. `soiree-epreuve crates/exemples/fautifs/modules/<nom>` rend donc 1 même pour `sain` et `avec-fenetre`. Pour voir un fautif échouer exactement son contrôle, l'éprouver par son module et sa copie native (`cargo run --release -p epreuve --example natif -- <nom> <module>`, ou le test `plan_standard`). Un jeu n'est pas touché.
 - **Le plan standard est ce qui fait foi** ; le plan court ne garantit pas le résultat d'un jeu (Punchline y échouait E2 et E15 en phase 1, faute de temps pour deux parties).
 
 ### La forme, les sources et l'ABI 3 (phase 2)

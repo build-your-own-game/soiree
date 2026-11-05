@@ -134,3 +134,102 @@ fn devine_depuis_ses_sources() {
     assert!(j.contains("\"jeu\": \"devine::Devine\""), "{j}");
     std::fs::remove_dir_all(&d).expect("nettoyer");
 }
+
+/// Les lignes des contrôles en échec dans un rapport lisible : `" E4 Invariants …
+/// échec du jeu — …"`, réduites au nom du contrôle.
+fn controles_en_echec(texte: &str) -> Vec<&str> {
+    texte
+        .lines()
+        .filter(|l| l.contains(" échec du jeu — "))
+        .filter_map(|l| l.split_whitespace().next())
+        .collect()
+}
+
+/// RESTE-PHASE-2, point 1 (CONTRAT : un contrôle sait échouer, « et lui seul » ;
+/// OUT-27, HIS-03, SAL-168) : depuis leurs sources, qui est le chemin qui fait foi, le
+/// socle sain rend 0, et un fautif sans `static` ne fait échouer que son contrôle.
+/// Tant que la crate `fautifs` tenait les `static` de cinq défauts, la règle « rien
+/// hors de l'état », qui lit toute crate du jeu, faisait échouer l'étape 1 à tous :
+/// `sain` rendait 1. Sur le plan court : son succès n'est pas celui du plan standard.
+#[test]
+fn sain_et_un_fautif_sans_static_depuis_leurs_sources() {
+    let d = std::env::temp_dir().join(format!("soiree-sain-{}", std::process::id()));
+    std::fs::create_dir_all(&d).expect("dossier");
+    let modules = racine().join("crates/exemples/fautifs/modules");
+
+    let json = d.join("sain.json");
+    let sortie = eprouver(&modules.join("sain"), &["--court"], &json);
+    let texte = String::from_utf8_lossy(&sortie.stdout);
+    assert_eq!(
+        sortie.status.code(),
+        Some(0),
+        "{texte}\n{}",
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    for attendu in [
+        "1. Compiler — faite",
+        "rien hors de l'état : faite",
+        "copie native : faite",
+        "2. Constater — faite",
+        "(code 0)",
+    ] {
+        assert!(texte.contains(attendu), "{attendu} :\n{texte}");
+    }
+    assert_eq!(controles_en_echec(&texte), Vec::<&str>::new(), "{texte}");
+    let j = std::fs::read_to_string(&json).expect("le rapport JSON");
+    assert!(j.contains("\"jeu\": \"fautifs::jeux::Sain\""), "{j}");
+
+    // E4 : deux points par tape. L'étape 1 est faite ; seul E4 échoue.
+    let json = d.join("invariant-viole.json");
+    let sortie = eprouver(&modules.join("invariant-viole"), &["--court"], &json);
+    let texte = String::from_utf8_lossy(&sortie.stdout);
+    assert_eq!(
+        sortie.status.code(),
+        Some(1),
+        "{texte}\n{}",
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    assert!(texte.contains("1. Compiler — faite"), "{texte}");
+    assert!(texte.contains("rien hors de l'état : faite"), "{texte}");
+    assert_eq!(controles_en_echec(&texte), ["E4"], "{texte}");
+    assert!(!texte.contains("panne de l'outil —"), "{texte}");
+    std::fs::remove_dir_all(&d).expect("nettoyer");
+}
+
+/// RESTE-PHASE-2, point 1 (revue de la phase 2, constats 1 et 5 ; INTERFACE, § 2.2) :
+/// un fautif dont la faute est un `static` échoue l'étape 1 depuis ses sources, et la
+/// règle « rien hors de l'état » nomme le `static` et le fichier de `fautifs-statiques`
+/// qui le tient : la forme l'attrape avant la pression. Le jeu est joué quand même, et
+/// son contrôle (E7) échoue aussi ; aucun autre.
+#[test]
+fn un_fautif_a_static_echoue_l_etape_1_en_nommant_le_static() {
+    let d = std::env::temp_dir().join(format!("soiree-static-{}", std::process::id()));
+    std::fs::create_dir_all(&d).expect("dossier");
+    let json = d.join("rapport.json");
+    let sortie = eprouver(
+        &racine().join("crates/exemples/fautifs/modules/vue-qui-ecrit"),
+        &["--court"],
+        &json,
+    );
+    let texte = String::from_utf8_lossy(&sortie.stdout);
+    assert_eq!(
+        sortie.status.code(),
+        Some(1),
+        "{texte}\n{}",
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    for attendu in [
+        "1. Compiler — échouée",
+        "rien hors de l'état : échouée",
+        "fautifs-statiques/src/lib.rs:",
+        "un `static` `VU` : une valeur gardée hors de l'état",
+        // Les autres règles tiennent : seul le `static` fait échouer l'étape 1.
+        "forme calculée : faite",
+        "module : faite",
+        "copie native : faite",
+    ] {
+        assert!(texte.contains(attendu), "{attendu} :\n{texte}");
+    }
+    assert_eq!(controles_en_echec(&texte), ["E7"], "{texte}");
+    std::fs::remove_dir_all(&d).expect("nettoyer");
+}

@@ -16,6 +16,7 @@ use std::process::ExitCode;
 
 use epreuve::FabriqueDynamique;
 use fautifs::jeux;
+use fautifs_statiques::jeux as statiques;
 use jeu_natif::FabriqueNative;
 
 fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
@@ -30,13 +31,13 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         "invariant-viole" => Box::new(FabriqueNative::<jeux::InvariantViole>::new()),
         "attend-un-absent" => Box::new(FabriqueNative::<jeux::AttendUnAbsent>::new()),
         "refuse-apres-avoir-ecrit" => {
-            Box::new(FabriqueNative::<jeux::RefuseApresAvoirEcrit>::new())
+            Box::new(FabriqueNative::<statiques::RefuseApresAvoirEcrit>::new())
         }
-        "vue-qui-ecrit" => Box::new(FabriqueNative::<jeux::VueQuiEcrit>::new()),
+        "vue-qui-ecrit" => Box::new(FabriqueNative::<statiques::VueQuiEcrit>::new()),
         "vue-qui-fuit" => Box::new(FabriqueNative::<jeux::VueQuiFuit>::new()),
         "natif-different" => Box::new(FabriqueNative::<jeux::NatifDifferent>::new()),
         "octet-qui-panique" => Box::new(FabriqueNative::<jeux::OctetQuiPanique>::new()),
-        "etat-hors-enveloppe" => Box::new(FabriqueNative::<jeux::EtatHorsEnveloppe>::new()),
+        "etat-hors-enveloppe" => Box::new(FabriqueNative::<statiques::EtatHorsEnveloppe>::new()),
         "fuit-la-memoire" => Box::new(FabriqueNative::<jeux::FuitLaMemoire>::new()),
         "depend-de-l-appareil" => Box::new(FabriqueNative::<jeux::DependDeLAppareil>::new()),
         "coupure-qui-compte" => Box::new(FabriqueNative::<jeux::CoupureQuiCompte>::new()),
@@ -48,9 +49,9 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         "boucle-au-vote" => Box::new(FabriqueNative::<jeux::BoucleAuVote>::new()),
         "phase-sans-cas" => Box::new(FabriqueNative::<jeux::PhaseSansCas>::new()),
         "invariant-jamais-evalue" => Box::new(FabriqueNative::<jeux::InvariantJamaisEvalue>::new()),
-        "retient-un-refus" => Box::new(FabriqueNative::<jeux::RetientUnRefus>::new()),
+        "retient-un-refus" => Box::new(FabriqueNative::<statiques::RetientUnRefus>::new()),
         "choix-qui-fuit" => Box::new(FabriqueNative::<jeux::ChoixQuiFuit>::new()),
-        "secret-dans-un-static" => Box::new(FabriqueNative::<jeux::SecretDansUnStatic>::new()),
+        "secret-dans-un-static" => Box::new(FabriqueNative::<statiques::SecretDansUnStatic>::new()),
         "pire-cas-trop-leger" => Box::new(FabriqueNative::<jeux::PireCasTropLeger>::new()),
         "panique-au-temps" => Box::new(FabriqueNative::<jeux::PaniqueAuTemps>::new()),
         "juge-sur-le-fait" => Box::new(FabriqueNative::<jeux::JugeSurLeFait>::new()),

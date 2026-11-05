@@ -26,6 +26,7 @@ use epreuve::{
     Etape, FabriqueDynamique, IdControle, IssueControle, IssueEtape, Panne, Plan, Rapport,
 };
 use fautifs::jeux;
+use fautifs_statiques::jeux as statiques;
 use jeu_abi::Duree;
 use jeu_natif::FabriqueNative;
 use partie::Faute;
@@ -243,7 +244,7 @@ fautif!(
 fn refuse_apres_avoir_ecrit_echoue_e6_et_e8() {
     let r = eprouver(
         "refuse-apres-avoir-ecrit",
-        &mut FabriqueNative::<jeux::RefuseApresAvoirEcrit>::new(),
+        &mut FabriqueNative::<statiques::RefuseApresAvoirEcrit>::new(),
         &Plan::court(GRAINE),
     );
     assert_eq!(
@@ -257,7 +258,7 @@ fn refuse_apres_avoir_ecrit_echoue_e6_et_e8() {
 fautif!(
     vue_qui_ecrit_echoue_e7,
     "vue-qui-ecrit",
-    jeux::VueQuiEcrit,
+    statiques::VueQuiEcrit,
     IdControle::E7
 );
 // CAT-46.
@@ -283,7 +284,7 @@ fautif!(
 fautif!(
     etat_hors_enveloppe_echoue_e14,
     "etat-hors-enveloppe",
-    jeux::EtatHorsEnveloppe,
+    statiques::EtatHorsEnveloppe,
     IdControle::E14
 );
 // OUT-84, HIS-10, SQ-76, PUN-15.
@@ -383,7 +384,7 @@ fautif!(
 fautif!(
     retient_un_refus_echoue_e6,
     "retient-un-refus",
-    jeux::RetientUnRefus,
+    statiques::RetientUnRefus,
     IdControle::E6
 );
 
@@ -403,7 +404,7 @@ fautif!(
 fautif!(
     secret_dans_un_static_echoue_e8,
     "secret-dans-un-static",
-    jeux::SecretDansUnStatic,
+    statiques::SecretDansUnStatic,
     IdControle::E8
 );
 

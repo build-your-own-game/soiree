@@ -9,7 +9,13 @@
 //!
 //! Chaque jeu a sa crate de module dans `modules/<nom>/`, que le workspace prend par le
 //! motif `crates/exemples/fautifs/modules/*`. Leur `build.rs` commun,
-//! `modules/build.rs`, pose le maximum de mémoire.
+//! `build-module.rs`, pose le maximum de mémoire.
+//!
+//! Cette crate ne tient aucun `static` : l'étape 1 de l'épreuve la lit pour chaque
+//! fautif, et un `static` ici ferait échouer la règle « rien hors de l'état » à tous
+//! (RESTE-PHASE-2, point 1). Les cinq défauts dont la faute est un `static` sont dans
+//! `fautifs-statiques`, qui dépend de celle-ci ; leurs crates de module restent dans
+//! `modules/`, à côté des autres.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -38,18 +44,12 @@ pub mod jeux {
     pub type InvariantViole = Socle<defauts::InvariantViole>;
     /// E5.
     pub type AttendUnAbsent = Socle<defauts::AttendUnAbsent>;
-    /// E6.
-    pub type RefuseApresAvoirEcrit = Socle<defauts::RefuseApresAvoirEcrit>;
-    /// E7.
-    pub type VueQuiEcrit = Socle<defauts::VueQuiEcrit>;
     /// E8.
     pub type VueQuiFuit = Socle<defauts::VueQuiFuit>;
     /// E9.
     pub type NatifDifferent = Socle<defauts::NatifDifferent>;
     /// E13.
     pub type OctetQuiPanique = Socle<defauts::OctetQuiPanique>;
-    /// E14.
-    pub type EtatHorsEnveloppe = Socle<defauts::EtatHorsEnveloppe>;
     /// E15.
     pub type FuitLaMemoire = Socle<defauts::FuitLaMemoire>;
     /// E10.
@@ -72,8 +72,6 @@ pub mod jeux {
     pub type PhaseSansCas = Socle<defauts::PhaseSansCas>;
     /// E4 : un invariant déclaré, jamais évalué.
     pub type InvariantJamaisEvalue = Socle<defauts::InvariantJamaisEvalue>;
-    /// E6 : un `static` écrit avant un refus, qui change la tape suivante.
-    pub type RetientUnRefus = Socle<defauts::RetientUnRefus>;
     /// E8 : un secret d'un octet, que le choix public montre.
     pub type ChoixQuiFuit = Socle<defauts::ChoixQuiFuit>;
     /// E2 : trois `Temps` qui paniquent ; la partie doit repartir.
@@ -89,8 +87,6 @@ pub mod jeux {
     pub type FinTropLourde = Socle<defauts::FinTropLourde>;
     /// E19, par le coût fixe : un brouillon de 32 Mio remis à zéro à chaque appel.
     pub type ZonesLourdes = Socle<defauts::ZonesLourdes>;
-    /// E8 : un secret recopié dans un `static`, que l'écran montre.
-    pub type SecretDansUnStatic = Socle<defauts::SecretDansUnStatic>;
     /// E16 : des pires cas plus légers que l'écran d'une soirée.
     pub type PireCasTropLeger = Socle<defauts::PireCasTropLeger>;
 }

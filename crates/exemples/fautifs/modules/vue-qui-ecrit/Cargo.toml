@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 jeu.workspace = true
-fautifs.workspace = true
+fautifs-statiques.workspace = true
 
 [lints]
 workspace = true

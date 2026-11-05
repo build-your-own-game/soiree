@@ -1,7 +1,7 @@
 //! `charger` : ce qui est refusé avant toute partie, et ce qui est vérifié (§ 8.7).
 
 use jeu_abi::{ABI, ApplicableFil};
-use moteur_wasmtime::{Moteur, RefusModule};
+use moteur_wasmtime::{Moteur, RefusModule, ReglagesMoteur};
 use partie::Faute;
 use reecriture::Refus;
 
@@ -120,16 +120,35 @@ fn zones_qui_chevauchent_la_pile_ou_entre_elles_refusees() {
     assert!(matches!(refus(&c), RefusModule::Declaration(_)));
 }
 
-/// `Bonjour` qui boucle ou qui panique : le module est refusé, avec la faute.
+/// Le garde-fou mural de [`bonjour_qui_boucle_refuse_avec_sa_faute`] : une minute.
+/// Épuiser [`moteur_wasmtime::BUDGET_DE_CHARGEMENT`] sur une boucle vide a pris
+/// environ 2 s le 2026-11-05, sur la machine de l'hôte (macOS, 10 cœurs, 16 Go ; ce
+/// test seul, sous `cargo test`, 2,07 s chargement compris) : autant que le garde-fou
+/// de deux secondes de [`REGLAGES`], qu'il dépassait sous la charge d'un `cargo test
+/// --workspace` (RESTE-PHASE-2, point 2). Trente fois plus laisse la charge ralentir la
+/// boucle sans changer l'issue ; la minute ne borne qu'un carburant qui ne s'épuiserait
+/// jamais.
+const GARDE_FOU_DU_CHARGEMENT_MS: u32 = 60_000;
+
+/// `Bonjour` qui boucle : le module est refusé, avec la faute `Budget` du jeu, au
+/// carburant de chargement réel ([`moteur_wasmtime::BUDGET_DE_CHARGEMENT`]), et non
+/// par le garde-fou mural, qui serait une panne de l'outil (HIS-06). Le garde-fou est réglé assez haut
+/// pour que l'issue ne dépende pas de la vitesse de la machine ni de sa charge
+/// (OUT-11 ; RESTE-PHASE-2, point 2) : seul le carburant, compté par la réécriture et
+/// le même partout, l'arrête. `garde_fou_mural_panne_de_l_outil` (`fautes.rs`) tient
+/// l'autre côté : un garde-fou court sur un carburant sans fin est une panne.
 #[test]
 fn bonjour_qui_boucle_refuse_avec_sa_faute() {
     let texte = Colle::new(COMPTER).wat().replace(
         "(func (export \"soiree_appel\") (param $n i32) (result i64)",
         "(func (export \"soiree_appel\") (param $n i32) (result i64) (loop $l (br $l))",
     );
-    let r = Moteur::new(REGLAGES)
-        .unwrap()
-        .charger(&wat::parse_str(&texte).unwrap());
+    let r = Moteur::new(ReglagesMoteur {
+        garde_fou_murale_ms: GARDE_FOU_DU_CHARGEMENT_MS,
+        ..REGLAGES
+    })
+    .unwrap()
+    .charger(&wat::parse_str(&texte).unwrap());
     assert_eq!(
         r.err(),
         Some(RefusModule::Faute {

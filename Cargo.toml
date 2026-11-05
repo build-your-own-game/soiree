@@ -25,7 +25,9 @@ members = [
     # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
     "crates/exemples/*",
     "crates/exemples/*/module",
-    # Un jeu fautif par contrôle négatif (§ 7.2), chacun avec sa crate de module.
+    # Un jeu fautif par contrôle négatif (§ 7.2), chacun avec sa crate de module ; ses
+    # règles sont dans `crates/exemples/fautifs`, ou `crates/exemples/fautifs-statiques`
+    # pour les cinq dont la faute est un `static` (le motif `crates/exemples/*` les prend).
     "crates/exemples/fautifs/modules/*",
 ]
 # L'outil `soiree` est un workspace à part, avec ses propres règles et son
@@ -51,6 +53,9 @@ partie = { path = "crates/partie", version = "0.1.0" }
 epreuve = { path = "crates/epreuve", version = "0.1.0" }
 devine = { path = "crates/exemples/devine", version = "0.1.0" }
 fautifs = { path = "crates/exemples/fautifs", version = "0.1.0" }
+# Les cinq fautifs dont la faute est un `static`, à part : la règle « rien hors de
+# l'état » de l'épreuve lit `fautifs` pour chaque fautif (RESTE-PHASE-2, point 1).
+fautifs-statiques = { path = "crates/exemples/fautifs-statiques", version = "0.1.0" }
 ardoise = { path = "crates/exemples/ardoise", version = "0.1.0" }
 
 # Les dépendances tierces du § 8, chacune avec sa raison. Un membre les prend par

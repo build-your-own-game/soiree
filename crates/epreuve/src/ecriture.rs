@@ -666,7 +666,9 @@ pub(crate) fn crate_du_chemin(chemin: &str) -> &str {
 /// INTERFACE, § 2.2 : « un `static` à mutabilité intérieure dans la crate du jeu est
 /// refusé ». Tout `static` l'est ici, même sans mutabilité intérieure : un `const`
 /// dit la même chose sans rien garder, et l'épreuve ne sait pas lire, à travers un
-/// alias de type, si un `static` en a une. Rend la ligne et ce qui est trouvé.
+/// alias de type, si un `static` en a une. Rend la ligne et ce qui est trouvé, avec le
+/// nom du `static` quand il le suit (RESTE-PHASE-2, point 1 : le rapport nomme le
+/// `static` qu'il refuse).
 ///
 /// Pourquoi une forme : un `static` passe d'une instance du module à l'autre avec sa
 /// mémoire, sans être dans l'état ; une vue peut y lire un secret recopié pendant une
@@ -679,9 +681,16 @@ pub(crate) fn hors_de_l_etat(source: &str) -> Vec<(usize, String)> {
     for (k, (ligne, mot)) in j.iter().enumerate() {
         let suivant = j.get(k.saturating_add(1)).map(|(_, m)| m.as_str());
         if mot == "static" {
+            // Le nom suit `static`, ou `static mut`.
+            let nom = match suivant {
+                Some("mut") => j.get(k.saturating_add(2)).map(|(_, m)| m.as_str()),
+                autre => autre,
+            }
+            .filter(|n| n.chars().all(|c| c.is_alphanumeric() || c == '_'));
+            let quoi = nom.map_or_else(String::new, |n| format!(" `{n}`"));
             trouves.push((
                 *ligne,
-                String::from("un `static` : une valeur gardée hors de l'état (écrire un `const`)"),
+                format!("un `static`{quoi} : une valeur gardée hors de l'état (écrire un `const`)"),
             ));
         } else if mot == "thread_local" && suivant == Some("!") {
             trouves.push((
@@ -878,6 +887,21 @@ mod tests {
                       std::thread_local! { static C: core::cell::Cell<u8> = const { core::cell::Cell::new(0) }; }\n";
         let lignes: Vec<usize> = hors_de_l_etat(source).iter().map(|(l, _)| *l).collect();
         assert_eq!(lignes, [3, 6, 7, 7], "{:?}", hors_de_l_etat(source));
+        // Le rapport nomme chaque `static` (RESTE-PHASE-2, point 1).
+        let trouves = hors_de_l_etat(source);
+        let noms: Vec<&str> = trouves
+            .iter()
+            .map(|(_, q)| q.split(" :").next().unwrap_or(""))
+            .collect();
+        assert_eq!(
+            noms,
+            [
+                "un `static` `NOMBRE`",
+                "un `static` `M`",
+                "un `thread_local!`",
+                "un `static` `C`"
+            ]
+        );
         assert_eq!(
             hors_de_l_etat("const A: [u8; 3] = [1, 2, 3];\nfn g<T: 'static>() {}\n").len(),
             0
