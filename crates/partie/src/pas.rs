@@ -17,6 +17,7 @@
 //! doit être celle du journal, et une entrée que le journal dit écartée n'est pas
 //! rejouée.
 
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -29,10 +30,21 @@ use crate::coeur::DemandeEnCours;
 use crate::instance::{CausePanne, Echec, Fabrique, Faute, Instance, PanneOutil};
 use crate::journal::{ArriveePlacee, IssueJournal, Ligne, LigneEntree, QuoiPlace};
 use crate::partie::{
-    Destinataire, LieuFaute, Lu, Mode, Partie, RapportFaute, RefusOuverture, accueillir, appeler,
-    creer, encoder_vers_vec, heure_du_pas, illisible,
+    Avancee, Destinataire, LieuFaute, Lu, Mode, Partie, RapportFaute, RefusOuverture, accueillir,
+    appeler, creer, encoder_vers_vec, heure_du_pas, illisible,
 };
 use crate::regles::{self, ArriveeTenu, IssueTenu, Livraison, Origine};
+
+/// Le retard de vue, en pas, au-delà duquel une arrivée vient d'un arriéré : une
+/// seconde (PHASE-3, § 2.11, P7). Choisi : une vue arrive d'habitude en quelques pas, et
+/// une retransmission de WebSocket la retient de l'ordre de 300 ms. La seule
+/// définition : l'épreuve la relit.
+pub const ARRIERE_PAS: u64 = 60;
+
+/// Les entrées d'un arriéré qu'un tour de la boucle joue au plus (PHASE-3, § 2.11, P7).
+/// Choisi, à remplacer par M1 (le coût fixe d'un arriéré) et M13 ; indépendant de la
+/// machine : le rejeu ne dépend pas d'une durée.
+pub const ARRIERES_PAR_TOUR: u32 = 8;
 
 /// Une entrée à jouer sur la définitive.
 pub(crate) struct AJouer {
@@ -42,48 +54,229 @@ pub(crate) struct AJouer {
     pour: Option<Destinataire>,
     /// Est-ce un `Temps` ?
     temps: Oui,
+    /// Vient-elle d'une arrivée (et non de ce que le cœur synthétise) ?
+    arrivee: Oui,
+    /// Vient-elle d'un arriéré ([`est_un_arriere`]) ?
+    arriere: Oui,
 }
 
 /// Ce qu'un pas a produit.
-struct Bilan {
+pub(crate) struct Bilan {
     acceptee: Oui,
     sorties: Vec<SortieFil>,
 }
 
+/// Un pas commencé sur la définitive et pas encore fini : ce qu'un tour de
+/// [`Partie::avancer_borne`] laisse quand il a joué ses arriérés (P7). Ses arrivées
+/// sont figées : celles qui arrivent ensuite vont après la fin de l'avancée en cours
+/// ([`AvanceeEnCours::fin`]).
+pub(crate) struct PasEnCours {
+    /// Le pas.
+    pub(crate) pas: Pas,
+    /// L'indice absolu de sa première ligne au journal.
+    pub(crate) debut: usize,
+    /// Les entrées qui restent à jouer, dans l'ordre.
+    entrees: VecDeque<AJouer>,
+    /// Ce que les entrées déjà jouées ont produit.
+    bilan: Bilan,
+}
+
+/// Une avancée commencée et pas finie : les pas à jouer jusqu'à `borne`, puis le
+/// saut, puis l'horloge et la tête (voir [`Partie::avancer`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AvanceeEnCours {
+    /// Le dernier pas à jouer avant le saut.
+    pub(crate) borne: Pas,
+    /// Le pas que l'horloge a atteint, rattrapage compris.
+    jusqua: Pas,
+    /// Le temps à jeter après `borne`.
+    pub(crate) saut: Duree,
+    /// Le numéro de la première arrivée reçue après le début de l'avancée : celles qui
+    /// arrivent pendant qu'elle reste en cours ne comptent, pour la tête, qu'à sa fin.
+    sequence: u64,
+}
+
+impl AvanceeEnCours {
+    /// Le pas définitif quand l'avancée sera finie : sa borne, puis le saut. Une
+    /// arrivée reçue pendant qu'elle reste en cours se place au-delà
+    /// ([`Partie::plancher`]), comme si l'avancée avait fini d'un seul tour : aucune
+    /// n'entre dans l'avancée, et la tête en juge à sa fin (CAT-14).
+    pub(crate) const fn fin(&self) -> Pas {
+        Pas::du_fil(self.borne.numero().saturating_add(self.saut.en_pas()))
+    }
+}
+
+/// Ce qu'un tour compte dans son budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Compter {
+    /// Rien : le tour n'a pas de borne.
+    Rien,
+    /// Les entrées d'un arriéré seulement : la soirée (P7).
+    Arrieres,
+    /// Toute entrée venue d'une arrivée : pour éprouver le découpage (E12, tests).
+    Arrivees,
+}
+
+/// Ce qu'un tour peut encore jouer.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Tour {
+    compter: Compter,
+    reste: u32,
+}
+
+impl Tour {
+    /// Un tour sans borne : [`Partie::avancer`], le rejeu, la tête.
+    pub(crate) const SANS_BORNE: Tour = Tour {
+        compter: Compter::Rien,
+        reste: 0,
+    };
+
+    /// Un tour qui joue au plus `n` entrées comptées (au moins une, pour avancer).
+    pub(crate) fn borne(compter: Compter, n: u32) -> Tour {
+        Tour {
+            compter,
+            reste: n.max(1),
+        }
+    }
+
+    const fn compte(self, e: &AJouer) -> bool {
+        match self.compter {
+            Compter::Rien => false,
+            Compter::Arrieres => matches!(e.arriere, Oui::Oui),
+            Compter::Arrivees => matches!(e.arrivee, Oui::Oui),
+        }
+    }
+
+    /// Le tour peut-il jouer cette entrée ? Sinon, le pas reste en cours.
+    const fn peut_jouer(self, e: &AJouer) -> bool {
+        !self.compte(e) || self.reste > 0
+    }
+
+    fn jouer(&mut self, e: &AJouer) {
+        if self.compte(e) {
+            self.reste = self.reste.saturating_sub(1);
+        }
+    }
+}
+
+/// Une arrivée vient-elle d'un arriéré (PHASE-3, § 2.11) ? Un geste ou une entrée de
+/// l'écran faits sur une vue de plus de [`ARRIERE_PAS`] pas avant leur réception :
+/// ce que le transport livre d'un coup au retour d'un appareil coupé, endormi ou en
+/// arrière-plan, ou de l'ordinateur de la soirée gelé.
+///
+/// Un tenu, une manette, une présence et une réponse n'en sont jamais : un tenu est
+/// complet et le dernier gagne, il n'y a pas d'arriéré de tenus (les 71 tenus de
+/// Sidequest ne mettent pas la partie en retard) ; une présence et une réponse viennent
+/// du commun, à leur réception. Le vu d'un tenu n'est pas celui que l'appareil a dit,
+/// mais la dernière vue qu'on lui a envoyée : son âge ne dirait rien.
+fn est_un_arriere(a: &ArriveePlacee) -> Oui {
+    let vue = match a.quoi {
+        QuoiPlace::Geste { .. } | QuoiPlace::Ecran(_) => true,
+        QuoiPlace::Tenu { .. }
+        | QuoiPlace::Manette { .. }
+        | QuoiPlace::Presence(_)
+        | QuoiPlace::Reponse { .. } => false,
+    };
+    if vue && a.recu.pas.numero().saturating_sub(a.vu.numero()) > ARRIERE_PAS {
+        Oui::Oui
+    } else {
+        Oui::Non
+    }
+}
+
 impl<F: Fabrique> Partie<F> {
-    /// Joue le pas `s` sur la définitive.
+    /// Joue le pas `s` sur la définitive, d'un seul tour.
     pub(crate) fn jouer_pas(&mut self, s: Pas) -> Result<(), PanneOutil> {
+        self.commencer_pas(s)?;
+        let mut tour = Tour::SANS_BORNE;
+        let _: Oui = self.continuer_pas(&mut tour)?;
+        Ok(())
+    }
+
+    /// Commence le pas `s` : ses arrivées, figées maintenant, rangées et traduites en
+    /// entrées, après ce que le cœur synthétise. Rien n'est encore joué.
+    pub(crate) fn commencer_pas(&mut self, s: Pas) -> Result<(), PanneOutil> {
+        let debut = self.fin_confirmee();
         let mut arrivees = self.arrivees_du_pas(s);
         regles::ordonner(&mut arrivees, &self.ouverture.graine);
         let mut entrees = Vec::new();
         self.synthetiser(s, &mut entrees)?;
         for a in arrivees {
-            self.traduire(s, a, &mut entrees)?;
+            self.traduire_et_marquer(s, a, &mut entrees)?;
         }
-        let mut bilan = Bilan {
-            acceptee: Oui::Non,
-            sorties: Vec::new(),
+        self.en_cours = Some(PasEnCours {
+            pas: s,
+            debut,
+            entrees: entrees.into(),
+            bilan: Bilan {
+                acceptee: Oui::Non,
+                sorties: Vec::new(),
+            },
+        });
+        Ok(())
+    }
+
+    /// Traduit une arrivée, et marque ses entrées : venues d'une arrivée, d'un arriéré
+    /// ou non.
+    fn traduire_et_marquer(
+        &mut self,
+        s: Pas,
+        a: ArriveePlacee,
+        entrees: &mut Vec<AJouer>,
+    ) -> Result<(), PanneOutil> {
+        let arriere = est_un_arriere(&a);
+        let avant = entrees.len();
+        self.traduire(s, a, entrees)?;
+        for e in entrees.iter_mut().skip(avant) {
+            e.arrivee = Oui::Oui;
+            e.arriere = arriere;
+        }
+        Ok(())
+    }
+
+    /// Joue le pas en cours, tant que le tour le permet, puis le finit : `Temps`, les
+    /// sorties, la lecture de l'état, le point de reprise s'il est dû. Rend `Oui` si le
+    /// pas est fini, ou abandonné sur la tête qui a fauté ; `Non` s'il reste en cours.
+    pub(crate) fn continuer_pas(&mut self, tour: &mut Tour) -> Result<Oui, PanneOutil> {
+        let Some(mut pc) = self.en_cours.take() else {
+            return Ok(Oui::Oui);
         };
-        for e in entrees {
+        if self.etale_mal == Oui::Oui && self.curseur.is_none() && self.mode == Mode::Definitive {
+            self.entrer_dans_le_pas_en_cours(&mut pc)?;
+        }
+        let s = pc.pas;
+        loop {
             if self.tete_fautive.is_some() {
                 // La tête a fauté : elle se reconstruit, ce pas ne s'y finit pas.
-                return Ok(());
+                return Ok(Oui::Oui);
             }
-            self.jouer_entree(s, e, &mut bilan)?;
+            let Some(prochaine) = pc.entrees.front() else {
+                break;
+            };
+            if !tour.peut_jouer(prochaine) {
+                self.en_cours = Some(pc);
+                return Ok(Oui::Non);
+            }
+            let Some(e) = pc.entrees.pop_front() else {
+                break;
+            };
+            tour.jouer(&e);
+            self.jouer_entree(s, e, &mut pc.bilan)?;
         }
+        let mut bilan = pc.bilan;
         let libre = self.coeur.en_pause == Oui::Non && self.coeur.en_panne == Oui::Non;
         if libre && regles::reveil_demande(self.coeur.reveil, s) == Oui::Oui {
             let e = self.temps(s)?;
             self.jouer_entree(s, e, &mut bilan)?;
         }
         if self.tete_fautive.is_some() {
-            return Ok(());
+            return Ok(Oui::Oui);
         }
         self.coeur.pas = s;
         self.journal.pas = self.journal.pas.max(s);
         if self.mode == Mode::Tete {
             // Sur la tête, rien ne part : ni sortie, ni demande, ni point (§ 4.4).
-            return Ok(());
+            return Ok(Oui::Oui);
         }
         let nouvelle = self.executer_sorties(s, bilan.sorties)?;
         if bilan.acceptee == Oui::Oui || nouvelle == Oui::Oui {
@@ -92,6 +285,133 @@ impl<F: Fabrique> Partie<F> {
         if nouvelle == Oui::Oui || self.point_du(s) {
             self.prendre_point()?;
         }
+        Ok(Oui::Oui)
+    }
+
+    /// Le contrôle négatif du découpage (`etale-mal`, PHASE-3 § 8.3) : une arrivée
+    /// reçue pendant un pas inachevé y entre, au lieu d'aller au pas suivant. Le
+    /// journal change alors avec le découpage, et E12 doit le voir.
+    fn entrer_dans_le_pas_en_cours(&mut self, pc: &mut PasEnCours) -> Result<(), PanneOutil> {
+        let s = pc.pas;
+        let (mut maintenant, plus_tard): (Vec<ArriveePlacee>, Vec<ArriveePlacee>) =
+            core::mem::take(&mut self.en_attente)
+                .into_iter()
+                .partition(|a| a.place <= s);
+        self.en_attente = plus_tard;
+        if maintenant.is_empty() {
+            return Ok(());
+        }
+        self.journal.lignes.push(Ligne::Arrivees {
+            pas: s,
+            arrivees: maintenant.clone(),
+        });
+        regles::ordonner(&mut maintenant, &self.ouverture.graine);
+        let mut entrees = Vec::new();
+        for a in maintenant {
+            self.traduire_et_marquer(s, a, &mut entrees)?;
+        }
+        pc.entrees.extend(entrees);
+        Ok(())
+    }
+
+    /// Avance d'un tour (voir [`Partie::avancer`]) : finit d'abord l'avancée qu'un tour
+    /// précédent a laissée, puis avance vers `cible`, tant que `tour` le permet.
+    pub(crate) fn avancer_tour(
+        &mut self,
+        cible: Pas,
+        mut tour: Tour,
+    ) -> Result<Avancee, PanneOutil> {
+        let mut saut = Duree::ZERO;
+        let mut fini = Oui::Oui;
+        if let Some(av) = self.avancee_en_cours.take() {
+            let (f, s) = self.poursuivre(av, &mut tour)?;
+            fini = f;
+            saut = saut.plus(s);
+        }
+        if fini == Oui::Oui {
+            let tete = self.horloge.max(self.coeur.pas);
+            let (jusqua, s) =
+                regles::cible(self.coeur.pas, tete, cible, self.declaration.rattrapage);
+            let borne = if s > Duree::ZERO {
+                jusqua
+            } else {
+                Pas::du_fil(jusqua.numero().saturating_sub(self.fenetre))
+            };
+            let av = AvanceeEnCours {
+                borne,
+                jusqua,
+                saut: s,
+                sequence: self.coeur.sequence,
+            };
+            let (_, s) = self.poursuivre(av, &mut tour)?;
+            saut = saut.plus(s);
+        }
+        let mut a = core::mem::replace(&mut self.sortie, Avancee::vide(self.coeur.pas));
+        a.definitif = self.coeur.pas;
+        a.saut = saut;
+        a.en_panne = self.coeur.en_panne;
+        a.en_cours = self.en_cours.as_ref().map(|p| p.pas);
+        Ok(a)
+    }
+
+    /// Poursuit une avancée : le pas en cours, puis chaque pas jusqu'à sa borne, puis
+    /// le saut, l'horloge et la tête. Rend `Oui` et le temps jeté si elle est finie ;
+    /// sinon, elle reste en cours pour le tour suivant.
+    fn poursuivre(
+        &mut self,
+        av: AvanceeEnCours,
+        tour: &mut Tour,
+    ) -> Result<(Oui, Duree), PanneOutil> {
+        if self.continuer_pas(tour)? == Oui::Non {
+            self.avancee_en_cours = Some(av);
+            return Ok((Oui::Non, Duree::ZERO));
+        }
+        while self.coeur.pas < av.borne {
+            let s = self.suivant();
+            self.commencer_pas(s)?;
+            if self.continuer_pas(tour)? == Oui::Non {
+                self.avancee_en_cours = Some(av);
+                return Ok((Oui::Non, Duree::ZERO));
+            }
+        }
+        if av.saut > Duree::ZERO {
+            let de = self.coeur.pas;
+            let a = Pas::du_fil(de.numero().saturating_add(av.saut.en_pas()));
+            self.noter(Ligne::Saut { de, a })?;
+            self.appliquer_saut(a);
+        }
+        self.horloge = av.jusqua.max(self.coeur.pas);
+        if self.fenetre > 0 {
+            // Les arrivées reçues pendant que l'avancée restait en cours arrivent, pour
+            // la tête, après elle : comme si elle avait fini d'un seul tour (CAT-14).
+            // Toutes attendent encore : placées au-delà de la fin de l'avancée
+            // (`plancher`), aucune n'y est entrée.
+            let (tard, avant): (Vec<ArriveePlacee>, Vec<ArriveePlacee>) =
+                core::mem::take(&mut self.en_attente)
+                    .into_iter()
+                    .partition(|a| a.sequence >= av.sequence);
+            self.en_attente = avant;
+            let rendu = self.avancer_la_tete(self.horloge);
+            if let Some(t) = self.tete.as_mut()
+                && tard.iter().any(|a| a.place <= t.pas)
+            {
+                t.a_rejouer = true;
+            }
+            self.en_attente.extend(tard);
+            rendu?;
+        }
+        Ok((Oui::Oui, av.saut))
+    }
+
+    /// Finit le pas et l'avancée qu'un tour borné a laissés, d'un seul tour : avant une
+    /// pause, une reprise, ce qui ne se fait qu'entre deux pas.
+    pub(crate) fn finir_l_avancee(&mut self) -> Result<(), PanneOutil> {
+        if let Some(av) = self.avancee_en_cours.take() {
+            let mut tour = Tour::SANS_BORNE;
+            let (_, saut) = self.poursuivre(av, &mut tour)?;
+            // Le temps jeté se dit au prochain `Avancee`.
+            self.sortie.saut = self.sortie.saut.plus(saut);
+        }
         Ok(())
     }
 
@@ -99,7 +419,7 @@ impl<F: Fabrique> Partie<F> {
     /// journal ; au rejeu, celles du journal.
     fn arrivees_du_pas(&mut self, s: Pas) -> Vec<ArriveePlacee> {
         if let Some(c) = self.curseur {
-            return match self.journal.lignes.get(c) {
+            return match self.journal.ligne(c) {
                 Some(Ligne::Arrivees { pas, arrivees }) if *pas == s => {
                     let a = arrivees.clone();
                     self.curseur = Some(c.saturating_add(1));
@@ -316,6 +636,8 @@ impl<F: Fabrique> Partie<F> {
             octets: encoder_vers_vec(&e)?,
             pour: None,
             temps: Oui::Oui,
+            arrivee: Oui::Non,
+            arriere: Oui::Non,
         })
     }
 
@@ -467,7 +789,7 @@ impl<F: Fabrique> Partie<F> {
     /// Au rejeu, la faute de cette entrée si le journal la dit écartée.
     fn ecartee_en_reference(&self, ordre: u64) -> Option<Faute> {
         let c = self.curseur?;
-        match self.journal.lignes.get(c) {
+        match self.journal.ligne(c) {
             Some(Ligne::Entree(l)) if l.partie == self.coeur.partie && l.ordre == ordre => {
                 match &l.issue {
                     IssueJournal::Ecartee { faute } => Some(faute.clone()),
@@ -502,7 +824,7 @@ impl<F: Fabrique> Partie<F> {
             self.journal.lignes.push(l);
             return Ok(());
         };
-        match self.journal.lignes.get(c) {
+        match self.journal.ligne(c) {
             Some(r) if *r == l => {
                 self.curseur = Some(c.saturating_add(1));
                 Ok(())
@@ -514,7 +836,7 @@ impl<F: Fabrique> Partie<F> {
 
     /// La fin du journal déjà confirmée : tout en direct, le curseur au rejeu.
     pub(crate) fn fin_confirmee(&self) -> usize {
-        self.curseur.unwrap_or(self.journal.lignes.len())
+        self.curseur.unwrap_or(self.journal.fin())
     }
 
     /// Dit quelque chose au commun ; au rejeu, c'est déjà dit.
@@ -549,11 +871,7 @@ impl<F: Fabrique> Partie<F> {
         let partie = self.coeur.partie;
         let budget = self.ouverture.budgets.entree;
         let fin = self.fin_confirmee();
-        let lignes = self
-            .journal
-            .lignes
-            .get(self.point.indice..fin)
-            .unwrap_or(&[]);
+        let lignes = self.journal.entre(self.point.indice, fin);
         for (k, l) in lignes.iter().enumerate() {
             let ou = self.point.indice.saturating_add(k);
             match l {
@@ -809,7 +1127,7 @@ impl<F: Fabrique> Partie<F> {
                 return Ok(());
             };
             let fin = self.journal.pas;
-            let ligne = self.journal.lignes.get(c);
+            let ligne = self.journal.ligne(c);
             if ligne.is_none() && self.coeur.pas >= fin {
                 return Ok(());
             }
@@ -888,6 +1206,8 @@ fn a_jouer(e: &EntreeFil<'_>, pour: Option<Destinataire>) -> Result<AJouer, Pann
         octets: encoder_vers_vec(e)?,
         pour,
         temps: Oui::Non,
+        arrivee: Oui::Non,
+        arriere: Oui::Non,
     })
 }
 

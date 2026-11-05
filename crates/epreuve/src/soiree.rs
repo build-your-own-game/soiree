@@ -55,15 +55,9 @@ use crate::telephone::{
 };
 use crate::tirage::Tirage;
 
-/// Le carburant de chaque sorte d'appel, dans l'épreuve. Des points de départ, non
-/// mesurés : larges, pour qu'un jeu honnête n'y bute jamais, et qu'une boucle
-/// infinie s'arrête en moins d'une seconde sur une machine de développement.
-pub const BUDGETS: Budgets = Budgets {
-    entree: 1 << 28,
-    lecture: 1 << 28,
-    creation: 1 << 28,
-    canonique: 1 << 28,
-};
+/// Le carburant de chaque sorte d'appel, dans l'épreuve : celui de la soirée, dont la
+/// seule définition est dans le cœur (`partie::BUDGETS_DE_SOIREE`, PHASE-3 P27).
+pub const BUDGETS: Budgets = partie::BUDGETS_DE_SOIREE;
 
 /// Les pas entre deux points de reprise, dans l'épreuve (§ 4.5 : 10 s de partie).
 pub const POINT_TOUS_LES: u64 = 600;
@@ -243,9 +237,14 @@ pub(crate) struct Bilan {
     /// Les allées et venues programmées qui n'ont pas eu lieu : un contrôle qui n'a pas
     /// tourné ne compte pas (OUT-26).
     pub(crate) allees_manquees: Vec<String>,
-    /// Les retours d'où part un arriéré (E19) : un appareil qui revient, ou tous après
-    /// un gel ou un redémarrage de l'autorité (`None`), et leur pas.
-    pub(crate) retours: Vec<crate::budgets::Retour>,
+    /// Les tours de la boucle : un par pas simulé (E19 juge chaque tour).
+    pub(crate) tours: u64,
+    /// Les tours qui ont laissé un pas inachevé, ses arriérés au-delà du budget d'un
+    /// tour (PHASE-3, P7).
+    pub(crate) tours_inacheves: u64,
+    /// Chaque tour, dans l'ordre : le dernier pas définitif après lui, et s'il a fini
+    /// son avancée.
+    pub(crate) tours_joues: Vec<(u64, bool)>,
 }
 
 /// L'organisateur simulé, à l'écran.
@@ -303,6 +302,9 @@ pub(crate) struct Soiree<'m> {
     e13: Compte,
     e14: Compte,
     memoire: Vec<Echantillon>,
+    /// Un échantillon de E15 dû, remis au premier pas fini : un tour borné a laissé le
+    /// pas où il tombait inachevé.
+    memoire_due: bool,
     lignes_vues: usize,
     acceptees_vues: u64,
     partie_vue: u32,
@@ -335,8 +337,10 @@ pub(crate) struct Soiree<'m> {
     prochain_geste_ecran: u64,
     /// Ce que le monde a fait, hors des téléphones et des fichiers.
     monde: MondeJoue,
-    /// Les retours d'où part un arriéré (E19).
-    retours: Vec<crate::budgets::Retour>,
+    /// Les tours qui ont laissé un pas inachevé (PHASE-3, P7).
+    tours_inacheves: u64,
+    /// Chaque tour : le dernier pas définitif après lui, et s'il a fini son avancée.
+    tours_joues: Vec<(u64, bool)>,
 }
 
 /// Les gels à l'échéance d'une soirée de E18.
@@ -484,6 +488,7 @@ impl<'m> Soiree<'m> {
             e13: Compte::default(),
             e14: Compte::default(),
             memoire: Vec::new(),
+            memoire_due: false,
             lignes_vues: usize::MAX,
             acceptees_vues: u64::MAX,
             partie_vue: 0,
@@ -508,7 +513,8 @@ impl<'m> Soiree<'m> {
             bot_etat: None,
             prochain_geste_ecran: 0,
             monde: MondeJoue::default(),
-            retours: Vec::new(),
+            tours_inacheves: 0,
+            tours_joues: Vec::new(),
         };
         s.programmer();
         Ok(s)
@@ -723,7 +729,8 @@ impl<'m> Soiree<'m> {
                 self.prendre_point(Oui::Non);
             }
             if self.reglage.sorte == Sorte::Longue
-                && pas.checked_rem(PERIODE_MEMOIRE) == Some(PERIODE_MEMOIRE / 2)
+                && (self.memoire_due
+                    || pas.checked_rem(PERIODE_MEMOIRE) == Some(PERIODE_MEMOIRE / 2))
             {
                 self.mesurer_la_memoire();
             }
@@ -1202,7 +1209,6 @@ impl<'m> Soiree<'m> {
         }
         self.annonces.push((pas, i, Annonce::Retour));
         self.forcer_vues = true;
-        self.retours.push((Some(appareil.fil()), pas));
     }
 
     /// Les poignées de main en cours, et la synchronisation des horloges.
@@ -1290,7 +1296,12 @@ impl<'m> Soiree<'m> {
     /// L'autorité redémarre depuis le dernier point et le journal (§ 4.5).
     fn redemarrer(&mut self) -> Option<Avancement> {
         let point = self.dernier_point.clone()?;
-        self.retours.push((None, self.pas));
+        // L'autorité s'arrête entre deux pas : un pas qu'un tour borné a laissé
+        // inachevé se finit d'abord (le rejeu du script fait de même). Ce qu'une vraie
+        // autorité perd en s'arrêtant au milieu d'un pas (ses arrivées figées, pas
+        // encore écrites à la garde) revient par les renvois des appareils : c'est au
+        // lot de la salle (PHASE-3, § 2.4).
+        self.finir_le_pas();
         let journal = self.partie.journal().clone();
         self.script.push(Op::Canonique);
         let avant = self.partie.canonique();
@@ -1305,6 +1316,20 @@ impl<'m> Soiree<'m> {
             obs.partie_reprise = p;
             obs.prochaine_partie = p.saturating_add(1);
         }
+        // L'autorité repart de ce que la garde aurait tenu : le point et le journal
+        // écrits, puis relus (PHASE-3, § 2.4).
+        let (point, journal) = match par_la_garde(&point, &journal) {
+            Ok(g) => g,
+            Err(e) => {
+                self.e14.evaluer();
+                self.e14.echouer(format!(
+                    "au pas {} : la garde ne se relit pas : {e:?}",
+                    self.pas
+                ));
+                self.stop = Some(String::from("l'autorité n'a pas pu redémarrer"));
+                return Some(Avancement::Constatee);
+            }
+        };
         let reprise = Partie::reprendre(
             Sonde::new(self.module.fabrique(), &self.obs),
             self.ouverture.clone(),
@@ -1852,20 +1877,43 @@ impl<'m> Soiree<'m> {
         }
     }
 
+    /// Un tour de la boucle, comme le Worker en fait un par image : au plus
+    /// `partie::ARRIERES_PAR_TOUR` arriérés (PHASE-3, P7).
     fn avancer(&mut self) {
         let cible = Pas::du_fil(self.pas);
         self.script.push(Op::Avancer(cible));
-        let a = match self.partie.avancer(cible) {
+        {
+            let mut obs = self.obs.borrow_mut();
+            obs.tour = obs.tour.saturating_add(1);
+        }
+        let a = match self.partie.avancer_borne(cible, partie::ARRIERES_PAR_TOUR) {
             Ok(a) => a,
             Err(p) => {
                 self.panne_outil(format!("avancer : {p}"));
                 return;
             }
         };
+        if a.en_cours.is_some() {
+            self.tours_inacheves = self.tours_inacheves.saturating_add(1);
+        }
+        self.tours_joues
+            .push((a.definitif.numero(), a.en_cours.is_none()));
         let en_panne = a.en_panne;
         self.traiter(a);
         if en_panne == Oui::Oui {
             self.repartir();
+        }
+    }
+
+    /// Finit, d'un seul tour, le pas qu'un tour borné a laissé inachevé : avant ce qui
+    /// ne se fait qu'entre deux pas (la forme canonique, un redémarrage). Rien sinon.
+    fn finir_le_pas(&mut self) {
+        if self.partie.pas_en_cours().is_none() {
+            return;
+        }
+        match self.partie.finir_le_pas() {
+            Ok(a) => self.traiter(a),
+            Err(p) => self.panne_outil(format!("finir le pas : {p}")),
         }
     }
 
@@ -2058,8 +2106,13 @@ impl<'m> Soiree<'m> {
         Some(())
     }
 
-    /// Après le pas : les vues, l'état, et les constats qui s'y lisent.
+    /// Après le pas : les vues, l'état, et les constats qui s'y lisent. Rien pendant un
+    /// pas qu'un tour borné a laissé inachevé : la définitive est au milieu de ce pas,
+    /// rien de neuf n'est définitif.
     fn apres_le_pas(&mut self) {
+        if self.partie.pas_en_cours().is_some() {
+            return;
+        }
         let lignes = self.partie.journal().lignes().len();
         if (lignes != self.lignes_vues || self.forcer_vues) && self.stop.is_none() {
             self.forcer_vues = false;
@@ -2461,8 +2514,14 @@ impl<'m> Soiree<'m> {
         }
     }
 
-    /// E15 : les octets vivants, et les appareils que l'état retient.
+    /// E15 : les octets vivants, et les appareils que l'état retient. Jamais au milieu
+    /// d'un pas qu'un tour borné a laissé inachevé, comme `apres_le_pas` : l'échantillon
+    /// est remis au premier pas fini.
     fn mesurer_la_memoire(&mut self) {
+        self.memoire_due = self.partie.pas_en_cours().is_some();
+        if self.memoire_due {
+            return;
+        }
         let def = self.partie.definitive();
         let vivants = match def.lire(&Appel::Memoire) {
             Ok(r) => match decoder::<Retour<'_>>(&r) {
@@ -2506,6 +2565,7 @@ impl<'m> Soiree<'m> {
         reason = "le bilan se lit d'un trait : chaque champ, et ce que le monde a fait"
     )]
     fn finir(mut self) -> Bilan {
+        self.finir_le_pas();
         self.script.push(Op::Canonique);
         let canonique_finale = match self.partie.canonique() {
             Ok(c) => {
@@ -2600,6 +2660,7 @@ impl<'m> Soiree<'m> {
                 (p.panne, oui, note)
             })
             .collect();
+        let tours = self.obs.borrow().tour;
         Bilan {
             ouverture: self.ouverture,
             journal,
@@ -2626,7 +2687,9 @@ impl<'m> Soiree<'m> {
             monde,
             allees_et_venues,
             allees_manquees,
-            retours: self.retours,
+            tours,
+            tours_inacheves: self.tours_inacheves,
+            tours_joues: self.tours_joues,
         }
     }
 
@@ -2652,11 +2715,23 @@ impl<'m> Soiree<'m> {
             }
             self.e14.evaluer();
             let pas = point.pas().numero();
+            // Ce que la garde tiendrait : le point relu, et le journal relu puis tronqué
+            // avant lui (PHASE-3, § 2.4 et P10).
+            let (point, mut garde) = match par_la_garde(&point, journal) {
+                Ok(g) => g,
+                Err(e) => {
+                    self.e14.echouer(format!(
+                        "le point du pas {pas} et le journal ne se relisent pas de la garde : {e:?}"
+                    ));
+                    continue;
+                }
+            };
+            let _: usize = garde.tronquer_avant(point.indice());
             match Partie::reprendre(
                 Sonde::new(self.module.fabrique(), &obs),
                 self.ouverture.clone(),
                 &point,
-                journal,
+                &garde,
             ) {
                 Ok(mut r) => {
                     if let Some((p, o)) =
@@ -2690,6 +2765,20 @@ impl<'m> Soiree<'m> {
             }
         }
     }
+}
+
+/// Un point et le journal, écrits comme la garde les écrit, puis relus
+/// (`partie::persistance`) : une reprise de l'épreuve part de ce que la garde rend, non
+/// des valeurs en mémoire.
+fn par_la_garde(
+    point: &Point,
+    journal: &Journal,
+) -> Result<(Point, Journal), partie::persistance::RefusGarde> {
+    use partie::persistance::{decoder_journal, decoder_point, encoder_journal, encoder_point};
+    Ok((
+        decoder_point(&encoder_point(point))?,
+        decoder_journal(&encoder_journal(journal))?,
+    ))
 }
 
 /// Un coup d'un bot, possédé.

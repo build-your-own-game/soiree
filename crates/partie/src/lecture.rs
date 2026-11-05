@@ -129,7 +129,14 @@ impl<F: Fabrique> Partie<F> {
     /// ([`regles::fusionner`]). Une vue invalide, ou une lecture fautive, laisse la
     /// dernière vue valide de son regard ; un regard qui n'en a jamais eu n'en reçoit
     /// pas.
+    ///
+    /// Une vue est celle d'un pas fini (SQ-86) : pendant un pas qu'un tour borné a
+    /// laissé inachevé ([`Partie::pas_en_cours`]), la définitive est au milieu de ce
+    /// pas, et chaque regard reçoit sa dernière vue valide, sans rien lire.
     pub fn regarder(&mut self, regards: &[RegardFil]) -> Result<Vec<Vue>, PanneOutil> {
+        if self.en_cours.is_some() {
+            return Ok(self.vues_gardees(regards));
+        }
         let appel = Appel::Regarder {
             regards: regards.to_vec(),
         };
@@ -309,6 +316,9 @@ impl<F: Fabrique> Partie<F> {
     }
 
     /// Ce que la définitive dit d'elle-même : phase, attente, accueil, cas.
+    ///
+    /// Pendant un pas inachevé ([`Partie::pas_en_cours`]), la définitive est au milieu
+    /// de ce pas : ce qu'elle dit n'est celui d'aucun pas. Le commun ne la lit pas alors.
     pub fn etat(&mut self) -> Result<EtatVisible, Echec> {
         let connues: Vec<u64> = self.coeur.demandes.iter().map(|d| d.id).collect();
         let r = match self.lire(&Appel::Etat { connues }, "Etat") {

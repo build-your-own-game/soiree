@@ -115,7 +115,7 @@ impl From<PanneOutil> for Echec {
 /// Une faute du jeu (§ 4.6). Les sept premières viennent d'une instance ; les deux
 /// dernières sont constatées par le cœur, sur un retour bien formé, et aucune
 /// instance ne les rend.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Faute {
     /// Le carburant de l'appel est épuisé : le jeu n'a pas rendu la main.
     Budget,

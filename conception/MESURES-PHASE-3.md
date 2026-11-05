@@ -200,6 +200,27 @@ Ce que la mesure ne dit pas, honnêtement : elle est faite **sans interface**, e
 
 **Proposition, pour le CONTRAT (« La partie qui fait foi continue de tourner »).** Faire tourner la partie qui fait foi dans un Worker dédié, menée par sa propre horloge et qui rattrape le temps ; signaler sur la télé (et dans le rapport) quand la page est cachée ; et faire de `cadence.mjs` la pression de l'épreuve sur chaque navigateur visé : un Worker qui tombe sous un seuil de réveils en arrière-plan échoue.
 
+## Lot 1 : la longueur du journal d'une soirée longue
+
+Mesuré le 2026-11-05, de 09 h 09 à 09 h 23, sur la machine de l'hôte (MacBook Apple M5, 16 Go, macOS 26.6.2, rustc 1.99.0), sans navigateur ; la charge (`vm.loadavg`) était de 5,7 à 8,0 : d'autres programmes tournaient (dont `coqchk`, un cœur entier). Le nombre de lignes et d'octets ne dépend pas de la charge ; les durées, si.
+
+La soirée longue de E15, plan standard (six heures simulées, 1 296 000 pas, des appareils qui vont et viennent), sans aucune troncature du journal, ses lignes écrites comme la garde les écrit (`partie::persistance::encoder_journal`, `VERSION_GARDE` 1) :
+
+| Jeu | Arrivées | Lignes du journal | Octets de la garde | Octets par ligne |
+| --- | --- | --- | --- | --- |
+| Punchline | 668 759 | 5 278 242 | 151 838 722 | 28,8 |
+| Sidequest | 719 986 | 13 120 681 | 253 116 416 | 19,3 |
+
+*Relevé de nouveau le 2026-11-05 à 11 h 29 et 11 h 52, après la correction du lot 1 (une arrivée reçue pendant une avancée inachevée va après sa fin)* : Sidequest, 13 120 680 lignes et 253 116 411 octets ; Punchline, inchangé. Même commande.
+
+Soit environ 10 lignes par pas chez Sidequest (calculé), et 195 octets de garde par pas : un journal jamais tronqué grandirait de 0,7 Mio par minute de soirée (calculé). C'est ce que P10 borne : la garde tient au plus deux points et une centaine de cases (PHASE-3, § 2.4), et le journal vivant se tronque avant le plus vieux point gardé (`Partie::tronquer_journal_avant`). Le lot 1 ne mesure pas la mémoire de ce journal dans le processus de l'épreuve, seulement ses octets encodés.
+
+Commande (depuis `soiree/`, la ligne « journal de la soirée longue » du rapport) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo run --release -p epreuve --bin soiree-epreuve -- ../games/sidequest
+```
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).

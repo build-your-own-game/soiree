@@ -72,6 +72,6 @@ pub use dynamique::{FabriqueDynamique, InstanceDynamique};
 pub use epreuve::{eprouver, eprouver_octets, rejouer};
 pub use etapes::{Compilation, Etape, Exigence, IssueEtape, Regle, ResultatEtape};
 pub use ligne::ligne_de_commande;
-pub use plan::{IdControle, Monde, MondeJoue, Panne, Plan};
+pub use plan::{CommunFautif, IdControle, Monde, MondeJoue, Panne, Plan};
 pub use rapport::{IssueControle, Rapport, Rejeu, ResultatControle};
 pub use soiree::{BUDGETS, POINT_TOUS_LES, Point};

@@ -470,6 +470,19 @@ pub struct Plan {
     pub memoire: Duree,
     /// Le monde simulé : [`Monde::REEL`], sauf pour montrer ce qu'il change.
     pub monde: Monde,
+    /// Un défaut injecté dans le commun, pour le contrôle négatif d'un contrôle qui
+    /// éprouve le commun à travers le jeu : `None`, sauf dans les tests de l'épreuve.
+    pub commun_fautif: Option<CommunFautif>,
+}
+
+/// Un défaut injecté dans le commun : le contrôle négatif d'un contrôle que nul jeu ne
+/// sait faire échouer, parce que c'est le commun qu'il éprouve à travers le jeu
+/// (PHASE-3, § 8.3 ; AGENTS.md, « Les contrôles et leurs négatifs »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommunFautif {
+    /// `etale-mal` : une arrivée reçue pendant un pas découpé entre dans ce pas au lieu
+    /// d'aller au suivant (`partie::Partie::etaler_mal`). E12 doit échouer, et lui seul.
+    EtaleMal,
 }
 
 impl Plan {
@@ -513,6 +526,7 @@ impl Plan {
             controles: IdControle::TOUS.to_vec(),
             memoire: Duree::s(6 * 3600),
             monde: Monde::REEL,
+            commun_fautif: None,
         }
     }
 
@@ -528,6 +542,7 @@ impl Plan {
             controles: IdControle::TOUS.to_vec(),
             memoire: Duree::s(3600),
             monde: Monde::REEL,
+            commun_fautif: None,
         }
     }
 

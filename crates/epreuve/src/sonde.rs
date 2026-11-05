@@ -186,10 +186,13 @@ pub(crate) struct Obs {
     pub(crate) phases: Vec<PhaseVue>,
     /// E19 : le carburant de chaque appel du cœur, par nom d'appel.
     pub(crate) carburant: BTreeMap<&'static str, Vec<u64>>,
-    /// E19 : le pas, le carburant et la vue de chaque entrée, par partie et par
-    /// ordre. Une entrée rejouée (une reprise, une faute reconstruite) remplace la
-    /// sienne : elle ne compte qu'une fois.
+    /// E19 : le pas, le carburant et le tour de chaque entrée, par partie et par
+    /// ordre. Une entrée rejouée (une reprise, une faute reconstruite) ne compte qu'une
+    /// fois, au tour où elle a été jouée d'abord.
     pub(crate) carburant_entrees: BTreeMap<(u32, u64), CarburantEntree>,
+    /// E19 : le tour de la boucle en cours, que la soirée avance à chaque
+    /// `avancer_borne` (PHASE-3, P7).
+    pub(crate) tour: u64,
 }
 
 /// E19 : ce que la sonde relève du coût d'une entrée.
@@ -199,28 +202,8 @@ pub(crate) struct CarburantEntree {
     pub(crate) place: u64,
     /// Son carburant.
     pub(crate) carburant: u64,
-    /// Le pas de la vue sur laquelle elle a été faite, pour une entrée qui en porte
-    /// une (un geste, un tenu, une manette, l'écran).
-    pub(crate) vu: Option<u64>,
-    /// L'appareil d'où elle vient, pour un geste, un tenu ou une manette.
-    pub(crate) de: Option<u64>,
-}
-
-/// Le pas de la vue d'une entrée encodée, si elle en porte une, et son appareil.
-fn vu_de(octets: &[u8]) -> (Option<u64>, Option<u64>) {
-    let Ok(Appel::Entree { entree, .. }) = decoder::<Appel<'_>>(octets) else {
-        return (None, None);
-    };
-    match decoder::<EntreeFil<'_>>(entree) {
-        Ok(
-            EntreeFil::Geste { de, quand, .. }
-            | EntreeFil::Tenu { de, quand, .. }
-            | EntreeFil::Manette { de, quand, .. },
-        ) => (Some(quand.vu), Some(de)),
-        Ok(EntreeFil::Ecran { quand, .. }) => (Some(quand.vu), None),
-        Ok(EntreeFil::Temps { .. } | EntreeFil::Presence(_) | EntreeFil::Reponse { .. })
-        | Err(_) => (None, None),
-    }
+    /// Le tour de la boucle où elle a été jouée d'abord.
+    pub(crate) tour: u64,
 }
 
 impl Obs {
@@ -247,6 +230,7 @@ impl Obs {
             phases: Vec::new(),
             carburant: BTreeMap::new(),
             carburant_entrees: BTreeMap::new(),
+            tour: 0,
         }))
     }
 }
@@ -637,7 +621,7 @@ impl<I: Instance> Sondee<I> {
         };
         self.connue.set(None);
         let r = self.brut(sorte, octets, budget);
-        self.noter_carburant_de_l_entree(ordre, place, octets);
+        self.noter_carburant_de_l_entree(ordre, place);
         let Ok(retour) = &r else {
             self.oublier_les_refus();
             return r;
@@ -1045,24 +1029,26 @@ impl<I: Instance> Sondee<I> {
         }
     }
 
-    /// E19 : le carburant d'une entrée, avec son pas et sa vue.
-    fn noter_carburant_de_l_entree(&self, ordre: u64, place: u64, octets: &[u8]) {
+    /// E19 : le carburant d'une entrée, avec son pas et son tour.
+    fn noter_carburant_de_l_entree(&self, ordre: u64, place: u64) {
         let carburant = self.inner.borrow().carburant();
         let partie = self.partie();
         let mut obs = self.obs.borrow_mut();
         if obs.verifs.budgets == Oui::Oui
             && let Some(c) = carburant
         {
-            let (vu, de) = vu_de(octets);
-            let _: Option<CarburantEntree> = obs.carburant_entrees.insert(
-                (partie, ordre),
-                CarburantEntree {
+            let tour = obs.tour;
+            obs.carburant_entrees
+                .entry((partie, ordre))
+                .and_modify(|e| {
+                    e.place = place;
+                    e.carburant = c;
+                })
+                .or_insert(CarburantEntree {
                     place,
                     carburant: c,
-                    vu,
-                    de,
-                },
-            );
+                    tour,
+                });
         }
     }
 

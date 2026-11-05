@@ -27,6 +27,14 @@
 //! - Après trois `Temps` écartés, le cœur cesse de livrer le temps et le dit
 //!   ([`Avancee::en_panne`]) ; [`Partie::repartir`] repart du dernier point sain,
 //!   sans les entrées suivantes (§ 4.6).
+//! - Un tour borné ([`Partie::avancer_borne`], PHASE-3 P7) : un pas dont les
+//!   arriérés dépassent [`ARRIERES_PAR_TOUR`] se finit sur plusieurs tours, ses
+//!   arrivées figées au tour où il commence, et le journal ne dépend pas du découpage.
+//! - Le journal à base d'indices absolus ([`Journal::tronquer_avant`], P10), et la
+//!   reprise depuis un journal tronqué.
+//! - La forme de la garde ([`persistance`], PHASE-3 § 2.4) : un point, sa chaîne,
+//!   l'état du cœur, l'ouverture et le journal, en octets versionnés
+//!   ([`persistance::VERSION_GARDE`]).
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -42,6 +50,7 @@ mod lecture;
 pub mod modele;
 mod partie;
 mod pas;
+pub mod persistance;
 pub mod regles;
 mod tete;
 
@@ -55,6 +64,7 @@ pub use journal::{
     ArriveePlacee, IssueJournal, Journal, Ligne, LigneEntree, QuoiPlace, ValeurTelephone,
 };
 pub use partie::{
-    AttenteVisible, Avancee, Budgets, Destinataire, EtatVisible, LieuFaute, Ouverture, Partie,
-    PointDeReprise, RapportFaute, RefusOuverture, RefusReprise, Tete, Vue,
+    AttenteVisible, Avancee, BUDGETS_DE_SOIREE, Budgets, Destinataire, EtatVisible, LieuFaute,
+    Ouverture, Partie, PointDeReprise, RapportFaute, RefusOuverture, RefusReprise, Tete, Vue,
 };
+pub use pas::{ARRIERE_PAS, ARRIERES_PAR_TOUR};

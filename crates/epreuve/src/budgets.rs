@@ -15,10 +15,20 @@
 //! la zone de panique ; § 3.2), que le carburant ne compte pas. Cent entrées de peu
 //! de carburant dans un même pas coûtent donc cent fois ce fixe.
 //!
-//! Une **image** où un geste arrive en retard coûte le rejeu de la fenêtre sur la
-//! tête, plus le pas de la définitive et la lecture de la scène : la somme du coût
-//! des entrées de `(fenêtre + 2)` pas consécutifs, pas vides compris (§ 10, « Ce
-//! qu'un FPS exige »). Chaque image des soirées, la plus lourde comprise, et chaque
+//! Un **tour** est un réveil de la boucle de l'autorité : un appel à
+//! `Partie::avancer_borne`, qui joue un pas, plusieurs après un gel (le rattrapage), ou
+//! une part d'un pas trop chargé d'arriérés (voir « Les arriérés »). L'épreuve en fait
+//! un par pas simulé, comme le Worker un par image. Le coût d'un tour est la somme du
+//! coût des entrées qu'il a jouées.
+//!
+//! Une **image** où un geste arrive en retard coûte le tour de la définitive, plus le
+//! rejeu de la fenêtre sur la tête et la lecture de la scène (§ 10, « Ce qu'un FPS
+//! exige »). L'image d'un tour `t` qui finit au pas `s` est le coût des tours `t` et
+//! `t + 1`, plus, si `t` a fini son avancée et que le jeu a une fenêtre, le rejeu de la
+//! tête, compté comme en phase 2 par les entrées que la définitive jouera aux pas
+//! `s + 2` à `s + fenêtre + 1`. Sans découpage, c'est la somme de `(fenêtre + 2)` pas
+//! consécutifs, comme en phase 2. Un tour qui laisse un pas inachevé ne fait pas avancer
+//! la tête (elle ne se rejoue qu'à une avancée finie). Chaque image des soirées, la plus lourde comprise, et chaque
 //! lecture, se jugent à leur maximum : un décompte final dix fois trop lourd, une
 //! fois par partie, échoue (CONTRAT : « aucune image au-delà de 33 ms en jeu » ; le
 //! 99ᵉ centile de INTERFACE § 7.2 ne vaut que pour les 60 images par seconde).
@@ -38,19 +48,16 @@
 //! # Les arriérés
 //!
 //! Un arriéré est ce que le commun livre d'un coup au retour d'un téléphone coupé, en
-//! arrière-plan ou endormi, ou de l'ordinateur de la soirée gelé : une entrée placée au
-//! plus [`RATTRAPAGE_PAS`] pas après ce retour, faite sur une vue de plus de
-//! [`ARRIERE_PAS`] pas (une seconde) reçue avant lui ([`d_un_arriere`]). L'âge de la
-//! vue seul ne suffit pas : une vue ne repart que si elle change (PUN-50), et un geste
-//! ordinaire sur un écran resté le même dix secondes en porte une de cent pas (revue
-//! de la phase 2, constat 11). Après un gel
-//! de 40 s du plan standard, sept téléphones du socle des fautifs livrent 32 gestes
-//! chacun au premier pas, puis encore 32 par paquet pendant une seconde : 225 entrées
-//! dans un pas, 155 800 unités de coût fixe chacune pour `devine`. Ce nombre est le
-//! fait du commun, pas du jeu : le carburant de ces entrées compte dans les images,
-//! leur coût fixe non, et le rapport les compte à part. Ce temps est pourtant réel :
-//! le commun devra étaler un arriéré sur plusieurs pas, ou passer les entrées d'un pas
-//! en un seul appel (proposition au mainteneur).
+//! arrière-plan ou endormi, ou de l'ordinateur de la soirée gelé : après un gel de 40 s
+//! du plan standard, sept téléphones du socle des fautifs livrent 32 gestes chacun au
+//! même pas, 225 entrées. Le cœur ne les étale pas sur plusieurs pas, ce qui changerait
+//! leur sens (une réponse faite à temps passerait après l'échéance) : il finit un pas
+//! trop chargé sur plusieurs tours, au plus `partie::ARRIERES_PAR_TOUR` arriérés par
+//! tour, ses arrivées figées au tour où il commence (PHASE-3, § 2.11, P7). Un arriéré
+//! y est une arrivée faite sur une vue de plus de `partie::ARRIERE_PAS` pas avant sa
+//! réception ; une entrée fraîche n'est jamais retenue. E19 juge donc chaque tour, coût
+//! fixe compris : la règle de la phase 2, qui ne comptait pas le coût fixe des
+//! arriérés, est tombée avec le découpage.
 //!
 //! # D'où viennent les budgets
 //!
@@ -263,49 +270,9 @@ impl BudgetsE19 {
     }
 }
 
-/// Le retard de vue, en pas, au-delà duquel une entrée vient d'un arriéré (voir « Les
-/// arriérés ») : une seconde. Choisi : une vue arrive d'habitude en quelques pas, et
-/// une retransmission de WebSocket la retient de l'ordre de 300 ms. Provisoire.
-pub const ARRIERE_PAS: u64 = 60;
-
-/// Un retour d'où part un arriéré : l'appareil (`None` : tous, après un gel ou un
-/// redémarrage de l'autorité) et le pas où il revient.
-pub(crate) type Retour = (Option<u64>, u64);
-
-/// Une entrée placée à `place`, faite sur la vue `vu` par l'appareil `de`, vient-elle
-/// d'un arriéré ?
-///
-/// Une vue de téléphone ne repart que si ses octets changent (PUN-50) : l'âge de la
-/// vue seul ne dit rien, un geste ordinaire fait sur un écran resté le même dix
-/// secondes en porte une de cent pas. Un arriéré est ce que le commun livre d'un coup
-/// au retour de son appareil (une coupure, un arrière-plan, un sommeil, un onglet
-/// rechargé : `Some(appareil)`) ou de l'ordinateur de la soirée (un gel, un
-/// redémarrage de l'autorité : `None`, pour tous) : placé au plus [`RATTRAPAGE_PAS`]
-/// pas après ce retour, et fait sur une vue de plus de [`ARRIERE_PAS`] pas, reçue
-/// avant lui (revue de la phase 2, constat 11).
-pub(crate) fn d_un_arriere(
-    place: u64,
-    vu: Option<u64>,
-    de: Option<u64>,
-    retours: &[Retour],
-) -> bool {
-    let Some(v) = vu else {
-        return false;
-    };
-    place.saturating_sub(v) > ARRIERE_PAS
-        && retours.iter().any(|(qui, r)| {
-            (qui.is_none() || *qui == de)
-                && v < *r
-                && *r <= place
-                && place <= r.saturating_add(RATTRAPAGE_PAS)
-        })
-}
-
-/// Combien de pas après un retour son arriéré peut encore arriver : deux secondes.
-/// Choisi : après un gel de 40 s, les téléphones livrent leur file au premier pas,
-/// puis par paquets pendant une seconde ; une poignée de main ratée ajoute quelques
-/// pas. Provisoire.
-pub const RATTRAPAGE_PAS: u64 = 2 * ARRIERE_PAS;
+/// Le retard de vue, en pas, au-delà duquel une arrivée vient d'un arriéré : sa seule
+/// définition est dans le cœur, que l'épreuve relit.
+pub const ARRIERE_PAS: u64 = partie::ARRIERE_PAS;
 
 /// Les lectures que le cœur fait en jouant, jugées sur [`BudgetsE19::lecture`]. Les
 /// autres (la forme canonique, la garde, `Bonjour`, `Decrire`) ne tombent pas dans
@@ -342,16 +309,63 @@ pub(crate) const fn cout(carburant: u64, fixe: u64) -> u64 {
     carburant.saturating_add(fixe)
 }
 
-/// La somme de chaque suite de `largeur` pas consécutifs, depuis le coût de chaque
-/// pas.
-pub(crate) fn images(pas: &[u64], largeur: usize) -> Vec<u64> {
-    pas.windows(largeur.max(1))
-        .map(|w| w.iter().fold(0u64, |a, x| a.saturating_add(*x)))
+/// Un tour de la boucle, pour E19 : le coût des entrées qu'il a jouées, le dernier pas
+/// définitif après lui, et s'il a fini son avancée (sinon, un pas reste en cours).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TourJoue {
+    pub(crate) cout: u64,
+    pub(crate) definitif: u64,
+    pub(crate) fini: bool,
+}
+
+/// L'image de chaque tour (voir « Ce que juge E19 ») : son coût et celui du tour
+/// suivant, plus, s'il a fini son avancée, celui des entrées placées aux pas `s + 2` à
+/// `s + fenetre + 1`, `s` son dernier pas définitif (`par_pas`, le coût des entrées par
+/// pas) : le rejeu de la tête.
+pub(crate) fn images(tours: &[TourJoue], par_pas: &BTreeMap<u64, u64>, fenetre: u64) -> Vec<u64> {
+    tours
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let suivant = tours.get(i.saturating_add(1)).map_or(0, |u| u.cout);
+            let tete = if t.fini && fenetre > 0 {
+                let debut = t.definitif.saturating_add(2);
+                let fin = t.definitif.saturating_add(fenetre).saturating_add(1);
+                par_pas
+                    .range(debut..=fin)
+                    .fold(0u64, |a, (_, c)| a.saturating_add(*c))
+            } else {
+                0
+            };
+            t.cout.saturating_add(suivant).saturating_add(tete)
+        })
         .collect()
 }
 
+/// Les images d'une suite de pas joués chacun d'un tour, sans découpage : la somme de
+/// chaque suite de `largeur` pas consécutifs (la forme de la phase 2).
+#[cfg(test)]
+fn images_sans_decoupage(pas: &[u64], largeur: usize) -> Vec<u64> {
+    let par_pas: BTreeMap<u64, u64> = (1u64..).zip(pas.iter().copied()).collect();
+    // Le tour du pas `p` finit au pas `p` : son image compte les pas `p + 1` et suivants,
+    // et son propre coût, celui du pas `p`.
+    let tours: Vec<TourJoue> = (1u64..)
+        .zip(pas.iter().copied())
+        .map(|(p, cout)| TourJoue {
+            cout,
+            definitif: p,
+            fini: true,
+        })
+        .collect();
+    let fenetre = u64::try_from(largeur.saturating_sub(2)).unwrap_or(0);
+    let mut v = images(&tours, &par_pas, fenetre);
+    // Une fenêtre qui dépasse la soirée ne faisait pas d'image en phase 2.
+    v.truncate(pas.len().saturating_sub(largeur.saturating_sub(1)));
+    v
+}
+
 /// Juge les soirées : chaque lecture courante, le carburant de chaque appel plus
-/// `fixe`, à son maximum ; chaque image (`(fenêtre + 2)` pas consécutifs, déjà
+/// `fixe`, à son maximum ; chaque image (`(fenêtre + 2)` tours consécutifs, déjà
 /// sommés par [`images`], fixes compris) à son maximum, et leur 99ᵉ centile.
 pub(crate) fn juger(
     b: &BudgetsE19,
@@ -385,7 +399,7 @@ pub(crate) fn juger(
         notes.push(format!(
             "coût, fixes compris, {}",
             decrire(
-                &format!("une image, (fenêtre {fenetre} + 2) pas"),
+                &format!("une image, (fenêtre {fenetre} + 2) tours"),
                 "images",
                 &images
             )
@@ -394,7 +408,7 @@ pub(crate) fn juger(
         if trop > 0 {
             let max = images.last().copied().unwrap_or(0);
             c.echouer(format!(
-                "{trop} image(s) de (fenêtre {fenetre} + 2) pas consécutifs coûtent plus que le budget des entrées d'une image, {}, jusqu'à {max}",
+                "{trop} image(s) de (fenêtre {fenetre} + 2) tours consécutifs coûtent plus que le budget des entrées d'une image, {}, jusqu'à {max}",
                 b.image_max
             ));
         }
@@ -447,35 +461,11 @@ mod tests {
 
     const B: BudgetsE19 = BUDGETS_E19;
 
-    /// Une entrée faite sur une vue de plus d'une seconde vient d'un arriéré ; une
-    /// entrée sans vue (le temps, une présence, une réponse) jamais.
+    /// PHASE-3, P7 : le retard de vue d'un arriéré n'a qu'une définition, celle du cœur.
     #[test]
-    fn un_arriere_se_lit_au_retard_de_la_vue() {
-        let retour = [(Some(7), 90)];
-        assert!(!d_un_arriere(100, Some(40), Some(7), &retour));
-        assert!(d_un_arriere(101, Some(40), Some(7), &retour));
-        assert!(!d_un_arriere(10_000, None, Some(7), &[(Some(7), 9_999)]));
-        assert!(!d_un_arriere(5, Some(9), Some(7), &[(Some(7), 4)]));
-    }
-
-    /// Revue de la phase 2, constat 11 : une vue de téléphone ne repart que si elle
-    /// change (PUN-50) ; un geste ordinaire fait sur un écran resté le même dix
-    /// secondes porte une vue vieille de cent pas, et n'est pas un arriéré. Seul l'est
-    /// ce qui arrive peu après le retour de son appareil (coupure, arrière-plan,
-    /// sommeil) ou de l'ordinateur de la soirée (gel, redémarrage), fait sur une vue
-    /// d'avant ce retour.
-    #[test]
-    fn un_geste_sur_une_vue_inchangee_n_est_pas_un_arriere() {
-        assert!(!d_un_arriere(1_000, Some(800), Some(7), &[]));
-        assert!(d_un_arriere(1_000, Some(800), Some(7), &[(Some(7), 990)]));
-        assert!(!d_un_arriere(1_000, Some(800), Some(7), &[(Some(8), 990)]));
-        assert!(d_un_arriere(1_000, Some(800), Some(7), &[(None, 995)]));
-        assert!(d_un_arriere(1_000, Some(800), None, &[(None, 995)]));
-        assert!(!d_un_arriere(1_000, Some(800), None, &[(Some(7), 995)]));
-        // Trop loin du retour : un geste ordinaire, joué ensuite.
-        assert!(!d_un_arriere(1_000, Some(800), Some(7), &[(Some(7), 800)]));
-        // Fait sur une vue reçue après le retour.
-        assert!(!d_un_arriere(1_000, Some(930), Some(7), &[(Some(7), 920)]));
+    fn l_arriere_de_l_epreuve_est_celui_du_coeur() {
+        assert_eq!(ARRIERE_PAS, partie::ARRIERE_PAS);
+        assert_eq!(ARRIERE_PAS, 60, "la valeur de la phase 2, inchangée");
     }
 
     /// Revue de la phase 2, constat 10 : aucun chiffre n'est présenté comme mesuré s'il
@@ -541,12 +531,30 @@ mod tests {
     fn une_image_rare_et_lourde_echoue() {
         let mut pas = vec![10u64; 999];
         pas.push(B.image_max - 10);
-        let (c, _) = juger(&B, &BTreeMap::new(), &images(&pas, 2), 0, 0);
+        let (c, _) = juger(&B, &BTreeMap::new(), &images_sans_decoupage(&pas, 2), 0, 0);
         assert_eq!(c.echecs, 0, "{:?}", c.details);
         pas.push(11);
-        let (c, _) = juger(&B, &BTreeMap::new(), &images(&pas, 2), 0, 0);
+        let (c, _) = juger(&B, &BTreeMap::new(), &images_sans_decoupage(&pas, 2), 0, 0);
         assert_eq!((c.evaluations, c.echecs), (2, 1), "{:?}", c.details);
-        assert_eq!(images(&[1, 2, 3], 2), vec![3, 5]);
+        assert_eq!(images_sans_decoupage(&[1, 2, 3], 2), vec![3, 5]);
+        // Un tour qui laisse un pas inachevé ne compte que lui-même ; celui qui finit
+        // compte aussi les pas qui suivent (PHASE-3, P7).
+        let par_pas: BTreeMap<u64, u64> = [(5, 100), (6, 7), (7, 9)].into_iter().collect();
+        let tours = [
+            TourJoue {
+                cout: 40,
+                definitif: 4,
+                fini: false,
+            },
+            TourJoue {
+                cout: 60,
+                definitif: 5,
+                fini: true,
+            },
+        ];
+        // Le premier : lui et le suivant, sans tête ; le second : lui, et la tête (le
+        // pas 7, la fenêtre d'un pas après le pas qui suit).
+        assert_eq!(images(&tours, &par_pas, 1), vec![100, 69]);
     }
 
     /// « Au moins 60 images par seconde » : un pour cent d'images au-delà du budget
@@ -563,11 +571,15 @@ mod tests {
         // Une image est la somme de pas consécutifs : la fenêtre l'élargit.
         let pas = vec![B.image_courante / 4; 10];
         assert_eq!(
-            juger(&B, &BTreeMap::new(), &images(&pas, 4), 2, 0).0.echecs,
+            juger(&B, &BTreeMap::new(), &images_sans_decoupage(&pas, 4), 2, 0)
+                .0
+                .echecs,
             0
         );
         assert_eq!(
-            juger(&B, &BTreeMap::new(), &images(&pas, 5), 3, 0).0.echecs,
+            juger(&B, &BTreeMap::new(), &images_sans_decoupage(&pas, 5), 3, 0)
+                .0
+                .echecs,
             1
         );
     }

@@ -154,6 +154,9 @@ impl<F: Fabrique> Partie<F> {
         core::mem::swap(&mut self.coeur, &mut t.coeur);
         let journal = core::mem::replace(&mut self.journal, Journal::vide(self.coeur.pas));
         let curseur = self.curseur.take();
+        // Un pas inachevé de la définitive reste de côté : la tête joue les siens d'un
+        // seul tour.
+        let en_cours = self.en_cours.take();
         let deja = t.pas;
         let arrivees: Vec<_> = self
             .en_attente
@@ -181,6 +184,7 @@ impl<F: Fabrique> Partie<F> {
         core::mem::swap(&mut self.coeur, &mut t.coeur);
         self.journal = journal;
         self.curseur = curseur;
+        self.en_cours = en_cours;
         self.en_attente = en_attente;
         t.pas = t.coeur.pas;
         t.instance = Some(instance);

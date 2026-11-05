@@ -255,6 +255,56 @@ fn reprise_rend_le_meme_etat_sur_les_deux_instances() {
     }
 }
 
+/// PHASE-3, lot 1 (§ 2.4) : chaque point de la soirée du module, et son journal,
+/// écrits comme la garde les écrit puis relus (`partie::persistance`, l'instantané de
+/// wasmtime compris), reprennent la partie : même cœur, même empreinte, même forme
+/// canonique ; le journal relu puis tronqué avant le point (P10) aussi. Sur les trois
+/// jeux, E14 fait de même à chaque épreuve (`soiree.rs`, `par_la_garde`).
+#[test]
+fn reprendre_depuis_un_point_decode_meme_empreinte() {
+    use partie::persistance::{decoder_journal, decoder_point, encoder_journal, encoder_point};
+    let (_moteur, charge) = module::charger();
+    let (mut d, bilan) = soiree(&charge);
+    let forme = d.module.canonique().expect("forme canonique");
+    let empreinte = d.module.empreinte().expect("empreinte");
+    let journal = decoder_journal(&encoder_journal(d.module.journal())).expect("journal relu");
+    assert!(
+        &journal == d.module.journal(),
+        "le journal relu est le même"
+    );
+    assert!(!bilan.points.is_empty());
+    for (pas, (_, pm)) in &bilan.points {
+        let octets = encoder_point(pm);
+        let relu: moteur_wasmtime::InstantaneWasm =
+            decoder_point::<moteur_wasmtime::InstantaneWasm>(&octets)
+                .unwrap_or_else(|e| panic!("le point du pas {pas} ne se relit pas : {e:?}"))
+                .instantane()
+                .clone();
+        assert!(
+            &relu == pm.instantane(),
+            "l'instantané du pas {pas} se relit égal"
+        );
+        let point = decoder_point(&octets).expect("point relu");
+        let mut tronque = journal.clone();
+        let _: usize = tronque.tronquer_avant(pm.indice());
+        for j in [&journal, &tronque] {
+            let mut rm = Partie::reprendre(
+                Piste::new(charge.fabrique(), Vec::new()),
+                ouverture(),
+                &point,
+                j,
+            )
+            .unwrap_or_else(|e| panic!("reprise du module au pas {pas} : {e:?}"));
+            assert!(
+                rm.coeur() == d.module.coeur(),
+                "cœur de la reprise du pas {pas}"
+            );
+            assert_eq!(rm.empreinte().expect("empreinte"), empreinte, "pas {pas}");
+            assert!(rm.canonique().expect("forme") == forme, "pas {pas}");
+        }
+    }
+}
+
 /// E9 en petit, `reecrire_preserve_le_sens` sur `devine` (§ 8.5) et
 /// `deux_instances_meme_journal_meme_empreinte` (§ 8.7) : le journal de la soirée,
 /// rejoué entrée par entrée sur la copie native, deux instances du module réécrit et

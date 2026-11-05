@@ -31,7 +31,7 @@ use crate::journal::{ArriveePlacee, Journal, Ligne, QuoiPlace, ValeurTelephone};
 use crate::regles::{self, Origine, ReglesTenu};
 
 /// Ce qu'il faut pour ouvrir une partie.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Ouverture {
     /// La graine de la soirée : celle de la première partie, et la graine d'ordre
     /// qui départage les égalités (§ 4.3). Neuve à chaque soirée, sauf rejeu voulu.
@@ -52,7 +52,7 @@ pub struct Ouverture {
 }
 
 /// Le carburant de chaque sorte d'appel (§ 3.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Budgets {
     /// Une entrée.
     pub entree: u64,
@@ -63,6 +63,17 @@ pub struct Budgets {
     /// La forme canonique.
     pub canonique: u64,
 }
+
+/// Le carburant de chaque sorte d'appel, en soirée comme dans l'épreuve (PHASE-3, P27) :
+/// la seule définition, que l'épreuve relit. Des points de départ, non mesurés : larges,
+/// pour qu'un jeu honnête n'y bute jamais, et qu'une boucle infinie s'arrête en moins
+/// d'une seconde sur une machine de développement.
+pub const BUDGETS_DE_SOIREE: Budgets = Budgets {
+    entree: 1 << 28,
+    lecture: 1 << 28,
+    creation: 1 << 28,
+    canonique: 1 << 28,
+};
 
 /// La tête de la partie (§ 4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,10 +133,13 @@ pub struct Avancee {
     pub saut: Duree,
     /// Trois `Temps` écartés de suite : le temps ne passe plus (§ 4.6).
     pub en_panne: Oui,
+    /// Le pas que ce tour a laissé inachevé (PHASE-3, P7) : ses arriérés dépassaient le
+    /// budget du tour. `None` après [`Partie::avancer`], qui finit toujours.
+    pub en_cours: Option<Pas>,
 }
 
 impl Avancee {
-    const fn vide(definitif: Pas) -> Avancee {
+    pub(crate) const fn vide(definitif: Pas) -> Avancee {
         Avancee {
             definitif,
             avis: Vec::new(),
@@ -138,6 +152,7 @@ impl Avancee {
             fautes: Vec::new(),
             saut: Duree::ZERO,
             en_panne: Oui::Non,
+            en_cours: None,
         }
     }
 }
@@ -253,6 +268,16 @@ impl<S> PointDeReprise<S> {
     pub const fn instantane(&self) -> &S {
         &self.instantane
     }
+
+    /// Le point sain que la partie avait à ce point, d'où [`Partie::repartir`] repart.
+    pub fn sain(&self) -> Option<&Arc<PointDeReprise<S>>> {
+        self.sain.as_ref()
+    }
+
+    /// Le dernier point à intervalle que la partie avait à ce point.
+    pub fn periodique(&self) -> Option<&Arc<PointDeReprise<S>>> {
+        self.periodique.as_ref()
+    }
 }
 
 /// Pourquoi une partie ne s'ouvre pas.
@@ -290,7 +315,8 @@ pub enum RefusReprise {
     /// Le rejeu a échoué : une entrée, une issue ou une empreinte diverge
     /// ([`CausePanne::RejeuDivergent`]), ou l'outil a lâché.
     Panne(PanneOutil),
-    /// Le point est au-delà du journal.
+    /// Le point est hors des lignes que le journal garde : au-delà de sa fin, ou
+    /// avant sa base s'il a été tronqué ([`Journal::tronquer_avant`]).
     PointHorsJournal,
 }
 
@@ -356,6 +382,12 @@ pub struct Partie<F: Fabrique> {
     pub(crate) images: Vec<(u64, Oui)>,
     /// Ce que le prochain [`Partie::avancer`] rendra.
     pub(crate) sortie: Avancee,
+    /// Le pas commencé et pas fini qu'un tour borné a laissé (P7).
+    pub(crate) en_cours: Option<crate::pas::PasEnCours>,
+    /// L'avancée à laquelle appartient ce pas : ce qu'il reste à jouer après lui.
+    pub(crate) avancee_en_cours: Option<crate::pas::AvanceeEnCours>,
+    /// Le contrôle négatif du découpage est-il armé ([`Partie::etaler_mal`]) ?
+    pub(crate) etale_mal: Oui,
 }
 
 impl<F: Fabrique> Partie<F> {
@@ -405,7 +437,8 @@ impl<F: Fabrique> Partie<F> {
         point: &PointDeReprise<<F::I as Instance>::Instantane>,
         journal: &Journal,
     ) -> Result<Partie<F>, RefusReprise> {
-        if point.indice > journal.lignes.len() {
+        // Le journal peut être tronqué (P10) : le point doit tomber dans ce qu'il garde.
+        if point.indice < journal.base() || point.indice > journal.fin() {
             return Err(RefusReprise::PointHorsJournal);
         }
         let mut instance = fabrique.neuve().map_err(RefusOuverture::Panne)?;
@@ -476,6 +509,9 @@ impl<F: Fabrique> Partie<F> {
             dernieres_vues: Vec::new(),
             images: Vec::new(),
             sortie: Avancee::vide(pas),
+            en_cours: None,
+            avancee_en_cours: None,
+            etale_mal: Oui::Non,
         }
     }
 
@@ -566,9 +602,60 @@ impl<F: Fabrique> Partie<F> {
     /// Prend un point de reprise maintenant, et le garde comme dernier point. Il ne
     /// décale pas les points à intervalle, qui ne dépendent que de l'histoire : une
     /// reprise les retrouve aux mêmes pas.
+    ///
+    /// Un point se prend entre deux pas : pendant un pas qu'un tour borné a laissé
+    /// inachevé ([`Partie::pas_en_cours`]), il rend le dernier point pris, au bord du
+    /// pas d'avant, sans en prendre un neuf.
     pub fn point(&mut self) -> Result<PointDeReprise<<F::I as Instance>::Instantane>, PanneOutil> {
-        self.instantaner()?;
+        if self.en_cours.is_none() {
+            self.instantaner()?;
+        }
         Ok(self.point.clone())
+    }
+
+    /// Le pas qu'un tour borné a commencé et pas fini (PHASE-3, P7) : la définitive
+    /// est au milieu de ce pas, et [`Partie::definitif`] vaut le pas d'avant. Une
+    /// arrivée reçue entre-temps va après la fin de l'avancée en cours
+    /// ([`Partie::avancee_en_cours`]), saut compris.
+    pub fn pas_en_cours(&self) -> Option<Pas> {
+        self.en_cours.as_ref().map(|p| p.pas)
+    }
+
+    /// Ce qu'il reste de l'avancée qu'un tour borné a laissée : le dernier pas qu'elle
+    /// jouera, et le temps qu'elle jettera ensuite. Une arrivée reçue pendant qu'elle
+    /// reste en cours est placée au-delà de sa fin, saut compris, comme si l'avancée
+    /// avait fini d'un seul tour.
+    pub fn avancee_en_cours(&self) -> Option<(Pas, Duree)> {
+        self.avancee_en_cours.map(|a| (a.borne, a.saut))
+    }
+
+    /// L'indice absolu qui suit la dernière ligne du dernier pas fini : ce qu'une garde
+    /// peut écrire du journal. Pendant un pas inachevé, ses lignes déjà écrites sont
+    /// au-delà ; une reprise ne les rejoue pas, et les appareils renvoient ce qu'on ne
+    /// leur a pas accusé.
+    pub fn fin_du_dernier_pas(&self) -> usize {
+        self.en_cours
+            .as_ref()
+            .map_or_else(|| self.fin_confirmee(), |p| p.debut)
+    }
+
+    /// Oublie les lignes du journal d'indice absolu inférieur à `indice` (P10) : la
+    /// mémoire reste bornée sur une longue soirée. Rien de ce dont la partie a besoin
+    /// n'est oublié : la troncature s'arrête au dernier point, d'où une faute se
+    /// reconstruit. Rend la nouvelle base. Une reprise ne part plus ensuite que d'un
+    /// point d'indice au moins égal.
+    pub fn tronquer_journal_avant(&mut self, indice: usize) -> usize {
+        let indice = indice.min(self.point.indice);
+        self.journal.tronquer_avant(indice)
+    }
+
+    /// **Le contrôle négatif du découpage (`etale-mal`, PHASE-3 § 8.3), jamais en
+    /// soirée.** Désormais, une arrivée reçue pendant un pas inachevé y entre au lieu
+    /// d'aller au pas suivant : le journal change avec le découpage. L'épreuve s'en sert
+    /// pour montrer que E12 le voit.
+    #[doc(hidden)]
+    pub fn etaler_mal(&mut self) {
+        self.etale_mal = Oui::Oui;
     }
 
     /// Après trois `Temps` écartés de suite (§ 4.6), la partie repart du dernier
@@ -586,6 +673,8 @@ impl<F: Fabrique> Partie<F> {
         if self.coeur.en_panne == Oui::Non || self.curseur.is_some() {
             return Ok(Oui::Non);
         }
+        // Une reprise se fait entre deux pas.
+        self.finir_l_avancee()?;
         let Some(sain) = self.point_sain.clone() else {
             return Ok(Oui::Non);
         };
@@ -610,6 +699,8 @@ impl<F: Fabrique> Partie<F> {
         if self.declaration.pause != PauseFil::DuCommun || self.coeur.en_pause == en_pause {
             return Ok(Oui::Non);
         }
+        // Une pause commence ou finit entre deux pas.
+        self.finir_l_avancee()?;
         self.noter(Ligne::Pause {
             apres: self.coeur.pas,
             en_pause,
@@ -632,34 +723,62 @@ impl<F: Fabrique> Partie<F> {
     /// depuis un instantané de la définitive si un geste est arrivé à une place
     /// qu'elle avait déjà jouée. Un saut vide d'abord la fenêtre : la définitive
     /// rattrape la tête, puis les deux sautent ensemble.
+    ///
+    /// D'un seul tour, sans borne : un pas qu'un tour borné a laissé inachevé est fini
+    /// d'abord, et l'avancée qu'il laissait avec lui.
     pub fn avancer(&mut self, cible: Pas) -> Result<Avancee, PanneOutil> {
-        let tete = self.horloge.max(self.coeur.pas);
-        let (jusqua, saut) =
-            regles::cible(self.coeur.pas, tete, cible, self.declaration.rattrapage);
-        let borne = if saut > Duree::ZERO {
-            jusqua
-        } else {
-            Pas::du_fil(jusqua.numero().saturating_sub(self.fenetre))
-        };
-        while self.coeur.pas < borne {
-            let s = Pas::du_fil(self.coeur.pas.numero().saturating_add(1));
-            self.jouer_pas(s)?;
-        }
-        if saut > Duree::ZERO {
-            let de = self.coeur.pas;
-            let a = Pas::du_fil(de.numero().saturating_add(saut.en_pas()));
-            self.noter(Ligne::Saut { de, a })?;
-            self.appliquer_saut(a);
-        }
-        self.horloge = jusqua.max(self.coeur.pas);
-        if self.fenetre > 0 {
-            self.avancer_la_tete(self.horloge)?;
-        }
+        self.avancer_tour(cible, crate::pas::Tour::SANS_BORNE)
+    }
+
+    /// Avance comme [`Partie::avancer`], mais d'un tour qui joue au plus
+    /// `arrieres_par_tour` entrées d'un arriéré (PHASE-3, § 2.11, P7 ;
+    /// [`crate::ARRIERES_PAR_TOUR`] en soirée) : au-delà, le pas reste en cours
+    /// ([`Avancee::en_cours`]) et se finit au tour suivant. Les arriérés gardent leur
+    /// pas, `Temps` vient toujours après eux, et le retard pris se rattrape ensuite par
+    /// les règles du temps. Une entrée fraîche n'est jamais retenue par le budget
+    /// (seulement par l'ordre : elle ne passe pas devant un arriéré qui la précède).
+    ///
+    /// **Les arrivées d'un pas se figent au tour où il commence**, et celles d'une
+    /// avancée au tour où elle commence : une arrivée reçue pendant une avancée
+    /// inachevée va au-delà de sa fin (`max(fait.pas, fin + 1)`, où `fin` est le dernier
+    /// pas qu'elle jouera, plus son saut). Le journal est alors celui qu'aurait donné la
+    /// même avancée jouée d'un seul tour, suivie des mêmes arrivées (CAT-14), et la tête
+    /// en juge à la fin de l'avancée.
+    ///
+    /// Chaque appel finit d'abord l'avancée laissée par le précédent, puis avance vers
+    /// `cible` : deux tours bornés valent `avancer` vers la première cible, puis vers la
+    /// seconde. Un budget nul vaut 1.
+    pub fn avancer_borne(
+        &mut self,
+        cible: Pas,
+        arrieres_par_tour: u32,
+    ) -> Result<Avancee, PanneOutil> {
+        let tour = crate::pas::Tour::borne(crate::pas::Compter::Arrieres, arrieres_par_tour);
+        self.avancer_tour(cible, tour)
+    }
+
+    /// Finit, d'un seul tour, le pas et l'avancée qu'un tour borné a laissés
+    /// ([`Partie::pas_en_cours`]), sans avancer au-delà ; rend ce qu'ils ont produit.
+    /// Rien à faire, rien de rendu, s'il n'y en a pas.
+    pub fn finir_le_pas(&mut self) -> Result<Avancee, PanneOutil> {
+        self.finir_l_avancee()?;
         let mut a = core::mem::replace(&mut self.sortie, Avancee::vide(self.coeur.pas));
         a.definitif = self.coeur.pas;
-        a.saut = saut;
         a.en_panne = self.coeur.en_panne;
+        a.en_cours = None;
         Ok(a)
+    }
+
+    /// Comme [`Partie::avancer_borne`], mais toute entrée venue d'une arrivée compte,
+    /// arriérée ou non : pour éprouver le découpage là où il n'y a pas d'arriéré (E12,
+    /// les propriétés du cœur). Jamais en soirée.
+    pub fn avancer_decoupe(
+        &mut self,
+        cible: Pas,
+        entrees_par_tour: u32,
+    ) -> Result<Avancee, PanneOutil> {
+        let tour = crate::pas::Tour::borne(crate::pas::Compter::Arrivees, entrees_par_tour);
+        self.avancer_tour(cible, tour)
     }
 
     /// Le numéro de pas saute jusqu'à `a`. Les arrivées placées dans les pas sautés
@@ -713,7 +832,7 @@ impl<F: Fabrique> Partie<F> {
                     place,
                     fait,
                     a_recu,
-                    self.coeur.pas,
+                    self.plancher(),
                     origine,
                     QuoiPlace::Presence(p),
                 ))
@@ -728,12 +847,12 @@ impl<F: Fabrique> Partie<F> {
                 }
                 // Une réponse vient du commun, sur cette machine : à sa réception.
                 let (fait, place) =
-                    regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.coeur.pas);
+                    regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.plancher());
                 Ok(self.placer_arrivee(
                     place,
                     fait,
                     a_recu,
-                    self.coeur.pas,
+                    self.plancher(),
                     Origine::Commun,
                     QuoiPlace::Reponse { id, reponse },
                 ))
@@ -744,6 +863,22 @@ impl<F: Fabrique> Partie<F> {
     /// Le prochain pas à jouer sur la définitive.
     pub(crate) fn suivant(&self) -> Pas {
         Pas::du_fil(self.coeur.pas.numero().saturating_add(1))
+    }
+
+    /// Le pas au-delà duquel une arrivée se place : le dernier pas définitif ; pendant
+    /// une avancée qu'un tour borné a laissée, le pas définitif qu'elle atteindra, sa
+    /// borne puis son saut (P7). Les arrivées d'un pas sont donc figées au tour où il
+    /// commence, et aucune arrivée reçue pendant l'avancée n'y entre : la même
+    /// avancée jouée d'un seul tour, suivie des mêmes arrivées, les aurait placées
+    /// là (CAT-14). Le contrôle négatif `etale-mal` oublie l'avancée et le pas en
+    /// cours.
+    pub(crate) fn plancher(&self) -> Pas {
+        match (&self.en_cours, self.avancee_en_cours) {
+            _ if self.etale_mal == Oui::Oui => self.coeur.pas,
+            (Some(_), Some(av)) => av.fin(),
+            (Some(p), None) => p.pas,
+            (None, _) => self.coeur.pas,
+        }
     }
 
     fn arriver_geste(
@@ -861,7 +996,7 @@ impl<F: Fabrique> Partie<F> {
             place,
             fait,
             a_recu,
-            self.coeur.pas,
+            self.plancher(),
             origine,
             QuoiPlace::Manette { de, numero, etat },
         )
@@ -890,7 +1025,7 @@ impl<F: Fabrique> Partie<F> {
         }
         // L'écran est local : il n'antidate pas.
         let (fait, place) =
-            regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.coeur.pas);
+            regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.plancher());
         let vu = regles::borner_vu(vu, self.coeur.derniere_vue(RegardFil::Ecran));
         Ok(self.placer_arrivee(
             place,
@@ -924,7 +1059,7 @@ impl<F: Fabrique> Partie<F> {
             a_recu,
             demi,
             self.declaration.antidatage_max,
-            self.coeur.pas,
+            self.plancher(),
         );
         self.garder_l_ordre(de, fait, place)
     }
@@ -932,7 +1067,7 @@ impl<F: Fabrique> Partie<F> {
     /// Place une arrivée locale (une présence) : à sa réception.
     fn placer_local(&mut self, de: Appareil, a_recu: Instant) -> (Instant, Pas) {
         let (fait, place) =
-            regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.coeur.pas);
+            regles::placer(a_recu, a_recu, Duree::ZERO, Duree::ZERO, self.plancher());
         self.garder_l_ordre(de, fait, place)
     }
 
@@ -961,7 +1096,10 @@ impl<F: Fabrique> Partie<F> {
     ) -> Placement {
         let sequence = self.coeur.sequence();
         // Une place que la tête a déjà jouée : elle se rejouera depuis la définitive.
-        if let Some(t) = self.tete.as_mut()
+        // Pendant une avancée inachevée, la tête n'en juge qu'à sa fin (`poursuivre`) :
+        // l'arrivée attend jusque-là, placée au-delà de l'avancée (`plancher`).
+        if self.avancee_en_cours.is_none()
+            && let Some(t) = self.tete.as_mut()
             && place <= t.pas
         {
             t.a_rejouer = true;

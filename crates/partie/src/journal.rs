@@ -21,9 +21,22 @@ use crate::instance::Faute;
 use crate::regles::{Ordonnable, Origine, Placee, ValeurTenue};
 
 /// Le journal d'une soirée : les lignes de chaque partie, à la suite.
+///
+/// # La base des indices (PHASE-3, P10)
+///
+/// Un journal grandit toute la soirée : 94 709 lignes en 180 s chez Sidequest
+/// (MESURES-PHASE-1). Il se tronque donc avant le plus vieux point de reprise qu'on
+/// garde ([`Journal::tronquer_avant`]). Les indices qui désignent une ligne (celui
+/// d'un point, [`PointDeReprise::indice`](crate::PointDeReprise::indice), celui d'une
+/// [`Ligne::Reprise`], ceux d'un [`crate::RapportFaute`]) restent **absolus** : la
+/// ligne d'indice `i` est la même avant et après une troncature. Les lignes gardées
+/// vont de [`Journal::base`] à [`Journal::fin`] ; [`Journal::lignes`] ne rend qu'elles,
+/// la première étant celle d'indice `base`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Journal {
     pub(crate) lignes: Vec<Ligne>,
+    /// L'indice absolu de la première ligne gardée : 0 tant que rien n'est tronqué.
+    pub(crate) base: usize,
     /// Le dernier pas définitif : le rejeu joue jusque-là, pas vides compris.
     pub(crate) pas: Pas,
 }
@@ -33,13 +46,56 @@ impl Journal {
     pub(crate) const fn vide(pas: Pas) -> Journal {
         Journal {
             lignes: Vec::new(),
+            base: 0,
             pas,
         }
     }
 
-    /// Les lignes, dans l'ordre.
+    /// Un journal de ces lignes, la première d'indice `base`, jusqu'au pas `pas` :
+    /// ce que relit [`crate::persistance`].
+    pub(crate) const fn depuis(base: usize, lignes: Vec<Ligne>, pas: Pas) -> Journal {
+        Journal { lignes, base, pas }
+    }
+
+    /// Les lignes gardées, dans l'ordre : la première a l'indice [`Journal::base`].
     pub fn lignes(&self) -> &[Ligne] {
         &self.lignes
+    }
+
+    /// L'indice absolu de la première ligne gardée : 0 tant que rien n'est tronqué.
+    pub const fn base(&self) -> usize {
+        self.base
+    }
+
+    /// L'indice absolu qui suit la dernière ligne : `base + lignes().len()`.
+    pub const fn fin(&self) -> usize {
+        self.base.saturating_add(self.lignes.len())
+    }
+
+    /// La ligne d'indice absolu `indice`, si elle est gardée.
+    pub fn ligne(&self, indice: usize) -> Option<&Ligne> {
+        self.lignes.get(indice.checked_sub(self.base)?)
+    }
+
+    /// Les lignes d'indices absolus `de..a`, bornées à celles qui sont gardées.
+    pub(crate) fn entre(&self, de: usize, a: usize) -> &[Ligne] {
+        let de = de.saturating_sub(self.base).min(self.lignes.len());
+        let a = a.saturating_sub(self.base).clamp(de, self.lignes.len());
+        self.lignes.get(de..a).unwrap_or(&[])
+    }
+
+    /// Oublie les lignes d'indice absolu inférieur à `indice` (P10), et rend la
+    /// nouvelle base. Un indice au-delà de la fin oublie tout ; un indice avant la base
+    /// ne change rien. Les indices des lignes gardées ne bougent pas.
+    ///
+    /// Une reprise ne part ensuite que d'un point d'indice au moins `base`
+    /// ([`crate::Partie::reprendre`] refuse les autres : `PointHorsJournal`).
+    pub fn tronquer_avant(&mut self, indice: usize) -> usize {
+        let indice = indice.clamp(self.base, self.fin());
+        let n = indice.saturating_sub(self.base);
+        let _: alloc::vec::Drain<'_, Ligne> = self.lignes.drain(..n);
+        self.base = indice;
+        self.base
     }
 
     /// Le dernier pas définitif.
@@ -63,7 +119,7 @@ impl Journal {
 }
 
 /// Une ligne du journal.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Ligne {
     /// Les arrivées jouées à ce pas, dans l'ordre de leur numéro d'arrivée, avant
     /// [`crate::regles::ordonner`]. Écrite au début du pas, s'il en a.
@@ -129,7 +185,7 @@ pub enum Ligne {
 }
 
 /// Une entrée appliquée à la définitive : son ordre, sa place, ses octets et son issue.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LigneEntree {
     /// La partie, dans la soirée.
     pub partie: u32,
@@ -144,7 +200,7 @@ pub struct LigneEntree {
 }
 
 /// L'issue d'une entrée, au journal (§ 4.5).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum IssueJournal {
     /// Acceptée, avec ses sorties.
     Acceptee {
@@ -170,7 +226,7 @@ pub enum IssueJournal {
 ///
 /// Tout ce qui dépend de l'horloge ou du réseau (la demi-latence, la dernière vue
 /// envoyée) est déjà appliqué : le rejeu n'en a pas besoin.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ArriveePlacee {
     /// Son numéro d'arrivée, unique dans la soirée.
     pub sequence: u64,
@@ -199,7 +255,7 @@ impl Ordonnable for ArriveePlacee {
 }
 
 /// Ce que porte une arrivée placée.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum QuoiPlace {
     /// Un geste.
     Geste {
@@ -242,7 +298,7 @@ pub enum QuoiPlace {
 }
 
 /// La valeur d'un tenu de téléphone, telle que le jeu l'a validée.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ValeurTelephone {
     /// La valeur, encodée par le jeu.
     pub octets: Vec<u8>,

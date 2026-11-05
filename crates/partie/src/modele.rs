@@ -283,6 +283,19 @@ pub struct InstanceModele {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstantaneModele(Option<EtatModele>);
 
+/// L'instantané du modèle se garde (PHASE-3, § 2.4) : son état, en postcard.
+impl crate::persistance::InstantaneGarde for InstantaneModele {
+    fn ecrire(&self, dans: &mut Vec<u8>) {
+        // L'état du modèle s'encode toujours : il n'a ni suite de longueur inconnue,
+        // ni valeur que postcard refuse.
+        let _: Result<(), jeu_abi::ErreurEncodage> = jeu_abi::encoder(&self.0, dans);
+    }
+
+    fn lire(octets: &[u8]) -> Result<Self, crate::persistance::RefusGarde> {
+        Ok(InstantaneModele(jeu_abi::decoder(octets)?))
+    }
+}
+
 impl InstanceModele {
     /// Une instance neuve, avant `Bonjour`, au réglage ordinaire.
     pub fn new() -> InstanceModele {

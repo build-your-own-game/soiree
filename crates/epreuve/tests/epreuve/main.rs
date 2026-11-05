@@ -149,6 +149,27 @@ fn le_socle_sain_passe_tout() {
         r.resultat(IdControle::E2).map(|c| c.issue.clone()),
         Some(IssueControle::Reussi)
     );
+    // Sans fenêtre, E12 juge le découpage d'un pas (PHASE-3, P7), et il a tourné.
+    let e12 = r.resultat(IdControle::E12).expect("au rapport");
+    assert_eq!(e12.issue, IssueControle::Reussi, "{}", lisible(&r));
+    assert!(e12.evaluations > 0);
+    assert!(e12.detail.contains("découpage"), "{}", e12.detail);
+}
+
+/// Le contrôle négatif de E12 pour le découpage d'un pas (PHASE-3, § 8.3 et P7) :
+/// `etale-mal`, un défaut du commun et non d'un jeu, qui laisse une arrivée reçue
+/// pendant un pas découpé entrer dans ce pas. Le socle sain fait alors échouer E12, et
+/// lui seul.
+#[test]
+fn etale_mal_fait_echouer_e12_et_lui_seul() {
+    let plan = Plan {
+        commun_fautif: Some(epreuve::CommunFautif::EtaleMal),
+        ..Plan::court(GRAINE)
+    };
+    let r = eprouver("sain", &mut FabriqueNative::<jeux::Sain>::new(), &plan);
+    echoue_exactement(&r, IdControle::E12);
+    let e12 = r.resultat(IdControle::E12).expect("au rapport");
+    assert!(e12.detail.contains("un pas découpé"), "{}", e12.detail);
 }
 
 /// Besoins 2 et 3 des jeux (`conception/BESOINS-DES-JEUX.md`, Tier list n° 2 et n° 3) :

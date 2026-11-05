@@ -18,7 +18,7 @@ use crate::regles::{EtatTenu, Origine};
 ///
 /// Opaque : il ne se lit qu'à travers les méthodes de [`crate::Partie`]. Deux états
 /// égaux donnent la même suite à la partie pour les mêmes arrivées.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EtatCoeur {
     /// Le numéro de la partie dans la soirée : 0, puis un de plus à chaque
     /// nouvelle partie.
@@ -71,7 +71,7 @@ pub struct EtatCoeur {
 }
 
 /// Ce que le cœur sait d'un appareil.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Fiche {
     /// L'appareil.
     pub(crate) appareil: Appareil,
@@ -88,7 +88,7 @@ pub(crate) struct Fiche {
 }
 
 /// Un tenu de téléphone, par appareil et par clé.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TenuTelephone {
     pub(crate) appareil: Appareil,
     pub(crate) rang: u32,
@@ -97,7 +97,7 @@ pub(crate) struct TenuTelephone {
 }
 
 /// Une manette.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TenuManette {
     pub(crate) appareil: Appareil,
     pub(crate) rang: u32,
@@ -111,7 +111,7 @@ pub(crate) fn exposer(partie: u32, id: u64) -> Option<u64> {
 }
 
 /// Une demande lancée, que le jeu liste encore.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DemandeEnCours {
     pub(crate) id: u64,
     pub(crate) repondue: Oui,

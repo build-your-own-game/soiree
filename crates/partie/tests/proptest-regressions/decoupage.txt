@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0946e5402a1be2e90f39b7f5ca4ba15ba1436f748e4a6a8fc7820113d0185ebd # shrinks to script = [Avancer(1), Geste { de: 1, quoi: 0, retard: 1, age: 0 }, Geste { de: 1, quoi: 0, retard: 1, age: 0 }, Avancer(1), Geste { de: 1, quoi: 0, retard: 1, age: 0 }, Regarder], n = 1, fenetre = 1
+cc b8a067b3f522a67538634951f7acb2cd44c0e7d443e6fb9a7279cd081cbab340 # shrinks to script = [Geste { de: 1, quoi: 0, retard: 0, age: 0 }, Geste { de: 1, quoi: 0, retard: 0, age: 0 }, Avancer(4), Geste { de: 1, quoi: 0, retard: 1, age: 0 }], n = 1, fenetre = 3
+cc aa4f192c32289661d440eb4baad022d430e549eb2713b0d98600a5ca4b5ed6b4 # shrinks to script = [Geste { de: 1, quoi: 0, retard: 0, age: 0 }, Geste { de: 1, quoi: 0, retard: 0, age: 0 }, Geste { de: 1, quoi: 0, retard: 0, age: 0 }, Avancer { delta: 2, tours: 1 }, Geste { de: 1, quoi: 0, retard: 1, age: 0 }], n = 1, fenetre = 0

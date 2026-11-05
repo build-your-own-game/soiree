@@ -124,8 +124,9 @@ pub(crate) fn rejouer<F: Fabrique + Clone>(
                 .arriver(arrivee.clone(), *recu)
                 .map(|_| ())
                 .map_err(|panne| panne.to_string()),
+            // Un tour de la boucle, comme la soirée l'a joué (PHASE-3, P7).
             Op::Avancer(cible) => partie
-                .avancer(*cible)
+                .avancer_borne(*cible, partie::ARRIERES_PAR_TOUR)
                 .map(|_| ())
                 .map_err(|panne| panne.to_string()),
             Op::Regarder(regards) => partie
@@ -136,10 +137,14 @@ pub(crate) fn rejouer<F: Fabrique + Clone>(
                 let _: Result<partie::EtatVisible, partie::Echec> = partie.etat();
                 Ok(())
             }
-            Op::Canonique => {
-                let _: Result<Vec<u8>, partie::Echec> = partie.canonique();
-                Ok(())
-            }
+            // La soirée finit d'abord le pas qu'un tour borné a laissé inachevé.
+            Op::Canonique => match partie.finir_le_pas() {
+                Ok(_) => {
+                    let _: Result<Vec<u8>, partie::Echec> = partie.canonique();
+                    Ok(())
+                }
+                Err(panne) => Err(panne.to_string()),
+            },
             Op::Point => match partie.point() {
                 Ok(point) => {
                     if points.len() < 4 {

@@ -101,15 +101,15 @@ struct Epreuve<'m, 'n> {
     premier_rejeu: Option<Rejeu>,
     /// E19 : le carburant de chaque appel des soirées principales, par nom.
     carburant: BTreeMap<&'static str, Vec<u64>>,
-    /// E19 : le coût de chaque image des soirées principales : `(fenêtre + 2)` pas
+    /// E19 : le coût de chaque image des soirées principales : `(fenêtre + 2)` tours
     /// consécutifs, le coût fixe de chaque entrée compris.
     carburant_images: Vec<u64>,
     /// E19 : le coût fixe d'un appel de ce module, en unités de carburant
     /// ([`crate::budgets::BudgetsE19::cout_fixe`]).
     fixe: u64,
-    /// E19 : les entrées d'un arriéré, dont le coût fixe n'entre pas dans les images :
-    /// combien en tout, et le plus dans un même pas.
-    arrieres: (u64, u64),
+    /// E19 : les tours des soirées principales, et ceux qui ont laissé un pas inachevé
+    /// (PHASE-3, P7).
+    tours: (u64, u64),
     /// Ce que le monde simulé a fait, sur toutes les soirées.
     monde: crate::plan::MondeJoue,
     /// E18 : la phase après chaque entrée, et les gels, de chaque soirée principale.
@@ -507,13 +507,14 @@ impl Epreuve<'_, '_> {
             fenetre,
             self.fixe,
         );
-        let (arrieres, au_plus) = self.arrieres;
+        let (tours, inacheves) = self.tours;
         let a = self.acc(IdControle::E19);
         a.compte.ajouter(&compte);
         a.notes.extend(notes);
         a.notes.push(format!(
-            "{arrieres} entrée(s) d'un arriéré (faites sur une vue de plus de {} pas), jusqu'à {au_plus} dans un même pas : leur carburant compte dans les images, pas leur coût fixe",
-            crate::budgets::ARRIERE_PAS
+            "{tours} tours de la boucle, dont {inacheves} ont laissé un pas inachevé : ses arriérés (faits sur une vue de plus de {} pas) au-delà de {} par tour, joués aux tours suivants ; chaque tour est jugé, coût fixe compris (PHASE-3, P7)",
+            partie::ARRIERE_PAS,
+            partie::ARRIERES_PAR_TOUR
         ));
     }
 
@@ -563,46 +564,39 @@ impl Epreuve<'_, '_> {
                 .or_default()
                 .extend(v.iter().copied());
         }
-        // Les entrées comptent une fois chacune ; un pas, la somme de leurs coûts
-        // (carburant et coût fixe) ; une image, `(fenêtre + 2)` pas consécutifs, pas
-        // vides compris.
-        // Le coût fixe d'une entrée d'un arriéré n'y compte pas : leur nombre dans un
-        // pas est le fait du commun (`budgets.rs`, « Les arriérés »).
+        // Les entrées comptent une fois chacune ; un tour de la boucle, la somme de
+        // leurs coûts (carburant et coût fixe) ; une image, `(fenêtre + 2)` tours
+        // consécutifs, tours vides compris (PHASE-3, P7 : un pas trop chargé
+        // d'arriérés se finit sur plusieurs tours, et chacun est jugé).
+        let mut par_tour: BTreeMap<u64, u64> = BTreeMap::new();
         let mut par_pas: BTreeMap<u64, u64> = BTreeMap::new();
-        let mut arrieres: BTreeMap<u64, u64> = BTreeMap::new();
-        // Les retours d'où part un arriéré : ceux des appareils, et la fin de chaque gel.
-        let mut retours = bilan.retours.clone();
-        retours.extend(bilan.gels.iter().map(|(_, fin)| (None, *fin)));
         for e in obs.carburant_entrees.values() {
             self.carburant
                 .entry("Entree")
                 .or_default()
                 .push(e.carburant);
-            let fixe = if crate::budgets::d_un_arriere(e.place, e.vu, e.de, &retours) {
-                let n = arrieres.entry(e.place).or_insert(0);
-                *n = n.saturating_add(1);
-                0
-            } else {
-                self.fixe
-            };
+            let c = crate::budgets::cout(e.carburant, self.fixe);
+            let n = par_tour.entry(e.tour).or_insert(0);
+            *n = n.saturating_add(c);
             let n = par_pas.entry(e.place).or_insert(0);
-            *n = n.saturating_add(crate::budgets::cout(e.carburant, fixe));
+            *n = n.saturating_add(c);
         }
-        self.arrieres.0 = self
-            .arrieres
-            .0
-            .saturating_add(arrieres.values().fold(0u64, |a, n| a.saturating_add(*n)));
-        self.arrieres.1 = self
-            .arrieres
-            .1
-            .max(arrieres.values().copied().max().unwrap_or(0));
-        if !par_pas.is_empty() {
-            let dense: Vec<u64> = (1..=bilan.pas_joues)
-                .map(|p| par_pas.get(&p).copied().unwrap_or(0))
+        self.tours.0 = self.tours.0.saturating_add(bilan.tours);
+        self.tours.1 = self.tours.1.saturating_add(bilan.tours_inacheves);
+        if !par_tour.is_empty() {
+            let tours: Vec<crate::budgets::TourJoue> = (1u64..)
+                .zip(bilan.tours_joues.iter())
+                .map(|(t, (definitif, fini))| crate::budgets::TourJoue {
+                    cout: par_tour.get(&t).copied().unwrap_or(0),
+                    definitif: *definitif,
+                    fini: *fini,
+                })
                 .collect();
-            let largeur = usize::try_from(self.fenetre_declaree().saturating_add(2)).unwrap_or(2);
-            self.carburant_images
-                .extend(crate::budgets::images(&dense, largeur));
+            self.carburant_images.extend(crate::budgets::images(
+                &tours,
+                &par_pas,
+                self.fenetre_declaree(),
+            ));
         }
         if !obs.phases.is_empty() {
             self.phases_des_soirees
@@ -1080,6 +1074,13 @@ impl Epreuve<'_, '_> {
             bilan.arrivees,
             bilan.memoire.len()
         ));
+        // PHASE-3, P10 : ce que le journal d'une longue soirée pèse sans troncature, en
+        // lignes et en octets de la garde (`partie::persistance`).
+        self.joue.push(format!(
+            "journal de la soirée longue : {} lignes, {} octets écrits comme la garde les écrit, sans troncature",
+            bilan.journal.lignes().len(),
+            partie::persistance::encoder_journal(&bilan.journal).len()
+        ));
         let a = self.acc(IdControle::E15);
         a.noter(format!(
             "allées et venues de la soirée longue, chacune suivie de son retour : {}",
@@ -1213,7 +1214,9 @@ impl Epreuve<'_, '_> {
                     ApplicableFil::SansObjet(r) => Some(r.clone()),
                 }
             } else {
-                fenetre.clone().err()
+                // E12 éprouve aussi le découpage d'un pas, que tout jeu traverse : il
+                // n'est jamais sans objet ; sans fenêtre, seul le découpage se juge.
+                None
             };
             match sans_objet {
                 Some(r) => self.acc(*c).sans_objet = Some(r),
@@ -1296,9 +1299,16 @@ impl Epreuve<'_, '_> {
                     ApplicableFil::SansObjet(_) => continue,
                 }
             } else {
-                match fenetre {
-                    Ok(w) => self.fenetre(&bilan, &original, w, &mut t),
-                    Err(_) => continue,
+                match self.retarder_et_decouper(&bilan, &original, &fenetre, &mut t) {
+                    Ok(None) => {
+                        let raison = fenetre.clone().err().unwrap_or_default();
+                        self.acc(c).sans_objet = Some(format!(
+                            "{raison} ; et aucun pas de la soirée des propriétés n'a deux entrées venues d'arrivées : rien à découper"
+                        ));
+                        continue;
+                    }
+                    Ok(Some(constat)) => Ok(constat),
+                    Err(e) => Err(e),
                 }
             };
             let a = self.acc(c);
@@ -1394,6 +1404,118 @@ impl Epreuve<'_, '_> {
             }
         }
         Ok((c, notes))
+    }
+
+    /// E12 : la fenêtre, si le jeu en déclare une, puis le découpage d'un pas. `None` :
+    /// ni fenêtre, ni pas à découper (aucun pas n'a deux entrées venues d'arrivées,
+    /// comme chez un jeu où l'écran seul joue) : E12 est alors sans objet.
+    fn retarder_et_decouper(
+        &self,
+        bilan: &Bilan,
+        original: &crate::proprietes::Releve,
+        fenetre: &Result<u64, String>,
+        tirage: &mut Tirage,
+    ) -> Result<Option<(Compte, Vec<String>)>, String> {
+        let (mut compte, mut notes) = match fenetre {
+            Ok(w) => self.fenetre(bilan, original, *w, tirage)?,
+            Err(r) => (
+                Compte::default(),
+                vec![format!(
+                    "fenêtre sans objet ({r}) : seul le découpage d'un pas se juge"
+                )],
+            ),
+        };
+        let Some((c, n)) = self.decoupage(bilan)? else {
+            if fenetre.is_err() {
+                return Ok(None);
+            }
+            notes.push(String::from(
+                "découpage : aucun pas n'a deux entrées venues d'arrivées, rien à découper",
+            ));
+            return Ok(Some((compte, notes)));
+        };
+        compte.ajouter(&c);
+        notes.extend(n);
+        Ok(Some((compte, notes)))
+    }
+
+    /// E12 : un pas joué en plusieurs tours, avec des arrivées reçues pendant ce pas,
+    /// donne le même journal, ligne pour ligne, que d'un seul tour (PHASE-3, P7 ;
+    /// CAT-14). Chaque `Avancer` du script des propriétés y joue des tours d'une entrée
+    /// venue d'une arrivée, et les arrivées qui le suivent sont remontées juste après
+    /// lui. Le contrôle négatif, `etale-mal`, est un défaut du commun
+    /// ([`crate::CommunFautif::EtaleMal`]) : aucun jeu ne sait faire échouer ce que le
+    /// commun seul décide. Une soirée où aucune arrivée ne suit un pas découpé compare
+    /// encore les pas joués en plusieurs tours, et le dit.
+    ///
+    /// `None` : aucun tour n'a laissé de pas inachevé, rien à découper.
+    fn decoupage(&self, bilan: &Bilan) -> Result<Option<(Compte, Vec<String>)>, String> {
+        let mut compte = Compte::default();
+        let (script, remontees) = crate::proprietes::regrouper(&bilan.script);
+        let (script, coupees) = crate::proprietes::couper_les_rafales(script);
+        let entier = crate::proprietes::rejouer_decoupe(
+            self.module,
+            &bilan.ouverture,
+            &script,
+            None,
+            Oui::Non,
+        )?;
+        let fautif = if self.plan.commun_fautif == Some(crate::plan::CommunFautif::EtaleMal) {
+            Oui::Oui
+        } else {
+            Oui::Non
+        };
+        let decoupe = crate::proprietes::rejouer_decoupe(
+            self.module,
+            &bilan.ouverture,
+            &script,
+            Some(1),
+            fautif,
+        )?;
+        let mut notes = vec![format!(
+            "découpage : {} tours d'une entrée ont laissé un pas inachevé, {} arrivées reçues pendant un pas inachevé, dont {} avant le dernier pas de l'avancée ou son saut ({remontees} remontées après leur pas, {coupees} passées après le pas de leur rafale){}",
+            decoupe.inacheves,
+            decoupe.pendant,
+            decoupe.avant_la_fin,
+            if fautif == Oui::Oui {
+                " ; contrôle négatif `etale-mal` armé"
+            } else {
+                ""
+            }
+        )];
+        if decoupe.inacheves == 0 {
+            return Ok(None);
+        }
+        if decoupe.pendant == 0 {
+            // Des pas joués en plusieurs tours se comparent encore ; seule la part des
+            // arrivées reçues pendant eux n'est pas éprouvée, et le rapport le dit.
+            notes.push(String::from(
+                "découpage : aucune arrivée n'a suivi un pas découpé dans cette soirée ; seuls les pas joués en plusieurs tours sont comparés",
+            ));
+        }
+        compte.evaluer();
+        let (a, b) = (entier.journal.lignes(), decoupe.journal.lignes());
+        if let Some(i) = (0..a.len().max(b.len())).find(|i| a.get(*i) != b.get(*i)) {
+            let court = |l: Option<&partie::Ligne>| {
+                l.map_or_else(
+                    || String::from("la fin"),
+                    |l| format!("{l:?}").chars().take(160).collect(),
+                )
+            };
+            compte.echouer(format!(
+                "un pas découpé en tours ne donne pas le journal d'un seul tour, à la ligne {i} : {} contre {}",
+                court(a.get(i)),
+                court(b.get(i))
+            ));
+        } else if let Some(i) = (0..entier.vues.len().max(decoupe.vues.len()))
+            .find(|i| entier.vues.get(*i) != decoupe.vues.get(*i))
+        {
+            // Le journal ne dit pas ce que montre la tête : ses vues se comparent à part.
+            compte.echouer(format!(
+                "un pas découpé en tours ne donne pas les vues d'un seul tour, au regard {i} du script"
+            ));
+        }
+        Ok(Some((compte, notes)))
     }
 
     /// E12 : les gestes reçus en retard dans la fenêtre donnent la même histoire
@@ -1655,7 +1777,7 @@ pub fn eprouver(
         carburant: BTreeMap::new(),
         carburant_images: Vec::new(),
         fixe: BUDGETS_E19.cout_fixe(module.octets_remis_a_zero()),
-        arrieres: (0, 0),
+        tours: (0, 0),
         phases_des_soirees: Vec::new(),
         monde: crate::plan::MondeJoue::default(),
     };

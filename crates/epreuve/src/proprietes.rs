@@ -1,4 +1,5 @@
-//! La même soirée, autrement : renumérotée (E10), coupée (E11), retardée (E12).
+//! La même soirée, autrement : renumérotée (E10), coupée (E11), retardée ou découpée
+//! (E12).
 //!
 //! Une soirée sans panne ni constat (`Sorte::Proprietes`) est jouée une fois, et son
 //! script ([`Op`]) gardé. Chaque contrôle en fait une variante, puis rejoue l'original
@@ -10,6 +11,7 @@
 //! | E10 | chaque `Appareil` remplacé par une autre valeur, de même longueur | le résumé après chaque pas, et les vues, à renumérotation près (CAT-27) |
 //! | E11 | un appareil coupé moins de `moins_de`, là où l'hypothèse a tenu pendant toute la coupure | le résumé final (PUN-73, SQ-28) |
 //! | E12 | des gestes reçus plus tard, mais dans la fenêtre | l'histoire définitive, aux instants de réception près (§ 4.3, D12) |
+//! | E12 | chaque pas découpé en tours d'une entrée, les arrivées qui suivent un pas reçues pendant ce pas | le journal, ligne pour ligne (PHASE-3, P7 ; CAT-14) |
 //!
 //! # Le modèle de la variante
 //!
@@ -93,7 +95,10 @@ fn lire_octets(r: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// Rejoue un script sur une partie neuve du module.
+/// Rejoue un script sur une partie neuve du module, chaque `Avancer` d'un seul tour
+/// (`Partie::avancer`) : les variantes de E10, E11 et E12 se comparent entre elles,
+/// sans que le découpage d'un pas, que la soirée fait d'après l'âge des vues, ne s'en
+/// mêle.
 pub(crate) fn rejouer(
     module: &ModuleCharge,
     ouverture: &Ouverture,
@@ -185,6 +190,222 @@ pub(crate) fn rejouer(
         .and_then(|o| lire_octets(&o));
     r.journal = Some(partie.journal().clone());
     Ok(r)
+}
+
+// ---------------------------------------------------------------------------
+// E12 : découper un pas (PHASE-3, P7 ; CAT-14)
+// ---------------------------------------------------------------------------
+
+/// Le script, chaque arrivée reçue entre deux `Avancer` remontée juste après le
+/// premier, avant les vues, l'état et les points de ce pas : rejouée découpée, elle
+/// arrive pendant l'avancée, si elle reste inachevée. L'ordre des arrivées entre elles
+/// est gardé. Rend aussi le nombre d'arrivées qui suivent un `Avancer`.
+pub(crate) fn regrouper(script: &[Op]) -> (Vec<Op>, u64) {
+    let mut rendu: Vec<Op> = Vec::with_capacity(script.len());
+    let mut autres: Vec<Op> = Vec::new();
+    let mut apres_avancer = false;
+    let mut remontees = 0u64;
+    for op in script {
+        match op {
+            Op::Avancer(_) => {
+                rendu.append(&mut autres);
+                rendu.push(op.clone());
+                apres_avancer = true;
+            }
+            Op::Arriver(..) if apres_avancer => {
+                rendu.push(op.clone());
+                remontees = remontees.saturating_add(1);
+            }
+            Op::Arriver(..) => rendu.push(op.clone()),
+            Op::Regarder(_)
+            | Op::Etat
+            | Op::Canonique
+            | Op::Point
+            | Op::Redemarrer { .. }
+            | Op::Repartir => {
+                if apres_avancer {
+                    autres.push(op.clone());
+                } else {
+                    rendu.push(op.clone());
+                }
+            }
+        }
+    }
+    rendu.append(&mut autres);
+    (rendu, remontees)
+}
+
+/// Coupe en deux chaque rafale d'au moins [`RAFALE_A_COUPER`] arrivées jouées par un
+/// `Avancer` qu'aucune arrivée ne suit avant l'`Avancer` d'après : sa seconde moitié
+/// passe juste après l'`Avancer` qui la jouait, dans l'ordre. Rejoué découpé, le pas de
+/// la première moitié reste inachevé, et la seconde arrive pendant lui. Sans cela, un
+/// jeu dont les arrivées viennent par rafales espacées ne reçoit jamais rien pendant un
+/// pas découpé : Tier list, au lot 1 (vérification du lot 1, constat 5). Rend aussi le
+/// nombre d'arrivées déplacées. Le script rendu est rejoué des deux façons : le déplacer
+/// ne change pas ce qui se compare.
+pub(crate) fn couper_les_rafales(script: Vec<Op>) -> (Vec<Op>, u64) {
+    // Les segments : ce qui précède le premier `Avancer`, puis chaque `Avancer` suivi de
+    // ce qui vient avant le suivant.
+    let mut segments: Vec<Vec<Op>> = vec![Vec::new()];
+    for op in script {
+        if matches!(op, Op::Avancer(_)) {
+            segments.push(Vec::new());
+        }
+        if let Some(dernier) = segments.last_mut() {
+            dernier.push(op);
+        }
+    }
+    let arrivees = |s: &[Op]| s.iter().filter(|o| matches!(o, Op::Arriver(..))).count();
+    let comptes: Vec<usize> = segments.iter().map(|s| arrivees(s)).collect();
+    let mut deplacees = 0u64;
+    for j in 0..segments.len().saturating_sub(1) {
+        let (k, suivantes) = (
+            comptes.get(j).copied().unwrap_or(0),
+            comptes.get(j.saturating_add(1)).copied().unwrap_or(0),
+        );
+        if k < RAFALE_A_COUPER || suivantes > 0 {
+            continue;
+        }
+        let Some(segment) = segments.get_mut(j) else {
+            continue;
+        };
+        // Les dernières `k / 2` arrivées du segment en sortent, dans l'ordre.
+        let mut garder = k.saturating_sub(k / 2);
+        let mut sorties = Vec::new();
+        segment.retain(|o| {
+            if !matches!(o, Op::Arriver(..)) {
+                return true;
+            }
+            if garder > 0 {
+                garder = garder.saturating_sub(1);
+                return true;
+            }
+            sorties.push(o.clone());
+            false
+        });
+        deplacees = deplacees.saturating_add(u64::try_from(sorties.len()).unwrap_or(0));
+        if let Some(suivant) = segments.get_mut(j.saturating_add(1)) {
+            // Juste après son `Avancer`, qui ouvre le segment.
+            let apres = usize::from(!suivant.is_empty());
+            let _: Vec<Op> = suivant.splice(apres..apres, sorties).collect();
+        }
+    }
+    (segments.into_iter().flatten().collect(), deplacees)
+}
+
+/// La plus petite rafale que [`couper_les_rafales`] coupe : il en reste au moins deux
+/// arrivées à leur pas, de quoi le laisser inachevé dans un tour d'une entrée, et une
+/// au moins arrive pendant lui.
+const RAFALE_A_COUPER: usize = 3;
+
+/// Ce qu'un rejeu découpé relève.
+pub(crate) struct Decoupe {
+    pub(crate) journal: Journal,
+    /// Les octets de chaque vue, à chaque `Regarder` : celle de l'écran est celle de la
+    /// tête quand le jeu a une fenêtre, et le journal ne la dit pas.
+    pub(crate) vues: Vec<Vec<(RegardFil, Vec<u8>)>>,
+    /// Les tours qui ont laissé un pas inachevé.
+    pub(crate) inacheves: u64,
+    /// Les arrivées reçues pendant un pas inachevé.
+    pub(crate) pendant: u64,
+    /// Celles reçues avant le dernier pas de l'avancée, ou avant son saut.
+    pub(crate) avant_la_fin: u64,
+}
+
+/// Rejoue un script sur une partie neuve du module. Avec `par_tour`, chaque `Avancer`
+/// joue un tour de `par_tour` entrées venues d'une arrivée
+/// (`Partie::avancer_decoupe`) ; les arrivées qui suivent arrivent alors pendant
+/// l'avancée, si elle reste inachevée, à quelque pas qu'elle en soit et avant son saut ;
+/// toute autre opération la finit d'abord. Sans, d'un seul tour. `etale_mal` arme le
+/// contrôle négatif du découpage (`Partie::etaler_mal`).
+pub(crate) fn rejouer_decoupe(
+    module: &ModuleCharge,
+    ouverture: &Ouverture,
+    script: &[Op],
+    par_tour: Option<u32>,
+    etale_mal: Oui,
+) -> Result<Decoupe, String> {
+    let obs = Obs::new(Verifs::RIEN, ouverture.budgets.lecture);
+    let mut partie = Partie::ouvrir(Sonde::new(module.fabrique(), &obs), ouverture.clone())
+        .map_err(|e| format!("la partie ne s'ouvre pas : {e:?}"))?;
+    if etale_mal == Oui::Oui {
+        partie.etaler_mal();
+    }
+    let mut d = Decoupe {
+        journal: Journal::clone(partie.journal()),
+        vues: Vec::new(),
+        inacheves: 0,
+        pendant: 0,
+        avant_la_fin: 0,
+    };
+    let finir = |partie: &mut Partie<Sonde<moteur_wasmtime::FabriqueWasm>>| {
+        partie
+            .finir_le_pas()
+            .map(|_| ())
+            .map_err(|p| format!("finir le pas : {p}"))
+    };
+    for op in script {
+        match op {
+            Op::Arriver(a, recu) => {
+                if let (Some(s), Some(reste)) = (partie.pas_en_cours(), partie.avancee_en_cours()) {
+                    d.pendant = d.pendant.saturating_add(1);
+                    if reste != (s, jeu_abi::Duree::ZERO) {
+                        d.avant_la_fin = d.avant_la_fin.saturating_add(1);
+                    }
+                }
+                let _: partie::Placement = partie
+                    .arriver(a.clone(), *recu)
+                    .map_err(|p| format!("arriver : {p}"))?;
+            }
+            Op::Avancer(cible) => {
+                finir(&mut partie)?;
+                match par_tour {
+                    None => {
+                        let _: partie::Avancee = partie
+                            .avancer(*cible)
+                            .map_err(|p| format!("avancer : {p}"))?;
+                    }
+                    Some(n) => {
+                        let av = partie
+                            .avancer_decoupe(*cible, n)
+                            .map_err(|p| format!("avancer : {p}"))?;
+                        if av.en_cours.is_some() {
+                            d.inacheves = d.inacheves.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            Op::Regarder(regards) => {
+                finir(&mut partie)?;
+                let vues = partie
+                    .regarder(regards)
+                    .map_err(|p| format!("regarder : {p}"))?;
+                d.vues
+                    .push(vues.into_iter().map(|v| (v.regard, v.octets)).collect());
+            }
+            Op::Etat => {
+                finir(&mut partie)?;
+                let _: Result<partie::EtatVisible, partie::Echec> = partie.etat();
+            }
+            Op::Canonique => {
+                finir(&mut partie)?;
+                let _: Result<Vec<u8>, partie::Echec> = partie.canonique();
+            }
+            Op::Point => finir(&mut partie)?,
+            Op::Redemarrer { .. } => {
+                return Err(String::from(
+                    "la soirée des propriétés ne redémarre pas l'autorité",
+                ));
+            }
+            Op::Repartir => {
+                finir(&mut partie)?;
+                let _: Oui = partie.repartir().map_err(|p| format!("repartir : {p}"))?;
+            }
+        }
+    }
+    finir(&mut partie)?;
+    d.journal = partie.journal().clone();
+    Ok(d)
 }
 
 // ---------------------------------------------------------------------------
@@ -834,7 +1055,7 @@ pub(crate) fn premiere_difference(gauche: &[Ligne], droite: &[Ligne]) -> Option<
 mod tests {
     use jeu_abi::{Duree, Pas};
 
-    use super::{PERIODE_HYPOTHESE, choisir_coupures};
+    use super::{PERIODE_HYPOTHESE, choisir_coupures, couper_les_rafales};
     use crate::soiree::Op;
 
     /// Un script de `pas` pas, sans arrivée.
@@ -867,5 +1088,68 @@ mod tests {
         let trouee: Vec<(u64, u64)> = longue.iter().copied().filter(|(q, _)| *q != 250).collect();
         let c = choisir_coupures(&s, &trouee, p, Duree::s(10), 3);
         assert!(c.iter().all(|c| c.debut > 250 || c.fin < 250), "{c:?}");
+    }
+
+    /// Une arrivée reconnaissable à son appareil.
+    fn arrivee(n: u64) -> Op {
+        Op::Arriver(
+            partie::Arrivee::Presence(jeu_abi::Presence::Depart {
+                appareil: jeu_abi::Appareil::du_fil(n),
+                cause: jeu_abi::CauseDepart::Silence,
+            }),
+            jeu_abi::Instant::de(Pas::du_fil(1)),
+        )
+    }
+
+    /// Chaque opération, par son `Debug` : `Op` ne se compare pas.
+    fn noms(s: &[Op]) -> Vec<String> {
+        s.iter().map(|o| format!("{o:?}")).collect()
+    }
+
+    /// Vérification du lot 1, constat 5 : une rafale de quatre arrivées qu'aucune arrivée
+    /// ne suit avant l'`Avancer` d'après est coupée, sa seconde moitié juste après
+    /// l'`Avancer` qui la jouait ; une rafale suivie d'arrivées, ou de deux arrivées
+    /// seulement, ne l'est pas.
+    #[test]
+    fn une_rafale_que_rien_ne_suit_est_coupee() {
+        let avancer = |p: u64| Op::Avancer(Pas::du_fil(p));
+        let rafale = vec![
+            arrivee(1),
+            arrivee(2),
+            arrivee(3),
+            arrivee(4),
+            avancer(1),
+            Op::Etat,
+            avancer(2),
+        ];
+        let (coupe, n) = couper_les_rafales(rafale);
+        let attendu = vec![
+            arrivee(1),
+            arrivee(2),
+            avancer(1),
+            arrivee(3),
+            arrivee(4),
+            Op::Etat,
+            avancer(2),
+        ];
+        assert_eq!((noms(&coupe), n), (noms(&attendu), 2));
+        let suivie = vec![
+            arrivee(1),
+            arrivee(2),
+            arrivee(3),
+            arrivee(4),
+            avancer(1),
+            arrivee(5),
+            avancer(2),
+        ];
+        let (pareil, n) = couper_les_rafales(suivie.clone());
+        assert_eq!((noms(&pareil), n), (noms(&suivie), 0));
+        let trois = vec![arrivee(1), arrivee(2), arrivee(3), avancer(1), avancer(2)];
+        let (coupe, n) = couper_les_rafales(trois);
+        let attendu = vec![arrivee(1), arrivee(2), avancer(1), arrivee(3), avancer(2)];
+        assert_eq!((noms(&coupe), n), (noms(&attendu), 1));
+        let courte = vec![arrivee(1), arrivee(2), avancer(1), avancer(2)];
+        let (pareil, n) = couper_les_rafales(courte.clone());
+        assert_eq!((noms(&pareil), n), (noms(&courte), 0));
     }
 }

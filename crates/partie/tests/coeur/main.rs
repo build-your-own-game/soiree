@@ -14,7 +14,10 @@
 )]
 
 mod commun;
+mod decoupage;
 mod fenetre;
+mod forme_garde;
+mod garde;
 mod partie;
 mod proprietes;
 mod regles;

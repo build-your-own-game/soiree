@@ -109,6 +109,86 @@ impl InstantaneWasm {
     }
 }
 
+/// Une page de WebAssembly, en octets.
+const OCTETS_PAR_PAGE: u64 = 65_536;
+
+/// L'instantané d'un module se garde (PHASE-3, § 2.4). Sa forme, à lui : les 32 octets
+/// de l'empreinte du module réécrit ; le nombre de pages, en `u64` petit-boutiste ; la
+/// mémoire entière, ses octets précédés de leur nombre en `u64` (il vaut les pages fois
+/// 65 536) ; le nombre de globales mutables d'origine, en `u32`, puis chacune : une
+/// étiquette (0 `i32`, 1 `i64`, 2 `f32`, 3 `f64`) et ses bits en `u64`, comme
+/// l'empreinte les lit. La relecture refuse un octet de trop ou de moins.
+///
+/// La mémoire est entière en phase 3 jusqu'au lot 2, qui en retire les quatre zones
+/// remises à zéro (`moteur-commun`, P3).
+impl partie::persistance::InstantaneGarde for InstantaneWasm {
+    fn ecrire(&self, dans: &mut Vec<u8>) {
+        dans.extend_from_slice(&self.module);
+        dans.extend_from_slice(&self.pages.to_le_bytes());
+        let longueur = u64::try_from(self.memoire.len()).unwrap_or(u64::MAX);
+        dans.extend_from_slice(&longueur.to_le_bytes());
+        dans.extend_from_slice(&self.memoire);
+        let n = u32::try_from(self.globales.len()).unwrap_or(u32::MAX);
+        dans.extend_from_slice(&n.to_le_bytes());
+        for g in self.globales.iter() {
+            let (t, b) = g.octets();
+            dans.extend_from_slice(&t);
+            dans.extend_from_slice(&b);
+        }
+    }
+
+    fn lire(octets: &[u8]) -> Result<Self, partie::persistance::RefusGarde> {
+        use partie::persistance::RefusGarde;
+        let refus = |quoi: &str| RefusGarde::Instantane(format!("instantané de module : {quoi}"));
+        let mut reste = octets;
+        let mut prendre = |n: usize| -> Result<&[u8], RefusGarde> {
+            let (t, r) = reste.split_at_checked(n).ok_or_else(|| refus("coupé"))?;
+            reste = r;
+            Ok(t)
+        };
+        let module: [u8; 32] = prendre(32)?.try_into().map_err(|_| refus("empreinte"))?;
+        let u64_de = |t: &[u8]| {
+            t.try_into()
+                .map(u64::from_le_bytes)
+                .map_err(|_| refus("entier"))
+        };
+        let pages = u64_de(prendre(8)?)?;
+        let longueur = u64_de(prendre(8)?)?;
+        if pages.checked_mul(OCTETS_PAR_PAGE) != Some(longueur) {
+            return Err(refus("la mémoire n'a pas la taille de ses pages"));
+        }
+        let longueur = usize::try_from(longueur).map_err(|_| refus("mémoire trop grande"))?;
+        let memoire: Arc<[u8]> = Arc::from(prendre(longueur)?);
+        let n: [u8; 4] = prendre(4)?.try_into().map_err(|_| refus("entier"))?;
+        let n = u32::from_le_bytes(n);
+        let mut globales = Vec::new();
+        for _ in 0..n {
+            let t = prendre(1)?.first().copied().ok_or_else(|| refus("coupé"))?;
+            let b = u64_de(prendre(8)?)?;
+            // Les bits hauts d'un `i32` ou d'un `f32` sont nuls à l'écriture : un octet
+            // non nul vient d'ailleurs.
+            let etroit =
+                |b: u64| u32::try_from(b).map_err(|_| refus("bits d'une globale de 32 bits"));
+            globales.push(match t {
+                0 => Bits::I32(etroit(b)?.cast_signed()),
+                1 => Bits::I64(b.cast_signed()),
+                2 => Bits::F32(etroit(b)?),
+                3 => Bits::F64(b),
+                _ => return Err(refus("étiquette de globale inconnue")),
+            });
+        }
+        if !reste.is_empty() {
+            return Err(refus("octets en trop"));
+        }
+        Ok(InstantaneWasm {
+            module,
+            pages,
+            memoire,
+            globales: Arc::from(globales),
+        })
+    }
+}
+
 pub(crate) struct Donnees {
     limites: StoreLimits,
 }
@@ -529,4 +609,134 @@ fn croissance_refusee() -> PanneOutil {
 fn dedans((a, n): Zone, (z, c): Zone) -> bool {
     let fin = u64::from(a).saturating_add(u64::from(n));
     a >= z && fin <= u64::from(z).saturating_add(u64::from(c))
+}
+
+#[cfg(test)]
+mod tests {
+    //! La forme de l'instantané gardé, figée (vérification du lot 1, constat 3) : ses
+    //! octets écrits à la main, et une seconde lecture qui ne passe pas par
+    //! [`InstantaneGarde::lire`] (SAL-90). Changer la forme fait rougir l'un et l'autre,
+    //! et demande de monter `partie::persistance::VERSION_GARDE`.
+
+    use std::sync::Arc;
+
+    use partie::persistance::{InstantaneGarde, RefusGarde, VERSION_GARDE};
+
+    use super::{Bits, InstantaneWasm};
+
+    /// Une page dont le premier et le dernier octet sont marqués, et une globale de
+    /// chaque sorte.
+    fn instantane_fige() -> InstantaneWasm {
+        let mut memoire = vec![0u8; 65_536];
+        memoire[0] = 0xaa;
+        memoire[65_535] = 0x55;
+        InstantaneWasm {
+            module: [3; 32],
+            pages: 1,
+            memoire: Arc::from(memoire),
+            globales: Arc::from(vec![
+                Bits::I32(-2),
+                Bits::I64(-3),
+                Bits::F32(0x3f80_0000),
+                Bits::F64(0x4000_0000_0000_0000),
+            ]),
+        }
+    }
+
+    /// Les octets de [`instantane_fige`], d'après la forme : l'empreinte, les pages en
+    /// `u64` petit-boutiste, la longueur de la mémoire en `u64` (65 536), la mémoire, le
+    /// nombre de globales en `u32`, puis chacune : son étiquette, ses bits en `u64`
+    /// petit-boutiste (les bits hauts d'un `i32` ou d'un `f32` à zéro).
+    fn octets_figes() -> Vec<u8> {
+        let mut memoire = vec![0u8; 65_536];
+        memoire[0] = 0xaa;
+        memoire[65_535] = 0x55;
+        [
+            &[3u8; 32][..],
+            &[1, 0, 0, 0, 0, 0, 0, 0],
+            &[0, 0, 1, 0, 0, 0, 0, 0],
+            &memoire,
+            &[4, 0, 0, 0],
+            &[0, 0xfe, 0xff, 0xff, 0xff, 0, 0, 0, 0],
+            &[1, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            &[2, 0, 0, 0x80, 0x3f, 0, 0, 0, 0],
+            &[3, 0, 0, 0, 0, 0, 0, 0, 0x40],
+        ]
+        .concat()
+    }
+
+    #[test]
+    fn les_octets_de_l_instantane_sont_figes() {
+        assert_eq!(
+            VERSION_GARDE, 1,
+            "les octets de ce test sont ceux de la version 1"
+        );
+        let mut o = Vec::new();
+        instantane_fige().ecrire(&mut o);
+        assert!(o == octets_figes(), "l'instantané s'écrit autrement");
+        assert!(
+            InstantaneWasm::lire(&octets_figes()) == Ok(instantane_fige()),
+            "les octets figés se relisent autrement"
+        );
+    }
+
+    /// SAL-90 : une lecture d'après la forme seule, sans `lire`.
+    #[test]
+    fn une_seconde_lecture_relit_l_instantane() {
+        let attendu = instantane_fige();
+        let mut o = Vec::new();
+        attendu.ecrire(&mut o);
+        let (empreinte, suite) = o.split_at(32);
+        assert_eq!(empreinte, attendu.module);
+        let (pages, suite) = suite.split_at(8);
+        assert_eq!(u64::from_le_bytes(pages.try_into().unwrap()), 1);
+        let (longueur, suite) = suite.split_at(8);
+        assert_eq!(u64::from_le_bytes(longueur.try_into().unwrap()), 65_536);
+        let (memoire, suite) = suite.split_at(65_536);
+        assert!(memoire == &*attendu.memoire, "la mémoire");
+        let (nombre, mut suite) = suite.split_at(4);
+        assert_eq!(u32::from_le_bytes(nombre.try_into().unwrap()), 4);
+        let mut globales = Vec::new();
+        for _ in 0..4 {
+            let (globale, apres) = suite.split_at(9);
+            suite = apres;
+            let bits = u64::from_le_bytes(globale[1..].try_into().unwrap());
+            globales.push(match globale[0] {
+                0 => Bits::I32(i32::from_le_bytes(
+                    bits.to_le_bytes()[..4].try_into().unwrap(),
+                )),
+                1 => Bits::I64(i64::from_le_bytes(bits.to_le_bytes())),
+                2 => Bits::F32(u32::try_from(bits).unwrap()),
+                3 => Bits::F64(bits),
+                etiquette => panic!("étiquette {etiquette}"),
+            });
+        }
+        assert!(suite.is_empty(), "des octets en trop");
+        assert_eq!(globales, *attendu.globales);
+    }
+
+    /// Une relecture stricte : un octet de trop ou de moins, une mémoire qui n'a pas la
+    /// taille de ses pages, une étiquette inconnue, des bits hauts dans un `i32`.
+    #[test]
+    fn un_instantane_abime_est_refuse() {
+        // L'étiquette de la première globale, après l'empreinte, les pages, la longueur,
+        // la mémoire et le nombre de globales ; puis le cinquième octet de ses bits.
+        const ETIQUETTE: usize = 65_588;
+        const BIT_HAUT: usize = 65_593;
+        let bon = octets_figes();
+        let refuse = |o: &[u8]| matches!(InstantaneWasm::lire(o), Err(RefusGarde::Instantane(_)));
+        let mut trop = bon.clone();
+        trop.push(0);
+        assert!(refuse(&trop));
+        assert!(refuse(&bon[..bon.len().saturating_sub(1)]));
+        let mut pages = bon.clone();
+        pages[32] = 2;
+        assert!(refuse(&pages));
+        let mut etiquette = bon.clone();
+        etiquette[ETIQUETTE] = 4;
+        assert!(refuse(&etiquette));
+        let mut haut = bon.clone();
+        haut[BIT_HAUT] = 1;
+        assert!(refuse(&haut));
+    }
 }
