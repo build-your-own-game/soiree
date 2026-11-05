@@ -282,6 +282,73 @@ Commande (depuis `games/tier-list/`) :
 CARGO_BUILD_JOBS=4 cargo test --test sauvegarde_lourde le_point -- --nocapture
 ```
 
+## Lot 3a : le moteur du navigateur dans Chrome
+
+Constaté et mesuré le 2026-11-05, de 15 h 39 à 16 h 03 (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), dans Chrome 156.0.8078.80 sans interface (`--headless=new`, profil neuf), par `soiree-banc machine`. La machine était chargée par d'autres programmes : `vm.loadavg` de 18 à 29 sur une minute (*corrigé après la vérification : « 21 à 29 » ne comprenait pas la charge 18 de 16 h 03*), 32 à 38 % de mémoire libre (`memory_pressure`). Les verdicts n'en dépendent pas ; les durées, si.
+
+### Les messages de V8
+
+Ce que Chrome lève pour chaque piège de `web/moteur-navigateur/essais/machine.wat` (un module non réécrit, appelé sur le fil principal de la page), et ce que wasmtime 50.0.1 rend pour le même scénario (`essais/pieges.txt`, vérifié par `crates/banc/tests/pieges.rs`) :
+
+| Scénario | Chrome 156 (`error.name : error.message`) | wasmtime 50.0.1 |
+| --- | --- | --- |
+| `unreachable` | `RuntimeError : unreachable` | ``wasm trap: wasm `unreachable` instruction executed`` |
+| lecture à 0xFFFFFFF0 | `RuntimeError : memory access out of bounds` | `MemoryOutOfBounds` |
+| récursion sans fin | `RangeError : Maximum call stack size exceeded` | `StackOverflow` |
+| `i32.div_s` par zéro | `RuntimeError : divide by zero` | `integer divide by zero` |
+| `i32.rem_s` par zéro | `RuntimeError : remainder by zero` | `integer divide by zero` |
+| `i32::MIN / -1` | `RuntimeError : divide result unrepresentable` | `integer overflow` |
+| `i32.trunc_f32_s` d'un NaN | `RuntimeError : float unrepresentable in integer range` | `invalid conversion to integer` |
+| `i32.trunc_f32_s` de 1e10 | `RuntimeError : float unrepresentable in integer range` | `integer overflow` |
+| `call_indirect` au-delà de la table | `RuntimeError : table index is out of bounds` | `undefined element: out of bounds table access` |
+| `call_indirect` vers un élément nul | `RuntimeError : null function` | `uninitialized element` |
+| `call_indirect` d'un autre type | `RuntimeError : function signature mismatch` | `indirect call type mismatch` |
+
+Dix messages sur onze désignent un seul piège de wasmtime et y sont ramenés (`moteur_navigateur::MESSAGES`) ; `float unrepresentable in integer range` en désigne deux (`AMBIGUS`). Après chaque piège, l'instance répond encore.
+
+D'autres constats de la même suite : `Memory.prototype.grow` au-delà du maximum lève `RangeError : WebAssembly.Memory.grow(): Maximum memory size exceeded` ; une vraie croissance détache l'ancien tampon (sa longueur tombe à 0), une croissance à taille égale n'est pas demandée et ne le détache pas ; les globales `i64` (`i64::MIN`, `i64::MAX`, ±(2⁵³ + 1)) passent exactement par `BigInt`, les `f32` et `f64` (NaN canoniques et -0 compris) par un nombre ; une globale immuable refuse d'être posée.
+
+### Ce que coûte le scénario
+
+| Mesure | Valeur | Comment |
+| --- | --- | --- |
+| `soiree-banc machine`, construction incrémentale comprise, deux passages dans deux Chrome neufs | 3,8 s, 10,4 s et 5,1 s (trois exécutions, la dernière à 16 h 03, charge 18) | `/usr/bin/time -l` |
+| Mémoire résidente maximale de `soiree-banc` et de ses sous-processus attendus (`cargo`, `wasm-bindgen`), pris un à un | 0,21 à 0,22 Go | `/usr/bin/time -l` |
+| Mémoire résidente de Chrome, somme de son processus et de tous ses descendants, au plus haut | 0,46 à 1,22 Go (trois exécutions) ; 1 206 272 et 1 208 624 Kio (1,24 Go) après la correction | un échantillon toutes les 0,1 s de `ps -A -o pid,ppid,rss` ; une somme de RSS compte plusieurs fois les pages partagées : c'est un majorant. La commande qui la refait est ci-dessous (écrite après la vérification : le premier relevé n'en avait pas) |
+| Le module de l'exemple `essais-navigateur` (avec `wat`, `reecriture`, `moteur-commun`) | 4 229 970 octets compilé, 3 710 370 après `wasm-bindgen` (le vérificateur, sur les mêmes sources : 3 710 374 ; l'écart de 4 octets n'est pas expliqué). Après la correction (`AMBIGUS` porte ses pièges) : 4 230 413 compilé, 3 710 900 après `wasm-bindgen` | `ls -l web/target/wasm32-unknown-unknown/release/examples/essais_navigateur.wasm target/banc/paquet/essais_navigateur_bg.wasm` |
+
+La compilation de `web/` depuis un dossier neuf est dans « Lot 3a » de `LOTS-PHASE-3.md`.
+
+Commande (depuis `soiree/`) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo run -p banc --bin soiree-banc -- machine
+```
+
+La mémoire de Chrome, depuis `soiree/`, `soiree-banc` déjà construit (`CARGO_BUILD_JOBS=4 cargo build -p banc --bin soiree-banc`) : le script lance le scénario, échantillonne toutes les 0,1 s la somme des RSS du Chrome du banc (le processus dont la ligne de commande porte `target/banc/profils`, sans `--type=`) et de tous ses descendants, et dit la plus haute, en Kio.
+
+```sh
+cat > rss-chrome.sh <<'FIN'
+"$@" & banc=$!
+max=0
+while kill -0 "$banc" 2>/dev/null; do
+  s=$(ps -A -o pid=,ppid=,rss=,command= | awk '
+    { pid[NR]=$1; pere[$1]=$2; rss[$1]=$3; if ($0 ~ /target\/banc\/profils/ && $0 !~ /--type=/) racine[$1]=1 }
+    END { t=0
+      for (i in pid) { p=pid[i]; q=p; while (q in pere && !(q in racine) && q>1) q=pere[q]; if (q in racine) t+=rss[p] }
+      print t }')
+  [ "$s" -gt "$max" ] && max=$s
+  sleep 0.1
+done
+wait "$banc"; code=$?
+echo "Chrome, somme des RSS au plus haut : $max Kio ; soiree-banc : code $code" >&2
+exit $code
+FIN
+/usr/bin/time -l sh rss-chrome.sh target/debug/soiree-banc machine
+```
+
+Relevé avec ce script le 2026-11-05 à 16 h 39 et 16 h 40 (même machine, Chrome 156.0.8078.80, `vm.loadavg` de 19 à 27, 31 à 32 % de mémoire libre) : Chrome 1 206 272 et 1 208 624 Kio au plus haut ; `soiree-banc` 0,22 à 0,23 Go (`/usr/bin/time -l`) ; 21,6 s et 17,9 s, construction incrémentale comprise et l'échantillonnage tournant à côté.
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).

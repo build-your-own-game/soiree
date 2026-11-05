@@ -21,6 +21,20 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 3a : le moteur du navigateur
+
+Rien ne change pour l'API d'un jeu, ni pour l'ABI (`jeu_abi::ABI` vaut 3), ni pour les empreintes, ni pour ce que l'épreuve joue et juge (`conception/PHASE-3.md`, § 2.2, § 2.3 et lot 3a ; `conception/LOTS-PHASE-3.md`, « Lot 3a »).
+
+- **Un second workspace, `web/`** (P31), pour ce qui ne sert que dans le navigateur. Ses `[workspace.lints]`, son `clippy.toml`, son `rust-toolchain.toml` et ses profils (sauf `module`, propre aux modules des jeux) sont ceux du commun, à l'identique, et chacun de ses membres écrit `[lints] workspace = true` : la règle « mêmes lints » le vérifie (`crates/banc/src/web.rs`), avec son témoin `web/temoins/lints-differents/`, qu'elle refuse.
+- **`web/moteur-navigateur`** : le module réécrit dans le navigateur. `MachineNavigateur`, l'`impl moteur_commun::Machine` sur `WebAssembly.Module`, `Instance`, `Memory` et `Global` (la mémoire par un `Uint8Array` relu à chaque opération, les `i64` par `BigInt`, le type des globales lu dans le module par `wasmparser`) ; `classer`, qui ramène une erreur du navigateur à un piège brut : un `RuntimeError` par son message (les messages de V8 constatés dans Chrome 156 prennent le nom que wasmtime donne au même piège, `MESSAGES`, sauf `float unrepresentable in integer range`, qui en désigne deux, `AMBIGUS`), un `RangeError` ou un `InternalError: too much recursion` en pile native ; `charger` et `FabriqueNavigateur`, comme `moteur-wasmtime`. La machine du navigateur n'a pas de garde-fou mural : elle ne rend jamais `Piege::Interrompu`. Dépendances : `wasm-bindgen` = 0.2.129 (la version de l'outil installé), `js-sys` 0.3.106 (sans `unsafe-eval`), `wasmparser` 0.245.1.
+- **Une crate de plus dans le commun, `banc`**, et le binaire `soiree-banc` : un pilote CDP minimal de Chrome sans interface (profil neuf, effacé à la fermeture), un petit serveur HTTP sur la boucle locale (COOP et COEP posés) qui reçoit `POST /banc/rapport`, la règle « mêmes lints » (`soiree-banc regles-web`) et le scénario `soiree-banc machine` : les essais de `Machine` (lire, écrire, remplir, grandir, globales `i64` et des autres types, `soiree_boite` et `soiree_appel`, instance neuve, onze pièges classés, un chargement de bout en bout) joués dans Chrome, puis leur contrôle négatif (une machine qui lit les `i64` par un nombre : les essais `globales_i64` échouent, et eux seuls). Code 0 réussi ; 1 échec (dont la règle « mêmes lints » qui refuse `web/`, et une page qui ne rapporte rien ou rapporte une erreur) ; 2 pas exécuté (Chrome absent, construction impossible). Le jugement compte les essais (33) et vérifie que le rapport est celui du passage joué. Dépendance nouvelle : `tungstenite` 0.30.0 (`handshake` seul).
+- `#[wasm_bindgen]` n'exige pas de code `unsafe` (question 5, P32) : les crates de `web/` posent `#![forbid(unsafe_code)]` comme les autres.
+
+#### Passer à cette version
+
+1. Un jeu n'a rien à faire : ni son code, ni son `Cargo.lock` ne changent (`banc` et `web/` ne sont des dépendances d'aucun jeu).
+2. Changer une règle d'écriture du commun (`[workspace.lints]`, `clippy.toml`, `rust-toolchain.toml`) se fait aussi, à l'identique, dans `web/` ; sinon `crates/banc/tests/web.rs` rougit.
+
 ### Phase 3, lot 2 : le moteur en deux
 
 Rien ne change pour l'API d'un jeu ni pour l'ABI (`jeu_abi::ABI` vaut 3), ni pour les empreintes : le même module réécrit donne, sur la soirée de `devine`, les mêmes empreintes avant et après (`conception/PHASE-3.md`, § 2.3, lot 2 ; `conception/LOTS-PHASE-3.md`, « Lot 2 »).

@@ -1,0 +1,31 @@
+[package]
+name = "banc"
+description = "Le banc des navigateurs, et le binaire soiree-banc : pilotes, pages de test, scénarios."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "soiree-banc"
+path = "src/bin/soiree-banc.rs"
+
+[dependencies]
+# Le pilote de Chrome : CDP est une WebSocket.
+tungstenite.workspace = true
+# Les messages de CDP, et le rapport qu'une page envoie à `POST /banc/rapport`.
+serde_json.workspace = true
+# La règle « mêmes lints » : les manifestes, `clippy.toml` et `rust-toolchain.toml` de
+# `web/`, comparés à ceux du commun.
+toml.workspace = true
+
+[dev-dependencies]
+# La référence des pièges des essais de `Machine` : wasmtime, le moteur de l'épreuve,
+# avec les fonctionnalités que `moteur-wasmtime` et `epreuve` lui donnent déjà.
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+# Le module des essais, écrit en `wat`.
+wat.workspace = true
+
+[lints]
+workspace = true

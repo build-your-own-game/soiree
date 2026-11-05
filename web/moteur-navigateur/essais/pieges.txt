@@ -1,0 +1,20 @@
+# Les pièges des scénarios de `machine.wat`, et le piège brut que wasmtime 50.0.1 en
+# rend, comme `moteur-wasmtime` le classe (`src/machine.rs`, `piege`) : la référence des
+# essais de `Machine` dans le navigateur (lot 3a).
+#
+# Une ligne par scénario : son numéro, le nom de l'essai, puis `hors-memoire`,
+# `pile-native`, ou `code` suivi du nom du piège. Lu par deux côtés : l'exemple
+# `essais-navigateur`, dans la page, qui juge le classement du navigateur ; et
+# `crates/banc/tests/pieges.rs`, en natif, qui vérifie que wasmtime rend bien ce qui
+# est écrit ici.
+2 unreachable code wasm trap: wasm `unreachable` instruction executed
+3 hors_memoire hors-memoire
+4 pile_native pile-native
+5 division_par_zero code wasm trap: integer divide by zero
+6 reste_par_zero code wasm trap: integer divide by zero
+7 debordement_de_division code wasm trap: integer overflow
+8 conversion_d_un_nan code wasm trap: invalid conversion to integer
+9 conversion_hors_bornes code wasm trap: integer overflow
+10 table_hors_bornes code wasm trap: undefined element: out of bounds table access
+11 element_nul code wasm trap: uninitialized element
+12 signature code wasm trap: indirect call type mismatch

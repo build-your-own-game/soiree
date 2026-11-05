@@ -1,0 +1,106 @@
+# Le second workspace du commun (PHASE-3, § 2.2, P31) : ce qui ne sert que dans le
+# navigateur, ou qui tire `wgpu`. Il est à part pour que `cargo test --workspace` du
+# commun ne compile ni `wasm-bindgen` ni, demain, `wgpu` en natif.
+#
+# Ses règles d'écriture sont celles du commun, à l'identique : `[workspace.lints]`
+# ci-dessous, `clippy.toml` et `rust-toolchain.toml` sont égaux à ceux de `../`, et
+# chaque membre écrit `[lints] workspace = true`. La règle « mêmes lints » le vérifie
+# (`crates/banc/src/web.rs`, tenue par `crates/banc/tests/web.rs`, avec son témoin
+# `temoins/lints-differents/`). Changer une règle se fait dans `../Cargo.toml`, puis ici.
+#
+# Les crates d'ici se compilent pour `wasm32-unknown-unknown` ; elles compilent aussi
+# en natif, pour leurs tests de ce qui ne touche pas au navigateur. Ce qui le touche
+# se teste dans un vrai navigateur, sur une page servie et pilotée par `soiree-banc`
+# (PHASE-3, annexe des dépendances : pas de `wasm-bindgen-test`).
+[workspace]
+resolver = "3"
+members = [
+    "moteur-navigateur",
+]
+# Le témoin de la règle « mêmes lints » : une crate aux lints différents, que la règle
+# doit refuser. Il n'est pas membre, et ne se compile jamais.
+exclude = ["temoins"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+repository = "https://github.com/build-your-own-game/soiree"
+
+[workspace.dependencies]
+# Les crates du commun, par chemin, dans l'autre workspace.
+jeu-abi = { path = "../crates/jeu-abi", version = "0.1.0" }
+partie = { path = "../crates/partie", version = "0.1.0" }
+reecriture = { path = "../crates/reecriture", version = "0.1.0" }
+moteur-commun = { path = "../crates/moteur-commun", version = "0.1.0" }
+
+# Les dépendances tierces, chacune avec sa raison.
+
+# La colle générée que le CONTRAT permet, entre Rust et le navigateur. Épinglée à la
+# version de l'outil `wasm-bindgen` installé (0.2.129) : la crate et l'outil doivent
+# être exactement de la même version (REM-156 ; PHASE-3, P32).
+wasm-bindgen = "=0.2.129"
+# Les API du navigateur sans DOM : `WebAssembly.Module`, `Instance`, `Memory`,
+# `Global`, `Uint8Array`, `BigInt`, `Reflect`. La version publiée avec
+# `wasm-bindgen` 0.2.129, qui l'exige à l'identique. Sans `unsafe-eval` (par défaut) :
+# `eval` et `new Function` ne servent à rien ici, et une page du commun n'aura pas à
+# permettre `'unsafe-eval'` dans sa politique de contenu.
+js-sys = { version = "0.3.106", default-features = false, features = ["std"] }
+# Le type de chaque globale exportée du module réécrit : le navigateur ne le dit pas
+# (`WebAssembly.Global.prototype.type` n'est pas livré), et une globale `f32` ou `f64`
+# lue comme un nombre ne se distingue pas d'un `i32`. La version que lit la réécriture.
+wasmparser = "0.245.1"
+
+# Pour les essais seulement.
+# Les petits modules écrits à la main des essais de `Machine`, assemblés dans la page.
+# La version de la famille de wasmparser 0.245, comme dans le commun.
+wat = "~1.245.1"
+
+# Les règles d'écriture (CONTRAT, « Les règles d'écriture »), reprises de
+# `outil/regles/cargo.toml`. Chaque membre écrit `[lints] workspace = true`.
+[workspace.lints.rust]
+# Pas de code `unsafe`. Refusé partout, mais pas interdit (`forbid`) au niveau du
+# workspace : INTERFACE.md (§ 2.14) en exige à deux endroits, chacun sous
+# `#[expect(unsafe_code, reason = "…")]` : les exports et l'allocateur que
+# `jeu::module!` écrit dans une crate de module, et l'allocateur à deux modes
+# de `jeu::colle`. Toute autre crate pose `#![forbid(unsafe_code)]` en tête.
+unsafe_code = "deny"
+# Une `unsafe fn` n'ouvre pas un bloc `unsafe` en silence.
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Les trois lints de documentation d'API publique que le contrat exempte.
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Chaque exception est explicite et justifiée : #[expect(lint, reason = "...")], jamais #[allow].
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Un `.expect()`, un `panic!` ou un index hors bornes arrêtent la partie autant qu'un `unwrap`.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+todo = "deny"
+# Un `_ =>` sur une enum avale en silence le variant qu'on ajoutera demain : nomme ceux qu'on ignore.
+wildcard_enum_match_arm = "deny"
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie (avec max-fn-params-bools = 0).
+fn_params_excessive_bools = "deny"
+# Un entier converti en flottant peut perdre des chiffres.
+cast_precision_loss = "deny"
+# Un dépassement d'entier arrête la partie : checked_, saturating_ ou wrapping_, choisi exprès.
+arithmetic_side_effects = "deny"
+# Une valeur qu'on jette dit son type (`let _: T = …`), et `.ok()` ne fait pas taire un Result.
+let_underscore_untyped = "deny"
+unused_result_ok = "deny"
+
+# Les profils du commun, à l'identique.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+overflow-checks = true

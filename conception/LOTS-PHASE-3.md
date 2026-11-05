@@ -286,3 +286,158 @@ Aucun navigateur ni serveur lancé. Plus aucun `yes` ni aucune tâche de fond ne
 
 - `moteur-navigateur` pose l'échéance de son garde-fou dans `Machine::boite`, et non dans `appel` : un appel du protocole est borné en entier.
 - `Fausse::croissances` compte les `grandir_jusqu_a` de la machine fausse. Une restauration à taille égale n'en fait aucune, et `moteur-navigateur` doit faire de même : un `grow(0)` détache le tampon.
+
+## Lot 3a — Le moteur du navigateur
+
+Fait le 2026-11-05, de 14 h 40 à 16 h 10 environ (heure de la machine, GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), avec Chrome 156.0.8078.80. Rien n'est commité.
+
+### Ce qui est fait
+
+**Le second workspace, `soiree/web/`** (P31) : `Cargo.toml` (membres nommés un à un, `exclude = ["temoins"]`, les crates du commun par chemin, les dépendances tierces avec leur raison, les profils `dev.package."*"` et `release` du commun), `Cargo.lock` (amorcé depuis celui du commun : les crates partagées y ont les mêmes versions), `rust-toolchain.toml` et `clippy.toml` copiés du commun, et `[workspace.lints]` recopié à l'identique.
+
+**`web/moteur-navigateur`** (`#![forbid(unsafe_code)]`) :
+- `MachineNavigateur`, l'`impl moteur_commun::Machine` sur `WebAssembly.Module`, `Instance`, `Memory` et `Global` (`src/machine.rs`). La mémoire passe par un `Uint8Array` posé sur `memory.buffer`, relu à chaque opération ; `remplir_de_zeros` par `Uint8Array::fill`. `grandir_jusqu_a` ne demande rien à taille égale ou moindre (`grow(0)` détache le tampon), et appelle `Memory.prototype.grow` par `Reflect` : un refus revient en `CroissanceRefusee` au lieu de traverser le module. Une globale se lit par `value`, se pose par `Reflect.set` (une globale immuable, ou d'un autre type, est une panne) ; les `i64` par `BigInt`, exacts. `boite` et `appel` passent par `Function::call*`, qui rendent l'exception levée ; `appel` relit son `i64` par `BigInt`. Pas de garde-fou mural dans la machine : elle ne rend jamais `Piege::Interrompu`.
+- `ModuleNavigateur` : le module compilé (`new WebAssembly.Module`, synchrone) et **le type de chaque globale exportée, lu par `wasmparser`** (`src/types.rs`) : le navigateur ne le dit pas, et un `i32`, un `f32` et un `f64` y sont tous un nombre.
+- `classer` (`src/pieges.rs`) : une erreur levée pendant un appel, ramenée à un piège brut. `RuntimeError` par son message : la table `MESSAGES` (dix messages de V8, constatés) ramène chacun au nom que wasmtime donne au même piège (`codes`) ou à `HorsMemoire` ; `AMBIGUS` (`float unrepresentable in integer range`, que V8 donne à deux pièges que wasmtime distingue) garde le texte du navigateur, précédé de `navigateur : ` ; un message inconnu aussi. `RangeError`, et `InternalError: too much recursion` (Firefox, lu, non constaté), donnent `PileNative` ; toute autre erreur, `Piege::Moteur`.
+- `charger` et `FabriqueNavigateur` (`src/chargement.rs`), comme `moteur-wasmtime` : réécrire, compiler, une sonde vérifiée par `verifier_chargement`, puis des `Protocole<MachineNavigateur>` (`InstanceNavigateur`). Rien du protocole n'y est recopié.
+- L'exemple `essais-navigateur` (`crate-type = ["cdylib"]`), la bibliothèque WebAssembly de la page de test : `essayer(fautif)` assemble `essais/machine.wat` dans la page, joue 33 essais et rend leur rapport. `essais/pieges.txt` dit, pour chacun des onze scénarios de piège, ce que wasmtime rend.
+
+**`crates/banc`, une crate de plus dans le commun**, et le binaire `soiree-banc` (`#![forbid(unsafe_code)]`) :
+- `serveur` : un serveur HTTP/1.1 sur `127.0.0.1`, un port libre, une requête par connexion, COOP, COEP et CORP posés ; il sert des fichiers sous des préfixes (sans `..`, sans `%`, sans chemin absolu) et fait passer chaque `POST /banc/rapport` sur un canal.
+- `cdp` et `chrome` : le pilote minimal. Chrome lancé `--headless=new --remote-debugging-port=0` sur un profil neuf sous `target/banc/profils/` ; l'adresse lue sur sa sortie d'erreur ; `Browser.getVersion`, `Target.createTarget`, `Target.attachToTarget` à plat, `Runtime.enable`, `Log.enable`, `Page.enable`, `Page.navigate` ; les exceptions, la console et le journal de la page gardés ; `Browser.close`, puis au plus 10 s avant `kill`, et le profil effacé.
+- `rapport` : la lecture et le jugement d'un rapport. Une page qui rapporte `{ erreur }`, ou rien, n'a pas réussi ; une famille que le lot demande (`lire`, `ecrire`, `remplir`, `grandir`, `globales_i64`, `pieges`) sans essai fait échouer (OUT-01).
+- `web` : **la règle « mêmes lints »**. Les `[workspace.lints]` de `web/` égaux à ceux du commun, comparés comme TOML ; `clippy.toml` et `rust-toolchain.toml` égaux ; chaque membre nommé (pas de motif) écrit `[lints] workspace = true` et rien d'autre. Égaux, et non « au moins aussi stricts » comme pour un jeu : `web/` est le commun. Le témoin `web/temoins/lints-differents/` (un workspace qui permet `unwrap_used`, et un membre aux lints propres) doit la faire échouer.
+- `machine` : le scénario `soiree-banc machine`. La règle « mêmes lints », puis la construction (l'exemple pour `wasm32-unknown-unknown` en `--release`, `CARGO_BUILD_JOBS=4` par défaut ; `wasm-bindgen --version` vérifiée égale à 0.2.129, REM-156 ; `wasm-bindgen --target web`), finie avant que Chrome ne parte ; puis deux passages, chacun dans un Chrome neuf : la vraie machine (tout réussit), et la machine fautive `i64-par-nombre` (les essais `globales_i64` échouent, et eux seuls). Code 0 réussi, 1 échec, 2 pas exécuté. `soiree-banc regles-web` ne joue que la règle.
+- La page `crates/banc/pages/machine.html` : une vingtaine de lignes de JavaScript, qui chargent la colle, appellent `essayer` et envoient le rapport.
+
+**`#[wasm_bindgen]` n'exige pas d'`unsafe`** (question 5, P32) : l'export compile sous `#![forbid(unsafe_code)]`, clippy pédant compris (wasm-bindgen 0.2.129, édition 2024, rustc 1.99.0). Aucune exception n'est écrite.
+
+Documents : `PHASE-3.md` (§ 2.2, les dépendances de `moteur-navigateur` et de `banc` ; § 2.3, ce qui est constaté dans le navigateur ; P32 et la question 5 ; la ligne du lot 3a au § 7 ; l'annexe des dépendances), `MESURES-PHASE-3.md` (« Lot 3a »), `CHANGELOG.md`, `crates/README.md`, `AGENTS.md`.
+
+### Les tests qui le tiennent
+
+Dans Chrome, par `soiree-banc machine` (33 essais, chacun sur une instance neuve) :
+- `lire`, `ecrire` : `ecrire_puis_le_module_lit`, `lire_ce_que_le_module_ecrit`, `lire_ecrire_aller_retour_a_travers_une_page` (70 000 octets de part et d'autre d'une page), `lire_hors_de_la_memoire_est_une_panne`, `ecrire_hors_de_la_memoire_est_une_panne` (aux bornes exactes, et à `u32::MAX`) ;
+- `remplir` : `remplir_de_zeros_aux_bornes`, `remplir_hors_de_la_memoire_est_une_panne` ;
+- `grandir` : `grandir_garde_la_memoire`, `grandir_a_la_meme_taille_ne_detache_pas` (qui voit aussi le détachement d'une vraie croissance : l'essai sait rougir), `grandir_au_dela_du_maximum_est_refuse`, `grandir_par_le_module_se_voit` ;
+- `globales_i64` : `globales_i64_lues_exactement`, `globales_i64_posees_exactement` (`i64::MIN`, `i64::MAX`, ±(2⁵³ + 1)…, relus et lus par le module), `globales_i64_ecrites_par_le_module` ; et `globales_des_autres_types` (NaN canoniques, -0), `globales_inconnue_immuable_ou_mal_typee_sont_des_pannes` ;
+- `appel_boite_passe_ses_arguments`, `appel_rend_un_i64_exact`, `neuve_repart_de_l_origine`, `neuve_apres_un_piege` ;
+- `pieges` : un essai par scénario de `pieges.txt` (`pieges_unreachable`, `pieges_hors_memoire`, `pieges_pile_native`, `pieges_division_par_zero`, `pieges_reste_par_zero`, `pieges_debordement_de_division`, `pieges_conversion_d_un_nan`, `pieges_conversion_hors_bornes`, `pieges_table_hors_bornes`, `pieges_element_nul`, `pieges_signature`) : le piège rendu est celui de wasmtime, ou, pour un message d'`AMBIGUS` seulement, le texte du navigateur ; jamais un autre nom ; l'instance répond encore après. `pieges_la_table_est_constatee` : chaque message des deux tables a été levé pendant ce passage ;
+- `chargement_d_une_boucle_est_la_faute_budget` : le module de `Bonjour` qui boucle, réécrit (`PHASE_1`) et chargé dans le navigateur par `charger` : `RefusModule::Faute { appel: "Bonjour", faute: Budget }`. La réécriture, le carburant `i64` et le protocole du commun tournent dans la page.
+
+En natif :
+- `crates/banc/tests/web.rs` : `web_a_les_lints_du_commun`, et son contrôle négatif `le_temoin_aux_lints_differents_fait_echouer_la_regle` (la règle nomme `workspace.lints.clippy.unwrap_used` et le membre `temoin`).
+- `crates/banc/tests/pieges.rs` : `chaque_piege_des_essais_est_celui_de_wasmtime` (les onze lignes de `pieges.txt` sont ce que wasmtime 50.0.1 rend pour `machine.wat`, et l'instance sert encore après).
+- `banc`, en unités : la lecture d'une requête et d'un corps, une requête coupée ou trop grosse refusée, un chemin qui ne sort pas de sa route ; les messages de CDP ; l'adresse annoncée par Chrome ; le jugement d'un rapport (`une_famille_absente_echoue_out01`, `le_controle_negatif_n_echoue_que_dans_sa_famille`, `un_rapport_d_erreur_n_est_pas_un_succes`) ; les différences de deux tables TOML.
+- `moteur-navigateur` (`cargo test` dans `web/`) : la table des messages (`chaque_message_une_fois`, `un_message_inconnu_garde_le_texte_du_navigateur`, `la_pile_native_de_chaque_moteur`…) et le type des globales (`chaque_globale_exportee_a_son_type`).
+
+**Contrôles négatifs.** Le témoin de `web/` (tenu par un test) ; la machine fautive `i64-par-nombre`, jouée à chaque `soiree-banc machine` : `globales_i64_lues_exactement` (lu -2⁵³ au lieu de -(2⁵³ + 1)), `globales_i64_posees_exactement` et `globales_i64_ecrites_par_le_module` échouent, et aucun autre. Faits à la main puis retirés, chacun après une copie du fichier remise à l'octet près : retirer `unreachable` de `MESSAGES` fait échouer `pieges_unreachable` (le texte du navigateur n'est accepté que pour un message d'`AMBIGUS`), code 1 ; demander `grow` à taille égale (`<` au lieu de `<=`) fait échouer `grandir_a_la_meme_taille_ne_detache_pas` (« tampon détaché (0 octets) »), code 1.
+
+### Les vérifications
+
+Toutes le 2026-11-05, `CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation. D'autres programmes chargeaient la machine : `vm.loadavg` de 9 à 29, de 32 à 60 % de mémoire libre (`memory_pressure`) avant chaque commande lourde.
+
+| Commande | Résultat |
+| --- | --- |
+| `cargo test --workspace --no-fail-fast` du commun (15 h 42 à 15 h 59, en arrière-plan, `/usr/bin/time -l`) | code 0 ; **464 réussis** (448 et les 16 de `banc`), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 1 010 s, wasmtime recompilé compris ; 0,64 Go de mémoire résidente au plus |
+| `cargo clippy --workspace --all-targets -- -D warnings` (commun) | aucun avertissement |
+| `cargo fmt --all --check` (commun, puis `web/`) | rien à reformater |
+| `cargo test -p banc` | 13 + 1 + 2 réussis ; 79 s compilation comprise, 1,16 Go au plus |
+| dans `web/` : `cargo clippy --all-targets --target wasm32-unknown-unknown -- -D warnings`, puis `cargo clippy --all-targets -- -D warnings` | aucun avertissement |
+| dans `web/` : `cargo test` | 8 réussis |
+| `soiree-banc regles-web` | code 0 |
+| `soiree-banc machine` (15 h 39, 15 h 39, 15 h 41, 16 h 03, construction comprise sauf la première) | **code 0** chaque fois : 33 essais réussis dans Chrome 156.0.8078.80 ; le contrôle négatif n'a fait échouer que les trois essais `globales_i64`. Le premier passage, `--sans-construire`, jouait une colle périmée (encore sans les messages `null function` et `function signature mismatch` dans la table) : il est écarté, et a montré que `--sans-construire` ne vérifie pas la fraîcheur |
+| les deux contrôles négatifs faits à la main (15 h 40 et 15 h 41) | code 1, chacun sur le seul essai visé (plus les `globales_i64` du passage fautif) |
+
+Après chaque exécution, aucun processus de Chrome ne restait sur un profil du banc (`pgrep -f target/banc/profils`), ni aucun profil sous `target/banc/profils/`. Le serveur du banc s'arrête avec lui.
+
+### Les mesures
+
+Dans `MESURES-PHASE-3.md`, « Lot 3a » : les messages de V8 pour chaque piège, face à ceux de wasmtime ; le coût du scénario (de 3,8 à 10,4 s, construction incrémentale comprise ; Chrome de 0,46 à 1,22 Go de mémoire résidente, somme de son arbre de processus, un majorant ; `soiree-banc` 0,21 Go). La compilation de `web/` depuis un dossier neuf (`cargo clean`, 15 h 59, charge 13 à 18) : l'exemple pour `wasm32-unknown-unknown` en `--release`, toutes ses dépendances comprises, 32 s et 0,53 Go de mémoire résidente au plus ; `cargo test --no-run` en natif ensuite, 72 s et 0,66 Go. Estimé au § 7 : « léger », Chrome « environ 1 Go ». La mémoire n'a pas été mesurée avant le premier travail du lot, comme le § 7 le demande, mais pendant : la première compilation (26,9 s, 14 h 5x) ne l'a pas relevée.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Firefox et Safari ne sont pas joués** : le lot ne demande que Chrome par CDP. `InternalError: too much recursion` (SpiderMonkey) est classé d'après PHASE-3, § 2.3, non constaté ; aucun message de SpiderMonkey ni de JavaScriptCore n'est dans `MESSAGES`. Un message inconnu reste sous le texte du navigateur, et les essais du banc le refuseront tant qu'il n'est pas rangé (lots 3b et 3c).
+- **Les essais tournent sur le fil principal de la page**, pas dans un Worker : la pile native qu'ils épuisent est celle de la page (le Worker vient au lot 10a, la profondeur qu'il tient au lot 3c, M9). `new WebAssembly.Module` synchrone est permis ici parce que le module d'essai est petit.
+- **Le protocole n'est essayé dans le navigateur que par le chargement** (`Bonjour` qui boucle, faute `Budget`) : un appel `Entree`, l'instantané, la restauration et l'empreinte sur `MachineNavigateur` ne sont joués qu'avec E20 (lot 3b), sur de vrais journaux.
+- **La faute d'un piège ambigu s'écrira autrement au journal dans Chrome et dans wasmtime** : `Faute::Piege { code: "navigateur : float unrepresentable in integer range" }` contre `invalid conversion to integer` ou `integer overflow`. Rust n'émet pas de conversion qui piège (`as` est saturée) ; un module écrit à la main le pourrait. Ce n'est pas tranché ici : E20 le verra (lot 3b).
+- **Aucun instantané ne passe d'un moteur à l'autre** : `InstanceNavigateur` garde l'instantané de `moteur-commun`, dont la forme est déjà figée, mais aucun essai ne relit dans le navigateur un instantané pris dans wasmtime (lot 3b, puis 10a).
+- **La règle « mêmes lints » ne compare pas les profils** : `web/` les a recopiés (`dev.package."*"`, `release`), sans `module`, qui ne sert qu'aux modules des jeux ; un écart de profil n'y rougirait pas. *Corrigé après la vérification (ci-dessous).*
+- **Le plan court ni le plan standard des trois jeux ne sont relancés** : le lot ne change rien de ce que l'épreuve joue ou juge (PHASE-3, § 7, « Le plan court ou le plan standard »), ni aucun fichier des jeux. *Faux d'après le § 7, qui demande le plan court à ce lot : joué après la vérification (ci-dessous).*
+
+### Ce que le lot suivant doit savoir
+
+- `soiree-banc machine` est le modèle d'un scénario : la règle « mêmes lints », la construction finie avant le navigateur, un navigateur neuf par passage, une page qui rapporte à `POST /banc/rapport`, un jugement pur (`banc::rapport::juger`) et un contrôle négatif joué à chaque fois. Le pilote CDP (`banc::cdp::Cdp`) suit les événements entre les réponses ; BiDi (lot 3b) peut reprendre le même `tungstenite` sur `TcpStream`.
+- Pour E20, `moteur_navigateur::charger` et `FabriqueNavigateur` donnent une `partie::Instance` dans la page ; le module d'un jeu (jusqu'à 4 Mio) se compile par `ModuleNavigateur::compiler`, synchrone : dans un Worker, ou sur la page tant que Chrome l'accepte. Le relevé du carburant de chaque appel se lit par `Instance::carburant`, comme dans wasmtime.
+- **Ajouter un navigateur, c'est ranger ses messages** : chaque message de `RuntimeError` que Firefox ou Safari lève pour les scénarios de `pieges.txt` va dans `MESSAGES` (s'il ne désigne qu'un piège de wasmtime) ou dans `AMBIGUS`. `pieges_la_table_est_constatee` vérifie que chaque message des tables est levé par le navigateur joué : la table devra alors se lire par navigateur.
+- Changer une règle d'écriture du commun se refait dans `web/` (`crates/banc/tests/web.rs` rougit sinon).
+- `banc` ajoute au `Cargo.lock` du commun `tungstenite` 0.30.0 et ce qu'il tire (`http`, `httparse`, `sha1`, `digest`, `data-encoding`…). Après son ajout, `cargo test --workspace` a recompilé wasmtime une fois (constaté ; la cause, des fonctionnalités d'une dépendance partagée unifiées autrement, est supposée). Les jeux n'en voient rien : leurs `Cargo.lock` ne changent pas.
+- La page de test sert `/paquet/` depuis `target/banc/paquet/` ; `--sans-construire` y reprend la dernière colle construite, même périmée.
+
+## Lot 3a, correction après la vérification
+
+Fait le 2026-11-05, de 16 h 25 à 17 h 25 environ (GMT), sur la même machine (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), Chrome 156.0.8078.80. Rien n'est commité.
+
+### Ce qui est corrigé
+
+**Constat 1 (important) : le plan court n'avait pas été joué.** Exact : PHASE-3, § 7, le demande aux lots qui ne sont pas dans la liste du plan standard, et la phrase « le lot ne l'exige pas » était fausse. Joué depuis les sources (`target/release/soiree-epreuve ../games/<jeu> --court`, le binaire à jour : `cargo build --release -p epreuve --bin soiree-epreuve` n'avait rien à refaire) :
+
+| Jeu | Heure | Code | Contrôles en échec | Durée | Mémoire max |
+| --- | --- | --- | --- | --- | --- |
+| Punchline | 16 h 30 | 1 | E2 seul : « une fin, mais aucune autre après la nouvelle partie » (rejeu : graine `b4e6…61c5`, 13 783 lignes) | 35 s | 0,34 Go |
+| Sidequest | 16 h 31 | **0** | aucun | 349 s | 0,48 Go |
+| Tier list | 16 h 37 | 1 | E15 seul : octets vivants « au plus 201670 au début, 213975 en moyenne à la fin », douze mesures, aucune allée et venue | 94 s | 0,26 Go |
+
+Mêmes codes, mêmes contrôles et mêmes chiffres que la vérification à 16 h 19 : le plan court est déterministe. **Ces échecs ne viennent pas du lot** : il ne touche rien de ce que l'épreuve compile ou joue (ni `epreuve`, `partie`, `jeu`, `jeu-abi`, `moteur-commun`, `moteur-wasmtime`, `reecriture`, ni les jeux), et son `Cargo.lock` n'ajoute que des paquets (`tungstenite` et ce qu'il tire) et des qualificatifs de version (`digest 0.10.7`…) : aucune version déjà là ne change. Ils sont connus en partie : le CHANGELOG dit que le plan court « ne garantit pas le résultat d'un jeu » (Punchline y échouait E2 et E15 en phase 1, faute de temps pour deux parties ; RESTE-PHASE-1). Les trois jeux passent le plan standard (lot 2, correction, 13 h 38 à 13 h 53).
+
+Ce qui était faux, c'est le § 7 : il demande le plan court sans dire ce qu'il prouve, alors qu'il ne donne pas le code 0. **PHASE-3, § 7, est corrigé** : le plan court d'un lot doit rendre, pour chaque jeu, le même code, les mêmes contrôles en échec et les mêmes constats qu'avant le lot ; la référence est le tableau ci-dessus ; tout écart est un échec du lot, et un lot qui change la référence la relève et dit pourquoi. La ligne du lot 3a le dit aussi.
+
+**Constat 2 (mineur) : deux codes de sortie.** Exact, et corrigé. `machine::jouer` rend `Arret::Echec` quand la règle « mêmes lints » refuse `web/` (code 1, « machine : échec »), `Arret::PasExecute` quand la construction, la colle ou le serveur manquent (code 2). Une page qui rapporte `{ erreur }`, ou rien, reste un échec (code 1) : c'est le code qu'on joue qui n'a pas tourné, dans un Chrome qui, lui, est parti ; c'est la documentation de `banc::rapport`, qui disait « pas exécuté », qui est corrigée, comme celle de `soiree-banc`, `AGENTS.md` et `CHANGELOG.md`.
+
+**Constat 3 (mineur) : un message ambigu accepté pour n'importe quel piège.** Exact, et corrigé. `AMBIGUS` porte, pour chaque message, les pièges de wasmtime qu'il peut désigner (`float unrepresentable in integer range` : `CONVERSION_INVALIDE` et `DEBORDEMENT_ENTIER`) ; `juger_piege` n'accepte le texte du navigateur que si le piège que wasmtime rend pour ce scénario en est un. `chaque_message_une_fois` vérifie aussi qu'un message ambigu en désigne au moins deux, et n'est qu'une fois dans la table. Ce qui reste : `debordement_de_division` attend aussi `DEBORDEMENT_ENTIER` ; si V8 y levait le message ambigu, l'essai passerait, mais `divide result unrepresentable` ne serait plus levé nulle part et `pieges_la_table_est_constatee` échouerait.
+
+**Constat 4 (mineur) : le jugement ne comptait pas les essais ni le passage.** Exact, et corrigé. Le rapport se lit avec son champ `fautif` (absent, il ne se lit pas) ; `juger` prend la suite attendue (`SUITE_MACHINE` : les familles, et `ESSAIS_MACHINE` = 33 essais exactement) et le passage joué : un rapport d'un autre passage, un essai de moins, de plus ou en double font échouer. Tests : `un_essai_de_moins_ou_en_double_echoue_out01`, `le_rapport_d_un_autre_passage_echoue`, et `un_rapport_d_erreur_n_est_pas_un_succes` complété.
+
+**Constat 5 (mineur) : les mesures.** (1) Exact : la mémoire de Chrome n'avait pas de commande. Le script est maintenant dans `MESURES-PHASE-3.md`, « Lot 3a », et la mesure est refaite avec lui (1 206 272 et 1 208 624 Kio au plus, soit 1,24 Go, dans l'écart déjà relevé). (2) Exact : la charge de l'en-tête est corrigée en « 18 à 29 ». (3) Je ne peux pas départager 3 710 370 et 3 710 374 : le premier chiffre est celui du lot, le second celui du vérificateur ; les deux sont écrits, avec la taille d'après la correction (3 710 900 octets ; 4 230 413 compilé), qui change avec `AMBIGUS`.
+
+**Constat 6 (mineur) : la règle ne comparait pas les profils.** Corrigé : les profils de `web/` doivent être ceux du commun, sauf `banc::web::PROFILS_DES_JEUX` (`module`). Le témoin `web/temoins/lints-differents/` a un troisième écart (`[profile.release] overflow-checks = false`), que `le_temoin_aux_lints_differents_fait_echouer_la_regle` exige de voir nommé.
+
+### Ce qui n'est pas suivi, et pourquoi
+
+- **Constat 7** : la mémoire du lot n'a pas été mesurée avant son premier travail ; on ne peut pas le refaire après coup. Les mesures faites ensuite (compilation `wasm32` à froid 0,53 Go et 32 s ; Chrome au plus 1,24 Go) restent dans l'estimation du § 7 (« léger », Chrome « environ 1 Go », un majorant).
+- **Les échecs du plan court de Punchline (E2) et de Tier list (E15)** ne sont pas corrigés : ils viennent de la longueur du plan court, pas du lot, et les corriger toucherait l'épreuve ou les jeux, hors du lot. Celui de Tier list est nouveau au journal : une heure de soirée sans allées et venues fait monter les octets vivants de 6 % ; le plan standard (six heures, avec allées et venues) passe.
+
+### Les tests qui le tiennent
+
+En plus de ceux du lot 3a : `rapport::tests::un_essai_de_moins_ou_en_double_echoue_out01`, `rapport::tests::le_rapport_d_un_autre_passage_echoue` (OUT-01), le troisième écart du témoin, `chaque_message_une_fois` étendu.
+
+**Contrôles négatifs faits à la main**, chacun sur une copie du fichier remise à l'octet près (`cmp`) :
+- `pieges.txt` dit que wasmtime rend `integer divide by zero` pour `conversion_d_un_nan` : `soiree-banc machine` rend 1, et seul `pieges_conversion_d_un_nan` échoue (« Autre("navigateur : float unrepresentable in integer range"), wasmtime rend Autre("wasm trap: integer divide by zero") ») ; avant la correction, l'essai aurait réussi.
+- une clé de plus dans `web/clippy.toml` : `soiree-banc machine` rend **1** (« machine : échec », la clé nommée), et non plus 2, sans rien construire ni lancer.
+- `lto = true` ajouté à `[profile.release]` de `web/Cargo.toml` : `soiree-banc regles-web` rend 1 et nomme `profile.release.lto`.
+
+### Les vérifications
+
+`CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation ; 24 à 40 % de mémoire libre (`memory_pressure`) avant chacune, `vm.loadavg` de 11 à 27 (d'autres programmes tournaient, dont un Chrome de l'hôte, sans rapport avec le banc).
+
+| Commande | Résultat |
+| --- | --- |
+| dans `web/` : `cargo fmt --all --check` ; `cargo test` ; `cargo clippy --all-targets --target wasm32-unknown-unknown -- -D warnings` puis en natif | ok ; 8 réussis ; aucun avertissement |
+| `cargo fmt --all --check` ; `cargo clippy --workspace --all-targets -- -D warnings` (commun) | ok ; aucun avertissement |
+| `cargo test -p banc` | 15 + 1 + 2 réussis |
+| le plan court des trois jeux (ci-dessus) | Sidequest 0 ; Punchline 1 (E2) ; Tier list 1 (E15) : la référence |
+| `soiree-banc machine` (16 h 39 et 16 h 40, sous le script de mesure) | **code 0** les deux fois : 33 essais réussis ; le contrôle négatif n'a fait échouer que les trois `globales_i64` ; `pieges_conversion_*` acceptés comme ambigus, pour un piège que le message désigne |
+| `soiree-banc regles-web` | code 0 |
+| `cargo test --workspace --no-fail-fast` (16 h 41 à 16 h 56, en arrière-plan, `/usr/bin/time -l`) | **code 101** : 465 réussis, **1 échec**, 1 ignoré (`plan_standard`) ; 862 s ; 0,38 Go au plus. L'échec : `boucle_au_vote_echoue_e19` (`epreuve/tests/epreuve`), où E15 est en « panne de l'outil » : « avancer : panne de la machine (Instanciation) : wasm trap: interrupt ». Le garde-fou mural d'une seconde de wasmtime a coupé l'instanciation d'une instance neuve ; la mémoire libre était descendue à 24 % et la charge dépassait 20 |
+| `cargo test -p epreuve --test epreuve boucle_au_vote_echoue_e19`, seul (16 h 56, charge 12) | réussi, 39 s |
+| `cargo test -p epreuve --test epreuve --no-fail-fast` (16 h 58 à 17 h 08, en arrière-plan, charge de 12 à 24) | **code 0** : 42 réussis, 0 échec, 1 ignoré (`plan_standard`), `boucle_au_vote_echoue_e19` compris. |
+| `cargo test --workspace --no-fail-fast`, relancé (17 h 08 à 17 h 22, en arrière-plan, charge de 16 à 24, 30 % de mémoire libre au départ) | **code 0** : **466 réussis** (464 et les deux nouveaux de `rapport`), 0 échec, 1 ignoré (`plan_standard`) ; 803 s ; 0,60 Go au plus |
+
+Après chaque exécution : aucun processus sur `target/banc/profils`, aucun profil restant, aucun serveur ni tâche de fond de moi. Les jeux : `git status` propre.
+
+### Ce que le lot suivant doit savoir
+
+- **Le plan court a une référence** (PHASE-3, § 7) : Sidequest 0, Punchline 1 (E2), Tier list 1 (E15). Un lot la compare ; il ne la prend pas pour un code 0.
+- **Le garde-fou mural de wasmtime peut couper une instanciation sous forte charge** : une panne de l'outil, jamais un succès, mais `cargo test --workspace` peut rougir sans que rien n'ait changé (OUT-89). `moteur-wasmtime` pose l'échéance à la création du `Store`, avant `Instance::new`. Ce n'est pas tranché ici (le lot ne touche pas `moteur-wasmtime`) ; le lot 3c, qui revoit le garde-fou d'après M10, devrait le regarder.
+- `banc::rapport::juger` prend la suite attendue et le passage : un scénario nouveau déclare sa `Suite` (familles et nombre exact d'essais), et sa page renvoie `fautif`.
+- Un message du navigateur qui désigne plusieurs pièges de wasmtime va dans `AMBIGUS` avec la liste de ceux qu'il désigne.

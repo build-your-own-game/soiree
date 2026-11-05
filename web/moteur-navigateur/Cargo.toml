@@ -1,0 +1,31 @@
+[package]
+name = "moteur-navigateur"
+description = "Le module réécrit dans le navigateur : les primitives de WebAssembly.Module, Instance, Memory et Global sous le protocole du commun."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+partie.workspace = true
+reecriture.workspace = true
+moteur-commun.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasmparser.workspace = true
+
+[dev-dependencies]
+# Les modules des essais de `Machine`, écrits en `wat` et assemblés dans la page.
+wat.workspace = true
+
+# Les essais de `Machine` dans un vrai navigateur (PHASE-3, lot 3a) : une bibliothèque
+# WebAssembly que `wasm-bindgen` relie à la page de `soiree-banc machine`.
+[[example]]
+name = "essais-navigateur"
+path = "examples/essais_navigateur.rs"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true

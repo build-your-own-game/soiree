@@ -4,7 +4,9 @@
 # Les membres sont nommés un à un, et non par `crates/*` : Cargo refuse un
 # motif qui désigne un dossier sans `Cargo.toml`, et `crates/exemples` en est un.
 # Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
-# `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2).
+# `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2) ;
+# `banc`, la deuxième (lot 3a). Ce qui ne sert que dans le navigateur est dans le second
+# workspace, `web/` (P31), dont les règles d'écriture sont celles-ci, à l'identique.
 #
 # Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
 # INTERFACE.md les sort de la crate du jeu (D8), pas du workspace. Elles partagent
@@ -24,6 +26,8 @@ members = [
     "crates/moteur-wasmtime",
     "crates/partie",
     "crates/epreuve",
+    # Le banc des navigateurs (PHASE-3, § 2.2 et § 8.2 ; lot 3a).
+    "crates/banc",
     # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
     "crates/exemples/*",
     "crates/exemples/*/module",
@@ -108,6 +112,11 @@ serde_json = "1.0.154"
 # `unsafe` dans ce qu'on en appelle, et le seul algorithme qu'il faille ; le reste
 # du PNG (morceaux, filtres, CRC) tient en quelques fonctions de `epreuve`.
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
+# Le banc pilote les navigateurs par une WebSocket : CDP pour Chrome, demain BiDi pour
+# Firefox (PHASE-3, P30). Synchrone, sur un `TcpStream` de `std`, sans runtime (SAL-146) ;
+# sans TLS (tout est sur la boucle locale). `handshake`, la poignée de main du client, est
+# sa seule fonctionnalité utile.
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 
 # Pour les tests seulement.
 # Les propriétés et les octets au hasard (§ 8.1, § 8.6).

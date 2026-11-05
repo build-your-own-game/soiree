@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Banc : les essais de Machine</title>
+<!--
+  La page de `soiree-banc machine` (PHASE-3, lot 3a). Elle charge l'exemple
+  `essais-navigateur` de `web/moteur-navigateur` par sa colle `wasm-bindgen`, joue ses
+  essais (`?fautif=` choisit la machine fautive du contrôle négatif) et envoie le rapport
+  à `POST /banc/rapport`. Une suite qui ne tourne pas rapporte `{ erreur }`, jamais un
+  succès.
+-->
+<script type="module">
+const fautif = new URLSearchParams(location.search).get("fautif") ?? "";
+let rapport;
+try {
+  const colle = await import("/paquet/essais_navigateur.js");
+  await colle.default();
+  rapport = colle.essayer(fautif);
+} catch (e) {
+  rapport = { erreur: String(e && e.stack ? e.stack : e) };
+}
+rapport.suite = "machine";
+rapport.fautif = fautif;
+rapport.agent = navigator.userAgent;
+await fetch("/banc/rapport?suite=machine", { method: "POST", body: JSON.stringify(rapport) });
+document.body.textContent = "rapport envoyé";
+</script>

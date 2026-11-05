@@ -1,0 +1,9 @@
+[package]
+name = "temoin"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# L'écart : ses propres lints, et non ceux du workspace.
+[lints.clippy]
+pedantic = "allow"

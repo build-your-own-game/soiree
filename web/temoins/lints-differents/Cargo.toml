@@ -1,0 +1,16 @@
+# Le témoin de la règle « mêmes lints » (`crates/banc/src/web.rs`, PHASE-3, lot 3a) : un
+# workspace de `web/` dont les règles s'écartent de celles du commun. Il n'est membre
+# d'aucun workspace et ne se compile jamais ; `crates/banc/tests/web.rs` vérifie que la
+# règle le refuse, en nommant `unwrap_used`, le profil `release` et le membre `temoin`.
+[workspace]
+resolver = "3"
+members = ["temoin"]
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+# L'écart : `unwrap` permis.
+unwrap_used = "allow"
+
+# Le troisième écart : un dépassement d'entier ne panique plus en release.
+[profile.release]
+overflow-checks = false
