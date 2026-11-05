@@ -20,7 +20,10 @@
 //!
 //! E1 à E19 (§ 7.2), chacun avec son contrôle négatif dans `exemples/fautifs`. Voir
 //! le module `epreuve` (le fichier `src/epreuve.rs`) pour ce que lit chaque
-//! contrôle.
+//! contrôle. Et E20, « Deux moteurs » (PHASE-3, § 8.3, lot 3b), un contrôle long que
+//! `--navigateurs` demande : les journaux de l'épreuve repris dans de vrais navigateurs
+//! par `soiree-banc rejouer`, et comparés appel par appel au relevé de wasmtime ; son
+//! contrôle négatif est un moteur fautif ([`CommunFautif::FausserApres`]).
 //!
 //! # Ce qu'elle rend
 //!
@@ -44,6 +47,7 @@
 mod budgets;
 mod controles;
 mod determinisme;
+mod deux_moteurs;
 mod dynamique;
 mod ecriture;
 mod epreuve;
@@ -72,6 +76,6 @@ pub use dynamique::{FabriqueDynamique, InstanceDynamique};
 pub use epreuve::{eprouver, eprouver_octets, rejouer};
 pub use etapes::{Compilation, Etape, Exigence, IssueEtape, Regle, ResultatEtape};
 pub use ligne::ligne_de_commande;
-pub use plan::{CommunFautif, IdControle, Monde, MondeJoue, Panne, Plan};
+pub use plan::{CommunFautif, IdControle, Monde, MondeJoue, Navigateur, Panne, Plan};
 pub use rapport::{IssueControle, Rapport, Rejeu, ResultatControle};
 pub use soiree::{BUDGETS, POINT_TOUS_LES, Point};

@@ -45,11 +45,41 @@ pub enum IdControle {
     E18,
     /// Budgets.
     E19,
+    /// Deux moteurs : les journaux de l'épreuve repris dans chaque navigateur demandé
+    /// donnent, appel par appel, ce qu'ils donnent dans wasmtime (PHASE-3, § 8.3, lot
+    /// 3b). Un contrôle long, hors du plan par défaut : `--navigateurs` le demande.
+    E20,
 }
 
 impl IdControle {
     /// Tous les contrôles, dans l'ordre.
-    pub const TOUS: [IdControle; 19] = [
+    pub const TOUS: [IdControle; 20] = [
+        IdControle::E1,
+        IdControle::E2,
+        IdControle::E3,
+        IdControle::E4,
+        IdControle::E5,
+        IdControle::E6,
+        IdControle::E7,
+        IdControle::E8,
+        IdControle::E9,
+        IdControle::E10,
+        IdControle::E11,
+        IdControle::E12,
+        IdControle::E13,
+        IdControle::E14,
+        IdControle::E15,
+        IdControle::E16,
+        IdControle::E17,
+        IdControle::E18,
+        IdControle::E19,
+        IdControle::E20,
+    ];
+
+    /// Les contrôles du plan par défaut, standard comme court : tous, sauf E20, un
+    /// contrôle long qu'on demande par `--navigateurs` (PHASE-3, § 8.3 et P17 : un code
+    /// 0 sans lui suffit pour jouer ; la publication l'attend).
+    pub const DU_PLAN: [IdControle; 19] = [
         IdControle::E1,
         IdControle::E2,
         IdControle::E3,
@@ -71,10 +101,11 @@ impl IdControle {
         IdControle::E19,
     ];
 
-    /// Les contrôles écrits : tous, depuis les étapes 5 et 6 du § 8.9.
-    pub const ECRITS: [IdControle; 19] = IdControle::TOUS;
+    /// Les contrôles écrits : tous, depuis les étapes 5 et 6 du § 8.9, et E20 depuis le
+    /// lot 3b de la phase 3.
+    pub const ECRITS: [IdControle; 20] = IdControle::TOUS;
 
-    /// Son nom court, « E1 » à « E19 ».
+    /// Son nom court, « E1 » à « E20 ».
     pub const fn nom(self) -> &'static str {
         match self {
             IdControle::E1 => "E1",
@@ -96,6 +127,7 @@ impl IdControle {
             IdControle::E17 => "E17",
             IdControle::E18 => "E18",
             IdControle::E19 => "E19",
+            IdControle::E20 => "E20",
         }
     }
 
@@ -121,10 +153,11 @@ impl IdControle {
             IdControle::E17 => "Flottants",
             IdControle::E18 => "Gel",
             IdControle::E19 => "Budgets",
+            IdControle::E20 => "Deux moteurs",
         }
     }
 
-    /// Le contrôle de ce nom, « E1 » à « E19 ».
+    /// Le contrôle de ce nom, « E1 » à « E20 ».
     pub fn depuis_nom(nom: &str) -> Option<IdControle> {
         IdControle::TOUS
             .into_iter()
@@ -471,8 +504,42 @@ pub struct Plan {
     /// Le monde simulé : [`Monde::REEL`], sauf pour montrer ce qu'il change.
     pub monde: Monde,
     /// Un défaut injecté dans le commun, pour le contrôle négatif d'un contrôle qui
-    /// éprouve le commun à travers le jeu : `None`, sauf dans les tests de l'épreuve.
+    /// éprouve le commun à travers le jeu : `None`, sauf dans les tests de l'épreuve, et
+    /// le moteur fautif de E20 (`--moteur-fautif`).
     pub commun_fautif: Option<CommunFautif>,
+    /// Les navigateurs où E20 reprend les journaux (`--navigateurs`) ; vide : E20 n'est
+    /// pas joué.
+    pub navigateurs: Vec<Navigateur>,
+}
+
+/// Un navigateur où E20 reprend les journaux de l'épreuve (PHASE-3, § 8.3) : c'est
+/// `soiree-banc rejouer` qui le lance et le pilote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Navigateur {
+    /// Chrome, par CDP.
+    Chrome,
+    /// Firefox, par `WebDriver` `BiDi`.
+    Firefox,
+    /// Safari, par `safaridriver` (lot 3c : d'ici là, « pas exécuté »).
+    Safari,
+}
+
+impl Navigateur {
+    /// Son nom sur la ligne de commande, celui que `soiree-banc` lit.
+    pub const fn nom(self) -> &'static str {
+        match self {
+            Navigateur::Chrome => "chrome",
+            Navigateur::Firefox => "firefox",
+            Navigateur::Safari => "safari",
+        }
+    }
+
+    /// Le navigateur de ce nom.
+    pub fn depuis_nom(nom: &str) -> Option<Navigateur> {
+        [Navigateur::Chrome, Navigateur::Firefox, Navigateur::Safari]
+            .into_iter()
+            .find(|n| n.nom().eq_ignore_ascii_case(nom.trim()))
+    }
 }
 
 /// Un défaut injecté dans le commun : le contrôle négatif d'un contrôle que nul jeu ne
@@ -483,6 +550,10 @@ pub enum CommunFautif {
     /// `etale-mal` : une arrivée reçue pendant un pas découpé entre dans ce pas au lieu
     /// d'aller au suivant (`partie::Partie::etaler_mal`). E12 doit échouer, et lui seul.
     EtaleMal,
+    /// `fausser_apres(n)` : le moteur du navigateur, passé `n` appels, lit le carburant
+    /// restant d'une unité de trop (PHASE-3, § 8.3, lot 3b). Seul E20 joue ce moteur :
+    /// E20 doit échouer, et lui seul.
+    FausserApres(u64),
 }
 
 impl Plan {
@@ -516,22 +587,24 @@ impl Plan {
     }
 
     /// Le plan de l'épreuve, pour `soiree-epreuve` : deux soirées de trois minutes,
-    /// toutes les pannes, tous les contrôles, six heures pour E15.
+    /// toutes les pannes, tous les contrôles sauf E20 (`--navigateurs`), six heures pour
+    /// E15.
     pub fn standard(graine: [u8; 32]) -> Plan {
         Plan {
             soirees: 2,
             duree: Duree::s(180),
             graine,
             pannes: Plan::pannes_standard(),
-            controles: IdControle::TOUS.to_vec(),
+            controles: IdControle::DU_PLAN.to_vec(),
             memoire: Duree::s(6 * 3600),
             monde: Monde::REEL,
             commun_fautif: None,
+            navigateurs: Vec::new(),
         }
     }
 
     /// Un plan court, pour les tests : une soirée de deux minutes, toutes les pannes,
-    /// tous les contrôles, et une soirée longue d'une heure. Il ne remplace pas le
+    /// tous les contrôles sauf E20, et une soirée longue d'une heure. Il ne remplace pas le
     /// plan standard : E15 y regarde une pente sur une heure, pas sur six.
     pub fn court(graine: [u8; 32]) -> Plan {
         Plan {
@@ -539,10 +612,11 @@ impl Plan {
             duree: Duree::s(120),
             graine,
             pannes: Plan::pannes_standard(),
-            controles: IdControle::TOUS.to_vec(),
+            controles: IdControle::DU_PLAN.to_vec(),
             memoire: Duree::s(3600),
             monde: Monde::REEL,
             commun_fautif: None,
+            navigateurs: Vec::new(),
         }
     }
 

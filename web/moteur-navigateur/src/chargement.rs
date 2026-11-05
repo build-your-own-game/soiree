@@ -6,7 +6,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use jeu_abi::{Bonjour, DeclarationFil};
-use moteur_commun::{Carte, Plan, Protocole, RefusModule, globales_d_origine, verifier_chargement};
+use moteur_commun::{
+    Carte, Machine, Plan, Protocole, RefusModule, globales_d_origine, verifier_chargement,
+};
 use partie::{Fabrique, PanneOutil};
 use reecriture::Reecrit;
 
@@ -79,6 +81,19 @@ impl ModuleCharge {
     /// Le carburant du chargement : celui du premier `Bonjour`, et celui de `Decrire`.
     pub fn carburant_du_chargement(&self) -> (u64, u64) {
         self.carburant_du_chargement
+    }
+
+    /// Une instance du module sous le protocole du commun, sur une machine qui enveloppe
+    /// une [`MachineNavigateur`] neuve : le moteur fautif de E20 (PHASE-3, lot 3b), qui
+    /// fausse ce que la vraie machine rend.
+    pub fn instance_sur<M: Machine>(
+        &self,
+        envelopper: impl FnOnce(MachineNavigateur) -> M,
+    ) -> Result<Protocole<M>, PanneOutil> {
+        Protocole::new(
+            envelopper(MachineNavigateur::new(&self.module)?),
+            Arc::clone(&self.carte),
+        )
     }
 
     /// Ce qui fabrique ses instances.

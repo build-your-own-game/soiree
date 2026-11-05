@@ -21,7 +21,8 @@ use std::rc::Rc;
 use js_sys::{Array, ArrayBuffer, Function, Object, Reflect, Uint8Array, WebAssembly};
 use moteur_commun::{Bits, Machine, Piege, RefusModule};
 use moteur_navigateur::{
-    AMBIGUS, MESSAGES, MachineNavigateur, ModuleNavigateur, PREFIXE_NON_RAMENE, Ramene, charger,
+    AMBIGUS, MESSAGES, MachineNavigateur, ModuleNavigateur, MoteurJs, PREFIXE_NON_RAMENE, Ramene,
+    charger,
 };
 use partie::{CausePanne, Faute, PanneOutil};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -479,11 +480,16 @@ fn juger_piege<M: Essayable>(m: &mut M, s: &ScenarioPiege, brut: &str) -> Issue 
     };
     let verdict = match (&constat, &s.attendu) {
         (c, a) if c == a => Ok(format!("{c:?}, comme wasmtime")),
-        (Piege::Autre(c), Piege::Autre(a))
+        (Piege::Autre(c), a)
             if c.strip_prefix(PREFIXE_NON_RAMENE).is_some_and(|m| {
-                AMBIGUS
-                    .iter()
-                    .any(|(ambigu, designes)| *ambigu == m && designes.contains(&a.as_str()))
+                AMBIGUS.iter().any(|(_, ambigu, designes)| {
+                    *ambigu == m
+                        && designes.iter().any(|d| match (d, a) {
+                            (Ramene::HorsMemoire, Piege::HorsMemoire) => true,
+                            (Ramene::Code(code), Piege::Autre(a)) => code == a,
+                            (Ramene::HorsMemoire | Ramene::Code(_), _) => false,
+                        })
+                })
             }) =>
         {
             Ok(format!(
@@ -516,26 +522,42 @@ fn leve(module: &WebAssembly::Module, k: i32) -> Result<(String, String), String
     }
 }
 
-/// Chaque message des deux tables a été levé par un scénario : elles ne tiennent que
-/// des messages constatés.
+/// Chaque message des deux tables que lève le moteur de ce navigateur a été levé par un
+/// scénario : elles ne tiennent que des messages constatés. Un navigateur dont le moteur
+/// n'est pas rangé (Safari, lot 3c) échoue : ses messages ne sont pas dans les tables.
 fn pieges_la_table_est_constatee(leves: &[(i32, String, String)]) -> Issue {
-    let manquent: Vec<&str> = MESSAGES
+    let agent = Reflect::get(&js_sys::global(), &JsValue::from_str("navigator"))
+        .and_then(|n| Reflect::get(&n, &JsValue::from_str("userAgent")))
+        .ok()
+        .and_then(|a| a.as_string())
+        .unwrap_or_default();
+    let moteur = MoteurJs::depuis_agent(&agent)
+        .ok_or_else(|| format!("moteur inconnu, aucun message rangé pour lui : {agent}"))?;
+    let siens = MESSAGES
         .iter()
-        .map(|(m, _)| *m)
-        .chain(AMBIGUS.iter().map(|(m, _)| *m))
-        .filter(|m| !leves.iter().any(|(_, _, l)| l == m))
-        .collect();
+        .filter(|(x, _, _)| *x == moteur)
+        .map(|(_, m, _)| *m)
+        .chain(
+            AMBIGUS
+                .iter()
+                .filter(|(x, _, _)| *x == moteur)
+                .map(|(_, m, _)| *m),
+        );
+    let mut ramenes = 0usize;
+    let mut manquent = Vec::new();
+    for m in siens {
+        ramenes = ramenes.saturating_add(1);
+        if !leves.iter().any(|(_, _, l)| l == m) {
+            manquent.push(m);
+        }
+    }
     (manquent.is_empty())
         .then_some(())
-        .ok_or_else(|| format!("jamais levés ici : {manquent:?}"))?;
-    let hors_memoire = MESSAGES
-        .iter()
-        .filter(|(_, r)| *r == Ramene::HorsMemoire)
-        .count();
+        .ok_or_else(|| format!("jamais levés ici ({moteur:?}) : {manquent:?}"))?;
+    let ambigus = AMBIGUS.iter().filter(|(x, _, _)| *x == moteur).count();
     Ok(format!(
-        "{} messages ramenés, dont {hors_memoire} hors de la mémoire, et {} ambigus : tous levés ici",
-        MESSAGES.len(),
-        AMBIGUS.len()
+        "{moteur:?} : {} messages ramenés et {ambigus} ambigus, tous levés ici",
+        ramenes.saturating_sub(ambigus)
     ))
 }
 

@@ -15,6 +15,9 @@ path = "src/bin/soiree-epreuve.rs"
 jeu-abi.workspace = true
 partie.workspace = true
 moteur-wasmtime.workspace = true
+# E20 : le relevé de chaque appel, et la reprise des journaux qui le produit, une seule
+# définition pour wasmtime et le navigateur (PHASE-3, lot 3b).
+moteur-commun.workspace = true
 reecriture.workspace = true
 # Les empreintes des soirées et des rapports, comme celles du moteur.
 blake3.workspace = true

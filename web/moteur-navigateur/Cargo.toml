@@ -27,5 +27,12 @@ name = "essais-navigateur"
 path = "examples/essais_navigateur.rs"
 crate-type = ["cdylib"]
 
+# Le rejeu de E20 dans un vrai navigateur (PHASE-3, lot 3b) : une bibliothèque
+# WebAssembly que `wasm-bindgen` relie au Worker de `soiree-banc rejouer`.
+[[example]]
+name = "rejeu-navigateur"
+path = "examples/rejeu_navigateur.rs"
+crate-type = ["cdylib"]
+
 [lints]
 workspace = true

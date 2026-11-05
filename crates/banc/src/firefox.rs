@@ -1,0 +1,185 @@
+//! Firefox sans interface, sur un profil neuf, piloté par `WebDriver` `BiDi` (PHASE-3,
+//! § 8.2, lot 3b), sans `geckodriver` : Firefox ouvre lui-même `BiDi` sous
+//! `--remote-debugging-port` (le harnais de mesure l'a fait le 2026-11-05).
+//!
+//! `--headless` est le vrai navigateur sans fenêtre ; `--remote-debugging-port 0`
+//! choisit un port libre, que Firefox écrit sur sa sortie d'erreur (`WebDriver BiDi
+//! listening on ws://…`). Le profil est un dossier neuf sous `target/banc/profils/`,
+//! avec un `user.js` sans première page, sans télémétrie ni mise à jour, effacé à la
+//! fermeture. Les préférences sont celles du harnais (`mesures/navigateur/navigateurs.mjs`).
+
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
+
+use serde_json::{Value as Json, json};
+
+use crate::bidi::{Bidi, ligne_d_evenement};
+use crate::navigateur::{arreter_processus, attendre_l_adresse, effacer, profil_neuf};
+
+/// Le Firefox de la machine de l'hôte (macOS).
+pub const FIREFOX: &str = "/Applications/Firefox.app/Contents/MacOS/firefox";
+
+/// Le délai d'une commande `BiDi`.
+const DELAI: Duration = Duration::from_secs(20);
+
+/// Les préférences du profil : ni première page, ni télémétrie, ni mise à jour, ni
+/// avertissement à la fermeture.
+const PREFERENCES: [(&str, &str); 7] = [
+    ("browser.shell.checkDefaultBrowser", "false"),
+    ("browser.startup.homepage_override.mstone", "\"ignore\""),
+    ("browser.aboutwelcome.enabled", "false"),
+    ("datareporting.policy.dataSubmissionEnabled", "false"),
+    ("toolkit.telemetry.reportingpolicy.firstRun", "false"),
+    ("app.update.disabledForTesting", "true"),
+    ("browser.tabs.warnOnClose", "false"),
+];
+
+/// Un Firefox lancé, et sa session `BiDi`.
+pub struct Firefox {
+    processus: Child,
+    profil: PathBuf,
+    bidi: Bidi,
+    /// `browserName` et `browserVersion` de la session (`firefox 158.0.1`).
+    pub version: String,
+}
+
+/// L'adresse `BiDi` que Firefox écrit sur sa sortie d'erreur.
+pub fn adresse_annoncee(ligne: &str) -> Option<&str> {
+    ligne
+        .split_once("WebDriver BiDi listening on ")
+        .map(|(_, a)| a.trim())
+        .filter(|a| a.starts_with("ws://"))
+}
+
+impl Firefox {
+    /// Lance `executable` sans interface, sur un profil neuf sous `profils`, ouvre une
+    /// session `BiDi` et s'abonne au journal des pages.
+    pub fn lancer(executable: &Path, profils: &Path) -> Result<Firefox, String> {
+        if !executable.exists() {
+            return Err(format!("Firefox absent : {}", executable.display()));
+        }
+        let profil = profil_neuf(profils, "firefox")?;
+        let prefs = PREFERENCES.iter().fold(String::new(), |mut s, (k, v)| {
+            let _: std::fmt::Result = writeln!(s, "user_pref(\"{k}\", {v});");
+            s
+        });
+        std::fs::write(profil.join("user.js"), prefs)
+            .map_err(|e| format!("{} : {e}", profil.display()))?;
+        let mut processus = Command::new(executable)
+            .args(["--headless", "--no-remote", "--profile"])
+            .arg(&profil)
+            .args(["--remote-debugging-port", "0", "about:blank"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("lancer Firefox : {e}"))?;
+        let adresse = match attendre_l_adresse(&mut processus, "Firefox", adresse_annoncee) {
+            Ok(a) => a,
+            Err(e) => {
+                effacer(&profil);
+                return Err(e);
+            }
+        };
+        let session = format!("{}/session", adresse.trim_end_matches('/'));
+        let bidi = match Bidi::ouvrir(&session) {
+            Ok(b) => b,
+            Err(e) => {
+                arreter_processus(&mut processus);
+                effacer(&profil);
+                return Err(e);
+            }
+        };
+        let mut firefox = Firefox {
+            processus,
+            profil,
+            bidi,
+            version: String::new(),
+        };
+        let s = firefox
+            .bidi
+            .envoyer("session.new", &json!({ "capabilities": {} }), DELAI)?;
+        let c = s.get("capabilities").cloned().unwrap_or(Json::Null);
+        firefox.version = format!(
+            "{} {}",
+            c.get("browserName").and_then(Json::as_str).unwrap_or("?"),
+            c.get("browserVersion")
+                .and_then(Json::as_str)
+                .unwrap_or("?")
+        );
+        firefox.bidi.envoyer(
+            "session.subscribe",
+            &json!({ "events": ["log.entryAdded"] }),
+            DELAI,
+        )?;
+        Ok(firefox)
+    }
+
+    /// Mène l'onglet de la session à `url`, sans attendre son chargement : la page
+    /// rapporte elle-même.
+    pub fn ouvrir(&mut self, url: &str) -> Result<(), String> {
+        let arbre = self
+            .bidi
+            .envoyer("browsingContext.getTree", &json!({}), DELAI)?;
+        let contexte = arbre
+            .pointer("/contexts/0/context")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("browsingContext.getTree sans onglet : {arbre}"))?
+            .to_owned();
+        self.bidi.envoyer(
+            "browsingContext.navigate",
+            &json!({ "context": contexte, "url": url, "wait": "none" }),
+            DELAI,
+        )?;
+        Ok(())
+    }
+
+    /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont dit.
+    pub fn ecouter(&mut self, delai: Duration) -> Result<Vec<String>, String> {
+        self.bidi.ecouter(delai)?;
+        Ok(self
+            .bidi
+            .evenements()
+            .iter()
+            .filter_map(ligne_d_evenement)
+            .collect())
+    }
+
+    /// Ferme Firefox (`browser.close`, puis au plus 10 s avant de le tuer) et efface son
+    /// profil.
+    pub fn fermer(mut self) {
+        self.arreter();
+    }
+
+    fn arreter(&mut self) {
+        let _: Result<Json, String> =
+            self.bidi
+                .envoyer("browser.close", &json!({}), Duration::from_secs(5));
+        arreter_processus(&mut self.processus);
+        effacer(&self.profil);
+    }
+}
+
+impl Drop for Firefox {
+    fn drop(&mut self) {
+        if matches!(self.processus.try_wait(), Ok(None)) {
+            self.arreter();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::adresse_annoncee;
+
+    #[test]
+    fn l_adresse_que_firefox_annonce() {
+        assert_eq!(
+            adresse_annoncee("WebDriver BiDi listening on ws://127.0.0.1:52011"),
+            Some("ws://127.0.0.1:52011")
+        );
+        assert_eq!(adresse_annoncee("console.error: autre chose"), None);
+    }
+}

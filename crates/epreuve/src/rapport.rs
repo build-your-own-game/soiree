@@ -94,7 +94,7 @@ pub struct Rapport {
     pub module: [u8; 32],
     /// Le plan joué.
     pub plan: Plan,
-    /// Un résultat par contrôle, de E1 à E19 : tous figurent, demandés ou non.
+    /// Un résultat par contrôle, de E1 à E20 : tous figurent, demandés ou non.
     pub controles: Vec<ResultatControle>,
     /// La copie native a-t-elle été comparée ?
     pub natif: bool,
@@ -110,6 +110,9 @@ pub struct Rapport {
     /// Les octets que le moteur remet à zéro avant chaque appel du module, d'où son
     /// coût fixe ; `None` : le module n'est pas chargé.
     pub octets_remis_a_zero: Option<u64>,
+    /// E20 : ce que chaque navigateur a vu, un résultat par navigateur (PHASE-3, § 8.3) ;
+    /// vide si E20 n'a pas joué.
+    pub e20: Vec<crate::deux_moteurs::NavigateurE20>,
 }
 
 pub(crate) fn hex(o: &[u8]) -> String {
@@ -322,6 +325,16 @@ impl Rapport {
             self.plan.memoire.en_ms() / 1000,
             if self.natif { "comparée" } else { "absente" },
         );
+        if !self.plan.navigateurs.is_empty() {
+            let noms: Vec<&str> = self.plan.navigateurs.iter().map(|n| n.nom()).collect();
+            let _: Result<(), std::fmt::Error> = writeln!(s, "E20 dans : {}.", noms.join(", "));
+        }
+        if let Some(c) = self.plan.commun_fautif {
+            let _: Result<(), std::fmt::Error> = writeln!(
+                s,
+                "Défaut injecté dans le commun (contrôle négatif) : {c:?}."
+            );
+        }
         let _: Result<(), std::fmt::Error> = writeln!(s, "Joué : {}", self.joue);
         let monde: Vec<String> = self
             .monde
@@ -497,6 +510,22 @@ impl Rapport {
                     ("pannes", Json::Liste(pannes)),
                     ("controles", Json::Liste(demandes)),
                     ("memoire_ms", Json::Nombre(self.plan.memoire.en_ms())),
+                    (
+                        "navigateurs",
+                        Json::Liste(
+                            self.plan
+                                .navigateurs
+                                .iter()
+                                .map(|n| Json::texte(n.nom()))
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "commun_fautif",
+                        self.plan
+                            .commun_fautif
+                            .map_or(Json::Booleen(false), |c| Json::texte(&format!("{c:?}"))),
+                    ),
                 ]),
             ),
             ("natif", Json::Booleen(self.natif)),
@@ -583,6 +612,25 @@ impl Rapport {
                 ]),
             ),
             ("controles", Json::Liste(controles)),
+            (
+                "e20",
+                Json::Liste(
+                    self.e20
+                        .iter()
+                        .map(|n| {
+                            Json::Objet(vec![
+                                ("navigateur", Json::texte(&n.nom)),
+                                ("version", Json::texte(&n.version)),
+                                ("issue", Json::texte(n.issue.code())),
+                                ("detail", Json::texte(&n.detail)),
+                                ("duree_ms", Json::Nombre(n.duree_ms)),
+                                ("rejeu_ms", Json::Nombre(n.rejeu_ms)),
+                                ("total_ms", Json::Nombre(n.total_ms)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
             (
                 "code_de_sortie",
                 Json::Nombre(u64::from(self.code_de_sortie())),

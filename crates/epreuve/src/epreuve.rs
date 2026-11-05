@@ -114,6 +114,8 @@ struct Epreuve<'m, 'n> {
     monde: crate::plan::MondeJoue,
     /// E18 : la phase après chaque entrée, et les gels, de chaque soirée principale.
     phases_des_soirees: Vec<PhasesEtGels>,
+    /// E20 : chaque soirée jouée, son ouverture et son journal, quand E20 est demandé.
+    soirees_e20: Vec<moteur_commun::releve::SoireeJouee>,
 }
 
 fn encode(a: &Appel<'_>) -> Vec<u8> {
@@ -391,15 +393,21 @@ impl Epreuve<'_, '_> {
         }
     }
 
-    /// Joue une soirée ; une panique de l'outil devient une panne de l'outil.
+    /// Joue une soirée ; une panique de l'outil devient une panne de l'outil. Quand E20
+    /// est demandé, la soirée est gardée pour lui (une soirée rejouée à l'identique, comme
+    /// la seconde exécution de E9, ne l'est qu'une fois).
     fn jouer(&mut self, r: Reglage) -> Result<Bilan, String> {
         let module = self.module;
+        let sorte = r.sorte;
         match catch_unwind(AssertUnwindSafe(move || {
             Soiree::ouvrir(module, r).map(Soiree::jouer)
         })) {
             Ok(b) => {
                 if let Ok(bilan) = &b {
                     self.monde.ajouter(&bilan.monde);
+                    if self.plan.demande(IdControle::E20) {
+                        self.garder_pour_e20(sorte, bilan);
+                    }
                 }
                 b
             }
@@ -412,6 +420,31 @@ impl Epreuve<'_, '_> {
                 Err(format!("l'épreuve a paniqué : {m}"))
             }
         }
+    }
+
+    /// E20 : garde l'ouverture et le journal d'une soirée jouée, sauf s'ils sont ceux
+    /// d'une soirée déjà gardée.
+    fn garder_pour_e20(&mut self, sorte: Sorte, bilan: &Bilan) {
+        if self
+            .soirees_e20
+            .iter()
+            .any(|s| s.ouverture == bilan.ouverture && s.journal == bilan.journal)
+        {
+            return;
+        }
+        let quoi = match sorte {
+            Sorte::Principale => "soirée principale",
+            Sorte::Hostile => "soirée hostile",
+            Sorte::Longue => "soirée longue",
+            Sorte::Proprietes => "soirée des propriétés",
+            Sorte::Gel => "soirée de gels",
+        };
+        let n = self.soirees_e20.len();
+        self.soirees_e20.push(moteur_commun::releve::SoireeJouee {
+            nom: format!("{quoi} (la {}ᵉ gardée)", n.saturating_add(1)),
+            ouverture: bilan.ouverture.clone(),
+            journal: bilan.journal.clone(),
+        });
     }
 
     fn panne_des_soirees(&mut self, quoi: &str, controles: &[IdControle]) {
@@ -1753,12 +1786,45 @@ fn juger_la_memoire(a: &mut Acc, mesures: &[Echantillon]) {
 }
 
 /// Éprouve un module chargé (§ 8.8). La copie native, si elle est donnée, est
-/// comparée au module (E9) et reprise (E14).
+/// comparée au module (E9) et reprise (E14). E20 demande les octets du module livré :
+/// il ne se joue que par [`eprouver_octets`], et reste ici « pas exécuté ».
 pub fn eprouver(
     module: &ModuleCharge,
     natif: Option<&mut dyn FabriqueDynamique>,
     plan: &Plan,
 ) -> Rapport {
+    let (mut rapport, _) = eprouver_et_garder(module, natif, plan);
+    if plan.demande(IdControle::E20) {
+        remplacer(
+            &mut rapport,
+            ResultatControle {
+                id: IdControle::E20,
+                issue: IssueControle::PasExecute,
+                evaluations: 0,
+                detail: String::from(
+                    "E20 reprend le module livré dans un navigateur : il ne se joue que depuis ses octets (`eprouver_octets`, `soiree-epreuve`)",
+                ),
+                rejeu: None,
+            },
+        );
+    }
+    rapport
+}
+
+/// Remplace le résultat d'un contrôle.
+fn remplacer(rapport: &mut Rapport, r: ResultatControle) {
+    match rapport.controles.iter_mut().find(|c| c.id == r.id) {
+        Some(c) => *c = r,
+        None => rapport.controles.push(r),
+    }
+}
+
+/// [`eprouver`], et les soirées que E20 reprendra.
+fn eprouver_et_garder(
+    module: &ModuleCharge,
+    natif: Option<&mut dyn FabriqueDynamique>,
+    plan: &Plan,
+) -> (Rapport, Vec<moteur_commun::releve::SoireeJouee>) {
     let a_natif = natif.is_some();
     let mut e = Epreuve {
         module,
@@ -1780,6 +1846,7 @@ pub fn eprouver(
         tours: (0, 0),
         phases_des_soirees: Vec::new(),
         monde: crate::plan::MondeJoue::default(),
+        soirees_e20: Vec::new(),
     };
     if plan.demande(IdControle::E1) {
         e.constat();
@@ -1790,7 +1857,8 @@ pub fn eprouver(
     if plan.demande(IdControle::E3) {
         e.univers();
     }
-    let principales: [IdControle; 11] = [
+    // E20 reprend au moins les soirées principales.
+    let principales: [IdControle; 12] = [
         IdControle::E2,
         IdControle::E3,
         IdControle::E4,
@@ -1802,6 +1870,7 @@ pub fn eprouver(
         IdControle::E14,
         IdControle::E17,
         IdControle::E19,
+        IdControle::E20,
     ];
     if principales.iter().any(|c| plan.demande(*c)) {
         e.soirees();
@@ -1825,18 +1894,23 @@ pub fn eprouver(
         e.memoire();
     }
     let monde = e.monde;
+    let soirees_e20 = std::mem::take(&mut e.soirees_e20);
     let (controles, joue) = e.resultats();
-    Rapport {
-        module: module.empreinte(),
-        plan: plan.clone(),
-        controles,
-        natif: a_natif,
-        joue,
-        compilation: None,
-        monde,
-        budgets: BUDGETS_E19,
-        octets_remis_a_zero: Some(module.octets_remis_a_zero()),
-    }
+    (
+        Rapport {
+            module: module.empreinte(),
+            plan: plan.clone(),
+            controles,
+            natif: a_natif,
+            joue,
+            compilation: None,
+            monde,
+            budgets: BUDGETS_E19,
+            octets_remis_a_zero: Some(module.octets_remis_a_zero()),
+            e20: Vec::new(),
+        },
+        soirees_e20,
+    )
 }
 
 /// Le rapport d'un jeu dont le module ne s'est pas compilé, ou dont l'étape 1 n'a pas
@@ -1863,11 +1937,13 @@ pub(crate) fn sans_module(plan: &Plan, compilation: crate::etapes::Compilation) 
         monde: crate::plan::MondeJoue::default(),
         budgets: BUDGETS_E19,
         octets_remis_a_zero: None,
+        e20: Vec::new(),
     }
 }
 
 /// Éprouve les octets d'un module : le charge (E1), puis [`eprouver`]. Un module
-/// refusé au chargement échoue E1, et rien d'autre ne tourne.
+/// refusé au chargement échoue E1, et rien d'autre ne tourne, sauf E20 s'il est
+/// demandé : chaque navigateur doit refuser le module pareil.
 pub fn eprouver_octets(
     moteur: &Moteur,
     octets: &[u8],
@@ -1875,7 +1951,16 @@ pub fn eprouver_octets(
     plan: &Plan,
 ) -> Rapport {
     match moteur.charger(octets) {
-        Ok(m) => eprouver(&m, natif, plan),
+        Ok(m) => {
+            let (mut rapport, soirees) = eprouver_et_garder(&m, natif, plan);
+            if plan.demande(IdControle::E20) {
+                let (r, navigateurs) =
+                    crate::deux_moteurs::juger(octets, Some(&m), None, &soirees, plan);
+                remplacer(&mut rapport, r);
+                rapport.e20 = navigateurs;
+            }
+            rapport
+        }
         Err(refus) => {
             let issue_e1 = match &refus {
                 moteur_wasmtime::RefusModule::Panne(_) => IssueControle::PanneDeLOutil,
@@ -1906,7 +1991,7 @@ pub fn eprouver_octets(
                     }
                 })
                 .collect();
-            Rapport {
+            let mut rapport = Rapport {
                 module: *blake3::hash(octets).as_bytes(),
                 plan: plan.clone(),
                 controles,
@@ -1916,7 +2001,15 @@ pub fn eprouver_octets(
                 monde: crate::plan::MondeJoue::default(),
                 budgets: BUDGETS_E19,
                 octets_remis_a_zero: None,
+                e20: Vec::new(),
+            };
+            if plan.demande(IdControle::E20) {
+                let (r, navigateurs) =
+                    crate::deux_moteurs::juger(octets, None, Some(&refus), &[], plan);
+                remplacer(&mut rapport, r);
+                rapport.e20 = navigateurs;
             }
+            rapport
         }
     }
 }

@@ -388,6 +388,9 @@ pub struct Partie<F: Fabrique> {
     pub(crate) avancee_en_cours: Option<crate::pas::AvanceeEnCours>,
     /// Le contrôle négatif du découpage est-il armé ([`Partie::etaler_mal`]) ?
     pub(crate) etale_mal: Oui,
+    /// Le rejeu refait-il les entrées écartées
+    /// ([`Partie::reprendre_en_refaisant_les_fautes`]) ?
+    pub(crate) refaire_les_fautes: Oui,
 }
 
 impl<F: Fabrique> Partie<F> {
@@ -432,10 +435,36 @@ impl<F: Fabrique> Partie<F> {
     /// avoir vu la dernière vue que le journal note pour lui ; ses vues lui sont
     /// renvoyées en entier (SAL-28).
     pub fn reprendre(
+        fabrique: F,
+        ouverture: Ouverture,
+        point: &PointDeReprise<<F::I as Instance>::Instantane>,
+        journal: &Journal,
+    ) -> Result<Partie<F>, RefusReprise> {
+        Partie::reprendre_selon(fabrique, ouverture, point, journal, Oui::Non)
+    }
+
+    /// Comme [`Partie::reprendre`], mais chaque entrée que le journal dit écartée est
+    /// rejouée elle aussi, comme la partie l'a jouée : l'appel, sa faute, qui doit être
+    /// celle du journal, puis la reconstruction de la définitive (§ 4.6). La reprise
+    /// fait alors les mêmes appels que la partie qui a écrit le journal, fautes
+    /// comprises. C'est celle de E20 (PHASE-3, lot 3b) : un second moteur doit fauter
+    /// comme le premier, et classer la faute pareil. Une autre faute, ou une entrée
+    /// écartée qui ne faute plus, est une divergence (`RejeuDivergent`).
+    pub fn reprendre_en_refaisant_les_fautes(
+        fabrique: F,
+        ouverture: Ouverture,
+        point: &PointDeReprise<<F::I as Instance>::Instantane>,
+        journal: &Journal,
+    ) -> Result<Partie<F>, RefusReprise> {
+        Partie::reprendre_selon(fabrique, ouverture, point, journal, Oui::Oui)
+    }
+
+    fn reprendre_selon(
         mut fabrique: F,
         ouverture: Ouverture,
         point: &PointDeReprise<<F::I as Instance>::Instantane>,
         journal: &Journal,
+        refaire_les_fautes: Oui,
     ) -> Result<Partie<F>, RefusReprise> {
         // Le journal peut être tronqué (P10) : le point doit tomber dans ce qu'il garde.
         if point.indice < journal.base() || point.indice > journal.fin() {
@@ -455,8 +484,10 @@ impl<F: Fabrique> Partie<F> {
         );
         partie.journal = journal.clone();
         partie.curseur = Some(point.indice);
+        partie.refaire_les_fautes = refaire_les_fautes;
         partie.rejouer()?;
         partie.curseur = None;
+        partie.refaire_les_fautes = Oui::Non;
         // La tête de la partie arrêtée avait la fenêtre d'avance : la reprise la
         // rejoue sans compter ce temps comme un retard (§ 4.1).
         partie.horloge = Pas::du_fil(partie.coeur.pas.numero().saturating_add(partie.fenetre));
@@ -512,6 +543,7 @@ impl<F: Fabrique> Partie<F> {
             en_cours: None,
             avancee_en_cours: None,
             etale_mal: Oui::Non,
+            refaire_les_fautes: Oui::Non,
         }
     }
 

@@ -15,6 +15,7 @@
 mod fausse;
 mod instantane;
 mod ordre;
+mod releve;
 
 /// Le module de `Bonjour` qui boucle, que le banc lira : un module que la réécriture
 /// accepte, sous les réglages de la phase 1.

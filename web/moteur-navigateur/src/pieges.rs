@@ -49,51 +49,143 @@ pub enum Ramene {
     Code(&'static str),
 }
 
-/// Les messages de `WebAssembly.RuntimeError` constatés, et ce qu'ils deviennent.
+/// Le moteur JavaScript d'un navigateur : chacun a ses messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoteurJs {
+    /// V8 (Chrome).
+    V8,
+    /// `SpiderMonkey` (Firefox).
+    SpiderMonkey,
+}
+
+impl MoteurJs {
+    /// Le moteur d'un navigateur, d'après son `navigator.userAgent` ; `None` pour un
+    /// navigateur dont les messages ne sont pas encore rangés (Safari, lot 3c).
+    pub fn depuis_agent(agent: &str) -> Option<MoteurJs> {
+        if agent.contains("Firefox/") {
+            Some(MoteurJs::SpiderMonkey)
+        } else if agent.contains("Chrome/") {
+            Some(MoteurJs::V8)
+        } else {
+            None
+        }
+    }
+}
+
+/// Les messages de `WebAssembly.RuntimeError` constatés, le moteur qui les lève, et ce
+/// qu'ils deviennent.
 ///
 /// Ceux de V8 sont constatés dans Chrome 156.0.8078.80 le 2026-11-05 par
-/// `soiree-banc machine` (lot 3a), un piège provoqué par scénario
-/// (`essais/machine.wat`, `essais/pieges.txt`). V8 donne un même message,
-/// `float unrepresentable in integer range`, à deux pièges que wasmtime distingue (la
-/// conversion d'un NaN, `CONVERSION_INVALIDE`, et celle d'un flottant hors des bornes,
-/// `DEBORDEMENT_ENTIER`) : il n'est pas ramené. Firefox et Safari s'y ajoutent quand on
-/// les constate (lots 3b et 3c).
-pub const MESSAGES: &[(&str, Ramene)] = &[
+/// `soiree-banc machine` (lot 3a), ceux de `SpiderMonkey` dans Firefox 158.0.1 le même
+/// jour (lot 3b, `--navigateur firefox`), un piège provoqué par scénario
+/// (`essais/machine.wat`, `essais/pieges.txt`). Aucun message n'est commun aux deux
+/// moteurs : le classement n'a pas à savoir lequel tourne. Safari s'y ajoute quand on le
+/// constate (lot 3c).
+pub const MESSAGES: &[(MoteurJs, &str, Ramene)] = &[
     // V8 (Chrome).
-    ("memory access out of bounds", Ramene::HorsMemoire),
-    ("unreachable", Ramene::Code(codes::UNREACHABLE)),
-    ("divide by zero", Ramene::Code(codes::DIVISION_PAR_ZERO)),
-    ("remainder by zero", Ramene::Code(codes::DIVISION_PAR_ZERO)),
     (
+        MoteurJs::V8,
+        "memory access out of bounds",
+        Ramene::HorsMemoire,
+    ),
+    (
+        MoteurJs::V8,
+        "unreachable",
+        Ramene::Code(codes::UNREACHABLE),
+    ),
+    (
+        MoteurJs::V8,
+        "divide by zero",
+        Ramene::Code(codes::DIVISION_PAR_ZERO),
+    ),
+    (
+        MoteurJs::V8,
+        "remainder by zero",
+        Ramene::Code(codes::DIVISION_PAR_ZERO),
+    ),
+    (
+        MoteurJs::V8,
         "divide result unrepresentable",
         Ramene::Code(codes::DEBORDEMENT_ENTIER),
     ),
     (
+        MoteurJs::V8,
         "table index is out of bounds",
         Ramene::Code(codes::TABLE_HORS_BORNES),
     ),
-    ("null function", Ramene::Code(codes::ELEMENT_NUL)),
     (
+        MoteurJs::V8,
+        "null function",
+        Ramene::Code(codes::ELEMENT_NUL),
+    ),
+    (
+        MoteurJs::V8,
         "function signature mismatch",
+        Ramene::Code(codes::SIGNATURE),
+    ),
+    // SpiderMonkey (Firefox) : ses messages suivent ceux de wasmtime de plus près.
+    (
+        MoteurJs::SpiderMonkey,
+        "unreachable executed",
+        Ramene::Code(codes::UNREACHABLE),
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "integer divide by zero",
+        Ramene::Code(codes::DIVISION_PAR_ZERO),
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "integer overflow",
+        Ramene::Code(codes::DEBORDEMENT_ENTIER),
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "invalid conversion to integer",
+        Ramene::Code(codes::CONVERSION_INVALIDE),
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "indirect call to null",
+        Ramene::Code(codes::ELEMENT_NUL),
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "indirect call signature mismatch",
         Ramene::Code(codes::SIGNATURE),
     ),
 ];
 
-/// Les messages constatés qui désignent plusieurs pièges de wasmtime, avec les noms de
-/// ceux qu'ils peuvent désigner : ils gardent le texte du navigateur
-/// ([`PREFIXE_NON_RAMENE`]), et la différence avec wasmtime est connue. Un message ni
-/// dans [`MESSAGES`] ni ici n'a pas été constaté : les essais du banc le refusent,
-/// jusqu'à ce qu'on le range dans l'une des deux tables. Ils refusent aussi un message
-/// d'ici levé pour un piège que wasmtime nomme autrement que l'un des siens.
+/// Les messages constatés qui désignent plusieurs pièges de wasmtime, avec ceux qu'ils
+/// peuvent désigner : ils gardent le texte du navigateur ([`PREFIXE_NON_RAMENE`]), et la
+/// différence avec wasmtime est connue. Un message ni dans [`MESSAGES`] ni ici n'a pas
+/// été constaté : les essais du banc le refusent, jusqu'à ce qu'on le range dans l'une
+/// des deux tables. Ils refusent aussi un message d'ici levé pour un piège que wasmtime
+/// nomme autrement que l'un des siens.
 ///
-/// V8 : la conversion d'un NaN en entier (wasmtime : `CONVERSION_INVALIDE`) et celle
-/// d'un flottant hors des bornes (`DEBORDEMENT_ENTIER`). Un module compilé par Rust n'y
-/// tombe pas : `as` y est une conversion saturée (`i32.trunc_sat_f32_s`), qui ne piège
-/// jamais.
-pub const AMBIGUS: &[(&str, &[&str])] = &[(
-    "float unrepresentable in integer range",
-    &[codes::CONVERSION_INVALIDE, codes::DEBORDEMENT_ENTIER],
-)];
+/// - V8 : la conversion d'un NaN en entier (wasmtime : `CONVERSION_INVALIDE`) et celle
+///   d'un flottant hors des bornes (`DEBORDEMENT_ENTIER`). Un module compilé par Rust
+///   n'y tombe pas : `as` y est une conversion saturée (`i32.trunc_sat_f32_s`), qui ne
+///   piège jamais.
+/// - `SpiderMonkey` : `index out of bounds`, d'un accès hors de la mémoire (wasmtime :
+///   [`Piege::HorsMemoire`], la faute `HorsMemoire`) comme d'un `call_indirect` au-delà
+///   de la table (`TABLE_HORS_BORNES`). Un module compilé par Rust sûr n'y tombe pas :
+///   ses accès sont bornés avant, et un dépassement y est une panique.
+pub const AMBIGUS: &[(MoteurJs, &str, &[Ramene])] = &[
+    (
+        MoteurJs::V8,
+        "float unrepresentable in integer range",
+        &[
+            Ramene::Code(codes::CONVERSION_INVALIDE),
+            Ramene::Code(codes::DEBORDEMENT_ENTIER),
+        ],
+    ),
+    (
+        MoteurJs::SpiderMonkey,
+        "index out of bounds",
+        &[Ramene::HorsMemoire, Ramene::Code(codes::TABLE_HORS_BORNES)],
+    ),
+];
 
 /// Ce que le navigateur a levé pendant un appel, lu sur l'erreur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,9 +217,9 @@ pub enum ErreurJs<'a> {
 /// son fil ; le garde-fou mural est le Worker que la page tue (PHASE-3, § 2.3, lot 10a).
 pub fn classer(e: ErreurJs<'_>) -> Piege {
     match e {
-        ErreurJs::Execution(message) => match MESSAGES.iter().find(|(m, _)| *m == message) {
-            Some((_, Ramene::HorsMemoire)) => Piege::HorsMemoire,
-            Some((_, Ramene::Code(code))) => Piege::Autre(String::from(*code)),
+        ErreurJs::Execution(message) => match MESSAGES.iter().find(|(_, m, _)| *m == message) {
+            Some((_, _, Ramene::HorsMemoire)) => Piege::HorsMemoire,
+            Some((_, _, Ramene::Code(code))) => Piege::Autre(String::from(*code)),
             None => Piege::Autre(format!("{PREFIXE_NON_RAMENE}{message}")),
         },
         ErreurJs::Portee(_) => Piege::PileNative,
@@ -145,7 +237,9 @@ pub fn classer(e: ErreurJs<'_>) -> Piege {
 mod tests {
     use moteur_commun::Piege;
 
-    use super::{AMBIGUS, ErreurJs, MESSAGES, PREFIXE_NON_RAMENE, Ramene, classer, codes};
+    use super::{
+        AMBIGUS, ErreurJs, MESSAGES, MoteurJs, PREFIXE_NON_RAMENE, Ramene, classer, codes,
+    };
 
     #[test]
     fn un_acces_hors_de_la_memoire() {
@@ -165,6 +259,24 @@ mod tests {
             classer(ErreurJs::Execution("remainder by zero")),
             Piege::Autre(String::from(codes::DIVISION_PAR_ZERO))
         );
+        assert_eq!(
+            classer(ErreurJs::Execution("indirect call to null")),
+            Piege::Autre(String::from(codes::ELEMENT_NUL))
+        );
+    }
+
+    #[test]
+    fn le_moteur_d_un_navigateur() {
+        let chrome = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36";
+        let firefox =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:158.0) Gecko/20100101 Firefox/158.0";
+        let safari = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15";
+        assert_eq!(MoteurJs::depuis_agent(chrome), Some(MoteurJs::V8));
+        assert_eq!(
+            MoteurJs::depuis_agent(firefox),
+            Some(MoteurJs::SpiderMonkey)
+        );
+        assert_eq!(MoteurJs::depuis_agent(safari), None);
     }
 
     /// Un message inconnu reste un piège du module, et se voit : il n'est pas déguisé
@@ -209,16 +321,19 @@ mod tests {
     /// contredisent pas.
     #[test]
     fn chaque_message_une_fois() {
-        for (i, (m, _)) in MESSAGES.iter().enumerate() {
+        for (i, (_, m, _)) in MESSAGES.iter().enumerate() {
             assert!(
-                MESSAGES.iter().skip(i + 1).all(|(n, _)| n != m),
+                MESSAGES.iter().skip(i + 1).all(|(_, n, _)| n != m),
                 "{m} deux fois"
             );
-            assert!(AMBIGUS.iter().all(|(a, _)| a != m), "{m} ramené et ambigu");
-        }
-        for (i, (a, designes)) in AMBIGUS.iter().enumerate() {
             assert!(
-                AMBIGUS.iter().skip(i + 1).all(|(b, _)| b != a),
+                AMBIGUS.iter().all(|(_, a, _)| a != m),
+                "{m} ramené et ambigu"
+            );
+        }
+        for (i, (_, a, designes)) in AMBIGUS.iter().enumerate() {
+            assert!(
+                AMBIGUS.iter().skip(i + 1).all(|(_, b, _)| b != a),
                 "{a} deux fois"
             );
             // Ambigu : il désigne au moins deux pièges de wasmtime.
@@ -228,6 +343,17 @@ mod tests {
                 Piege::Autre(format!("{PREFIXE_NON_RAMENE}{a}"))
             );
         }
-        assert!(MESSAGES.iter().any(|(_, r)| *r == Ramene::HorsMemoire));
+        // Chaque moteur a son accès hors de la mémoire, ramené ou ambigu.
+        for moteur in [MoteurJs::V8, MoteurJs::SpiderMonkey] {
+            assert!(
+                MESSAGES
+                    .iter()
+                    .any(|(x, _, r)| *x == moteur && *r == Ramene::HorsMemoire)
+                    || AMBIGUS
+                        .iter()
+                        .any(|(x, _, d)| *x == moteur && d.contains(&Ramene::HorsMemoire)),
+                "{moteur:?}"
+            );
+        }
     }
 }

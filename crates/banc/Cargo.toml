@@ -12,9 +12,12 @@ name = "soiree-banc"
 path = "src/bin/soiree-banc.rs"
 
 [dependencies]
-# Le pilote de Chrome : CDP est une WebSocket.
+# E20 : relire le relevé de wasmtime (ses événements, ses appels, son empreinte) pour
+# juger ce qu'une page rapporte sans la croire sur parole.
+moteur-commun.workspace = true
+# Les pilotes de Chrome et de Firefox : CDP et WebDriver BiDi sont des WebSocket.
 tungstenite.workspace = true
-# Les messages de CDP, et le rapport qu'une page envoie à `POST /banc/rapport`.
+# Les messages de CDP et de BiDi, et le rapport qu'une page envoie à `POST /banc/rapport`.
 serde_json.workspace = true
 # La règle « mêmes lints » : les manifestes, `clippy.toml` et `rust-toolchain.toml` de
 # `web/`, comparés à ceux du commun.

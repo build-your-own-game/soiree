@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Banc : E20, deux moteurs</title>
+<!--
+  La page de `soiree-banc rejouer` (PHASE-3, lot 3b). Son Worker (`rejouer-worker.js`)
+  charge l'exemple `rejeu-navigateur` de `web/moteur-navigateur` par sa colle
+  `wasm-bindgen`, reprend les soirées de l'épreuve servies sous `/e20/` et compare
+  chaque événement au relevé de wasmtime, une fois par passage de `?passes=` (le vrai
+  moteur, `""`, puis le moteur fautif du contrôle négatif). Le rejeu tourne dans un
+  Worker, comme l'autorité : un long calcul sur le fil de la page ferait proposer à
+  Firefox d'arrêter le script. Un rejeu qui ne tourne pas rapporte `{ erreur }`, jamais
+  un succès.
+-->
+<script type="module">
+const passes = (new URLSearchParams(location.search).get("passes") ?? "").split(",");
+const travail = new Worker("/banc/rejouer-worker.js", { type: "module" });
+const rapport = await new Promise((rendre) => {
+  travail.onmessage = (m) => rendre(m.data);
+  travail.onerror = (e) => rendre({ erreur: `Worker : ${e.message} (${e.filename}:${e.lineno})` });
+  travail.onmessageerror = () => rendre({ erreur: "Worker : message illisible" });
+  travail.postMessage({ passes });
+});
+travail.terminate();
+rapport.suite = "rejouer";
+rapport.agent = navigator.userAgent;
+await fetch("/banc/rapport?suite=rejouer", { method: "POST", body: JSON.stringify(rapport) });
+document.body.textContent = "rapport envoyé";
+</script>

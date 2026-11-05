@@ -441,3 +441,147 @@ Après chaque exécution : aucun processus sur `target/banc/profils`, aucun prof
 - **Le garde-fou mural de wasmtime peut couper une instanciation sous forte charge** : une panne de l'outil, jamais un succès, mais `cargo test --workspace` peut rougir sans que rien n'ait changé (OUT-89). `moteur-wasmtime` pose l'échéance à la création du `Store`, avant `Instance::new`. Ce n'est pas tranché ici (le lot ne touche pas `moteur-wasmtime`) ; le lot 3c, qui revoit le garde-fou d'après M10, devrait le regarder.
 - `banc::rapport::juger` prend la suite attendue et le passage : un scénario nouveau déclare sa `Suite` (familles et nombre exact d'essais), et sa page renvoie `fautif`.
 - Un message du navigateur qui désigne plusieurs pièges de wasmtime va dans `AMBIGUS` avec la liste de ceux qu'il désigne.
+
+## Lot 3b — Le second moteur de l'épreuve
+
+Fait le 2026-11-05, de 17 h 30 à 19 h 50 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), avec Chrome 156.0.8078.80 et Firefox 158.0.1, sans interface. Rien n'est commité.
+
+### Ce qui est fait
+
+**E20, « Deux moteurs »** (PHASE-3, § 8.2 et § 8.3), dans `epreuve` (`src/deux_moteurs.rs`) :
+- `IdControle::E20` ; `IdControle::TOUS` a vingt contrôles, et `IdControle::DU_PLAN` (E1 à E19) est le plan par défaut, standard comme court : E20 est un contrôle long, qu'on demande (`--navigateurs chrome,firefox[,safari]`, qui l'ajoute au plan). Il n'est dans aucune étape du CONTRAT (`Etape::controles`), pour ne pas rendre « pas faite » une étape qu'un code 0 sans lui fait (P17).
+- Quand E20 est demandé, l'épreuve garde chaque soirée qu'elle joue (ouverture et journal ; une soirée rejouée à l'identique, comme la seconde exécution de E9, une seule fois) ; `eprouver_octets` fait le relevé de wasmtime (chaque soirée reprise depuis sa création, sur `moteur_commun::releve::Enregistreuse`), écrit un dossier (module livré, `soirees.bin`, `releve.bin`) dans le dossier temporaire, lance `soiree-banc rejouer` (trouvé par `SOIREE_BANC`, sinon à côté de l'exécutable ; `soiree-epreuve <dossier>` le pose pour la copie native), relit son JSON. Un résultat par navigateur au rapport (texte ; JSON, champ `e20`) ; E20 prend le pire (échec, puis panne, puis pas exécuté). Le dossier est effacé sur un succès, gardé sinon, avec `banc.txt`. Un module refusé au chargement joue E20 aussi : chaque navigateur doit le refuser pareil. `eprouver` (sans les octets) laisse E20 « pas exécuté », dit.
+- Le contrôle négatif dans l'épreuve : `CommunFautif::FausserApres(n)`, `--moteur-fautif <n>` (transmis à la copie native, écrit au rapport : « Défaut injecté dans le commun »).
+
+**`moteur_commun::releve`**, nouveau : le relevé (`Evenement` : début et fin de soirée, instance neuve, appel — nom, budget, empreinte courte de l'appel, ordre et place d'une entrée, carburant, issue : retour (longueur, empreinte courte), faute classée, ou cause de panne —, instantané, restauration, empreinte), `Chargement` (empreinte réécrite et carburant de `Bonjour` et `Decrire`, ou le refus classé par `classer_refus`), sa forme binaire relue strictement, `comparer`, `Enregistreuse` (qui peut comparer en chemin et arrêter le rejeu au premier écart), et `rejouer` : la même procédure dans wasmtime et dans le navigateur. Il reprend `Enregistree` et `Enregistreuse` de `mesures/navigateur/capture`, sur le protocole du commun ; la capture du harnais n'est pas touchée.
+
+**`partie::Partie::reprendre_en_refaisant_les_fautes`** : la reprise ordinaire saute les entrées écartées ; celle-ci rejoue chacune, vérifie que sa faute est celle du journal (sinon `RejeuDivergent`), puis reconstruit la définitive, comme la partie l'a fait. Sans elle, aucune faute ne passerait par E20, et « chaque fautif classé pareil » ne voudrait rien dire. `reprendre` ne change pas (`refaire_les_fautes` vaut `Non` hors de cette méthode).
+
+**`banc`** :
+- `bidi` et `firefox` : Firefox sans interface sur un profil neuf (`user.js` du harnais), `--remote-debugging-port 0`, l'adresse lue sur sa sortie, `session.new`, `session.subscribe` (`log.entryAdded`), `browsingContext.getTree`, `browsingContext.navigate`, `browser.close` puis au plus 10 s avant de le tuer, profil effacé. Sans `geckodriver`.
+- `navigateur` : `Navigateur` (chrome, firefox, safari) et `Lance`, un même pilote pour les deux ; Safari y est « pas exécuté » (lot 3c). Les aides de profil, de fermeture et de lecture de l'adresse sont partagées avec `chrome`.
+- `machine` prend `--navigateur firefox` (et `--executable`) ; `construire` construit n'importe quels exemples de `web/moteur-navigateur`.
+- `rejouer` : le scénario de E20. La règle « mêmes lints », la construction de l'exemple `rejeu-navigateur` avant tout navigateur, puis, par navigateur, la page `pages/rejouer.html`, dont le Worker (`pages/rejouer-worker.js`) joue deux passages : le moteur demandé, puis le moteur fautif `fausser-apres:<n>` (n = la moitié des appels, au plus 100). Le jugement (`rejouer::juger`) : le vrai passage sans écart **et** avec l'empreinte BLAKE3 et le nombre d'événements du relevé servi (la page n'est pas crue sur parole) ; le contrôle négatif doit diverger à l'appel `n`, sur le carburant, sinon E20 est une panne de l'outil. `soiree-banc rejouer <dossier> [--navigateurs] [--fautif] [--sortie] [--delai] [--sans-construire]`.
+
+**`moteur-navigateur`** :
+- l'exemple `rejeu-navigateur` (`rejouer(module, soirees, releve, fautif)`) et son moteur fautif (`Faussee` : passé `n` appels de `soiree_appel`, le carburant restant lu d'une unité de trop) ; `ModuleCharge::instance_sur`, une instance du protocole sur une machine qui enveloppe la vraie.
+- **Les messages de SpiderMonkey** : `MESSAGES` et `AMBIGUS` portent leur moteur (`MoteurJs::V8`, `MoteurJs::SpiderMonkey`, tiré de `navigator.userAgent`) ; six messages de Firefox ramenés au nom de wasmtime ; `index out of bounds` (la mémoire comme la table) ambigu ; `AMBIGUS` désigne désormais des `Ramene` (une faute `HorsMemoire`, ou un code), et l'essai `pieges_la_table_est_constatee` ne vérifie que les messages du moteur joué.
+
+Documents : `PHASE-3.md` (§ 2.2, `moteur-commun`, `banc`, `epreuve` ; la ligne du lot 3b au § 7 ; le scénario `rejouer` au § 8.2 ; E20 au § 8.3 ; la question 24), `MESURES-PHASE-3.md` (« Lot 3b »), `CHANGELOG.md`, `crates/README.md`, `AGENTS.md`.
+
+### Les tests qui le tiennent
+
+En natif :
+- `moteur-commun/tests/commun/releve.rs` (sur le modèle de `partie`) : `la_reprise_depuis_la_creation_se_releve_a_l_identique` (deux relevés égaux, chaque soirée reprise jusqu'au bout, des `Panique` refaites, entrées, restaurations, empreintes et `Canonique` relevées), `un_moteur_qui_differe_se_voit_a_son_premier_appel` (le modèle divergent : l'écart tombe sur la forme canonique de la fin, et le rejeu s'arrête là), `un_carburant_fausse_d_une_unite_se_voit`, `un_releve_plus_court_ou_plus_long_est_un_ecart`, `les_formes_se_relisent_strictement`.
+- `partie/tests/coeur/garde.rs` : `la_reprise_qui_refait_les_fautes_refait_chacune` (même partie, une restauration de plus par faute ; un journal qui dit une autre faute est une divergence, que la reprise ordinaire ne voit pas).
+- `banc` : `rejouer::tests` (`le_vrai_moteur_egal_et_le_negatif_vu_reussit`, `un_ecart_est_un_echec_qui_le_nomme`, `la_page_n_est_pas_crue_sur_parole` — OUT-01 —, `le_moteur_fautif_de_l_epreuve_fait_echouer`, `le_negatif_suit_le_nombre_d_appels`, `un_rapport_d_erreur_n_est_pas_un_succes`), `bidi::tests`, `firefox::tests`, `navigateur::tests`.
+- `epreuve` : `deux_moteurs::tests` (`le_resultat_du_banc_se_lit`, `e20_prend_le_pire`), `ligne::tests::le_plan_se_transmet` (E20, navigateurs et moteur fautif compris), `les_navigateurs_demandent_e20` ; `tests/epreuve` : `passe_tout` vérifie que E20 est le seul contrôle hors du plan, « pas exécuté » ; `zero_evaluation_n_est_pas_un_succes` compte vingt contrôles.
+- `moteur-navigateur` (`cargo test` dans `web/`) : `chaque_message_une_fois` (les deux moteurs, et chacun a son accès hors de la mémoire), `le_moteur_d_un_navigateur`.
+
+Dans les navigateurs (chaque fois Chrome puis Firefox, un à la fois) :
+- `soiree-banc machine --navigateur firefox` et `--navigateur chrome` : code 0, 33 essais réussis, le contrôle négatif n'a fait échouer que les trois `globales_i64`.
+- E20 réussi, plan court, pour `devine`, `ardoise`, Punchline, Sidequest et Tier list (ces trois depuis leurs sources), et pour chacun des 33 modules de `exemples/fautifs` ; à chaque fois, le contrôle négatif du banc (`fausser-apres:100`, ou la moitié des appels) a divergé à l'appel attendu, sur le carburant.
+- **Le moteur fautif fait échouer E20 seul** : `soiree-epreuve --wasm devine_module.wasm --court --navigateurs chrome,firefox --moteur-fautif 50` rend 1, E20 « échec du jeu » dans les deux navigateurs (« événement 57, soirée 0, après l'entrée d'ordre 28 (place 202) : un carburant de 8400 au lieu de 8401 ; … Etat sur l'instance 1 »), et chaque autre contrôle a l'issue et le nombre d'évaluations du même plan sans le défaut.
+
+### Les vérifications
+
+`CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation ; 20 à 53 % de mémoire libre avant chaque commande lourde (une fois 20 %, pendant les fautifs, à la limite : rien n'a été lancé à côté), `vm.loadavg` de 10 à 27 (d'autres programmes de l'hôte tournaient, dont son propre Chrome).
+
+| Commande | Résultat |
+| --- | --- |
+| `cargo clippy` de `moteur-commun`, `partie`, `banc`, `epreuve` (`--all-targets -- -D warnings`) ; dans `web/`, en `wasm32` et en natif | aucun avertissement |
+| `cargo fmt --all --check` (commun, `web/`) | rien à reformater |
+| `cargo test -p moteur-commun --test commun releve`, `-p partie --test coeur la_reprise_qui_refait`, `-p banc`, `-p epreuve --lib` ; `cargo test` dans `web/` | réussis (5, 1, 25 + 1 + 2, 63, 9) |
+| `soiree-banc machine --navigateur firefox`, puis `chrome` (18 h 05) | code 0 chacun |
+| le plan court des trois jeux, depuis les sources, avec E20 (18 h 23 à 18 h 42) | Sidequest **0** ; Punchline 1, E2 seul (« une fin, mais aucune autre après la nouvelle partie », graine `b4e6…61c5`, 13 783 lignes) ; Tier list 1, E15 seul (201 670 au début, 213 975 à la fin) : **la référence du § 7**, inchangée ; E20 réussi dans les deux navigateurs pour chacun |
+| `devine`, `ardoise` (`--wasm`, plan court, E20) | code 3 (module seul), chaque contrôle réussi ou sans objet, E20 réussi |
+| les 33 fautifs (`--wasm`, plan court, E20 ; 18 h 43 à 19 h 19) | E20 réussi pour chacun, dans les deux navigateurs |
+| `devine --moteur-fautif 50` | code 1, E20 seul en échec |
+| `cargo test --workspace --no-fail-fast` (19 h 22 à 19 h 36, arrière-plan) | **code 101** : 480 réussis, **5 échecs**, 1 ignoré ; 868 s ; 0,44 Go au plus. Les cinq, dans `tests/epreuve` : `devine_passe_tout`, `avec_fenetre_passe_tout`, `le_socle_sain_passe_tout`, `un_jeu_sans_telephone_passe_tout_sans_pannes_de_telephone` (`passe_tout` exigeait chaque contrôle, demandé ou non, réussi ou sans objet ; E20, hors du plan, y est « pas exécuté ») et `zero_evaluation_n_est_pas_un_succes` (il comptait 19 contrôles). Corrigés sans rien affaiblir : `passe_tout` exige que E20 soit le seul contrôle hors du plan, et « pas exécuté » ; l'autre compte `IdControle::TOUS.len()`, soit 20 |
+| `cargo test -p epreuve --test epreuve --no-fail-fast`, après la correction (19 h 37 à 19 h 48, arrière-plan) | **code 0** : 42 réussis, 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 665 s ; 0,55 Go au plus. Avec les 480 autres réussis de la commande précédente (dont aucun binaire de test n'a changé depuis), **485 tests**, tous réussis |
+| `cargo clippy --workspace --all-targets -- -D warnings` (commun), après la correction ; dans `web/`, `wasm32` et natif ; `cargo test` dans `web/` ; `cargo fmt --all --check` des deux ; `soiree-banc regles-web` | aucun avertissement ; 9 réussis ; rien à reformater ; code 0 |
+
+Après chaque exécution : aucun processus sur `target/banc/profils`, aucun profil restant, aucun dossier `soiree-e20-*` laissé (ceux des contrôles négatifs, gardés exprès, effacés à la main), aucun serveur ni tâche de fond de moi. Les jeux : Punchline et Sidequest, `git status` propre ; **Tier list : son `Cargo.lock` a une ligne de plus**, écrite par Cargo pendant l'étape 1 de son épreuve (son workspace dépend de `epreuve`, qui dépend maintenant de `moteur-commun`). Elle n'est pas défaite : un `--locked` refuserait l'ancien fichier. Elle est à committer dans le dépôt de Tier list, à part du commun.
+
+### Les mesures
+
+Dans `MESURES-PHASE-3.md`, « Lot 3b » : la durée de E20 par jeu et par navigateur, plan court (de 20 s à 2 min 40 par jeu pour les deux navigateurs ; Sidequest, 497 088 événements : 49 s de relevé dans wasmtime, 47 s de reprise dans Chrome, 37 s dans Firefox), une seule exécution chacune, sous une charge de 15 à 24 ; les messages de SpiderMonkey. La mémoire du lot, mesurée en premier comme le § 7 le demande : `cargo build --release -p banc` à 0,58 Go (14 s) ; `soiree-banc machine --navigateur firefox`, 0,64 Go (navigateur non compté) ; la reconstruction de `soiree-epreuve` et `soiree-banc` en `--release`, 1,05 Go (161 s). Estimé au § 7 : « `banc` natif léger ; un navigateur à la fois, environ 1 Go » ; la mémoire des navigateurs n'est pas mesurée à ce lot.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Safari** : « pas exécuté », dit par le banc et par E20 (« Safari se pilote par safaridriver, que le banc n'a qu'au lot 3c »). Le lot ne le demande pas ; aucun réglage de la machine n'a été touché.
+- **Les entrées des pilotes** (`Input.dispatchKeyEvent`, `Input.dispatchMouseEvent`, `Input.dispatchTouchEvent`, `input.performActions`) ne sont pas écrites : aucun scénario de ce lot ne s'en sert, et un code non joué ne serait pas éprouvé. « Pilotes complets » veut dire ici : le même pilote pour Chrome et Firefox (lancement, version, page, console et exceptions, fermeture), joué par deux scénarios. Elles viennent avec `dessin`, `pages` et `soiree` (lots 9 à 12).
+- **Le plan standard avec E20** n'est pas joué : le lot ne change rien de ce que le plan par défaut joue ou juge (E20 n'y est pas, et la reprise qui refait les fautes n'est appelée que par E20), et le § 7 ne le demande pas au lot 3b ; le plan court des trois jeux rend la référence. La durée de E20 sur le plan standard n'est donc pas mesurée (sa soirée longue de six heures serait six fois plus longue à reprendre : estimé).
+- **Les fautes que E20 compare** : les journaux des 33 fautifs ne font refaire que des `Panique`. `Budget`, `Profondeur`, `HorsMemoire`, `Memoire` et `Piege` ne passent par E20 sur aucun module d'aujourd'hui (les fautifs qui les visent fautent dans des appels qui ne sont pas des entrées, ou au chargement) ; leur classement dans le navigateur reste tenu par les essais de `Machine` (onze pièges, dans les deux navigateurs). Un message ambigu (`float unrepresentable in integer range` dans V8, `index out of bounds` dans SpiderMonkey) donnerait une faute écrite autrement que dans wasmtime, et E20 échouerait : c'est voulu (la différence se voit), et un module compilé par Rust sûr n'y tombe pas.
+- **Le relevé de wasmtime n'est pas celui du jeu en direct** : c'est celui de la reprise de chaque soirée par la procédure commune (le jeu en direct mêle la tête, les sondes et les copies). PHASE-3, § 8.3, le dit maintenant. Si wasmtime ne reprend pas son propre journal, E20 est une panne de l'outil sans lancer de navigateur ; ce n'est arrivé sur aucun module.
+- **La pile du Worker** : aucun des modules joués n'a épuisé la pile d'un Worker (aucune `PileNative`), mais la profondeur qu'il tient n'est pas mesurée (M9, lot 3c).
+- **Le lancement et la fermeture des navigateurs** coûtent de 4 à 28 s par navigateur sous charge, plus que la reprise des petits modules ; ce n'est pas optimisé (un navigateur par module et par E20).
+- `mesures/navigateur/capture` n'est pas retirée : elle reste l'outil de la mesure 1 (`banc-coeur.js` part au lot 3c).
+
+### Ce que le lot suivant doit savoir
+
+- **Lancer E20** : `cargo build --release -p banc` **et** `cargo build --release -p epreuve --bin soiree-epreuve`, en deux commandes : `-p banc -p epreuve --bin soiree-epreuve` ne construit que `soiree-epreuve` (`--bin` vaut pour les deux paquets ; constaté à ce lot, un `soiree-banc` périmé a tourné une fois). Puis `target/release/soiree-epreuve <jeu> --court --navigateurs chrome,firefox`.
+- **Le lot 3c change toutes les empreintes réécrites** (`PHASE_3`) : le relevé suit (le `Chargement` porte l'empreinte réécrite ; la page réécrit avec `reecriture::Reglages::PHASE_1`, en dur dans `rejeu_navigateur.rs` : à changer avec `ReglagesMoteur::PHASE_3`, sinon chaque E20 échouera au chargement, ce qui se verra).
+- **Ajouter Safari**, c'est : son pilote derrière `navigateur::Lance`, ses messages dans `MESSAGES`/`AMBIGUS` avec un `MoteurJs::JavaScriptCore` (et `depuis_agent`, qui prend aujourd'hui tout agent `Chrome/` pour V8), puis `soiree-banc machine --navigateur safari` et E20.
+- `Partie::reprendre_en_refaisant_les_fautes` est la reprise qui fait les mêmes appels que la partie qui a écrit le journal ; la reprise d'une autorité (lot 10a) garde `reprendre`, qui saute les fautes.
+- Le relevé d'une page passe par le Worker ; `moteur_commun::releve::Enregistreuse::comparant` arrête le rejeu au premier écart : un rejeu fautif coûte ce qui précède l'écart.
+- Le dossier d'un E20 qui n'a pas réussi reste dans le dossier temporaire de la machine (`soiree-e20-<empreinte>-<pid>`) : `soiree-banc rejouer <dossier> --sans-construire` le rejoue.
+
+## Lot 3b, correction après la vérification
+
+Fait le 2026-11-05, de 20 h 15 à 21 h 50 environ (GMT), même machine (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface. Rien n'est commité.
+
+### Les constats, et ce qui en est fait
+
+**Constat 1 (important) : « chaque fautif classé pareil » ne comparait que des `Panique`.** Vérifié, exact : sur les 33 fautifs, les journaux ne font refaire que des `Panique` (3 et 6), et aucune autre sorte de faute ne passait d'un moteur à l'autre par E20. (Précision : `boucle-au-vote` et `jamais-fini` ne fautent pas du tout dans l'épreuve — le premier reste sous le budget d'arrêt, le second ne finit plus ses manches — ; rien n'était donc à rejouer chez eux.) **Corrigé** : la procédure commune (`moteur_commun::releve::rejouer`, jouée telle quelle dans wasmtime et dans le Worker) provoque, avant les soirées, deux fautes `Budget` sur chaque module accepté : une instance neuve, `Bonjour` et `Decrire` au budget de lecture de la première soirée, dont le carburant `c` est relevé ; puis, chaque fois sur une instance neuve, `Decrire` à `c / 2`, puis à `c - 1` (le carburant s'épuise au milieu de l'appel, puis à une unité de sa fin). Chaque navigateur doit rendre la même faute, au même carburant, que wasmtime ; et l'épreuve exige que wasmtime en fasse des `Budget` (`releve::budgets_provoques`), sinon E20 est une panne de l'outil. Le rapport le dit : « fautes : Budget × 2, Panique × 3 (dont 2 Budget provoquées avant les soirées) », et pour chaque navigateur « fautes classées pareil : Budget × 2, Panique × 3 ». Ce que cela tient : le piège du carburant épuisé, levé par le navigateur, puis la lecture des globales après le piège, qui est le chemin même de `Profondeur` (`soiree_profondeur`) et de `Memoire` (`soiree_croissance_bornee`) dans `moteur_commun::protocole`. Ce que cela ne tient pas : `HorsMemoire` et `Piege` ne se provoquent pas sur un module compilé par Rust sûr ; ils restent tenus par les essais de `Machine` (onze pièges, dans chaque navigateur), et c'est dit au § 7 et au § 8.2 de PHASE-3.
+
+**Constat 2 (mineur) : `index out of bounds` est ambigu dans Firefox.** Vérifié, exact (MESURES-PHASE-3, « Les messages de SpiderMonkey » : SpiderMonkey 158 lève ce même message pour la lecture hors de la mémoire et pour le `call_indirect` au-delà de la table). **Écarté**, sans changement : le message seul ne dit pas lequel des deux pièges est tombé, et le ramener à l'un serait un classement deviné ; la faute garde alors le texte du navigateur, et un E20 qui y tomberait échouerait — la différence se voit, elle ne fait pas un faux succès. Un module de Rust sûr n'y tombe pas (ses accès sont bornés avant, un dépassement y est une panique). Le lever demanderait de lire l'instruction fautive (le décalage de la trame wasm dans `error.stack`, puis l'opérateur à ce décalage par `wasmparser`) : ce n'est pas simple, et cela se joue avec les autres moteurs au lot 3c (ci-dessous).
+
+**Constat 3 (mineur) : `deux_moteurs.rs` ignorait le code de sortie de `soiree-banc`.** Vérifié, exact : un banc arrêté sur la règle « mêmes lints » (`"arret": "echec"`) ou qui ne rendait rien donnait « pas exécuté ». **Corrigé** : `lire_le_banc` rend un `ArretDuBanc` qui garde la nature de l'arrêt (`pas_execute` reste « pas exécuté » : un navigateur ou un fichier absent ; `echec`, la règle « mêmes lints » qui refuse `web/`, est une **panne de l'outil**, puisque c'est le commun qui est en défaut, pas le jeu ; un JSON illisible aussi) ; un banc qui n'écrit pas `--sortie`, ou que l'on n'a pas pu lancer, est une panne de l'outil ; et `code_coherent` exige que le code de sortie dise ce que dit le JSON (0 si chaque navigateur réussit, 1 si l'un échoue, 2 sinon ; un signal est une panne).
+
+**Constat 4 (mineur) : `partie` change, et seul le plan court avait été joué.** Vérifié : la branche nouvelle de `jouer_entree` n'est prise que sous `reprendre_en_refaisant_les_fautes`, que seul E20 appelle ; mais le § 7 ne tranchait pas ce cas. **Tranché en jouant** le plan standard des trois jeux depuis leurs sources (sans E20) : code 0 pour chacun (ci-dessous). Le § 7 (ligne du lot 3b) le dit.
+
+**Constat 5 (mineur) : les durées de Sidequest manquaient, et dépendent de la charge.** Vérifié, exact. **Corrigé** : E20 remesuré sur les cinq modules avec le banc à jour (MESURES-PHASE-3, « Lot 3b », « Après la vérification ») ; les chiffres de Sidequest qui manquaient y sont, et les trois séries (lot, vérificateur, correction) y sont mises côte à côte avec leur charge.
+
+**Constat 6 (mineur) : le `Cargo.lock` de Tier list.** Vérifié : toujours une ligne (`moteur-commun` parmi les dépendances de `epreuve`), écrite par Cargo ; rien d'autre n'a changé dans les jeux. Rien à faire ici : elle est à committer dans le dépôt de Tier list, à part du commun (CHANGELOG, « Passer à cette version »).
+
+### Les tests qui le tiennent
+
+- `moteur-commun/tests/commun/releve.rs`, `les_fautes_budget_se_provoquent_avant_les_soirees` : sur le modèle, la faute `Budget` provoquée est relevée avant la soirée 0 (`budgets_provoques`) ; sans soirée, rien ; un moteur qui classe le carburant épuisé en piège (`BudgetEnPiege`) diverge là, avant toute soirée. Son contrôle négatif, joué à la main : sans l'appel à `provoquer_le_budget`, ce test échoue, et lui seul des six.
+- `epreuve`, `deux_moteurs::tests` : `le_resultat_du_banc_se_lit` (chaque arrêt garde sa nature), `le_code_du_banc_doit_s_accorder` (nouveau).
+- Dans les navigateurs, E20 : `Budget × 2` classées pareil dans Chrome et Firefox pour `devine`, `ardoise`, les trois jeux et 32 des 33 fautifs (`declaration-incoherente` est refusé au chargement, pareil, et ne joue rien).
+
+### Les vérifications
+
+`CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation ; 31 à 51 % de mémoire libre avant chaque commande lourde, `vm.loadavg` de 5 à 13.
+
+| Commande | Résultat |
+| --- | --- |
+| `cargo test -p moteur-commun --test commun releve` ; `-p epreuve --lib deux_moteurs` ; `-p banc` | 6, 3, 28 réussis |
+| `cargo clippy -p moteur-commun -p epreuve -p banc --all-targets -- -D warnings` ; dans `web/`, `wasm32` et natif ; `cargo test` dans `web/` ; `cargo fmt --all --check` (commun, `web/`) | aucun avertissement ; 9 réussis ; rien à reformater |
+| `cargo build --release -p banc`, puis `-p epreuve --bin soiree-epreuve` | 4,9 s (0,23 Go), 12,7 s (0,40 Go) |
+| `soiree-banc machine --navigateur firefox`, puis `chrome` (20 h 42) | code 0 chacun ; 33 essais, le contrôle négatif n'a fait échouer que les trois `globales_i64` |
+| `devine`, `ardoise` (`--wasm`, plan court, E20) | code 3 (module seul), chaque contrôle réussi ou sans objet ; E20 réussi, `Budget × 2` classées pareil |
+| `devine --moteur-fautif 50` | code 1, **E20 seul en échec** dans les deux navigateurs (« événement 60, soirée 0, après l'entrée d'ordre 24 (place 198) : un carburant de 5530 au lieu de 5531 ») ; le rapport entier, comparé ligne à ligne avec celui sans défaut : seuls E20, le verdict et la ligne « Défaut injecté dans le commun : FausserApres(50) » diffèrent |
+| les 33 fautifs (`--wasm`, plan court, E20 ; 20 h 43 à 21 h 02) | E20 réussi pour chacun ; `Budget × 2` partout sauf `declaration-incoherente` (refusé pareil) ; `Panique × 3` (`fichier-qui-panique`) et `× 6` (`panique-au-temps`) en plus ; mêmes codes de sortie, et E1 à E19 aux mêmes issues et aux mêmes nombres d'évaluations, que le passage du vérificateur |
+| le plan court des trois jeux, depuis les sources, avec E20 (21 h 02 à 21 h 08) | Sidequest **0** ; Punchline 1, E2 seul (« une fin, mais aucune autre après la nouvelle partie », graine `b4e6…61c5`, 13 783 lignes) ; Tier list 1, E15 seul (201 670 au début, 213 975 à la fin) : **la référence du § 7** ; E20 réussi dans les deux navigateurs pour chacun |
+| le plan standard des trois jeux, depuis les sources, sans E20 (21 h 08 à 21 h 24) | Punchline **0** (140 s, 1,41 Go) ; Sidequest **0** (565 s, 2,35 Go) ; Tier list **0** (248 s, 0,85 Go) |
+| le code du banc, joué à la main avec trois faux `soiree-banc` (`SOIREE_BANC`) sur `ardoise` : `/usr/bin/false`, un banc qui écrit `"arret": "echec"` (la règle « mêmes lints »), un banc qui écrit « réussi » et rend 1 | code 2 chaque fois, E20 **panne de l'outil** : « le banc rend le code 1 sans écrire … resultat.json », « le banc s'arrête (echec) : la règle « mêmes lints » refuse web/ », « le banc rend le code 1, et son résultat en demande 0 » ; avant la correction, d'après le code d'alors (non rejoué), les deux premiers auraient donné « pas exécuté », le troisième un succès |
+| `cargo test --workspace --no-fail-fast` (21 h 24 à 21 h 33, arrière-plan) | **code 0** : 487 réussis (485 et les deux tests nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 505 s ; 0,78 Go au plus |
+
+Les mesures : MESURES-PHASE-3, « Lot 3b », « Après la vérification » (la durée de E20 par module et par navigateur, Sidequest compris, sous une charge de 8 à 13).
+
+État laissé : aucun navigateur, serveur ni tâche de fond de moi ; aucun profil sous `target/banc/profils` ; aucun dossier `soiree-e20-*` (ceux du moteur fautif et des faux bancs, gardés exprès par l'épreuve, effacés à la main). Punchline et Sidequest propres ; Tier list n'a que la ligne de son `Cargo.lock`. Fichiers de code changés par la correction : `crates/moteur-commun/src/releve.rs`, `crates/moteur-commun/tests/commun/releve.rs`, `crates/epreuve/src/deux_moteurs.rs` ; documents : `PHASE-3.md` (§ 7, ligne du lot 3b ; § 8.2, `rejouer`), `MESURES-PHASE-3.md`, `CHANGELOG.md`, `crates/README.md`, `AGENTS.md`, ce journal.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **`HorsMemoire` et `Piege` ne passent toujours pas par E20** : aucun module de Rust sûr ne les lève, et aucune entrée de l'ABI ne permet de les provoquer de dehors. Ils restent tenus par les essais de `Machine` dans chaque navigateur. `Profondeur` et `Memoire` ne sont pas provoquées non plus ; leur classement passe par la même lecture des globales après un piège que `Budget`, que E20 compare désormais.
+- **`index out of bounds` dans Firefox** reste ambigu (constat 2, écarté ci-dessus).
+- Le reste de « Ce qui n'est pas fait » du lot 3b tient : Safari, les entrées des pilotes, E20 sur le plan standard (sa durée y reste non mesurée), la mémoire des navigateurs.
+
+### Ce que le lot suivant doit savoir
+
+- Le relevé de chaque module commence désormais par `Neuve`, `Bonjour`, `Decrire` (au budget de lecture), puis deux fois `Neuve`, `Bonjour`, `Decrire` en faute `Budget` : 3 instances et 6 appels avant `Soiree(0)`. Un écart à cet endroit n'a pas de soirée (« événement 5 : … »), et c'est le classement d'un carburant épuisé qui diffère.
+- Le lot 3c change toutes les empreintes réécrites, et peut changer le coût de `Decrire` : les budgets provoqués suivent d'eux-mêmes (`c / 2`, `c - 1`, relevés à chaque fois).
+- Pour lever l'ambiguïté de `index out of bounds` (et faire de même pour JavaScriptCore) : lire dans `error.stack` le décalage de la trame wasm, puis l'opérateur du module réécrit à ce décalage (`wasmparser`, déjà dans `moteur-navigateur`) — un accès mémoire donne `HorsMemoire`, un `call_indirect` le code de la table —, avec un essai de `Machine` qui le vérifie dans Firefox.
+- Le code de sortie de `soiree-banc rejouer` fait foi avec son JSON : un scénario qui change ses codes (0, 1, 2) doit changer `deux_moteurs::code_coherent` avec lui.

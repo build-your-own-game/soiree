@@ -80,6 +80,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "banc"
 version = "0.1.0"
 dependencies = [
+ "moteur-commun",
  "serde_json",
  "toml",
  "tungstenite",
@@ -535,6 +536,7 @@ dependencies = [
  "jeu-abi",
  "jeu-natif",
  "miniz_oxide",
+ "moteur-commun",
  "moteur-wasmtime",
  "partie",
  "reecriture",

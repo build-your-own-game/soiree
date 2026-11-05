@@ -7,7 +7,14 @@
 //!
 //! options du plan : [--graine HEX] [--soirees N] [--duree S] [--memoire S]
 //!                   [--controles E1,E2,…] [--court] [--json CHEMIN]
+//!                   [--navigateurs chrome,firefox,safari] [--moteur-fautif N]
 //! ```
+//!
+//! `--navigateurs` ajoute E20 au plan (PHASE-3, § 8.3, lot 3b) : un contrôle long, que
+//! le plan par défaut ne joue pas. L'épreuve lance alors `soiree-banc rejouer`, qu'elle
+//! cherche dans `SOIREE_BANC`, sinon à côté de son exécutable. `--moteur-fautif N` est
+//! le contrôle négatif de E20 : le moteur du navigateur fausse le carburant passé `N`
+//! appels, et E20 doit échouer, et lui seul ; le rapport le dit.
 //!
 //! **Depuis les sources** (un dossier) : l'étape 1 de l'épreuve ([`crate::sources`]) lit
 //! le workspace du jeu, vérifie ses règles d'écriture, compile son module et sa copie
@@ -36,11 +43,11 @@ use moteur_wasmtime::{Moteur, ReglagesMoteur};
 
 use crate::dynamique::FabriqueDynamique;
 use crate::etapes::Compilation;
-use crate::plan::{IdControle, Plan};
+use crate::plan::{CommunFautif, IdControle, Navigateur, Plan};
 use crate::rapport::Rapport;
 use crate::sources::{self, Prepare};
 
-const USAGE: &str = "usage : soiree-epreuve <dossier du jeu> [--module CRATE] [--cible DOSSIER] | --wasm <module.wasm> ; [--graine HEX] [--soirees N] [--duree S] [--memoire S] [--controles E1,E2,…] [--court] [--json CHEMIN]";
+const USAGE: &str = "usage : soiree-epreuve <dossier du jeu> [--module CRATE] [--cible DOSSIER] | --wasm <module.wasm> ; [--graine HEX] [--soirees N] [--duree S] [--memoire S] [--controles E1,E2,…] [--court] [--json CHEMIN] [--navigateurs chrome,firefox] [--moteur-fautif N]";
 
 /// D'où vient le module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +83,14 @@ fn graine(hex: &str) -> Option<[u8; 32]> {
     Some(g)
 }
 
+/// Des navigateurs séparés par des virgules (`chrome,firefox`).
+fn navigateurs(v: &str) -> Result<Vec<Navigateur>, String> {
+    v.split(',')
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| Navigateur::depuis_nom(n).ok_or_else(|| format!("navigateur inconnu : {n}")))
+        .collect()
+}
+
 fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
     let mut args = args.into_iter();
     let mut position = None;
@@ -91,7 +106,8 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
         match a.as_str() {
             "--court" => court = true,
             "--graine" | "--soirees" | "--duree" | "--memoire" | "--controles" | "--json"
-            | "--wasm" | "--module" | "--cible" | "--sources" => {
+            | "--wasm" | "--module" | "--cible" | "--sources" | "--navigateurs"
+            | "--moteur-fautif" => {
                 let v = args
                     .next()
                     .ok_or_else(|| format!("{a} attend une valeur"))?;
@@ -132,8 +148,18 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
             "--module" => module = Some(v),
             "--cible" => cible = Some(PathBuf::from(v)),
             "--sources" => constat = Some(PathBuf::from(v)),
+            "--navigateurs" => plan.navigateurs = navigateurs(&v)?,
+            "--moteur-fautif" => {
+                plan.commun_fautif = Some(CommunFautif::FausserApres(
+                    v.parse().map_err(|_| format!("nombre illisible : {v}"))?,
+                ));
+            }
             _ => json = Some(PathBuf::from(v)),
         }
+    }
+    // Des navigateurs demandent E20, quels que soient les contrôles nommés.
+    if !plan.navigateurs.is_empty() && !plan.demande(IdControle::E20) {
+        plan.controles.push(IdControle::E20);
     }
     let source = match (wasm, position) {
         (Some(_), Some(p)) => return Err(format!("argument en trop : {}", p.display())),
@@ -164,7 +190,7 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
 
 /// Les options du plan, réécrites pour la copie native que lance l'étape 1.
 fn options_du_plan(plan: &Plan) -> Vec<String> {
-    vec![
+    let mut v = vec![
         String::from("--graine"),
         crate::rapport::hex(&plan.graine),
         String::from("--soirees"),
@@ -179,7 +205,22 @@ fn options_du_plan(plan: &Plan) -> Vec<String> {
             .map(|c| c.nom())
             .collect::<Vec<_>>()
             .join(","),
-    ]
+    ];
+    if !plan.navigateurs.is_empty() {
+        v.push(String::from("--navigateurs"));
+        v.push(
+            plan.navigateurs
+                .iter()
+                .map(|n| n.nom())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    if let Some(CommunFautif::FausserApres(n)) = plan.commun_fautif {
+        v.push(String::from("--moteur-fautif"));
+        v.push(n.to_string());
+    }
+    v
 }
 
 /// Écrit le rapport : le texte sur la sortie standard, le JSON dans son fichier.
@@ -305,7 +346,14 @@ fn depuis_les_sources(demande: &sources::Demande, plan: &Plan, json: Option<Path
                 return 2;
             }
             let json = json.unwrap_or_else(|| wasm.with_extension("epreuve.json"));
-            let statut = Command::new(&binaire)
+            let mut copie = Command::new(&binaire);
+            // E20 : la copie native, compilée ailleurs, trouve `soiree-banc` par là.
+            if std::env::var_os("SOIREE_BANC").is_none()
+                && let Ok(b) = crate::deux_moteurs::banc()
+            {
+                copie.env("SOIREE_BANC", b);
+            }
+            let statut = copie
                 .arg(&wasm)
                 .arg("--sources")
                 .arg(&constat)
@@ -327,7 +375,7 @@ fn depuis_les_sources(demande: &sources::Demande, plan: &Plan, json: Option<Path
 #[cfg(test)]
 mod tests {
     use super::{Source, graine, lire, options_du_plan};
-    use crate::plan::{IdControle, Plan};
+    use crate::plan::{CommunFautif, IdControle, Navigateur, Plan};
 
     #[test]
     fn une_ligne_complete() {
@@ -361,6 +409,30 @@ mod tests {
         let mut args = vec![String::from("m.wasm")];
         args.extend(options_du_plan(&p));
         assert_eq!(lire(args).expect("lisible").plan, p);
+        // E20, ses navigateurs et son moteur fautif aussi.
+        p.controles.push(IdControle::E20);
+        p.navigateurs = vec![Navigateur::Chrome, Navigateur::Firefox];
+        p.commun_fautif = Some(CommunFautif::FausserApres(12));
+        let mut args = vec![String::from("m.wasm")];
+        args.extend(options_du_plan(&p));
+        assert_eq!(lire(args).expect("lisible").plan, p);
+    }
+
+    /// E20 n'est pas du plan par défaut ; `--navigateurs` le demande.
+    #[test]
+    fn les_navigateurs_demandent_e20() {
+        let d = lire(["m.wasm".to_owned()]).expect("lisible");
+        assert!(!d.plan.demande(IdControle::E20));
+        assert_eq!(d.plan.navigateurs, []);
+        let d = lire(["m.wasm", "--court", "--navigateurs", "chrome,firefox"].map(String::from))
+            .expect("lisible");
+        assert!(d.plan.demande(IdControle::E20));
+        assert_eq!(
+            d.plan.navigateurs,
+            [Navigateur::Chrome, Navigateur::Firefox]
+        );
+        assert!(lire(["m.wasm", "--navigateurs", "edge"].map(String::from)).is_err());
+        assert!(lire(["m.wasm", "--moteur-fautif", "x"].map(String::from)).is_err());
     }
 
     #[test]

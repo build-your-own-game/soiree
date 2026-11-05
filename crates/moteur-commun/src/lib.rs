@@ -13,7 +13,9 @@
 //!   les remet à zéro, et sa forme dans la garde ([`partie::persistance::InstantaneGarde`]) ;
 //! - l'empreinte de l'état (§ 3.2) ;
 //! - ce que le chargement vérifie : `Bonjour`, les zones, `Decrire`, l'accord de la
-//!   déclaration ([`verifier_chargement`]), sous [`BUDGET_DE_CHARGEMENT`].
+//!   déclaration ([`verifier_chargement`]), sous [`BUDGET_DE_CHARGEMENT`] ;
+//! - le relevé de chaque appel d'une instance, et la reprise des journaux de l'épreuve
+//!   qui le produit, que E20 compare d'un moteur à l'autre ([`releve`], lot 3b).
 //!
 //! Deux morceaux qui s'accordent n'ont qu'une définition : le harnais de mesure des
 //! navigateurs avait recopié ce protocole en JavaScript (`mesures/navigateur/page/
@@ -64,6 +66,7 @@ pub mod essais;
 mod instantane;
 mod machine;
 mod protocole;
+pub mod releve;
 
 pub use chargement::{
     BUDGET_DE_CHARGEMENT, Charge, RefusModule, globales_d_origine, verifier_chargement,

@@ -45,11 +45,22 @@ fn lisible(r: &Rapport) -> String {
     r.texte()
 }
 
-/// Chaque contrôle est réussi ou sans objet, et chaque réussite a des évaluations.
+/// Chaque contrôle du plan est réussi ou sans objet, et chaque réussite a des
+/// évaluations ; hors du plan, il n'y a que E20 (un contrôle long, que seul
+/// `--navigateurs` demande : PHASE-3, § 8.3), « pas exécuté », jamais réussi.
 /// Le module est donné tout compilé : l'étape 1 n'est pas faite, et c'est la seule
 /// étape exigée qui manque (code 3, jamais 0 ; RESTE-PHASE-1, point 13).
 fn passe_tout(r: &Rapport) {
-    for c in &r.controles {
+    let hors_du_plan: Vec<IdControle> = r
+        .controles
+        .iter()
+        .filter(|c| !r.plan.demande(c.id))
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(hors_du_plan, [IdControle::E20], "{}", lisible(r));
+    let e20 = r.resultat(IdControle::E20).expect("au rapport");
+    assert_eq!(e20.issue, IssueControle::PasExecute, "{}", lisible(r));
+    for c in r.controles.iter().filter(|c| r.plan.demande(c.id)) {
         assert!(
             matches!(c.issue, IssueControle::Reussi | IssueControle::SansObjet(_)),
             "{} : {:?}\n{}",
@@ -520,7 +531,8 @@ fn zero_evaluation_n_est_pas_un_succes() {
     assert_eq!(e4.issue, IssueControle::PasExecute);
     assert!(e4.detail.contains("OUT-07"), "{}", e4.detail);
     // Hors du plan, chaque autre contrôle figure au rapport, « pas exécuté » (OUT-10).
-    assert_eq!(r.controles.len(), 19);
+    assert_eq!(r.controles.len(), IdControle::TOUS.len());
+    assert_eq!(r.controles.len(), 20);
     for c in &r.controles {
         if c.id != IdControle::E4 {
             assert_eq!(c.issue, IssueControle::PasExecute, "{}", c.id);

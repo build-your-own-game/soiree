@@ -6,21 +6,23 @@
 //!    `web/moteur-navigateur`, pour `wasm32-unknown-unknown`, puis `wasm-bindgen
 //!    --target web`, à la version de la crate (0.2.129, REM-156). Elle finit avant que
 //!    le navigateur ne parte : jamais de navigateur pendant une compilation (OUT-89).
-//! 3. Deux passages, chacun dans un Chrome neuf sur un profil neuf : la vraie machine,
+//! 3. Deux passages, chacun dans un navigateur neuf sur un profil neuf (Chrome par
+//!    défaut, Firefox avec `--navigateur firefox`, lot 3b) : la vraie machine,
 //!    où tout doit réussir et où chaque famille que le lot demande doit avoir tourné ; puis
 //!    la machine fautive (`?fautif=i64-par-nombre`, des `i64` lus par un nombre), où les
 //!    essais `globales_i64` doivent échouer, et eux seuls.
 //!
 //! La page (`pages/machine.html`) envoie son rapport à `POST /banc/rapport` ; le banc
-//! écoute en même temps sa console et ses exceptions par CDP. Il ne retente rien (OUT-91).
+//! écoute en même temps sa console et ses exceptions (CDP, `BiDi`). Il ne retente rien
+//! (OUT-91).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::chrome::Chrome;
 use crate::horloge::{maintenant, reste};
+use crate::navigateur::{Lance, Navigateur};
 use crate::rapport::{self, Attendu, Rapport, SUITE_MACHINE};
 use crate::serveur::{Requete, Serveur};
 use crate::{commun, web};
@@ -33,8 +35,10 @@ pub const WASM_BINDGEN: &str = "0.2.129";
 pub struct Options {
     /// Construire l'exemple et sa colle avant de jouer.
     pub construire: bool,
-    /// L'exécutable de Chrome.
-    pub chrome: PathBuf,
+    /// Le navigateur.
+    pub navigateur: Navigateur,
+    /// Son exécutable, s'il n'est pas celui de la machine.
+    pub executable: Option<PathBuf>,
     /// Le plus long qu'on attend le rapport d'une page.
     pub delai: Duration,
 }
@@ -43,7 +47,8 @@ impl Default for Options {
     fn default() -> Options {
         Options {
             construire: true,
-            chrome: PathBuf::from(crate::chrome::CHROME),
+            navigateur: Navigateur::Chrome,
+            executable: None,
             delai: Duration::from_secs(60),
         }
     }
@@ -87,18 +92,20 @@ fn lancer(c: &mut Command, quoi: &str) -> Result<String, String> {
     }
 }
 
-/// Construit l'exemple `essais-navigateur` et sa colle dans `paquet`.
-fn construire(web: &Path, paquet: &Path) -> Result<(), String> {
+/// Construit les exemples `exemples` de `web/moteur-navigateur` pour
+/// `wasm32-unknown-unknown`, en une commande, puis la colle de chacun dans `paquet`
+/// (`wasm-bindgen --target web`, à la version de la crate : REM-156).
+pub(crate) fn construire(web: &Path, paquet: &Path, exemples: &[&str]) -> Result<(), String> {
     let cible = web.join("target");
     let mut cargo = Command::new("cargo");
     cargo
         .current_dir(web)
+        .args(["build", "-p", "moteur-navigateur"]);
+    for e in exemples {
+        cargo.args(["--example", e]);
+    }
+    cargo
         .args([
-            "build",
-            "-p",
-            "moteur-navigateur",
-            "--example",
-            "essais-navigateur",
             "--target",
             "wasm32-unknown-unknown",
             "--release",
@@ -108,7 +115,10 @@ fn construire(web: &Path, paquet: &Path) -> Result<(), String> {
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
         cargo.env("CARGO_BUILD_JOBS", "4");
     }
-    lancer(&mut cargo, "cargo build de essais-navigateur")?;
+    lancer(
+        &mut cargo,
+        &format!("cargo build de {}", exemples.join(", ")),
+    )?;
     let version = lancer(
         Command::new("wasm-bindgen").arg("--version"),
         "wasm-bindgen --version",
@@ -119,18 +129,23 @@ fn construire(web: &Path, paquet: &Path) -> Result<(), String> {
             version.trim()
         ));
     }
-    let wasm = cible.join("wasm32-unknown-unknown/release/examples/essais_navigateur.wasm");
-    lancer(
-        Command::new("wasm-bindgen")
-            .args(["--target", "web", "--no-typescript", "--out-dir"])
-            .arg(paquet)
-            .arg(&wasm),
-        "wasm-bindgen",
-    )?;
+    for e in exemples {
+        let wasm = cible.join(format!(
+            "wasm32-unknown-unknown/release/examples/{}.wasm",
+            e.replace('-', "_")
+        ));
+        lancer(
+            Command::new("wasm-bindgen")
+                .args(["--target", "web", "--no-typescript", "--out-dir"])
+                .arg(paquet)
+                .arg(&wasm),
+            &format!("wasm-bindgen de {e}"),
+        )?;
+    }
     Ok(())
 }
 
-/// Un passage : un Chrome neuf, la page, son rapport, puis Chrome fermé.
+/// Un passage : un navigateur neuf, la page, son rapport, puis le navigateur fermé.
 fn passer(
     o: &Options,
     origine: &str,
@@ -146,33 +161,31 @@ fn passer(
         console: Vec::new(),
         verdict: Err(String::from("pas exécuté")),
     };
-    let mut chrome = match Chrome::lancer(&o.chrome, profils) {
+    let mut nav = match Lance::lancer(o.navigateur, o.executable.as_deref(), profils) {
         Ok(c) => c,
         Err(e) => {
             p.verdict = Err(format!("pas exécuté : {e}"));
             return p;
         }
     };
-    p.navigateur.clone_from(&chrome.version);
+    nav.version().clone_into(&mut p.navigateur);
     let url = format!("{origine}/banc/machine.html?fautif={fautif}");
-    let corps = chrome.ouvrir(&url).and_then(|()| {
+    let corps = nav.ouvrir(&url).and_then(|()| {
         let echeance = maintenant()
             .checked_add(o.delai)
             .ok_or_else(|| String::from("délai"))?;
         loop {
             if let Ok(q) = recus.recv_timeout(Duration::from_millis(100)) {
-                p.console
-                    .extend(chrome.ecouter(Duration::from_millis(200))?);
+                p.console.extend(nav.ecouter(Duration::from_millis(200))?);
                 return Ok(q.corps);
             }
-            p.console
-                .extend(chrome.ecouter(Duration::from_millis(100))?);
+            p.console.extend(nav.ecouter(Duration::from_millis(100))?);
             if reste(echeance).is_zero() {
                 return Err(format!("aucun rapport en {:?}", o.delai));
             }
         }
     });
-    chrome.fermer();
+    nav.fermer();
     p.verdict = corps.and_then(|c| {
         let r = rapport::lire(&c)?;
         let v = rapport::juger(&r, &SUITE_MACHINE, fautif, attendu);
@@ -206,7 +219,7 @@ pub fn jouer(o: &Options) -> Result<Vec<Passage>, Arret> {
     let banc = soiree.join("target/banc");
     let paquet = banc.join("paquet");
     if o.construire {
-        construire(&web, &paquet).map_err(Arret::PasExecute)?;
+        construire(&web, &paquet, &["essais-navigateur"]).map_err(Arret::PasExecute)?;
     }
     if !paquet.join("essais_navigateur.js").exists() {
         return Err(Arret::PasExecute(format!(

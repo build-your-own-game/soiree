@@ -349,6 +349,73 @@ FIN
 
 Relevé avec ce script le 2026-11-05 à 16 h 39 et 16 h 40 (même machine, Chrome 156.0.8078.80, `vm.loadavg` de 19 à 27, 31 à 32 % de mémoire libre) : Chrome 1 206 272 et 1 208 624 Kio au plus haut ; `soiree-banc` 0,22 à 0,23 Go (`/usr/bin/time -l`) ; 21,6 s et 17,9 s, construction incrémentale comprise et l'échantillonnage tournant à côté.
 
+## Lot 3b : la durée de E20 (point 14 de RESTE-PHASE-2)
+
+Mesuré le 2026-11-05, de 18 h 23 à 19 h 22 (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), dans Chrome 156.0.8078.80 (`--headless=new`) et Firefox 158.0.1 (`--headless`), profils neufs, par `soiree-epreuve … --court --navigateurs chrome,firefox`, une exécution à la fois, sans compilation à côté. D'autres programmes chargeaient la machine : `vm.loadavg` de 15 à 24 sur une minute au départ de chaque exécution (noté à chaque ligne), 31 à 42 % de mémoire libre. Une seule exécution par module : les durées varient avec la charge (le lancement et la fermeture surtout), aucun chiffre n'est une médiane.
+
+Ce que E20 reprend, sur le plan court : chaque soirée jouée (la principale, l'hostile, la longue d'une heure, celle des propriétés, celle des gels ; la seconde exécution de E9, identique, une fois), depuis sa création, fautes refaites. « Relevé » : la reprise dans wasmtime, faite par l'épreuve. « Page » : de l'ouverture de la page au rapport, deux passages compris (le vrai moteur, puis le moteur fautif du contrôle négatif, qui s'arrête au 101ᵉ appel) ; « reprise » : celle du vrai moteur seule, mesurée par la page (`performance.now()`, Worker) ; « en tout » : lancement et fermeture du navigateur compris. « Banc » : `soiree-banc rejouer` entier, sa construction (la règle « mêmes lints », `cargo build` de l'exemple déjà à jour, `wasm-bindgen`) comprise.
+
+| Module (départ, charge) | Événements, dont appels | Relevé (wasmtime) | Chrome : page, reprise, en tout | Firefox : page, reprise, en tout | Banc (construction) |
+| --- | --- | --- | --- | --- | --- |
+| `devine` (19 h 19, 23,6) | 13 384, 12 903 | 1,7 s | 2,1 s, 0,76 s, 22,1 s | 3,1 s, 1,2 s, 31,0 s | 59,7 s (4,8 s) |
+| `ardoise` (19 h 21, 18,1) | 18 254, 17 777 | 1,2 s | 1,5 s, 0,61 s, 5,5 s | 2,2 s, 1,1 s, 17,8 s | 24,7 s (1,2 s) |
+| Punchline (18 h 37, 16,9) | 25 921, 25 318 | 3,8 s | 4,6 s, 2,5 s, 8,6 s | 5,9 s, 3,6 s, 9,8 s | 19,6 s (0,7 s) |
+| Sidequest (18 h 23, 15,0) | 497 088, 495 300 | 49,1 s | 60,4 s, 46,9 s, non relevé | 47,7 s, 37,4 s, non relevé | 158,9 s (non relevée) |
+| Tier list (18 h 39, 19,6) | 29 798, 29 292 | 13,4 s | 10,4 s, 9,0 s, 17,9 s | 13,4 s, 11,0 s, 23,4 s | 42,5 s (1,1 s) |
+
+Pour Sidequest, le `soiree-banc` lancé était d'avant l'ajout de « en tout » et de la construction au JSON (la commande de construction n'avait refait que `soiree-epreuve`) : ces deux chiffres manquent, le reste est le même code. L'épreuve entière, depuis les sources, compilation de la copie native comprise : Sidequest 792 s (0,72 Go de mémoire résidente au plus pour `soiree-epreuve` et la copie native, `/usr/bin/time -l`, qui ne compte pas les navigateurs), Punchline 135 s (0,52 Go), Tier list 166 s (0,76 Go) ; au lot 3a, le plan court sans E20 prenait 349 s, 35 s et 94 s (sans compilation). La mémoire des navigateurs n'est pas mesurée à ce lot (au lot 3a : Chrome au plus 1,24 Go, un majorant).
+
+Ce qui se lit : la reprise de Sidequest (près de 500 000 appels) prend autant dans un Worker de Chrome ou de Firefox que dans wasmtime, relevé compris ; pour les petits modules, E20 est dominé par le lancement et la fermeture des navigateurs (de 4 à 28 s par navigateur, très variables sous cette charge). Le plan standard n'est pas mesuré avec E20 (deux soirées de trois minutes et six heures de soirée longue : la reprise de la soirée longue y serait six fois plus longue, estimé, non mesuré).
+
+Les 33 modules de `exemples/fautifs`, plan court, de 18 h 43 à 19 h 19 : E20 réussi dans les deux navigateurs pour chacun, de 1 à 2 minutes chacun, épreuve comprise (`soiree-epreuve --wasm`, au plus 1,13 Go de mémoire résidente). Les fautes que leurs journaux font refaire : `Panique` seulement (trois chez `fichier-qui-panique`, six chez `panique-au-temps`) ; `declaration-incoherente` est refusé au chargement, et refusé pareil (« déclaration refusée : limites.memoire (1 pages) sous la mémoire minimale du module (36) »).
+
+Commandes (depuis `soiree/`) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo build --release -p banc
+CARGO_BUILD_JOBS=4 cargo build --release -p epreuve --bin soiree-epreuve
+CARGO_BUILD_JOBS=4 cargo build -p devine-module -p ardoise-module --target wasm32-unknown-unknown --profile module
+target/release/soiree-epreuve --wasm target/wasm32-unknown-unknown/module/devine_module.wasm --court --navigateurs chrome,firefox
+target/release/soiree-epreuve ../games/sidequest --court --navigateurs chrome,firefox
+# Les fautifs : compilés par `cargo test -p epreuve --test epreuve` dans target/verif-module.
+for f in target/verif-module/wasm32-unknown-unknown/module/fautif_*_module.wasm; do
+  target/release/soiree-epreuve --wasm $f --court --navigateurs chrome,firefox
+done
+```
+
+### Après la vérification : E20 remesuré, fautes `Budget` provoquées comprises
+
+Remesuré le 2026-11-05, de 20 h 42 à 21 h 09 (GMT), même machine, mêmes navigateurs (Chrome 156.0.8078.80, Firefox 158.0.1, sans interface, profils neufs), même commande, avec le relevé corrigé (deux fautes `Budget` provoquées avant les soirées : 3 instances neuves et 6 appels de plus par module). `vm.loadavg` de 8 à 13 au départ de chaque exécution (noté à chaque ligne), 31 à 44 % de mémoire libre ; une exécution par module, sans compilation à côté. Les chiffres du tableau précédent ont été pris sous une charge de 15 à 24 : la reprise de Sidequest y prenait de deux à trois fois plus (49,1 s de relevé contre 26,6 s ici) ; le passage du vérificateur, vers 20 h, sous une charge de 5 à 14, donnait pour Sidequest 17,8 s de relevé, 15,5 s et 16,9 s de reprise, 19,2 s et 20,3 s en tout, 40 s de banc. Ces durées dépendent d'abord de la charge de la machine.
+
+| Module (départ, charge) | Événements, dont appels | Relevé (wasmtime) | Chrome : page, reprise, en tout | Firefox : page, reprise, en tout | Banc (construction) |
+| --- | --- | --- | --- | --- | --- |
+| `devine` (20 h 42, 10,9) | 13 393, 12 909 | 0,42 s | 1,1 s, 0,41 s, 2,0 s | 1,4 s, 0,56 s, 3,9 s | 8,3 s (2,3 s) |
+| `ardoise` (20 h 43, 9,8) | 18 263, 17 783 | 0,43 s | 0,93 s, 0,42 s, 1,4 s | 2,0 s, 0,53 s, 4,2 s | 6,0 s (0,32 s) |
+| Punchline (21 h 02, 12,9) | 25 930, 25 324 | 1,3 s | 2,1 s, 1,4 s, 3,1 s | 2,1 s, 1,3 s, 3,5 s | 6,9 s (0,26 s) |
+| Sidequest (21 h 03, 8,6) | 497 097, 495 306 | 26,6 s | 17,6 s, 16,0 s, 19,8 s | 23,3 s, 21,6 s, 25,5 s | 45,9 s (0,58 s) |
+| Tier list (21 h 07, 8,2) | 29 807, 29 298 | 10,1 s | 10,0 s, 8,7 s, 13,7 s | 12,6 s, 10,8 s, 15,4 s | 30,2 s (1,1 s) |
+
+Les chiffres de Sidequest qui manquaient (« en tout » et la construction) sont là : 19,8 s dans Chrome et 25,5 s dans Firefox, lancement et fermeture compris ; 0,58 s de construction. L'épreuve entière, plan court, depuis les sources (la compilation déjà en cache) : Punchline 49 s (0,61 Go de mémoire résidente au plus pour `soiree-epreuve` et la copie native, navigateurs non comptés), Sidequest 235 s (0,92 Go), Tier list 101 s (0,55 Go) ; `devine` 24 s (0,71 Go) et `ardoise` 9,6 s (0,65 Go) en `--wasm`. Les 33 fautifs, de 20 h 43 à 21 h 02 : de 3 à 192 s chacun (`zones-lourdes`, le plus long ; les autres de 23 à 43 s), épreuve comprise, 0,94 Go de mémoire résidente au plus, E20 réussi pour chacun.
+
+### Les messages de SpiderMonkey
+
+Ce que Firefox 158.0.1 lève pour chaque piège de `web/moteur-navigateur/essais/machine.wat`, par `soiree-banc machine --navigateur firefox`, le 2026-11-05 vers 18 h 05 (même machine) :
+
+| Scénario | Firefox 158 | wasmtime 50.0.1 |
+| --- | --- | --- |
+| `unreachable` | `RuntimeError : unreachable executed` | ``wasm `unreachable` instruction executed`` |
+| lecture à 0xFFFFFFF0 | `RuntimeError : index out of bounds` | `MemoryOutOfBounds` |
+| récursion sans fin | `InternalError : too much recursion` | `StackOverflow` |
+| `i32.div_s` et `i32.rem_s` par zéro | `RuntimeError : integer divide by zero` | `integer divide by zero` |
+| `i32::MIN / -1` | `RuntimeError : integer overflow` | `integer overflow` |
+| `i32.trunc_f32_s` d'un NaN | `RuntimeError : invalid conversion to integer` | `invalid conversion to integer` |
+| `i32.trunc_f32_s` de 1e10 | `RuntimeError : integer overflow` | `integer overflow` |
+| `call_indirect` au-delà de la table | `RuntimeError : index out of bounds` | `undefined element: out of bounds table access` |
+| `call_indirect` vers un élément nul | `RuntimeError : indirect call to null` | `uninitialized element` |
+| `call_indirect` d'un autre type | `RuntimeError : indirect call signature mismatch` | `indirect call type mismatch` |
+
+Six messages désignent un seul piège de wasmtime et y sont ramenés ; `index out of bounds` en désigne deux (la mémoire et la table, `AMBIGUS`). `Memory.prototype.grow` au-delà du maximum : `RangeError : failed to grow memory`. Le reste de la suite (globales `i64` par `BigInt`, détachement du tampon) se comporte comme dans Chrome. Commande : `target/release/soiree-banc machine --navigateur firefox` (10 s, construction comprise, 0,64 Go de mémoire résidente au plus pour `soiree-banc` et ses sous-processus attendus).
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).

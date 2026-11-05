@@ -11,8 +11,8 @@
 //!   et `soiree_appel` ; une instance neuve du même `WebAssembly.Module` ;
 //! - [`classer`] : ce que le navigateur lève pendant un appel, ramené à un piège brut
 //!   ([`moteur_commun::Piege`]). `RuntimeError` par son message (la table [`MESSAGES`],
-//!   constatée dans Chrome, qui le ramène au nom que wasmtime donne au même piège, et
-//!   [`AMBIGUS`], les messages qui en désignent plusieurs), `RangeError` et
+//!   constatée dans Chrome et Firefox, qui le ramène au nom que wasmtime donne au même
+//!   piège, et [`AMBIGUS`], les messages qui en désignent plusieurs), `RangeError` et
 //!   `InternalError: too much recursion` en pile native ;
 //! - [`charger`], qui réécrit, compile et fait vérifier un module par
 //!   [`moteur_commun::verifier_chargement`], et [`FabriqueNavigateur`].
@@ -34,6 +34,8 @@
 //!   table [`MESSAGES`] prennent le nom que wasmtime donne au même piège. Dans Chrome,
 //!   tous les pièges des essais sauf un : V8 dit `float unrepresentable in integer range`
 //!   d'un NaN comme d'un flottant hors des bornes, que wasmtime distingue ([`AMBIGUS`]).
+//!   Dans Firefox, tous sauf deux : `SpiderMonkey` dit `index out of bounds` d'un accès
+//!   hors de la mémoire comme d'un `call_indirect` au-delà de la table.
 //!
 //! # Où cela se teste
 //!
@@ -52,4 +54,6 @@ mod types;
 
 pub use chargement::{FabriqueNavigateur, InstanceNavigateur, ModuleCharge, charger};
 pub use machine::{MachineNavigateur, ModuleNavigateur};
-pub use pieges::{AMBIGUS, ErreurJs, MESSAGES, PREFIXE_NON_RAMENE, Ramene, classer, codes};
+pub use pieges::{
+    AMBIGUS, ErreurJs, MESSAGES, MoteurJs, PREFIXE_NON_RAMENE, Ramene, classer, codes,
+};

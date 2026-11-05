@@ -651,6 +651,20 @@ impl<F: Fabrique> Partie<F> {
         }
         let mut a_reconstruire = None;
         let issue = match self.ecartee_en_reference(ordre) {
+            // E20 : l'entrée écartée se rejoue, et doit refaire sa faute.
+            Some(faute) if self.refaire_les_fautes == Oui::Oui => {
+                match self.appeler_entree(ordre, s, &e.octets) {
+                    Err(Echec::Faute(f)) if f == faute => {
+                        a_reconstruire = Some(self.definitive.carburant());
+                        IssueJournal::Ecartee { faute }
+                    }
+                    Err(Echec::Panne(p)) => return Err(p),
+                    autre => {
+                        let c = self.curseur.unwrap_or_default();
+                        return Err(divergence(c, &alloc::format!("la faute {faute:?}"), &autre));
+                    }
+                }
+            }
             Some(faute) => IssueJournal::Ecartee { faute },
             None => match self.appeler_entree(ordre, s, &e.octets) {
                 Ok((issue, reveil)) => {

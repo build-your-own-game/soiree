@@ -4,17 +4,14 @@
 //! choisit un port libre, que Chrome écrit sur sa sortie d'erreur. Le profil est un
 //! dossier neuf sous `target/banc/profils/`, effacé à la fermeture.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value as Json, json};
 
 use crate::cdp::{Cdp, ligne_d_evenement};
-use crate::horloge::{maintenant, reste};
+use crate::navigateur::{arreter_processus, attendre_l_adresse, effacer, profil_neuf};
 
 /// Le Chrome de la machine de l'hôte (macOS).
 pub const CHROME: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -33,18 +30,6 @@ pub struct Chrome {
     session: Option<String>,
 }
 
-/// Un profil neuf : un dossier qui n'existait pas.
-fn profil_neuf(dossier: &Path) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(dossier).map_err(|e| format!("{}: {e}", dossier.display()))?;
-    for n in 0u32..1000 {
-        let p = dossier.join(format!("chrome-{}-{n}", std::process::id()));
-        if std::fs::create_dir(&p).is_ok() {
-            return Ok(p);
-        }
-    }
-    Err(format!("aucun profil neuf sous {}", dossier.display()))
-}
-
 /// L'adresse CDP que Chrome écrit sur sa sortie d'erreur.
 pub fn adresse_annoncee(ligne: &str) -> Option<&str> {
     ligne
@@ -60,7 +45,7 @@ impl Chrome {
         if !executable.exists() {
             return Err(format!("Chrome absent : {}", executable.display()));
         }
-        let profil = profil_neuf(profils)?;
+        let profil = profil_neuf(profils, "chrome")?;
         let mut processus = Command::new(executable)
             .args([
                 "--headless=new",
@@ -78,38 +63,12 @@ impl Chrome {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("lancer Chrome : {e}"))?;
-        let Some(erreur) = processus.stderr.take() else {
-            let _: std::io::Result<()> = processus.kill();
-            return Err(String::from("la sortie d'erreur de Chrome manque"));
-        };
-        let (envoi, recu) = mpsc::channel::<String>();
-        // Le fil lit la sortie d'erreur jusqu'au bout : un tuyau plein bloquerait Chrome.
-        let _: std::io::Result<thread::JoinHandle<()>> = thread::Builder::new()
-            .name(String::from("banc-chrome-stderr"))
-            .spawn(move || {
-                for l in BufReader::new(erreur).lines() {
-                    let Ok(l) = l else { break };
-                    let _: Result<(), mpsc::SendError<String>> = envoi.send(l);
-                }
-            });
-        let echeance = maintenant()
-            .checked_add(Duration::from_secs(30))
-            .ok_or_else(|| String::from("délai"))?;
-        let mut vu = Vec::new();
-        let adresse = loop {
-            let Ok(l) = recu.recv_timeout(reste(echeance)) else {
-                let _: std::io::Result<()> = processus.kill();
-                let _: std::io::Result<std::process::ExitStatus> = processus.wait();
+        let adresse = match attendre_l_adresse(&mut processus, "Chrome", adresse_annoncee) {
+            Ok(a) => a,
+            Err(e) => {
                 effacer(&profil);
-                return Err(format!(
-                    "Chrome n'a pas annoncé son adresse CDP en 30 s : {}",
-                    vu.join(" | ")
-                ));
-            };
-            if let Some(a) = adresse_annoncee(&l) {
-                break String::from(a);
+                return Err(e);
             }
-            vu.push(l);
         };
         let mut chrome = Chrome {
             processus,
@@ -187,19 +146,7 @@ impl Chrome {
         let _: Result<Json, String> =
             self.cdp
                 .envoyer("Browser.close", &json!({}), None, Duration::from_secs(5));
-        let echeance = maintenant().checked_add(Duration::from_secs(10));
-        loop {
-            match self.processus.try_wait() {
-                Ok(Some(_)) | Err(_) => break,
-                Ok(None) => {}
-            }
-            if echeance.is_none_or(|e| reste(e).is_zero()) {
-                let _: std::io::Result<()> = self.processus.kill();
-                let _: std::io::Result<std::process::ExitStatus> = self.processus.wait();
-                break;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
+        arreter_processus(&mut self.processus);
         effacer(&self.profil);
     }
 }
@@ -210,18 +157,6 @@ impl Drop for Chrome {
             self.arreter();
         }
     }
-}
-
-/// Efface un profil ; les processus fils de Chrome y écrivent encore un instant après
-/// sa fin.
-fn effacer(profil: &Path) {
-    for _ in 0..20 {
-        if std::fs::remove_dir_all(profil).is_ok() || !profil.exists() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
-    eprintln!("profil laissé : {}", profil.display());
 }
 
 #[cfg(test)]

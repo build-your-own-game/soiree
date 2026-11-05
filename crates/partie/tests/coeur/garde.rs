@@ -187,6 +187,92 @@ fn une_partie_tronquee_continue_et_se_reprend() {
     assert_eq!(etat(&r), etat(&p));
 }
 
+/// E20 (PHASE-3, lot 3b) : la reprise qui refait les fautes rejoue chaque entrée
+/// écartée, comme la partie l'a jouée (l'appel, la faute, la reconstruction), et
+/// retrouve la même partie ; elle fait plus d'appels que la reprise ordinaire, qui les
+/// saute. Une faute du journal que l'instance ne refait pas est une divergence, que la
+/// reprise ordinaire ne voit pas.
+#[test]
+fn la_reprise_qui_refait_les_fautes_refait_chacune() {
+    let (mut p, points) = une_soiree(60);
+    let fin = p.empreinte().unwrap();
+    let ecartees_au_journal = ecartees(p.journal());
+    assert!(ecartees_au_journal >= 5, "{ecartees_au_journal}");
+    let creation = &points[0];
+    let ordinaire = FabriqueModele::new(ReglageModele::ordinaire());
+    let compteurs_ordinaires = std::rc::Rc::clone(&ordinaire.compteurs);
+    let mut r = Partie::reprendre(ordinaire, ouverture_de(&p), creation, p.journal()).unwrap();
+    assert_eq!(r.empreinte().unwrap(), fin);
+    let refaisant = FabriqueModele::new(ReglageModele::ordinaire());
+    let compteurs = std::rc::Rc::clone(&refaisant.compteurs);
+    let mut f = Partie::reprendre_en_refaisant_les_fautes(
+        refaisant,
+        ouverture_de(&p),
+        creation,
+        p.journal(),
+    )
+    .unwrap();
+    assert_eq!(f.empreinte().unwrap(), fin);
+    assert_eq!(f.coeur(), p.coeur());
+    assert_eq!(etat(&f), etat(&p));
+    // Chaque faute refaite reconstruit la définitive : une restauration de plus chacune.
+    assert_eq!(
+        compteurs.restaurations.get(),
+        compteurs_ordinaires.restaurations.get() + u64::try_from(ecartees_au_journal).unwrap(),
+    );
+    assert!(compteurs.ecritures.get() > compteurs_ordinaires.ecritures.get());
+    // Le journal dit une autre faute que celle que l'instance refait.
+    let lignes: Vec<Ligne> = p
+        .journal()
+        .lignes()
+        .iter()
+        .cloned()
+        .map(|l| match l {
+            Ligne::Entree(mut e) if matches!(e.issue, IssueJournal::Ecartee { .. }) => {
+                e.issue = IssueJournal::Ecartee {
+                    faute: Faute::Budget,
+                };
+                Ligne::Entree(e)
+            }
+            l @ (Ligne::Entree(_)
+            | Ligne::Arrivees { .. }
+            | Ligne::Empreinte { .. }
+            | Ligne::Saut { .. }
+            | Ligne::Pause { .. }
+            | Ligne::Vue { .. }
+            | Ligne::Partie { .. }
+            | Ligne::Reprise { .. }) => l,
+        })
+        .collect();
+    let autre = decoder_journal(&encoder_lignes(
+        p.journal().base(),
+        p.journal().pas(),
+        &lignes,
+    ))
+    .unwrap();
+    assert!(
+        Partie::reprendre(
+            FabriqueModele::new(ReglageModele::ordinaire()),
+            ouverture_de(&p),
+            creation,
+            &autre,
+        )
+        .is_ok(),
+        "la reprise ordinaire ne relit pas la faute"
+    );
+    let refus = Partie::reprendre_en_refaisant_les_fautes(
+        FabriqueModele::new(ReglageModele::ordinaire()),
+        ouverture_de(&p),
+        creation,
+        &autre,
+    );
+    assert!(
+        matches!(&refus, Err(RefusReprise::Panne(pa)) if pa.cause == partie::CausePanne::RejeuDivergent),
+        "{:?}",
+        refus.err()
+    );
+}
+
 /// Un morceau de journal se raccorde à la fin de celui qu'il prolonge, et pas ailleurs.
 #[test]
 fn les_morceaux_de_journal_se_raccordent() {
