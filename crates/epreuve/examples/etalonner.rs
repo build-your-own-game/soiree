@@ -22,7 +22,9 @@
 //!    passée à l'épreuve à la place de la copie native), et la vue de l'écran, l'état
 //!    et les invariants de chaque pire cas : pour chaque appel d'au moins
 //!    [`LOURD`] unités, `(durée − coût fixe) / carburant`.
-//! 4. **Le chargement**, pour mémoire.
+//! 4. **Le chargement**, pour mémoire : sa durée, et le carburant de `Bonjour` et de
+//!    `Decrire` sous `BUDGET_DE_CHARGEMENT` (celui de `Creer` est dans la soirée, par
+//!    sorte d'appel).
 //!
 //! Les durées ne valent que pour cette machine, et pour wasmtime : ni pour un
 //! navigateur, ni pour l'ordinateur de la soirée. Une mesure porte la date et la
@@ -348,6 +350,11 @@ fn etalonner(moteur: &Moteur, chemin: &str) -> Result<(), String> {
     let zones = module.octets_remis_a_zero();
     println!("{chemin}");
     println!("  chargement : {} ms", chargement.as_millis());
+    let (bonjour, decrire) = module.carburant_du_chargement();
+    println!(
+        "  carburant du chargement : Bonjour {bonjour}, Decrire {decrire} (BUDGET_DE_CHARGEMENT {})",
+        moteur_wasmtime::BUDGET_DE_CHARGEMENT
+    );
 
     let zero_ns = remise_a_zero(zones);
     println!(

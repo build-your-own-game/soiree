@@ -319,3 +319,20 @@ fn entree_par_entree_meme_etat() {
     assert_eq!(c.ecartees, 5, "{c:?}");
     assert!(c.empreintes >= 1, "{c:?}");
 }
+
+/// PHASE-3, lot 2 (P5) : le chargement de `devine` brûle mille fois moins que
+/// `BUDGET_DE_CHARGEMENT` (une marge choisie). Ce qu'en brûlent les cinq modules est
+/// mesuré dans `MESURES-PHASE-3.md`, « Lot 2 » : `Decrire` au plus 9 322 unités, chez
+/// Tier list. Un budget baissé jusqu'à gêner un jeu honnête ferait d'abord rougir ce
+/// test.
+#[test]
+fn le_chargement_tient_largement_son_budget() {
+    let (_moteur, charge) = module::charger();
+    let (bonjour, decrire) = charge.carburant_du_chargement();
+    assert!(bonjour > 0 && decrire > 0, "{bonjour}, {decrire}");
+    assert!(
+        bonjour.max(decrire) * 1000 < moteur_wasmtime::BUDGET_DE_CHARGEMENT,
+        "Bonjour {bonjour}, Decrire {decrire}, budget {}",
+        moteur_wasmtime::BUDGET_DE_CHARGEMENT
+    );
+}

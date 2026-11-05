@@ -4,6 +4,7 @@
 # Les membres sont nommés un à un, et non par `crates/*` : Cargo refuse un
 # motif qui désigne un dossier sans `Cargo.toml`, et `crates/exemples` en est un.
 # Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
+# `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2).
 #
 # Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
 # INTERFACE.md les sort de la crate du jeu (D8), pas du workspace. Elles partagent
@@ -19,6 +20,7 @@ members = [
     "crates/jeu",
     "crates/jeu-natif",
     "crates/reecriture",
+    "crates/moteur-commun",
     "crates/moteur-wasmtime",
     "crates/partie",
     "crates/epreuve",
@@ -48,6 +50,8 @@ jeu-derive = { path = "crates/jeu-derive", version = "0.1.0" }
 jeu = { path = "crates/jeu", version = "0.1.0" }
 jeu-natif = { path = "crates/jeu-natif", version = "0.1.0" }
 reecriture = { path = "crates/reecriture", version = "0.1.0" }
+# Le protocole d'un appel, une seule fois pour tous les moteurs (PHASE-3, § 2.3, P2).
+moteur-commun = { path = "crates/moteur-commun", version = "0.1.0" }
 moteur-wasmtime = { path = "crates/moteur-wasmtime", version = "0.1.0" }
 partie = { path = "crates/partie", version = "0.1.0" }
 epreuve = { path = "crates/epreuve", version = "0.1.0" }

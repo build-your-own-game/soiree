@@ -11,7 +11,8 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
 | `jeu` | ce qu'écrit l'auteur d'un jeu, la colle du module, `jeu::module!` | `no_std` ; `unsafe` seulement sous `#[expect]` (allocateur, exports, le sceau `colle::Hote`) | écrite, testée |
 | `jeu-natif` | la copie native d'un jeu, comme `partie::Instance` | un seul `unsafe`, qui construit le jeton de l'hôte ; vide sous `wasm32` | écrite, testée |
 | `reecriture` | valider et réécrire un module : carburant, profondeur, NaN, croissance, globales | pure, sans `unsafe` | écrite, testée |
-| `moteur-wasmtime` | le module réécrit dans wasmtime, comme `partie::Instance` | sans `unsafe` | écrite, testée |
+| `moteur-commun` | le protocole d'un appel, une seule fois pour tous les moteurs : le trait `Machine` (les primitives d'un moteur), `Protocole` (une `partie::Instance` sur une `Machine`), le classement d'un piège, l'instantané hors des quatre zones et sa forme gardée, l'empreinte, `verifier_chargement` et `BUDGET_DE_CHARGEMENT` ; le module d'essai `essais::BONJOUR_QUI_BOUCLE` (PHASE-3, lot 2) | `no_std`, sans `unsafe`, sans entrées-sorties | écrite, testée sur une machine fausse (`tests/commun`) |
+| `moteur-wasmtime` | le module réécrit dans wasmtime, comme `partie::Instance` : `impl Machine` sur wasmtime, l'époque du garde-fou mural et le fil de chaque instance ; l'exemple `boucle_vide` (M10) | sans `unsafe` | écrite, testée |
 | `partie` | le cœur de la partie qui fait foi ; le contrat `Instance` ; la fenêtre et la tête ; la validation de la scène ; le tour borné (`avancer_borne`), le journal à base et la forme de la garde (`persistance`), PHASE-3 lot 1 | `no_std`, sans entrées-sorties | écrite, testée (§ 8.9, étapes 3, 5 et 6) |
 | `epreuve` | la soirée simulée, les contrôles E1 à E19, l'étape 1 qui part des sources (règles d'écriture, module et copie native compilés), le binaire `soiree-epreuve` | sans `unsafe` | E1 à E19 écrits, chacun avec son contrôle négatif, sur le plan court et le plan standard ; les sept étapes du CONTRAT au rapport ; `tests/deux_instances` joue `devine` sur les deux instances |
 | `exemples/devine` | le jeu d'exemple (§ 9) ; sa crate de module dans `devine/module` | `no_std` | écrit, testé ; le module se compile, sans import |
@@ -26,9 +27,11 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
        \       /      \             |
          jeu           partie        |
         /   \         /      \       |
- exemples   jeu-natif        moteur-wasmtime
-                  \              /
-                   \--epreuve--/
+ exemples   jeu-natif      moteur-commun
+                  \              |
+                   \       moteur-wasmtime
+                    \            /
+                     \--epreuve--/
 ```
 
 | Crate | Dépend de, dans le commun |
@@ -37,7 +40,8 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
 | `jeu` | `jeu-abi`, `jeu-derive` |
 | `partie` | `jeu-abi` |
 | `jeu-natif` | `jeu-abi`, `jeu`, `partie` |
-| `moteur-wasmtime` | `jeu-abi`, `partie`, `reecriture` |
+| `moteur-commun` | `jeu-abi`, `partie`, `reecriture` |
+| `moteur-wasmtime` | `jeu-abi`, `moteur-commun`, `partie`, `reecriture` |
 | `epreuve` | `jeu-abi`, `partie`, `moteur-wasmtime`, `reecriture` ; en test et dans l'exemple `natif`, `jeu-natif`, `devine`, `ardoise`, `fautifs`, `fautifs-statiques`. Le binaire que l'étape 1 écrit pour un jeu dépend de `epreuve`, `jeu-natif` et de la crate de règles du jeu |
 | `devine`, `ardoise`, `fautifs` | `jeu` ; leurs crates de module, `jeu` et leur jeu |
 | `fautifs-statiques` | `jeu`, `fautifs` ; ses crates de module, `jeu` et `fautifs-statiques` |
@@ -49,7 +53,8 @@ La conception est dans [`../conception/INTERFACE.md`](../conception/INTERFACE.md
 - **`jeu-abi`** : la définition unique des octets échangés. Changer la forme d'un `Appel`, d'un `Retour` ou d'une `EntreeFil` fait rougir `forme_figee` ; un tel changement monte `jeu_abi::ABI` et réécrit les octets attendus de `tests/abi/commun.rs`, à la main. L'ABI 2 a ajouté `Appel::Proprietes` et `Appel::Hypothese` (et leurs retours), à la fin des deux enums, pour E10 et E11 : les octets de l'ABI 1 n'ont pas bougé. L'ABI 3 a ajouté à `ProprietesFil` le nombre de variantes de `Phase` (E3) et les noms d'`Epreuve::INVARIANTS` (E4) : seuls les octets de `Retour::Proprietes` ont changé.
 - **`partie::Fabrique::neuve_tete`** : une méthode ajoutée, avec une valeur par défaut (`neuve`), pour la seconde instance qu'une fenêtre fait naître. Une fabrique existante n'a rien à changer ; la sonde de l'épreuve s'en sert pour ne pas juger la tête.
 - **`partie::Instance`**, `Fabrique`, `Echec`, `Faute`, `PanneOutil`, `CausePanne` : le contrat entre le cœur et les deux instances. `partie::modele::InstanceModele` en est une implémentation sans WebAssembly, pour les tests du cœur.
-- **`partie::persistance`** (PHASE-3, § 2.4) : la forme de la garde, un en-tête de cinq octets (`VERSION_GARDE` en `u32` petit-boutiste, puis la sorte) et un contenu en postcard. Changer la forme d'un type gardé (lignes du journal, `EtatCoeur`, `Ouverture`, `Budgets`, `Faute`, `PointDeReprise` aplati) fait rougir les octets figés et la seconde lecture de `partie/tests/coeur/garde.rs` et `forme_garde.rs` (SAL-90 : chaque variant de chaque enum gardée, un `EtatCoeur` qui a des fiches, des tenus, des manettes, des demandes et des vues, un point dont la chaîne a trois points) ; ceux de l'instantané de wasmtime sont dans les tests de `moteur-wasmtime/src/interieur.rs`. Un tel changement monte `VERSION_GARDE` et réécrit ces octets à la main. L'instantané d'une instance s'écrit par `persistance::InstantaneGarde`, que chaque instance gardée implémente (`moteur_wasmtime::InstantaneWasm`, le modèle).
+- **`partie::persistance`** (PHASE-3, § 2.4) : la forme de la garde, un en-tête de cinq octets (`VERSION_GARDE` en `u32` petit-boutiste, puis la sorte) et un contenu en postcard. Changer la forme d'un type gardé (lignes du journal, `EtatCoeur`, `Ouverture`, `Budgets`, `Faute`, `PointDeReprise` aplati) fait rougir les octets figés et la seconde lecture de `partie/tests/coeur/garde.rs` et `forme_garde.rs` (SAL-90 : chaque variant de chaque enum gardée, un `EtatCoeur` qui a des fiches, des tenus, des manettes, des demandes et des vues, un point dont la chaîne a trois points) ; ceux de l'instantané d'un module sont dans les tests de `moteur-commun/src/instantane.rs`. Un tel changement monte `VERSION_GARDE` et réécrit ces octets à la main. L'instantané d'une instance s'écrit par `persistance::InstantaneGarde`, que chaque instance gardée implémente (`moteur_commun::Instantane`, que `moteur_wasmtime::InstantaneWasm` nomme, et le modèle). `VERSION_GARDE` vaut 2 depuis le lot 2 de la phase 3 : l'instantané d'un module ne garde plus que la mémoire hors des quatre zones (P3) ; les octets des types de `partie` n'ont pas changé.
+- **`moteur_commun::Machine`** (PHASE-3, § 2.3) : le contrat entre le protocole du commun et un moteur WebAssembly (wasmtime aujourd'hui, le navigateur au lot 3a). Un moteur ne fait que des primitives (lire, écrire, remettre à zéro, faire grandir la mémoire, lire et poser une globale par son nom, appeler `soiree_boite` et `soiree_appel`, une instance neuve du même module) et rend un piège brut (`Piege`) ; l'échéance du garde-fou mural se pose dans `boite` et borne `boite` et `appel` ensemble (INTERFACE, § 4.6) ; tout ce qui se décide (le déroulé d'un appel, le classement d'une faute, l'instantané, l'empreinte, le chargement) est dans `moteur-commun`, et ne se recopie pas. L'ordre du classement est tenu par `tests/commun/ordre.rs`, `classer_garde_son_ordre`, et ses bornes exactes (un carburant à 0, une profondeur au maximum : pas des fautes) par `les_bornes_exactes_ne_sont_pas_des_fautes`.
 - **Les indices du journal sont absolus** : un point, une `Ligne::Reprise`, un `RapportFaute` désignent une ligne par son indice depuis le début de la soirée, qui ne bouge pas quand le journal est tronqué (`Journal::base`, P10).
 - **La zone de panique et les bords de la forme canonique** (`jeu_abi::lire_panique`, `entete_de_panique`, `lire_canonique`) : écrits hors de postcard, définis une fois dans `jeu-abi`, écrits par la colle de `jeu`, lus par le moteur et l'épreuve.
 

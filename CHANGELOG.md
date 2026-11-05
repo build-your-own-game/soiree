@@ -21,6 +21,23 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 2 : le moteur en deux
+
+Rien ne change pour l'API d'un jeu ni pour l'ABI (`jeu_abi::ABI` vaut 3), ni pour les empreintes : le même module réécrit donne, sur la soirée de `devine`, les mêmes empreintes avant et après (`conception/PHASE-3.md`, § 2.3, lot 2 ; `conception/LOTS-PHASE-3.md`, « Lot 2 »).
+
+- **Une crate de plus, `moteur-commun`** (P2) : le protocole d'un appel, une seule fois pour tous les moteurs. Le trait `Machine` (les primitives d'un moteur : lire, écrire et remettre à zéro la mémoire, la faire grandir, lire et poser une globale par son nom, appeler `soiree_boite` et `soiree_appel`, une instance neuve) et le piège brut `Piege` ; `Protocole<M: Machine>`, une `partie::Instance` ; le classement d'un piège, dans l'ordre d'avant (tenu par `classer_garde_son_ordre`) ; l'empreinte ; `verifier_chargement` (`Bonjour`, zones, `Decrire`, déclaration) ; `RefusModule` ; le module d'essai `essais::BONJOUR_QUI_BOUCLE`. `no_std`, sans entrées-sorties.
+- **`moteur-wasmtime` est réduit à `impl Machine` sur wasmtime**, l'époque du garde-fou et le fil de chaque instance. Son API ne change pas : `Moteur`, `ReglagesMoteur`, `ModuleCharge`, `InstanceWasm`, `FabriqueWasm`, `InstantaneWasm` (désormais un alias de `moteur_commun::Instantane`), `RefusModule` et `BUDGET_DE_CHARGEMENT` (réexportés de `moteur-commun`). Nouveaux : `ModuleCharge::carte` et `ModuleCharge::carburant_du_chargement`, l'exemple `boucle_vide` (M10). Le garde-fou mural borne toujours un appel en entier, `soiree_boite` et `soiree_appel` ensemble : son échéance se pose une fois, dans `Machine::boite`.
+- **L'instantané ne garde plus que la mémoire hors des quatre zones** (P3) : la pile, la boîte, le brouillon et la zone de panique, remises à zéro avant chaque appel et exclues de l'empreinte, ne sont plus copiées, et la restauration les remet à zéro. Chez Tier list, un plateau neuf garde 323 584 octets au lieu de 25,4 Mio ; le pire cas, 16,8 Mio (M3). Sa forme gardée change : **`partie::persistance::VERSION_GARDE` vaut 2** ; une garde de la version 1 est refusée (`RefusGarde::Version`). Les octets figés de l'instantané sont dans `crates/moteur-commun/src/instantane.rs` ; ceux des types de `partie` n'ont pas changé.
+- **`BUDGET_DE_CHARGEMENT` passe de 2³² à 2²⁶** (P5 ; RESTE-PHASE-2, point 16) : une boucle dans `Bonjour` ou `Decrire` est la faute `Budget` du jeu sous le garde-fou d'une seconde de `ReglagesMoteur::PHASE_1`, même sur une machine chargée, au lieu d'une panne de l'outil. Mesuré : `Bonjour` et `Decrire` des cinq modules brûlent au plus 9 322 unités.
+- `epreuve` compte `moteur-commun` parmi les crates du commun (étape 1, `sources.rs`).
+
+#### Passer à cette version
+
+1. Un jeu n'a rien à faire dans son code. Son `Cargo.lock` gagne `moteur-commun` (que `moteur-wasmtime`, pris par chemin, tire désormais) : Cargo l'écrit à la première compilation ; c'est un changement à committer dans le dépôt du jeu.
+2. Un `Bonjour` ou un `Decrire` qui brûlerait plus de 2²⁶ unités est refusé (faute `Budget`). Aucun des cinq modules mesurés n'en approche (au plus 9 322).
+3. Du code qui lisait les champs de `InstantaneWasm` (aucun hors du moteur) lit `pages()`, `plages()`, `octets()` et `globales()` de `moteur_commun::Instantane`. Une garde écrite avant ce lot ne se relit plus.
+4. Changer la forme de l'instantané monte `VERSION_GARDE` et réécrit à la main les octets figés de `crates/moteur-commun/src/instantane.rs` (et non plus de `moteur-wasmtime/src/interieur.rs`, retiré).
+
 ### Phase 3, lot 1 : le cœur prêt pour le monde
 
 Rien ne change pour l'API d'un jeu ni pour l'ABI (`jeu_abi::ABI` vaut 3). Ce qui change dans `partie` et dans ce que l'épreuve joue et juge (`conception/PHASE-3.md`, § 2.4, § 2.11, lot 1 ; `conception/LOTS-PHASE-3.md`, « Lot 1 ») :

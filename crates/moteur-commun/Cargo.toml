@@ -1,0 +1,26 @@
+[package]
+name = "moteur-commun"
+description = "Le protocole d'un appel, une seule fois pour tous les moteurs : wasmtime et le navigateur."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+partie.workspace = true
+# Les noms des globales que la réécriture exporte, le module réécrit et ses refus : une
+# seule définition, celle de la réécriture (PHASE-3, § 2.2).
+reecriture.workspace = true
+# L'empreinte de l'état : la mémoire hors des zones exclues, et les globales (§ 3.2).
+blake3.workspace = true
+
+[dev-dependencies]
+# Le module de `Bonjour` qui boucle, écrit en `wat`, lu et réécrit dans les tests.
+wat.workspace = true
+# Des octets au hasard pour la relecture de l'instantané : jamais de panique (REM-64).
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -30,13 +30,14 @@ use crate::ecriture::{self, Attendu};
 use crate::etapes::{Compilation, IssueEtape, Regle};
 
 /// Les crates du commun : elles ne sont jamais jugées comme des crates du jeu.
-const CRATES_DU_COMMUN: [&str; 8] = [
+const CRATES_DU_COMMUN: [&str; 9] = [
     "jeu",
     "jeu-abi",
     "jeu-derive",
     "jeu-natif",
     "partie",
     "reecriture",
+    "moteur-commun",
     "moteur-wasmtime",
     "epreuve",
 ];

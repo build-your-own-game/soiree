@@ -470,8 +470,8 @@ fn octets_journal() -> Vec<u8> {
 #[test]
 fn les_octets_de_la_garde_sont_figes() {
     assert_eq!(
-        VERSION_GARDE, 1,
-        "les octets de ce fichier sont ceux de la version 1"
+        VERSION_GARDE, 2,
+        "les octets de ce fichier sont ceux de la version 2 (ceux de partie n'ont pas changé depuis la 1)"
     );
     let mut ecarts = Vec::new();
     let o = encoder_ouverture(&ouverture_figee());

@@ -30,8 +30,9 @@ Pendant la refonte, les trois jeux dépendent du commun **par chemin** (`../../s
 - Un changement qui casse un jeu dit comment s'adapter, dans `CHANGELOG.md` et, pendant la refonte, dans `conception/BESOINS-DES-JEUX.md`.
 - **Les octets échangés ont une seule définition, dans `jeu-abi`.** Changer la forme d'un `Appel`, d'un `Retour` ou d'une `EntreeFil` fait rougir `forme_figee` : un tel changement monte `jeu_abi::ABI` et réécrit à la main les octets attendus de `crates/jeu-abi/tests/abi/commun.rs`. Un variant s'ajoute à la fin de son enum.
 - Changer ce que fait la réécriture monte `reecriture::VERSION` : l'empreinte d'un module réécrit en dépend.
-- Changer la forme de ce que la garde tient (un type de `partie` gardé, l'instantané d'une instance) monte `partie::persistance::VERSION_GARDE` et réécrit à la main les octets figés de `crates/partie/tests/coeur/garde.rs` et `forme_garde.rs` (et, pour l'instantané de wasmtime, ceux des tests de `crates/moteur-wasmtime/src/interieur.rs`). Un variant ajouté à une enum gardée ne compile plus dans `forme_garde.rs` tant qu'il n'a pas ses octets figés.
-- Le moteur et le cœur (`moteur-wasmtime`, `partie`) ne dépendent jamais de `jeu` : ils ne connaissent aucun type de jeu (D6).
+- Changer la forme de ce que la garde tient (un type de `partie` gardé, l'instantané d'une instance) monte `partie::persistance::VERSION_GARDE` et réécrit à la main les octets figés de `crates/partie/tests/coeur/garde.rs` et `forme_garde.rs` (et, pour l'instantané d'un module, ceux des tests de `crates/moteur-commun/src/instantane.rs`). Un variant ajouté à une enum gardée ne compile plus dans `forme_garde.rs` tant qu'il n'a pas ses octets figés.
+- Le moteur et le cœur (`moteur-commun`, `moteur-wasmtime`, `partie`) ne dépendent jamais de `jeu` : ils ne connaissent aucun type de jeu (D6).
+- **Le protocole d'un appel a une seule définition, dans `moteur-commun`** (PHASE-3, P2) : le déroulé d'un appel, le classement d'un piège en faute ou en panne, l'instantané hors des quatre zones, l'empreinte et ce que le chargement vérifie. Un moteur (`moteur-wasmtime`, demain `moteur-navigateur`) n'écrit que l'`impl Machine` de ses primitives ; n'y recopie rien de ce qui se décide.
 
 Ce qui est figé pour les autres crates, et le graphe des dépendances, sont dans `crates/README.md`.
 

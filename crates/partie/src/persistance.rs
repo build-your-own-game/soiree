@@ -16,8 +16,8 @@
 //! chaque enum gardée, un état du cœur qui a de chaque chose, un point dont la chaîne
 //! a trois points ; une seconde lecture indépendante, qui n'utilise ni serde ni postcard
 //! (SAL-90), les relit champ à champ. Changer la forme d'un type gardé fait rougir l'un
-//! et l'autre, et demande de monter [`VERSION_GARDE`]. L'instantané de wasmtime a les
-//! siens (`moteur-wasmtime`, `interieur.rs`). Une garde d'une autre version est refusée,
+//! et l'autre, et demande de monter [`VERSION_GARDE`]. L'instantané d'un module a les
+//! siens (`moteur-commun`, `instantane.rs`). Une garde d'une autre version est refusée,
 //! typée ([`RefusGarde::Version`]) : on ne relit pas des octets qu'on ne sait plus lire.
 //!
 //! # Un point de reprise
@@ -49,9 +49,13 @@ use crate::partie::{Ouverture, PointDeReprise};
 
 /// La version de la forme de la garde. Elle monte à chaque changement de la forme d'un
 /// type gardé (un champ, un variant, leur ordre) : les octets figés de
-/// `tests/coeur/garde.rs`, de `tests/coeur/forme_garde.rs` et de l'instantané de
-/// `moteur-wasmtime` se réécrivent alors à la main.
-pub const VERSION_GARDE: u32 = 1;
+/// `tests/coeur/garde.rs`, de `tests/coeur/forme_garde.rs` et de l'instantané d'un
+/// module (`moteur-commun`, `instantane.rs`) se réécrivent alors à la main.
+///
+/// Version 2 (PHASE-3, lot 2) : l'instantané d'un module ne garde plus que la mémoire
+/// hors des quatre zones (P3). Les types de `partie` n'ont pas changé : leurs octets
+/// figés sont ceux de la version 1, sous un autre en-tête.
+pub const VERSION_GARDE: u32 = 2;
 
 /// La sorte d'un message de la garde : le cinquième octet de l'en-tête.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,7 +107,7 @@ impl From<ErreurFil> for RefusGarde {
 }
 
 /// Un instantané d'instance que la garde sait écrire et relire : la mémoire, les
-/// globales et la taille d'un module (`moteur-wasmtime`), l'état du modèle des tests.
+/// globales et la taille d'un module (`moteur-commun`), l'état du modèle des tests.
 /// Ses octets sont les siens ; la garde les range sans les lire.
 pub trait InstantaneGarde: Sized {
     /// Écrit l'instantané à la fin de `dans`.

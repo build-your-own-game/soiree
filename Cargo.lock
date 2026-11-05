@@ -1079,11 +1079,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "moteur-wasmtime"
+name = "moteur-commun"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "jeu-abi",
+ "partie",
+ "proptest",
+ "reecriture",
+ "wat",
+]
+
+[[package]]
+name = "moteur-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "jeu-abi",
+ "moteur-commun",
  "partie",
  "reecriture",
  "wasmtime",

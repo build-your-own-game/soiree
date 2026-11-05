@@ -7,7 +7,9 @@
 
 #![cfg(test)]
 
+mod chargement_borne;
 mod charger;
 mod commun;
 mod etat;
 mod fautes;
+mod sans_zones;

@@ -15,8 +15,8 @@
 //! appartient à l'ABI (les capacités, une manette, une touche, un pointeur, une
 //! présence) est écrit d'après sa forme d'ABI, figée par `jeu-abi` (`forme_figee`) ; la
 //! seconde lecture le compare à ses octets d'ABI. L'instantané du modèle est opaque à
-//! la garde : il se range tel que le modèle l'écrit (`InstantaneGarde`) ; celui de
-//! wasmtime a ses propres octets figés (`moteur-wasmtime`, `interieur.rs`).
+//! la garde : il se range tel que le modèle l'écrit (`InstantaneGarde`) ; celui d'un
+//! module a ses propres octets figés (`moteur-commun`, `instantane.rs`).
 //!
 //! Un variant ajouté ne compile plus dans les `nom_*` ci-dessous (pas de `_`), et un
 //! variant sans octets figés fait rougir `les_octets_figes_couvrent_chaque_variant`.
@@ -646,8 +646,8 @@ fn octets_point(pt: &Point) -> Vec<u8> {
 #[test]
 fn les_octets_de_chaque_variant_sont_figes() {
     assert_eq!(
-        VERSION_GARDE, 1,
-        "les octets de ce fichier sont ceux de la version 1"
+        VERSION_GARDE, 2,
+        "les octets de ce fichier sont ceux de la version 2 (ceux de partie n'ont pas changé depuis la 1)"
     );
     let mut ecarts = Vec::new();
     let mut comparer = |nom: &str, ligne: Ligne, attendu: Vec<u8>| {

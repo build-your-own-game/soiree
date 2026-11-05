@@ -221,6 +221,67 @@ Commande (depuis `soiree/`, la ligne « journal de la soirée longue » du rappo
 CARGO_BUILD_JOBS=4 cargo run --release -p epreuve --bin soiree-epreuve -- ../games/sidequest
 ```
 
+## Lot 2 : le chargement, la boucle vide (M10) et le point de Tier list (M3)
+
+Mesuré le 2026-11-05, de 12 h 33 à 12 h 41 (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), dans wasmtime 50.0.1 (Cranelift), sans navigateur. Le carburant ne dépend pas de la machine ; les durées, si.
+
+### Le carburant du chargement
+
+Les cinq modules, compilés au profil `module` depuis les arbres de travail de la branche `refonte` à cette date (`devine`, `ardoise`, Punchline, Sidequest, Tier list), chargés sous `ReglagesMoteur::PHASE_1` ; `Creer` relevé dans la soirée du plan court rejouée par E9 et E14 (graine `5e…5e`), au plus de tous ses appels. En unités de carburant :
+
+| Module | `Bonjour` | `Decrire` | `Creer` (médiane ; maximum) |
+| --- | --- | --- | --- |
+| devine | 3 104 | 7 468 | 4 275 ; 4 275 |
+| ardoise | 3 161 | 7 304 | 4 097 ; 4 097 |
+| Punchline | 3 191 | 9 297 | 292 345 ; 292 345 |
+| Sidequest | 3 194 | 7 573 | 317 069 ; 343 002 |
+| Tier list | 3 167 | 9 322 | 105 688 ; 105 688 |
+
+Commande (depuis `soiree/`, la ligne « carburant du chargement » et la ligne `Creer` de la soirée) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo run --release -p epreuve --example etalonner -- target/wasm32-unknown-unknown/module/devine_module.wasm target/wasm32-unknown-unknown/module/ardoise_module.wasm ../games/punchline/target/wasm32-unknown-unknown/module/punchline_module.wasm ../games/sidequest/target/wasm32-unknown-unknown/module/sidequest_module.wasm ../games/tier-list/target/wasm32-unknown-unknown/module/tier_list_module.wasm
+```
+
+### M10 : une unité de carburant sur une boucle vide
+
+Le module de `Bonjour` qui boucle (`crates/moteur-commun/essais/bonjour-qui-boucle.wat`) chargé sous un garde-fou de dix minutes, moins un témoin qui piège dès l'entrée, divisé par `BUDGET_DE_CHARGEMENT` ; « médiane ; minimum ; maximum » en ps par unité, sur n chargements. La charge est `vm.loadavg` sur une minute, avant et après.
+
+| Budget | Charge | n | ps par unité | Durée de la boucle (ms) |
+| --- | --- | --- | --- | --- |
+| 2³² | peu chargée (2,4 à 2,8) | 7 | 528 ; 481 ; 539 | 2 070 à 2 317 |
+| 2³² | quatorze `yes`, lancés 3 s avant (3,7 puis 13,2) | 7 | 1 249 ; 928 ; 1 492 | 3 989 à 6 412 |
+| 2²⁶ | peu chargée (3,4) | 15 | 358 ; 233 ; 597 | 16 à 40 |
+| 2²⁶ | quatorze `yes`, lancés 5 s avant (4,5 puis 5,6) | 15 | 903 ; 367 ; 1 033 | 25 à 70 |
+| 2²⁶ | quatorze `yes`, lancés 45 s avant (21) | 21 | 775 ; 383 ; 950 | 26 à 64 |
+
+Les quatorze `yes` (`yes > /dev/null`, un par processus) occupent les dix cœurs. **Sous charge, une unité de boucle vide coûte jusqu'à 1 492 ps**, et non 680 comme au point 2 de RESTE-PHASE-2, dont la charge n'avait duré que le temps d'un test de 3 s. À 2²⁶ les durées sont plus dispersées et souvent plus courtes par unité qu'à 2³² : une boucle de quelques dizaines de millisecondes ne voit pas toute la charge. Le budget se juge donc sur le maximum à 2³², 1 492 ps : 2²⁶ unités en 100 ms, dix fois sous le garde-fou d'une seconde.
+
+Commande (depuis `soiree/` ; pour la charge, lancer d'abord quatorze `yes > /dev/null &`, et les arrêter après) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo run --release -p moteur-wasmtime --example boucle_vide -- 15
+```
+
+Sous la même charge, `chargement_borne::bonjour_qui_boucle_est_une_faute_avec_le_garde_fou_de_chargement` (`PHASE_1`, garde-fou d'une seconde, `BUDGET_DE_CHARGEMENT` 2²⁶) a réussi 10 fois sur 10 à 5 s de charge, puis 20 fois sur 20 à 45 s (le binaire de test lancé seul, `target/debug/deps/moteur-… chargement_borne`, compilé avant la charge). À 2³², sans charge, il échoue : `Panne(PanneOutil { cause: GardeFouMural, … })`.
+
+### M3 : la taille d'un point de reprise de Tier list, dans wasmtime
+
+L'instantané hors des quatre zones (P3), le module de Tier list réécrit et chargé sous `PHASE_1`. Le pire cas est celui de `tests/sauvegarde_lourde.rs` de Tier list : le plus lourd plateau que le jeu accepte (`IMAGES_MAX_OCTETS` d'images, ici quatre images incompressibles de 262 144 octets, des tuiles texte jusqu'à `TUILES_MAX`, `RANGS_MAX` rangs, chaque texte à sa limite), sa sauvegarde écrite (« Download Backup »), puis relue (« Restore Backup »).
+
+| État | Mémoire | Zones (remises à zéro, exclues) | Instantané hors des zones | Gardé (`InstantaneGarde`) |
+| --- | --- | --- | --- | --- |
+| plateau neuf, juste créé | 406 pages (26 607 616 o) | 26 284 032 o | 323 584 o (0,31 Mio) | — |
+| pire cas, sauvegarde relue | 670 pages (43 909 120 o) | 26 284 032 o | 17 625 088 o (16,8 Mio), 3 plages | 17 625 193 o |
+
+Le plateau neuf confirme le calcul de P3 (0,31 Mio). **Le pire cas est cinquante-cinq fois plus gros** : la mémoire a grandi de 264 pages pendant la sauvegarde et sa relecture, et le tas de l'allocateur (`dlmalloc`) garde cette place, que l'instantané garde avec lui. Avant le lot 2, l'instantané copiait la mémoire entière : 43 909 120 octets. Relu de la garde et restauré dans une instance neuve, il rend la même empreinte. Le chiffrement et l'envoi de ce point dans le Worker restent à mesurer (lot 11) : R2, P8 et P9 se jugent sur ces 16,8 Mio.
+
+Commande (depuis `games/tier-list/`) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo test --test sauvegarde_lourde le_point -- --nocapture
+```
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).
