@@ -1,0 +1,19 @@
+[package]
+name = "fautif-zones-lourdes-module"
+description = "Le module WebAssembly du jeu au brouillon de 32 Mio, qui fait échouer E19."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

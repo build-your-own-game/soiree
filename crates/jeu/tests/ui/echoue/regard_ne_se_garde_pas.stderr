@@ -1,0 +1,19 @@
+error[E0308]: mismatched types
+  --> tests/ui/echoue/regard_ne_se_garde_pas.rs:11:5
+   |
+10 | fn cloner(r: &Regard) -> Regard {
+   |                          ------ expected `jeu::Regard` because of return type
+11 |     r.clone()
+   |     ^^^^^^^^^ expected `Regard`, found `&Regard`
+   |
+note: `jeu::Regard` does not implement `Clone`, so `&jeu::Regard` was cloned instead
+  --> tests/ui/echoue/regard_ne_se_garde_pas.rs:11:5
+   |
+11 |     r.clone()
+   |     ^
+
+error[E0507]: cannot move out of `*r` which is behind a shared reference
+ --> tests/ui/echoue/regard_ne_se_garde_pas.rs:7:5
+  |
+7 |     *r
+  |     ^^ move occurs because `*r` has type `jeu::Regard`, which does not implement the `Copy` trait

@@ -16,6 +16,14 @@ use partie::{Echec, Fabrique, Instance};
 use crate::soiree::BUDGETS;
 use crate::sonde::{Compte, recoller};
 
+/// De combien, en pour cent, une vue de l'écran des soirées peut dépasser la vue du
+/// plus lourd des pires cas sans que E16 n'échoue. Le carburant d'une vue dépend aussi
+/// de nombres que le jeu ne choisit pas (un pas, une échéance : un varint d'un octet de
+/// plus coûte quelques unités) ; `devine` dépasse ainsi son pire cas de 10 unités sur
+/// 16 010 au plan court. Un pire cas qui n'est pas construit depuis les limites (dix
+/// tuiles au lieu de trois cents) en est loin. Choisi, non mesuré.
+pub(crate) const MARGE_DU_PIRE_CAS_POUR_CENT: u64 = 10;
+
 /// Ce que les pires cas ont montré.
 #[derive(Debug, Default)]
 pub(crate) struct Constat {

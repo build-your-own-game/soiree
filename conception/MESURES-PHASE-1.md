@@ -1,6 +1,6 @@
 # Mesures de la phase 1
 
-> **Statut.** Mesures du commun de la phase 1 et des trois jeux reconstruits, pour aider le mainteneur à fixer les budgets dans [`CONTRAT.md`](../CONTRAT.md) (question 12 de [`REPONSES-PROVISOIRES.md`](REPONSES-PROVISOIRES.md)). **Ce sont des propositions, pas des budgets.** Les budgets que juge E19 aujourd'hui (`epreuve::BUDGET_ENTREE`, `BUDGET_LECTURE`, `BUDGET_IMAGE`) restent des points de départ choisis, non mesurés.
+> **Statut.** Mesures du commun de la phase 1 et des trois jeux reconstruits, pour aider le mainteneur à fixer les budgets dans [`CONTRAT.md`](../CONTRAT.md) (question 12 de [`REPONSES-PROVISOIRES.md`](REPONSES-PROVISOIRES.md)). **Ce sont des propositions, pas des budgets.** Les budgets que E19 jugeait alors (`epreuve::BUDGET_ENTREE`, `BUDGET_LECTURE`, `BUDGET_IMAGE`) étaient des points de départ choisis, non mesurés ; depuis la phase 2, ils sont dérivés du temps d'une image et dits provisoires (`epreuve::BUDGETS_E19`, voir « Phase 2 — l'étalonnage des budgets de E19 », en fin de fichier).
 >
 > **Date et machine.** Toutes les mesures du 2026-11-04, entre 13 h 50 et 14 h 45 (GMT), sur la même machine : MacBook Apple M5, 10 cœurs (4 de performance, 6 d'efficacité), 16 Go, macOS 26.6.2 ; rustc 1.99.1, cible `aarch64-apple-darwin` pour le natif ; wasmtime 50.0.1 (Cranelift). Arbres de travail non committés, branche `refonte` de chaque dépôt, à cette date. D'autres agents travaillaient sur la machine : une durée peut porter leur charge.
 >
@@ -119,3 +119,34 @@ Elles se discutent ; aucune n'est appliquée.
 3. **Séparer le budget d'une vue de pire cas du budget d'une lecture courante** (question déjà ouverte par Tier list, `games/tier-list/BESOINS-COMMUN.md`, § 13) : un pire cas est construit pour être le plus lourd.
 4. **Décider des gros états (question 1 du § 13)** avant le navigateur : 25 Mio par point de reprise pour Tier list.
 5. **Borner la durée de l'épreuve standard**, ou dire ce qu'elle doit coûter : 27 s à 452 s selon le jeu, sur cette machine.
+
+## Phase 2 — l'étalonnage des budgets de E19
+
+> **Date et machine.** Le 2026-11-04, de 19 h 33 à 19 h 37 (UTC), sur la même machine (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2 ; rustc 1.99.0 ; wasmtime 50.0.1, Cranelift), build `--release`, d'autres programmes tournant à côté. Commande : `cargo run --release -p epreuve --example etalonner -- <module.wasm>…` (`crates/epreuve/examples/etalonner.rs`, dans le dépôt cette fois). Modules : `devine`, le fautif `boucle-au-vote`, et ceux de Punchline, Sidequest et Tier list, compilés depuis des copies de leurs dépôts (`soiree/target/copies-des-jeux/`, hors de tout dépôt) où seule la déclaration `INVARIANTS` que demande l'ABI 3 a été ajoutée ; les dépôts des jeux n'ont pas été touchés.
+
+| | `devine` | `boucle-au-vote` | Punchline | Sidequest | Tier list |
+|---|---|---|---|---|---|
+| Octets remis à zéro par appel (pile, boîte, brouillon, panique) | 2 166 784 | 2 166 784 | 2 166 784 | 3 215 360 | 26 284 032 |
+| `fill(0)` d'un tampon de cette taille | 13,0 µs | 12,5 µs | 13,0 µs | 18,6 µs | 168,7 µs |
+| `Bonjour` (≈ 3 100 unités), médiane de 2 000 | 17,2 µs | 17,2 µs | 17,2 µs | 24,5 µs | 170,9 µs |
+| … moins la remise à zéro | 4,2 µs | 4,7 µs | 4,1 µs | 5,9 µs | 2,3 µs |
+| ps par unité, appels ≥ 10⁶ unités : médiane / 90ᵉ centile | — | 37 / 38 | 25 / 31 | 40 / 45 | 60 / 82 |
+| ps par unité, appels ≥ 10⁵ unités : médiane / 90ᵉ centile | 68 / 190 (3 appels) | 39 / 92 | 56 / 89 | 47 / 66 | 72 / 159 |
+
+« ps par unité » : `(durée − médiane des Bonjour) / carburant`, pour chaque appel des pires cas (vue de l'écran, état, invariants, sept fois chacun) et d'une soirée du plan court rejouée entrée par entrée (E9, E14) sur des instances chronométrées. Les maxima (jusqu'à 9 ms pour un appel de quelques milliers d'unités) sont des interruptions de la machine, pas du module : ils ne sont pas retenus. Ce qu'on en lit :
+
+- **Le coût fixe d'un appel est presque tout entier la remise à zéro des zones** : 4 à 6 µs pour le reste, 13 à 170 µs pour la remise à zéro. C'est la part que la phase 1 n'avait pas mesurée seule (« La durée d'un appel » ci-dessus) : chez Tier list, 169 µs sur 171.
+- **Une unité de carburant vaut moins qu'un cycle** : de 25 à 63 ps en médiane sur les appels lourds, ce qui confirme la pente de 0,04 ns par unité de la phase 1.
+- Les budgets provisoires en sont tirés, avec leur dérivation, dans `crates/epreuve/src/budgets.rs` : 200 ps par unité, 10 µs de fixe et 10 ns par Kio remis à zéro, chacun au-dessus de ce qui est mesuré ici, puis une marge de 4 et la moitié de l'image au jeu. Ce sont des choix provisoires : la phase 3 les remplacera par une mesure dans un navigateur, sur l'ordinateur de la soirée.
+
+### La suite donnée aux propositions
+
+1. *Ne pas juger le budget d'une image en carburant seul* : **appliquée.** Le coût d'un appel est son carburant plus le coût fixe du module (`BudgetsE19::cout_fixe`), et une image somme le coût de ses entrées. Une entrée d'un arriéré (faite sur une vue de plus d'une seconde) n'y compte que son carburant : après le gel de 40 s du plan standard, le socle des fautifs reçoit 225 entrées au premier pas, et leur nombre est le fait du commun.
+2. *Relever les budgets, ou les dire provisoires* : **appliquée, les deux.** Ils sont dérivés du temps d'une image, et non plus choisis, et le rapport les dit provisoires.
+3. *Séparer le budget d'une vue de pire cas de celui d'une lecture courante* : **appliquée** (`BudgetsE19::pire_cas` depuis 33 ms, `BudgetsE19::lecture` depuis 1/60 s), chacun jugé à son maximum.
+4. *Décider des gros états* : **pas tranchée**, c'est au mainteneur. Le coût fixe en donne une raison de plus : chaque appel de Tier list remet 25 Mio à zéro.
+5. *Borner la durée de l'épreuve standard* : **pas tranchée.**
+
+### Les trois jeux contre les budgets provisoires
+
+Le 2026-11-04, de 22 h 31 à 23 h 00 GMT, sur la même machine, `soiree-epreuve` depuis les sources des copies des jeux (seule la déclaration `INVARIANTS` ajoutée), plan standard, graine par défaut. E19 : Punchline et Sidequest passent ; Tier list échoue sur la vue de l'écran de ses pires cas (de 40,5 à 43,0 millions d'unités, coût fixe de 1 333 400 compris, pour un budget de 10 312 500). Sur le reste de l'épreuve, Punchline échoue E8 (la variation d'un octet), Sidequest passe tout (code 0). Durées : 242 s, 284 s et 620 s ; le détail est dans `RESTE-PHASE-1.md`, « Vérifications des budgets ».

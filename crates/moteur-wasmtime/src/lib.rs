@@ -495,6 +495,16 @@ impl ModuleCharge {
         self.commun.memoire_max
     }
 
+    /// Les octets que le moteur remet à zéro avant chaque appel : la pile, la boîte,
+    /// le brouillon et la zone de panique (§ 3.2). Ce travail n'est pas compté dans le
+    /// carburant, qui ne compte que les instructions du module ; il est le même à
+    /// chaque appel, et l'épreuve le compte à part dans ce que juge E19.
+    pub fn octets_remis_a_zero(&self) -> u64 {
+        crate::interieur::remises_a_zero(&self.commun.base, self.commun.zones)
+            .iter()
+            .fold(0u64, |a, (_, n)| a.saturating_add(u64::from(*n)))
+    }
+
     /// Ce qui fabrique ses instances.
     pub fn fabrique(&self) -> FabriqueWasm {
         FabriqueWasm {

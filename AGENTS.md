@@ -2,7 +2,7 @@
 
 > Ce fichier s'adresse à l'agent de code qui travaille dans ce dépôt, quel qu'il soit. Ce dépôt est public, et tous les jeux de la soirée en dépendent.
 
-Le commun est en reconstruction sur la branche `refonte` : la phase 1 est écrite (voir `README.md`, « Où en est le commun »). Ce fichier décrit comment travailler sur ce qui existe maintenant. L'ancien commun reste lisible à l'étiquette `avant-refonte`.
+Le commun est en reconstruction sur la branche `refonte` : les phases 1 et 2 sont écrites (voir `README.md`, « Où en est le commun »), et ce qui reste, avec ce que la phase 3 devra mesurer ou trancher, est dans `conception/RESTE-PHASE-2.md`. Ce fichier décrit comment travailler sur ce qui existe maintenant. L'ancien commun reste lisible à l'étiquette `avant-refonte`.
 
 ## Ce qui fait foi
 
@@ -52,12 +52,15 @@ Depuis ce dossier :
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build -p devine-module --target wasm32-unknown-unknown --profile module
-cargo run --release -p epreuve --example natif -- devine target/wasm32-unknown-unknown/module/devine_module.wasm
+cargo run --release -p epreuve --bin soiree-epreuve -- crates/exemples/devine
 ```
 
-- Les modules des fautifs se compilent de même (`-p fautif-<nom>-module`), et `cargo run --release -p epreuve --example natif -- <nom> <module>` les éprouve avec leur copie native. `crates/epreuve/tests/epreuve` vérifie, sur le plan court, que chacun fait échouer exactement son contrôle.
-- Les tests de `epreuve` prennent l'essentiel de la durée de `cargo test` (près de deux minutes le 2026-11-04, voir `conception/MESURES-PHASE-1.md`).
+- **L'épreuve part des sources** : `soiree-epreuve <dossier du jeu>` (CONTRAT, « L'épreuve », étape 1). Le dossier est la racine du workspace du jeu, sa crate de règles ou sa crate de module ; `--module <crate>` choisit dans un workspace qui en a plusieurs, `--cible <dossier>` le dossier de compilation. L'épreuve lit le workspace (`cargo metadata`), vérifie les règles d'écriture (forme de la crate de module, `#![forbid(unsafe_code)]` et `#![no_std]`, lints, profils, `clippy.toml`, aucun `allow`, aucun `static` ni `thread_local!`, aucun `impl Forme`/`Etat`/`Message` écrit à la main, aucune crate par chemin hors du workspace du jeu, le même commun, et ce que les `build.rs` disent à Cargo), lance clippy en natif et pour `wasm32`, compile le module (profil `module`) et la copie native, puis joue. Le rapport nomme les sept étapes du CONTRAT, faites ou non, exigées ou non avec leur raison (`crates/epreuve/src/etapes.rs`) ; le code de sortie n'est 0 que si chaque étape exigée est faite.
+- **La copie native, sans exemple écrit à la main.** La convention : la crate de module d'un jeu se réduit à `jeu::module!(<chemin du type du jeu>);` (plus `#![no_std]` ou `#![cfg_attr(target_arch = "wasm32", no_std)]`), et ne dépend que de `jeu` et de la crate de règles. L'épreuve y lit le type du jeu, et écrit hors du dépôt du jeu, dans `<cible>/soiree-epreuve/<crate de module>/`, un binaire de trois lignes qui donne `jeu_natif::FabriqueNative::<chemin>` à `epreuve::ligne_de_commande`. Ce binaire dépend de la crate de règles par chemin, de `jeu-natif` et `epreuve` de ce commun-ci, part du `Cargo.lock` du jeu et se compile sans réseau dans `<cible>/soiree-epreuve/cible` (partagé entre les jeux d'un même dossier de compilation). Le jeu doit donc dépendre de ce même commun (règle « même commun »). Une crate `<jeu>-epreuve` écrite à la main n'est plus nécessaire.
+- **Un module seul** : `soiree-epreuve --wasm <module.wasm>` (ou le chemin du fichier). Le rapport le dit, l'étape 1 n'est pas faite, et le code de sortie n'est jamais 0. `cargo run --release -p epreuve --example natif -- <nom> <module>` éprouve ainsi un fautif ou `devine` avec sa copie native, sans recompiler.
+- Les modules des fautifs se compilent avec `-p fautif-<nom>-module`. `crates/epreuve/tests/epreuve` vérifie, sur le plan court, que chacun fait échouer exactement son contrôle ; sur le plan standard, qui fait foi, `cargo test -p epreuve --test epreuve -- --ignored plan_standard` (3 125 s pour 35 jeux le 2026-11-05 sur la machine de l'hôte, quatre fils). Ces tests jouent le module et la copie native, sans l'étape 1. `crates/epreuve/tests/sources.rs` éprouve `devine` depuis ses sources, et une crate de module qui fait plus que la macro.
+- **Un fautif ne passe pas l'étape 1 depuis ses sources** : la crate `fautifs`, que toutes les crates de module des fautifs partagent, tient les `static` de cinq défauts, que la règle « rien hors de l'état » refuse. `soiree-epreuve crates/exemples/fautifs/modules/<nom>` rend donc 1 pour chacun, `sain` et `avec-fenetre` compris, avec, en plus de l'étape 1, exactement le contrôle visé en échec (contrôle final de la phase 2, `conception/RESTE-PHASE-1.md`). Ne lis pas ce code 1 comme l'échec du contrôle seul ; lis le contrôle dans le rapport, ou éprouve le module avec sa copie native (exemple `natif`).
+- Les tests de `epreuve` prennent l'essentiel de la durée de `cargo test` : le 2026-11-05, après `cargo clean`, `cargo test --workspace` a pris 575 s compilation comprise, dont 289 s pour `tests/epreuve` et 134 s pour `tests/sources.rs` (voir `conception/RESTE-PHASE-1.md`, « Contrôle final de la phase 2 »).
 - Sur une machine de 16 Go, une seule commande lourde à la fois : deux compilations de wasmtime en parallèle saturent la mémoire. `CARGO_BUILD_JOBS=4` la borne encore.
 - Quand un autre agent travaille dans le même dossier, préfère `cargo … -p <crate>` au workspace entier, et ne touche qu'aux fichiers de ta tâche.
 
@@ -71,7 +74,7 @@ cargo run --release -p epreuve --example natif -- devine target/wasm32-unknown-u
 ## Les mesures
 
 - Aucun chiffre n'est présenté comme mesuré s'il ne l'est pas. Une mesure porte sa date, sa machine et la commande qui la refait.
-- Les budgets que juge E19 (`epreuve::BUDGET_ENTREE`, `BUDGET_LECTURE`, `BUDGET_IMAGE`) sont des points de départ choisis. Les mesures de `conception/MESURES-PHASE-1.md` sont des propositions ; **c'est le mainteneur qui fixe les budgets, dans `CONTRAT.md`**.
+- Les budgets que juge E19 sont provisoires et s'écrivent à un seul endroit, `epreuve::BUDGETS_E19` (`crates/epreuve/src/budgets.rs`), avec leur dérivation : le temps d'une image du CONTRAT, la durée d'une unité de carburant et le coût fixe d'un appel mesurés dans wasmtime (`examples/etalonner.rs`, daté, avec sa machine), une marge choisie pour le navigateur et l'ordinateur de la soirée, et la part d'une image laissée au jeu. Change une mesure en la refaisant, jamais à la main ; ne présente pas la marge comme mesurée. Le rapport dit ces budgets provisoires ; **c'est le mainteneur qui fixe les budgets, dans `CONTRAT.md`**.
 - Le carburant est compté par la réécriture : il est le même sur toute machine. Une durée, non : elle dépend de la machine et de sa charge.
 
 ## La documentation
@@ -86,6 +89,8 @@ Une phrase fausse produit du mauvais code chez tous les agents. Chaque fait a un
 | `conception/REPONSES-PROVISOIRES.md` | les réponses provisoires aux questions du § 13 |
 | `conception/BESOINS-DES-JEUX.md` | la réponse du commun à chaque besoin des jeux |
 | `conception/MESURES-PHASE-1.md` | ce qui a été mesuré, daté, avec sa machine |
+| `conception/RESTE-PHASE-1.md` | ce que la phase 1 a laissé, point par point, coché avec le test qui le tient ; les vérifications de chaque chantier de la phase 2 |
+| `conception/RESTE-PHASE-2.md` | ce qui reste après la phase 2, et ce que la phase 3 devra mesurer ou trancher |
 | `conception/proposition-*.md` | les trois propositions d'où vient INTERFACE.md ; elles ne font plus foi |
 | `crates/README.md` | la carte des crates, leur graphe, ce qui est figé |
 | `lecons/sources/` | les leçons de l'ancien code, par identifiant |

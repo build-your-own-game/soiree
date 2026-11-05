@@ -1,0 +1,19 @@
+[package]
+name = "fautif-choix-qui-fuit-module"
+description = "Le module WebAssembly du fautif dont le chiffre choisi, secret d'un octet, se lit dans le choix public (E8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

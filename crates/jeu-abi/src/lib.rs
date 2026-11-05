@@ -75,8 +75,9 @@ pub use entrees::{
 };
 pub use enveloppe::{
     ABI, Appel, AttenteFil, Bonjour, ComposantBotFil, ConstatFil, CoupFil, EcranFil, EntreeFil,
-    EtatFil, FichierBotFil, IssueFil, MontreFil, OuiFil, ProprietesFil, QuandFil, RegardFil,
-    Retour, ReveilFil, SorteAppel, SorteOctets, SortieFil, StyleFil, TenuFil, Validation, VueFil,
+    EtatFil, FichierBotFil, IssueFil, MontreFil, OuiFil, PERIODE_HYPOTHESE, ProprietesFil,
+    QuandFil, RegardFil, Retour, ReveilFil, SorteAppel, SorteOctets, SortieFil, StyleFil, TenuFil,
+    Validation, VueFil,
 };
 pub use format::{
     ErreurDecodage, ErreurEncodage, ErreurFil, Fnv1a, Illisible, decoder, encoder, fnv1a64,

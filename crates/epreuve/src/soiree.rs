@@ -11,16 +11,32 @@
 //!
 //! Elle joue le module, pas la copie native : c'est le module qui passe l'épreuve et
 //! que l'on joue (CONTRAT, « Le cadre technique »).
+//!
+//! # Le monde simulé ([`Monde`])
+//!
+//! - **Les bots décident sur ce que leur téléphone a reçu** (point 20). Chaque vue part
+//!   avec l'instantané de la définitive d'où elle vient ; le téléphone garde celui de
+//!   la vue qu'il montre, et son bot se lit sur une instance à part, restaurée à cet
+//!   instantané, sous le regard du téléphone. Un téléphone sans vue ne fait rien.
+//! - **Chaque téléphone a son horloge** (point 21, `telephone.rs`) : `fait` porte
+//!   l'erreur de son estimation, et la demi-latence annoncée est celle de l'écho.
+//! - **Le réseau** (point 22, `telephone.rs`) : deux canaux, pertes et
+//!   retransmissions qui retiennent la file, accusés perdus, poignées de main ratées,
+//!   rechargement qui renumérote, rappel du tenu, arrière-plan.
+//! - **Les fichiers** (`fichiers.rs`) : le sélecteur de l'écran, et les demandes
+//!   servies avec de vrais contenus.
+//!
+//! Ce que le monde a fait se compte dans [`crate::MondeJoue`], que le rapport donne.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use jeu_abi::{
-    Appareil, Appel, ApplicableFil, Capacites, CauseDepart, ComposantBotFil, CoupFil, DemandeFil,
-    Duree, EchecDemande, EntreeFil, IdDemande, Instant, IssueFil, Oui, Pas, Presence, QuandFil,
-    RegardFil, Retour, RoleAppareil, SorteAppel, SorteOctets, StyleFil, TexteCourt, decoder,
-    encoder,
+    Appareil, Appel, ApplicableFil, Capacites, CauseDepart, ComposantBotFil, CoupFil, Duree,
+    EchecDemande, EntreeFil, FormeEcran, IdDemande, Instant, IssueFil, Oui, Pas, Presence,
+    QuandFil, RegardFil, Retour, RoleAppareil, SorteAppel, SorteOctets, StyleFil, TexteCourt,
+    Validation, decoder, encoder,
 };
 use moteur_wasmtime::{FabriqueWasm, InstanceWasm, InstantaneWasm, ModuleCharge};
 use partie::{
@@ -30,10 +46,12 @@ use partie::{
 };
 
 use crate::controles;
-use crate::plan::{IdControle, Panne};
-use crate::sonde::{Compte, Obs, Sonde, Verifs, hacher, premiere_entree_differente};
+use crate::fichiers::{Abime, Fichiers};
+use crate::plan::{IdControle, Monde, MondeJoue, Panne};
+use crate::sonde::{Compte, Obs, Sonde, Sondee, Verifs, hacher, premiere_entree_differente};
 use crate::telephone::{
-    EtatEvenement, FERMETURE, Lien, Paquet, SILENCE_MAX, Telephone, VueEnRoute,
+    EtatEvenement, FERME_EN_ARRIERE_PLAN, FERMETURE, Lien, Paquet, SILENCE_MAX, Telephone,
+    VueEnRoute,
 };
 use crate::tirage::Tirage;
 
@@ -95,6 +113,9 @@ pub(crate) enum Op {
     Redemarrer {
         lignes: usize,
     },
+    /// Après trois `Temps` écartés de suite, la partie repart de son dernier point
+    /// sain (§ 4.6, `Partie::repartir`).
+    Repartir,
 }
 
 /// La sorte d'une soirée.
@@ -119,6 +140,7 @@ pub(crate) struct Reglage {
     pub(crate) sorte: Sorte,
     pub(crate) graine: [u8; 32],
     pub(crate) duree: u64,
+    pub(crate) monde: Monde,
     pub(crate) pannes: Vec<Panne>,
     pub(crate) verifs: Verifs,
     pub(crate) e5: Oui,
@@ -169,6 +191,10 @@ pub(crate) struct Faits {
     pub(crate) parties: u32,
     /// E8 : les valeurs secrètes trop courtes pour être cherchées dans les vues.
     pub(crate) secrets_non_cherches: u64,
+    /// E16 : la vue de l'écran seul la plus lourde de la soirée, lue par E8 : son pas
+    /// et son carburant. Un pire cas doit coûter au moins autant (INTERFACE, § 2.13 :
+    /// « construit depuis les limites » ; revue de la phase 2, constat 14).
+    pub(crate) vue_ecran_max: Option<(u64, u64)>,
 }
 
 /// Une faute du jeu, rattachée au contrôle qui l'a vue.
@@ -206,6 +232,20 @@ pub(crate) struct Bilan {
     pub(crate) e17: Compte,
     /// Les gels de la soirée : leur premier pas, et le pas où le temps reprend.
     pub(crate) gels: Vec<(u64, u64)>,
+    /// Les fois où la partie, en panne, est repartie de son dernier point sain (§ 4.6).
+    pub(crate) reprises: u64,
+    /// Ce que le monde simulé a fait.
+    pub(crate) monde: MondeJoue,
+    /// Les allées et venues de la soirée elle-même (soirée longue), constatées, par
+    /// sorte : coupures, rechargements, arrière-plans, sommeils, chacun suivi de son
+    /// retour.
+    pub(crate) allees_et_venues: std::collections::BTreeMap<&'static str, u64>,
+    /// Les allées et venues programmées qui n'ont pas eu lieu : un contrôle qui n'a pas
+    /// tourné ne compte pas (OUT-26).
+    pub(crate) allees_manquees: Vec<String>,
+    /// Les retours d'où part un arriéré (E19) : un appareil qui revient, ou tous après
+    /// un gel ou un redémarrage de l'autorité (`None`), et leur pas.
+    pub(crate) retours: Vec<crate::budgets::Retour>,
 }
 
 /// L'organisateur simulé, à l'écran.
@@ -250,6 +290,8 @@ pub(crate) struct Soiree<'m> {
     gel: Option<u64>,
     copie: Option<InstanceWasm>,
     projection: Option<InstanceWasm>,
+    /// La mémoire de l'instance de projection neuve, d'où elle repart à chaque E8.
+    projection_neuve: Option<InstantaneWasm>,
     dernier_point: Option<Point>,
     points: Vec<Point>,
     script: Vec<Op>,
@@ -273,12 +315,28 @@ pub(crate) struct Soiree<'m> {
     stop: Option<String>,
     arrivees: u64,
     en_panne_vue: bool,
+    /// Les reprises faites par `Partie::repartir`.
+    reprises: u64,
     e17: Compte,
     dernier_e17: u64,
     /// La dernière échéance que la partie a dite attendre (E18).
     echeance: Option<u64>,
     gels: Vec<(u64, u64)>,
     prochain_gel: u64,
+    /// Le sélecteur de fichiers et les demandes de fichiers (`Monde::fichiers`).
+    fichiers: Fichiers,
+    /// Le hasard des fichiers, à part : un jeu sans fichiers tire le même reste.
+    tf: Tirage,
+    /// L'instance où se lisent les bots des téléphones, restaurée à la vue de chacun.
+    bot_inst: Option<Sondee<InstanceWasm>>,
+    /// L'instantané qu'elle porte.
+    bot_etat: Option<Rc<InstantaneWasm>>,
+    /// Le prochain geste de l'écran qui apporte des fichiers.
+    prochain_geste_ecran: u64,
+    /// Ce que le monde a fait, hors des téléphones et des fichiers.
+    monde: MondeJoue,
+    /// Les retours d'où part un arriéré (E19).
+    retours: Vec<crate::budgets::Retour>,
 }
 
 /// Les gels à l'échéance d'une soirée de E18.
@@ -345,6 +403,10 @@ pub(crate) fn partie_au(journal: &Journal, indice: usize) -> u32 {
 
 impl<'m> Soiree<'m> {
     /// Ouvre une soirée. `Err` : la partie ne s'ouvre pas.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "l'ouverture pose chaque champ de la soirée, un par ligne"
+    )]
     pub(crate) fn ouvrir(module: &'m ModuleCharge, reglage: Reglage) -> Result<Soiree<'m>, String> {
         let obs = Obs::new(reglage.verifs, BUDGETS.lecture);
         let ouverture = ouverture(reglage.graine);
@@ -353,6 +415,8 @@ impl<'m> Soiree<'m> {
         let mut t = Tirage::new(&reglage.graine, "soirée");
         let absurde = t.deriver("absurde");
         let tp = t.deriver("points");
+        let tf = t.deriver("fichiers");
+        let horloges = reglage.monde.horloges;
         let declaration = module.declaration();
         let mut tels = Vec::new();
         if let ApplicableFil::Oui(_) = declaration.telephones {
@@ -378,11 +442,14 @@ impl<'m> Soiree<'m> {
                 };
                 let latence = t.entre(1, 4);
                 let id = t.entier() | 1;
+                let hasard = t.deriver("téléphone");
                 tels.push(Telephone::new(
                     id,
                     style,
                     30_u64.saturating_add(k.saturating_mul(18)),
                     latence,
+                    hasard,
+                    horloges,
                 ));
             }
         }
@@ -405,6 +472,7 @@ impl<'m> Soiree<'m> {
             gel: None,
             copie: None,
             projection: None,
+            projection_neuve: None,
             dernier_point: None,
             points: Vec::new(),
             script: Vec::new(),
@@ -428,11 +496,19 @@ impl<'m> Soiree<'m> {
             stop: None,
             arrivees: 0,
             en_panne_vue: false,
+            reprises: 0,
             e17: Compte::default(),
             dernier_e17: 0,
             echeance: None,
             gels: Vec::new(),
             prochain_gel: 0,
+            fichiers: Fichiers::default(),
+            tf,
+            bot_inst: None,
+            bot_etat: None,
+            prochain_geste_ecran: 0,
+            monde: MondeJoue::default(),
+            retours: Vec::new(),
         };
         s.programmer();
         Ok(s)
@@ -468,6 +544,10 @@ impl<'m> Soiree<'m> {
     }
 
     /// Programme les pannes du plan, et les allées et venues de la soirée longue.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "le programme se lit d'un trait : les pannes du plan, puis celles de la soirée longue"
+    )]
     fn programmer(&mut self) {
         let duree = self.reglage.duree;
         let n = self.tels.len();
@@ -483,12 +563,19 @@ impl<'m> Soiree<'m> {
                 | Panne::TrouNoir { .. }
                 | Panne::Retenu { .. }
                 | Panne::Rechargement
+                | Panne::ArrierePlan { .. }
                 | Panne::Jumeau => {
                     let c = k.checked_rem(n.max(1)).unwrap_or(0);
                     k = k.saturating_add(1);
                     c
                 }
-                Panne::Rafales | Panne::RedemarrageAutorite | Panne::Gel { .. } => 0,
+                // Choisis quand ils commencent : le téléphone qui part parmi les
+                // présents ; le doublon, sur tous.
+                Panne::Rafales
+                | Panne::RedemarrageAutorite
+                | Panne::Gel { .. }
+                | Panne::Depart
+                | Panne::Doublon => 0,
             };
             // Les pannes d'un téléphone dans la première moitié de la soirée, le
             // redémarrage ensuite, les gels à la fin : elles se mêlent sans qu'un long
@@ -506,14 +593,23 @@ impl<'m> Soiree<'m> {
                 | Panne::TrouNoir { .. }
                 | Panne::Retenu { .. }
                 | Panne::Rechargement
-                | Panne::Jumeau => debut,
+                | Panne::ArrierePlan { .. }
+                | Panne::Jumeau
+                | Panne::Doublon => debut,
+                // Assez tôt pour que la soirée dure encore 90 s au moins après lui, au
+                // plan standard (180 s) comme au plan court (120 s) : la garde d'une
+                // place (PUN-13) passe, et le jeu libère la place sous les contrôles.
+                Panne::Depart => entre(&mut self.t, 18, 22),
                 Panne::RedemarrageAutorite => entre(&mut self.t, 40, 48),
                 Panne::Gel { duree: d } if d < Duree::s(10) => entre(&mut self.t, 50, 55),
                 Panne::Gel { .. } => entre(&mut self.t, 60, 65),
             };
             // Un jeu sans téléphone ne vit pas une panne de téléphone : elle est sans
             // objet, ni programmée ni manquée (besoin 2 des jeux).
-            let etat = if n == 0 && panne.du_telephone() == Oui::Oui {
+            // Un seul téléphone ne part pas pour de bon : il finirait la soirée.
+            let etat = if (n == 0 && panne.du_telephone() == Oui::Oui)
+                || (n < 2 && panne == Panne::Depart)
+            {
                 Avancement::SansObjet
             } else {
                 Avancement::Attend
@@ -529,21 +625,39 @@ impl<'m> Soiree<'m> {
         }
         if self.reglage.sorte == Sorte::Longue {
             // Des départs pour de bon, chacun remplacé par un appareil neuf, toutes les
-            // quatre à huit minutes ; des coupures courtes ; un gel de dix minutes sur
-            // une soirée de deux heures au moins (§ 7.1, OUT-84, SQ-76, PUN-15).
+            // quatre à huit minutes ; des coupures, des rechargements, des passages en
+            // arrière-plan et des sommeils, chacun suivi de son retour ; un gel de dix
+            // minutes sur une soirée de deux heures au moins (§ 7.1, OUT-84, SQ-76,
+            // PUN-15).
+            // Les quatre sortes tour à tour, depuis une tirée : une heure en voit chacune.
             let mut p = 0u64;
+            let mut sorte = self.t.sous(4);
             loop {
                 p = p.saturating_add(self.t.entre(4 * 3600, 8 * 3600));
-                if p >= duree {
+                // Un jeu sans téléphone n'a pas d'allées et venues : elles seraient
+                // toutes manquées.
+                if p >= duree || n == 0 {
                     break;
                 }
-                self.programme.push(Programme {
-                    du_plan: Oui::Non,
-                    panne: Panne::Coupure {
+                sorte = sorte.saturating_add(1).checked_rem(4).unwrap_or(0);
+                let panne = match sorte {
+                    0 => Panne::Rechargement,
+                    1 => Panne::ArrierePlan {
+                        duree: Duree::s(self.t.entre(3, 40)),
+                    },
+                    2 => Panne::Silence {
+                        duree: Duree::s(self.t.entre(2, 10)),
+                    },
+                    _ => Panne::Coupure {
                         duree: Duree::s(self.t.entre(2, 30)),
                     },
+                };
+                self.programme.push(Programme {
+                    du_plan: Oui::Non,
+                    panne,
                     debut: p,
-                    cible: usize::try_from(self.t.sous(u64::try_from(n).unwrap_or(1))).unwrap_or(0),
+                    // Choisie parmi les présents quand elle commence.
+                    cible: 0,
                     etat: Avancement::Attend,
                     note: String::from("allée et venue"),
                 });
@@ -576,6 +690,7 @@ impl<'m> Soiree<'m> {
             }
             self.pas = pas;
             self.arrivees_et_departs();
+            self.poignees_et_horloges();
             if self.reglage.sorte == Sorte::Longue && pas >= prochain_depart {
                 self.renouveler();
                 prochain_depart = pas.saturating_add(self.prochain_depart_longue());
@@ -603,6 +718,7 @@ impl<'m> Soiree<'m> {
             }
             self.vues_des_telephones();
             self.bots_telephones();
+            self.rappels();
             if pas.checked_rem(POINT_TOUS_LES) == Some(0) {
                 self.prendre_point(Oui::Non);
             }
@@ -642,6 +758,62 @@ impl<'m> Soiree<'m> {
         }
     }
 
+    /// `Panne::Depart` : un téléphone présent part pour de bon, et ne revient plus.
+    /// Il est tiré parmi ceux qu'aucune panne n'occupe ; les pannes qui l'attendaient
+    /// passent à un autre téléphone présent, pour être constatées quand même. Au
+    /// moins un téléphone reste. `None` si aucun ne peut partir maintenant.
+    fn partir_pour_de_bon(&mut self) -> Option<Avancement> {
+        let occupes: Vec<usize> = self
+            .programme
+            .iter()
+            .filter(|p| {
+                matches!(p.etat, Avancement::EnCours { .. }) && p.panne.du_telephone() == Oui::Oui
+            })
+            .map(|p| p.cible)
+            .collect();
+        let presents: Vec<usize> = self
+            .tels
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.lien == Lien::Ok && t.present == Oui::Oui && t.part.is_none())
+            .map(|(i, _)| i)
+            .collect();
+        if presents.len() < 2 || self.gel.is_some() {
+            return None;
+        }
+        let libres: Vec<usize> = presents
+            .iter()
+            .copied()
+            .filter(|i| !occupes.contains(i))
+            .collect();
+        let k = usize::try_from(self.t.sous(u64::try_from(libres.len()).ok()?)).ok()?;
+        let i = *libres.get(k)?;
+        let autres: Vec<usize> = presents.iter().copied().filter(|j| *j != i).collect();
+        let mut r = 0usize;
+        for p in &mut self.programme {
+            if p.etat == Avancement::Attend && p.cible == i && p.panne.du_telephone() == Oui::Oui {
+                if let Some(j) = autres.get(r.checked_rem(autres.len()).unwrap_or(0)) {
+                    p.cible = *j;
+                }
+                r = r.saturating_add(1);
+            }
+        }
+        let pas = self.pas;
+        let tel = self.tels.get_mut(i)?;
+        tel.part = Some(pas.saturating_add(1));
+        // La cible, pour le constat : le programme garde l'indice du parti.
+        if let Some(p) = self
+            .programme
+            .iter_mut()
+            .find(|p| p.panne == Panne::Depart && p.etat == Avancement::Attend)
+        {
+            p.cible = i;
+        }
+        Some(Avancement::EnCours {
+            fin: pas.saturating_add(2),
+        })
+    }
+
     /// Un appareil présent part pour de bon ; un neuf arrive trente secondes plus tard.
     fn renouveler(&mut self) {
         let presents: Vec<usize> = self
@@ -663,12 +835,15 @@ impl<'m> Soiree<'m> {
         }
         let latence = self.t.entre(1, 4);
         let id = self.t.entier() | 1;
+        let hasard = self.t.deriver("téléphone");
         self.appareils.push(id);
         self.tels.push(Telephone::new(
             id,
             StyleFil::Sage,
             self.pas.saturating_add(1800),
             latence,
+            hasard,
+            self.reglage.monde.horloges,
         ));
     }
 
@@ -683,7 +858,7 @@ impl<'m> Soiree<'m> {
             }
             if tel.part == Some(pas) {
                 tel.lien = Lien::Hors;
-                tel.perdre_le_reseau();
+                tel.perdre_le_reseau(pas);
                 tel.evenements.clear();
                 annonces.push((pas, i, Annonce::Depart(CauseDepart::Fermeture)));
             }
@@ -701,6 +876,32 @@ impl<'m> Soiree<'m> {
             };
             match p.etat {
                 Avancement::Attend if pas >= p.debut => {
+                    // Une allée et venue de la soirée longue vise un téléphone présent
+                    // quand elle commence : tirée parmi ceux du départ, elle visait
+                    // surtout des appareils partis pour de bon, et manquait en silence
+                    // (revue de la phase 2, constat 12).
+                    let mut p = p;
+                    if p.du_plan == Oui::Non && p.panne.du_telephone() == Oui::Oui {
+                        let presents: Vec<usize> = self
+                            .tels
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, t)| {
+                                t.lien == Lien::Ok && t.present == Oui::Oui && t.part.is_none()
+                            })
+                            .map(|(i, _)| i)
+                            .collect();
+                        let n = u64::try_from(presents.len()).unwrap_or(0);
+                        if let Some(i) = usize::try_from(self.t.sous(n.max(1)))
+                            .ok()
+                            .and_then(|k| presents.get(k))
+                        {
+                            p.cible = *i;
+                            if let Some(prog) = self.programme.get_mut(k) {
+                                prog.cible = *i;
+                            }
+                        }
+                    }
                     let etat = self.commencer(&p);
                     if let Some(prog) = self.programme.get_mut(k) {
                         match etat {
@@ -761,6 +962,19 @@ impl<'m> Soiree<'m> {
                 self.gels.push((pas, fin));
                 Some(Avancement::EnCours { fin })
             }
+            Panne::Depart => self.partir_pour_de_bon(),
+            Panne::Doublon => {
+                let mut un = false;
+                for t in &mut self.tels {
+                    if t.lien == Lien::Ok && t.part.is_none() {
+                        t.doubler = Oui::Oui;
+                        un = true;
+                    }
+                }
+                un.then_some(Avancement::EnCours {
+                    fin: pas.saturating_add(600),
+                })
+            }
             Panne::Jumeau => {
                 if self.gel.is_some() {
                     return None;
@@ -777,7 +991,20 @@ impl<'m> Soiree<'m> {
             Panne::Coupure { duree }
             | Panne::Silence { duree }
             | Panne::TrouNoir { duree }
-            | Panne::Retenu { duree } => {
+            | Panne::Retenu { duree }
+            | Panne::ArrierePlan { duree } => {
+                if matches!(p.panne, Panne::ArrierePlan { .. }) {
+                    // Quitter le premier plan relâche tout, avant de se figer (REM-11).
+                    let ok = self
+                        .tels
+                        .get(p.cible)
+                        .is_some_and(|t| t.lien == Lien::Ok && t.present == Oui::Oui);
+                    if !ok {
+                        return None;
+                    }
+                    self.relacher_le_tenu(p.cible);
+                    self.monde.arriere_plans = self.monde.arriere_plans.saturating_add(1);
+                }
                 let annonce = {
                     let tel = self.tels.get_mut(p.cible)?;
                     if tel.lien != Lien::Ok || tel.present == Oui::Non || tel.part.is_some() {
@@ -786,7 +1013,7 @@ impl<'m> Soiree<'m> {
                     match p.panne {
                         Panne::Coupure { .. } => {
                             tel.lien = Lien::Coupe { fin };
-                            tel.perdre_le_reseau();
+                            tel.perdre_le_reseau(pas);
                             Some((
                                 pas.saturating_add(FERMETURE.min(duree.en_pas() / 2)),
                                 Annonce::Depart(CauseDepart::Fermeture),
@@ -801,9 +1028,18 @@ impl<'m> Soiree<'m> {
                                 )
                             })
                         }
+                        Panne::ArrierePlan { .. } => {
+                            tel.lien = Lien::ArrierePlan { fin };
+                            (duree.en_pas() > SILENCE_MAX).then(|| {
+                                (
+                                    pas.saturating_add(SILENCE_MAX),
+                                    Annonce::Depart(CauseDepart::Silence),
+                                )
+                            })
+                        }
                         Panne::TrouNoir { .. } => {
                             tel.lien = Lien::TrouNoir { fin };
-                            tel.perdre_le_reseau();
+                            tel.perdre_le_reseau(pas);
                             (duree.en_pas() > SILENCE_MAX).then(|| {
                                 (
                                     pas.saturating_add(SILENCE_MAX),
@@ -816,7 +1052,9 @@ impl<'m> Soiree<'m> {
                         | Panne::Rechargement
                         | Panne::Jumeau
                         | Panne::RedemarrageAutorite
-                        | Panne::Gel { .. } => {
+                        | Panne::Gel { .. }
+                        | Panne::Depart
+                        | Panne::Doublon => {
                             tel.lien = Lien::Retenu { fin };
                             for r in &mut tel.reseau {
                                 r.livre_a = r.livre_a.max(fin);
@@ -837,15 +1075,9 @@ impl<'m> Soiree<'m> {
                     return None;
                 }
                 let fin = pas.saturating_add(attente);
-                tel.lien = Lien::Recharge { fin };
-                tel.perdre_le_reseau();
-                // Ce que la page n'avait pas envoyé meurt avec elle ; son état tenu aussi.
-                tel.evenements
-                    .retain(|e| matches!(e.etat, EtatEvenement::Place(_)));
-                tel.tenu = None;
-                tel.vue.clear();
-                tel.envoyee.clear();
-                tel.vues.clear();
+                // Ce que la page n'avait pas envoyé meurt avec elle ; son état tenu, sa
+                // vue et sa numérotation aussi (SAL-38).
+                tel.recharger(fin, pas);
                 self.annonces.push((
                     pas.saturating_add(FERMETURE),
                     p.cible,
@@ -878,27 +1110,172 @@ impl<'m> Soiree<'m> {
                 }
             }
             Panne::RedemarrageAutorite | Panne::Gel { .. } => Avancement::Constatee,
+            // Constaté quand le téléphone est parti : il ne revient plus.
+            Panne::Depart => {
+                if self.tels.get(p.cible).is_some_and(|t| t.lien == Lien::Hors) {
+                    Avancement::Constatee
+                } else {
+                    Avancement::Manquee
+                }
+            }
+            // Comme le jumeau : tant qu'aucun geste n'a été reçu deux fois, le réseau
+            // double encore, jusqu'aux neuf dixièmes de la soirée.
+            Panne::Doublon => {
+                let limite = self.reglage.duree.saturating_mul(9) / 10;
+                if self.pas < limite {
+                    for t in &mut self.tels {
+                        if t.part.is_none() {
+                            t.doubler = Oui::Oui;
+                        }
+                    }
+                    Avancement::EnCours {
+                        fin: self.pas.saturating_add(600),
+                    }
+                } else {
+                    for t in &mut self.tels {
+                        t.doubler = Oui::Non;
+                    }
+                    Avancement::Manquee
+                }
+            }
             Panne::Coupure { .. }
             | Panne::Silence { .. }
             | Panne::TrouNoir { .. }
             | Panne::Retenu { .. }
+            | Panne::ArrierePlan { .. }
             | Panne::Rechargement => {
                 let pas = self.pas;
-                let gigue = self.t.sous(3);
-                if let Some(tel) = self.tels.get_mut(p.cible) {
-                    if matches!(tel.lien, Lien::Hors) {
-                        return Avancement::Manquee;
-                    }
-                    tel.lien = Lien::Ok;
-                    tel.envoyer_les_gestes(pas, gigue);
-                    tel.envoyer_le_tenu(pas, gigue);
-                    tel.envoyee.clear();
+                let Some(tel) = self.tels.get_mut(p.cible) else {
+                    return Avancement::Manquee;
+                };
+                if matches!(tel.lien, Lien::Hors) {
+                    return Avancement::Manquee;
                 }
-                self.annonces.push((pas, p.cible, Annonce::Retour));
-                self.forcer_vues = true;
+                // Une connexion fermée se rouvre par une poignée de main, qui peut
+                // rater ; une page qui dormait, connexion ouverte, repart d'elle-même.
+                let ferme = match p.panne {
+                    Panne::Coupure { .. } | Panne::Rechargement => true,
+                    Panne::ArrierePlan { duree } => duree.en_pas() > FERME_EN_ARRIERE_PLAN,
+                    Panne::Silence { .. }
+                    | Panne::TrouNoir { .. }
+                    | Panne::Retenu { .. }
+                    | Panne::Rafales
+                    | Panne::Jumeau
+                    | Panne::RedemarrageAutorite
+                    | Panne::Gel { .. }
+                    | Panne::Depart
+                    | Panne::Doublon => false,
+                };
+                if ferme {
+                    if matches!(p.panne, Panne::ArrierePlan { .. }) {
+                        // Le système a fermé la connexion : ce qui y attendait est perdu.
+                        tel.perdre_le_reseau(pas);
+                        tel.vues.clear();
+                        tel.envoyee.clear();
+                    }
+                    if tel.reconnecter(pas) {
+                        self.connecter(p.cible);
+                    }
+                } else {
+                    tel.lien = Lien::Ok;
+                    self.connecter(p.cible);
+                }
                 Avancement::Constatee
             }
         }
+    }
+
+    /// Une connexion aboutie : l'accueil réaligne la numérotation des tenus de la page
+    /// sur ce que l'ordinateur de la soirée a reçu d'elle (SAL-38), ce qui attendait
+    /// repart, et le commun annonce le retour.
+    fn connecter(&mut self, i: usize) {
+        let pas = self.pas;
+        let Some(appareil) = self.tels.get(i).map(|t| Appareil::du_fil(t.appareil)) else {
+            return;
+        };
+        let dernier = self.partie.numero_tenu(appareil);
+        if let Some(tel) = self.tels.get_mut(i) {
+            tel.accueillir(dernier);
+            tel.envoyer_les_gestes(pas);
+            tel.envoyer_le_tenu(pas);
+            tel.envoyee.clear();
+        }
+        self.annonces.push((pas, i, Annonce::Retour));
+        self.forcer_vues = true;
+        self.retours.push((Some(appareil.fil()), pas));
+    }
+
+    /// Les poignées de main en cours, et la synchronisation des horloges.
+    fn poignees_et_horloges(&mut self) {
+        let pas = self.pas;
+        let horloges = self.reglage.monde.horloges;
+        let mut connectes = Vec::new();
+        for (i, tel) in self.tels.iter_mut().enumerate() {
+            if tel.poignee_du_pas(pas) {
+                connectes.push(i);
+            }
+            tel.synchroniser_si_du(pas, horloges);
+        }
+        for i in connectes {
+            self.connecter(i);
+        }
+    }
+
+    /// Le rappel régulier des tenus (REM-13).
+    fn rappels(&mut self) {
+        let pas = self.pas;
+        for tel in &mut self.tels {
+            tel.rappeler(pas);
+        }
+    }
+
+    /// Une page qui quitte le premier plan relâche ce qu'elle tient (REM-11) : la
+    /// valeur relâchée de son tenu, telle que le jeu la donne à sa validation.
+    fn relacher_le_tenu(&mut self, i: usize) {
+        let pas = self.pas;
+        let Some((octets, _)) = self.tels.get(i).and_then(|t| t.tenu.clone()) else {
+            return;
+        };
+        let appel = Appel::Valider {
+            sorte: SorteOctets::TenuTelephone,
+            octets: &octets,
+        };
+        let lu = self.partie.definitive().lire(&appel);
+        let relache = match lu.as_deref().map(decoder::<Retour<'_>>) {
+            Ok(Ok(Retour::Valide(Validation::Valide { tenu: Some(t) })))
+                if t.est_relache == jeu_abi::OuiFil::Non =>
+            {
+                t.relache.map(<[u8]>::to_vec)
+            }
+            Ok(_) | Err(_) => None,
+        };
+        if let (Some(r), Some(tel)) = (relache, self.tels.get_mut(i)) {
+            tel.tenir(r, (pas, 0), pas);
+        }
+    }
+
+    /// L'instance où se lisent les bots des téléphones, et la validation de leurs
+    /// tenus : à part de la définitive, sous les mêmes constats (E7).
+    fn bot_instance(&mut self) -> Option<&Sondee<InstanceWasm>> {
+        if self.bot_inst.is_none() {
+            let mut i = match Sonde::new(self.module.fabrique(), &self.obs).neuve() {
+                Ok(i) => i,
+                Err(p) => {
+                    self.panne_outil(format!("instance des bots : {p}"));
+                    return None;
+                }
+            };
+            for a in [Appel::Bonjour, Appel::Decrire] {
+                if let Err(e) =
+                    Instance::appeler(&mut i, SorteAppel::Lecture, &octets(&a), BUDGETS.lecture)
+                {
+                    self.panne_outil(format!("instance des bots : {e}"));
+                    return None;
+                }
+            }
+            self.bot_inst = Some(i);
+        }
+        self.bot_inst.as_ref()
     }
 
     /// Une panne qui se constate en cours de route : rafale, jumeau.
@@ -913,6 +1290,7 @@ impl<'m> Soiree<'m> {
     /// L'autorité redémarre depuis le dernier point et le journal (§ 4.5).
     fn redemarrer(&mut self) -> Option<Avancement> {
         let point = self.dernier_point.clone()?;
+        self.retours.push((None, self.pas));
         let journal = self.partie.journal().clone();
         self.script.push(Op::Canonique);
         let avant = self.partie.canonique();
@@ -973,7 +1351,7 @@ impl<'m> Soiree<'m> {
                 let pas = self.pas;
                 for tel in &mut self.tels {
                     tel.renvoyer_le_provisoire(definitif);
-                    tel.envoyer_les_gestes(pas, 0);
+                    tel.envoyer_les_gestes(pas);
                     tel.envoyee.clear();
                 }
                 self.forcer_vues = true;
@@ -1025,18 +1403,32 @@ impl<'m> Soiree<'m> {
             .into_iter()
             .partition(|(_, _, a)| *a <= pas);
         self.demandes = restent;
+        let ecran = match self.module.declaration().ecran {
+            FormeEcran::Scene {
+                largeur, hauteur, ..
+            } => (u64::from(largeur), u64::from(hauteur)),
+            FormeEcran::Page { largeur_max } => {
+                (u64::from(largeur_max), u64::from(largeur_max) * 9 / 16)
+            }
+        };
         for (id, d, _) in dues {
-            let reponse = match d {
-                DemandeArrivee::Image { .. } => ReponseArrivee::Image(Err(EchecDemande::Refuse)),
-                DemandeArrivee::Rendu { .. } => ReponseArrivee::Rendu(Ok(b"PNG".to_vec())),
-                DemandeArrivee::Lire { .. } => ReponseArrivee::Lu(Err(EchecDemande::Illisible)),
-                DemandeArrivee::Telecharger { .. } => ReponseArrivee::Fait(Ok(())),
-                // Une ligne sur dix échoue : un échec revient comme une réponse (SQ-78).
-                DemandeArrivee::Ligne { .. } => {
-                    if self.t.une_sur(10) {
-                        ReponseArrivee::Fait(Err(EchecDemande::Interne))
-                    } else {
-                        ReponseArrivee::Fait(Ok(()))
+            let reponse = if self.reglage.monde.fichiers == Oui::Oui {
+                self.fichiers.servir(&d, ecran, &mut self.tf)
+            } else {
+                match d {
+                    DemandeArrivee::Image { .. } => {
+                        ReponseArrivee::Image(Err(EchecDemande::Refuse))
+                    }
+                    DemandeArrivee::Rendu { .. } => ReponseArrivee::Rendu(Ok(b"PNG".to_vec())),
+                    DemandeArrivee::Lire { .. } => ReponseArrivee::Lu(Err(EchecDemande::Illisible)),
+                    DemandeArrivee::Telecharger { .. } => ReponseArrivee::Fait(Ok(())),
+                    // Une ligne sur dix échoue : un échec revient comme une réponse (SQ-78).
+                    DemandeArrivee::Ligne { .. } => {
+                        if self.t.une_sur(10) {
+                            ReponseArrivee::Fait(Err(EchecDemande::Interne))
+                        } else {
+                            ReponseArrivee::Fait(Ok(()))
+                        }
                     }
                 }
             };
@@ -1082,22 +1474,54 @@ impl<'m> Soiree<'m> {
         let _: Option<partie::Placement> = self.arriver(Arrivee::Presence(p));
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "une livraison se lit d'un trait : l'accusé, le doublon reconnu, l'arrivée, sa place"
+    )]
     fn livrer_paquet(&mut self, i: usize, paquet: Paquet) {
+        let pas = self.pas;
+        // L'accusé d'un geste redescend par la file fiable des vues : gigue, rafales,
+        // retransmissions. Tant qu'il n'est pas arrivé, le téléphone ne sait pas que le
+        // geste est passé.
+        let accuse = match (&paquet, self.tels.get_mut(i)) {
+            (Paquet::Geste { .. }, Some(t)) => t.livraison_de_vue(pas),
+            (Paquet::Tenu { .. }, _) | (_, None) => pas,
+        };
         let Some(tel) = self.tels.get(i) else {
             return;
         };
         let de = Appareil::du_fil(tel.appareil);
-        let demi = Duree::pas(tel.latence);
-        let vu = Pas::du_fil(tel.vu);
+        let demi = tel.horloge.demi_aller_retour();
         let (a, id, jumeau) = match paquet {
             Paquet::Geste { id } => {
-                let Some(e) = tel
-                    .evenements
-                    .iter()
-                    .find(|e| e.id == id && e.etat == EtatEvenement::EnVol)
-                else {
+                // En vol, ou déjà placé quand le réseau livre sa copie (un doublon).
+                let Some(e) = tel.evenements.iter().find(|e| {
+                    e.id == id
+                        && matches!(e.etat, EtatEvenement::EnVol | EtatEvenement::Place { .. })
+                }) else {
                     return;
                 };
+                // Reçu deux fois (un accusé perdu, un doublon du réseau) : l'ordinateur
+                // de la soirée le reconnaît à son identité, le compte une fois, et le
+                // réaccuse.
+                if let Some(place) = tel.recus.get(&id).copied() {
+                    if let Some(tel) = self.tels.get_mut(i) {
+                        tel.compte.doubles = tel.compte.doubles.saturating_add(1);
+                        if let Some(e) = tel.evenements.iter_mut().find(|e| e.id == id) {
+                            e.etat = EtatEvenement::Place { pas: place, accuse };
+                        }
+                    }
+                    if self.tels.iter().any(|t| t.doubler == Oui::Oui) {
+                        for t in &mut self.tels {
+                            t.doubler = Oui::Non;
+                        }
+                        self.constater(|p| matches!(p, Panne::Doublon));
+                    }
+                    return;
+                }
+                if !matches!(e.etat, EtatEvenement::EnVol) {
+                    return;
+                }
                 (
                     Arrivee::Geste {
                         de,
@@ -1106,7 +1530,7 @@ impl<'m> Soiree<'m> {
                             pas: Pas::du_fil(e.fait.0),
                             fraction: e.fait.1,
                         },
-                        vu,
+                        vu: Pas::du_fil(e.vu),
                         id: jeu_abi::IdGeste::du_fil(id),
                         demi_aller_retour: demi,
                     },
@@ -1138,7 +1562,10 @@ impl<'m> Soiree<'m> {
             return;
         };
         let place = match placement {
-            Some(partie::Placement::Place { pas }) => Some(EtatEvenement::Place(pas.numero())),
+            Some(partie::Placement::Place { pas }) => Some(EtatEvenement::Place {
+                pas: pas.numero(),
+                accuse,
+            }),
             Some(partie::Placement::FilePleine) => Some(EtatEvenement::AEnvoyer),
             Some(
                 partie::Placement::Malforme(_)
@@ -1148,10 +1575,13 @@ impl<'m> Soiree<'m> {
             )
             | None => None,
         };
-        if jumeau == Oui::Oui && matches!(place, Some(EtatEvenement::Place(_))) {
+        if jumeau == Oui::Oui && matches!(place, Some(EtatEvenement::Place { .. })) {
             self.constater(|p| matches!(p, Panne::Jumeau));
         }
         if let Some(tel) = self.tels.get_mut(i) {
+            if let Some(EtatEvenement::Place { pas, .. }) = place {
+                let _: Option<u64> = tel.recus.insert(id, pas);
+            }
             match place {
                 Some(etat) => {
                     if let Some(e) = tel.evenements.iter_mut().find(|e| e.id == id) {
@@ -1172,7 +1602,63 @@ impl<'m> Soiree<'m> {
             graine,
             depuis_vue,
         };
-        match self.partie.definitive().lire(&appel) {
+        let lu = self.partie.definitive().lire(&appel);
+        self.coups_du_bot(lu)
+    }
+
+    /// Le bot du téléphone `i`. Dans le monde réel, il décide sur la vue que le
+    /// téléphone a reçue : l'instance des bots est restaurée à l'état de la définitive
+    /// d'où elle vient. Sans vue reçue, il ne fait rien (point 20).
+    fn bot_du_telephone(&mut self, i: usize, depuis_vue: u64) -> Vec<Coup> {
+        let Some(tel) = self.tels.get(i) else {
+            return Vec::new();
+        };
+        let regard = RegardFil::Appareil(tel.appareil);
+        let style = tel.style;
+        if self.reglage.monde.vues_recues == Oui::Non {
+            return self.bot(regard, style, depuis_vue);
+        }
+        let Some(etat) = tel.etat_vu.clone() else {
+            self.monde.sans_vue = self.monde.sans_vue.saturating_add(1);
+            return Vec::new();
+        };
+        let en_retard = tel.vue != tel.envoyee;
+        self.monde.decisions_sur_vue_recue = self.monde.decisions_sur_vue_recue.saturating_add(1);
+        if en_retard {
+            self.monde.decisions_sur_vue_en_retard =
+                self.monde.decisions_sur_vue_en_retard.saturating_add(1);
+        }
+        let graine = self.t.entier();
+        let appel = Appel::Bot {
+            regard,
+            style,
+            graine,
+            depuis_vue,
+        };
+        let deja = self.bot_etat.as_ref().is_some_and(|e| Rc::ptr_eq(e, &etat));
+        if self.bot_instance().is_none() {
+            return Vec::new();
+        }
+        if !deja {
+            let restauree = self
+                .bot_inst
+                .as_mut()
+                .map(|b| Instance::restaurer(b, &etat));
+            if let Some(Err(p)) = restauree {
+                self.panne_outil(format!("instance des bots, restaurer : {p}"));
+                return Vec::new();
+            }
+            self.bot_etat = Some(etat);
+        }
+        let lu = match self.bot_inst.as_ref() {
+            Some(b) => b.lire(&appel),
+            None => return Vec::new(),
+        };
+        self.coups_du_bot(lu)
+    }
+
+    fn coups_du_bot(&mut self, lu: Result<Vec<u8>, Echec>) -> Vec<Coup> {
+        match lu {
             Ok(r) => {
                 if let Ok(Retour::Bot(coups)) = decoder::<Retour<'_>>(&r) {
                     coups.iter().map(Coup::de).collect()
@@ -1228,7 +1714,28 @@ impl<'m> Soiree<'m> {
                 Coup::Action(a) => EcranArrivee::Action(a),
                 Coup::Touche(t) => EcranArrivee::Touche(t),
                 Coup::Composant(c) => EcranArrivee::Composant(c),
-                Coup::Geste(_) | Coup::Tenu(_) | Coup::Rien => continue,
+                // Les fichiers passent par le sélecteur du commun : le jeu n'en reçoit
+                // que le nom, le type et la taille (TL-14).
+                Coup::Fichiers(f) if self.reglage.monde.fichiers == Oui::Oui => {
+                    let abime = match self.reglage.sorte {
+                        Sorte::Hostile => Abime::Hostile,
+                        Sorte::Principale | Sorte::Longue | Sorte::Proprietes | Sorte::Gel => {
+                            Abime::Non
+                        }
+                    };
+                    let fichiers = f
+                        .into_iter()
+                        .map(|(nom, genre, o)| {
+                            self.fichiers.recevoir(&nom, &genre, o, abime, &mut self.tf)
+                        })
+                        .collect();
+                    self.prochain_geste_ecran = self.prochain_geste_ecran.saturating_add(1);
+                    EcranArrivee::Composant(ComposantArrivee::Fichiers {
+                        geste: jeu_abi::IdGeste::du_fil((1 << 60) | self.prochain_geste_ecran),
+                        fichiers,
+                    })
+                }
+                Coup::Geste(_) | Coup::Tenu(_) | Coup::Fichiers(_) | Coup::Rien => continue,
             };
             let _: Option<partie::Placement> = self.arriver(Arrivee::Ecran { quoi, vu });
         }
@@ -1243,7 +1750,6 @@ impl<'m> Soiree<'m> {
             if !tel.lien.agit() || tel.connu == Oui::Non || pas < tel.prochain_bot {
                 continue;
             }
-            let regard = RegardFil::Appareil(tel.appareil);
             let style = tel.style;
             let depuis = pas.saturating_sub(tel.vue_depuis);
             let jumeau = pas < tel.jumeau_jusqua;
@@ -1255,34 +1761,40 @@ impl<'m> Soiree<'m> {
             };
             let prochain = pas.saturating_add(periode).saturating_add(self.t.sous(5));
             let mut coups: Vec<(Coup, Oui)> = self
-                .bot(regard, style, depuis)
+                .bot_du_telephone(i, depuis)
                 .into_iter()
                 .map(|c| (c, Oui::Non))
                 .collect();
             if jumeau {
                 coups.extend(
-                    self.bot(regard, style, depuis)
+                    self.bot_du_telephone(i, depuis)
                         .into_iter()
                         .map(|c| (c, Oui::Oui)),
                 );
             }
             for (c, j) in coups {
                 let fraction = self.t.fraction();
-                let gigue = self.t.sous(3);
                 match c {
                     Coup::Geste(o) => {
                         self.echantillonner(SorteOctets::GesteTelephone, &o);
                         if let Some(tel) = self.tels.get_mut(i) {
-                            tel.emettre(o, (pas, fraction), j, pas, gigue);
+                            tel.emettre(o, (pas, fraction), j, pas);
+                            if let Some(e) = tel.evenements.last() {
+                                self.monde.noter_fait(e.fait, (pas, fraction));
+                            }
                         }
                     }
                     Coup::Tenu(o) => {
                         self.echantillonner(SorteOctets::TenuTelephone, &o);
                         if let Some(tel) = self.tels.get_mut(i) {
-                            tel.tenir(o, (pas, fraction), pas, gigue);
+                            tel.tenir(o, (pas, fraction), pas);
                         }
                     }
-                    Coup::Action(_) | Coup::Touche(_) | Coup::Composant(_) | Coup::Rien => {}
+                    Coup::Action(_)
+                    | Coup::Touche(_)
+                    | Coup::Composant(_)
+                    | Coup::Fichiers(_)
+                    | Coup::Rien => {}
                 }
             }
             if let Some(tel) = self.tels.get_mut(i) {
@@ -1312,13 +1824,26 @@ impl<'m> Soiree<'m> {
     fn vues_des_telephones(&mut self) {
         let pas = self.pas;
         for tel in &mut self.tels {
+            // Une page figée laisse ses vues dans la connexion : elle les lira d'un coup.
+            if !tel.lien.lit() {
+                continue;
+            }
             let (arrivees, restent): (Vec<VueEnRoute>, Vec<VueEnRoute>) =
                 std::mem::take(&mut tel.vues)
                     .into_iter()
                     .partition(|v| v.livre_a <= pas);
             tel.vues = restent;
+            if arrivees.len() >= 2 {
+                tel.compte.vues_en_rafale = tel.compte.vues_en_rafale.saturating_add(1);
+            }
             for v in arrivees {
-                tel.vu = tel.vu.max(v.pas);
+                if v.pas < tel.vu {
+                    continue;
+                }
+                tel.vu = v.pas;
+                if v.etat.is_some() {
+                    tel.etat_vu = v.etat;
+                }
                 if v.octets != tel.vue {
                     tel.vue = v.octets;
                     tel.vue_depuis = pas;
@@ -1337,7 +1862,39 @@ impl<'m> Soiree<'m> {
                 return;
             }
         };
+        let en_panne = a.en_panne;
         self.traiter(a);
+        if en_panne == Oui::Oui {
+            self.repartir();
+        }
+    }
+
+    /// La partie est en panne (trois `Temps` écartés de suite) : l'épreuve la fait
+    /// repartir de son dernier point sain, comme le commun le ferait (§ 4.6). La faute
+    /// est déjà notée ; une partie qui ne peut pas repartir reste figée, et c'est une
+    /// faute de plus. Les points gardés pris entre le point sain et la reprise ne
+    /// servent plus : une reprise du journal depuis eux ne la retrouve pas.
+    fn repartir(&mut self) {
+        self.script.push(Op::Repartir);
+        match self.partie.repartir() {
+            Ok(Oui::Oui) => {
+                self.reprises = self.reprises.saturating_add(1);
+                self.en_panne_vue = false;
+                if let Some(Ligne::Reprise { depuis, .. }) = self.partie.journal().lignes().last() {
+                    let depuis = *depuis;
+                    self.points.retain(|p| p.indice() <= depuis);
+                }
+                self.prendre_point(Oui::Non);
+            }
+            Ok(Oui::Non) => self.fautes.push(FauteVue {
+                controle: controle_des_fautes(self.reglage.sorte),
+                detail: format!(
+                    "au pas {} : la partie est en panne et ne peut pas repartir (aucun point sain)",
+                    self.pas
+                ),
+            }),
+            Err(p) => self.panne_outil(format!("repartir : {p}")),
+        }
     }
 
     fn traiter(&mut self, a: Avancee) {
@@ -1349,7 +1906,11 @@ impl<'m> Soiree<'m> {
             });
         }
         for (id, d) in a.lancer {
-            let delai = self.t.entre(12, 120);
+            let delai = if self.reglage.monde.fichiers == Oui::Oui {
+                Fichiers::delai(&d, &mut self.tf)
+            } else {
+                self.t.entre(12, 120)
+            };
             self.demandes.push((id, d, self.pas.saturating_add(delai)));
         }
         for id in a.annuler {
@@ -1365,8 +1926,7 @@ impl<'m> Soiree<'m> {
                 if let Some(t) = self.tels.get_mut(k) {
                     t.connu = Oui::Non;
                     let fin = self.pas.saturating_add(300);
-                    t.lien = Lien::Recharge { fin };
-                    t.perdre_le_reseau();
+                    t.recharger(fin, self.pas);
                 }
                 self.annonces
                     .push((self.pas, k, Annonce::Depart(CauseDepart::Voulu)));
@@ -1402,8 +1962,9 @@ impl<'m> Soiree<'m> {
             });
         }
         let definitif = a.definitif.numero();
+        let pas = self.pas;
         for t in &mut self.tels {
-            t.confirmer(definitif);
+            t.confirmer(definitif, pas);
         }
     }
 
@@ -1431,6 +1992,26 @@ impl<'m> Soiree<'m> {
             }
         };
         let pas = self.pas;
+        // L'état d'où partent les vues des téléphones : leur bot décidera dessus. Pris
+        // une fois, seulement si une vue de téléphone part.
+        let mut etat: Option<Rc<InstantaneWasm>> = None;
+        let a_envoyer = self.reglage.monde.vues_recues == Oui::Oui
+            && vues.iter().any(|v| match v.regard {
+                RegardFil::Appareil(a) => self
+                    .tels
+                    .iter()
+                    .any(|t| t.appareil == a && v.octets != t.envoyee && t.lien.recoit()),
+                RegardFil::Ecran => false,
+            });
+        if a_envoyer {
+            match self.partie.definitive().instantane_epreuve() {
+                Ok(i) => etat = Some(Rc::new(i)),
+                Err(p) => {
+                    self.panne_outil(format!("instantané des vues : {p}"));
+                    return None;
+                }
+            }
+        }
         for v in vues {
             match v.regard {
                 RegardFil::Ecran => {
@@ -1457,20 +2038,18 @@ impl<'m> Soiree<'m> {
                     }
                 }
                 RegardFil::Appareil(a) => {
-                    let gigue = self.t.sous(3);
                     if let Some(t) = self.tels.iter_mut().find(|t| t.appareil == a)
                         && v.octets != t.envoyee
-                        && t.lien.agit()
+                        && t.lien.recoit()
                     {
                         t.envoyee.clone_from(&v.octets);
-                        let livre_a = t.livraison(pas, gigue);
-                        if !matches!(t.lien, Lien::Coupe { .. } | Lien::TrouNoir { .. }) {
-                            t.vues.push(VueEnRoute {
-                                livre_a,
-                                pas: v.pas.numero(),
-                                octets: v.octets,
-                            });
-                        }
+                        let livre_a = t.livraison_de_vue(pas);
+                        t.vues.push(VueEnRoute {
+                            livre_a,
+                            pas: v.pas.numero(),
+                            octets: v.octets,
+                            etat: etat.clone(),
+                        });
                     }
                 }
             }
@@ -1733,6 +2312,10 @@ impl<'m> Soiree<'m> {
 
     /// E8 : `vue(état, r) = vue(projection(état, r), r)` pour chaque regard, et les
     /// octets de chaque secret que `r` ne voit pas cherchés dans sa vue (CAT-46).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "E8 se lit d'un trait : l'instance neuve, puis chaque regard, sa vue rechargée et ses secrets cherchés"
+    )]
     fn verifier_secrets(&mut self) {
         let regards = self.regards();
         let canonique = match self.partie.definitive().canonique() {
@@ -1748,19 +2331,25 @@ impl<'m> Soiree<'m> {
         };
         if self.projection.is_none() {
             self.projection = self.instance_nue();
-        }
-        // L'instance de projection part de la mémoire de la définitive, puis `Charger`
-        // remplace l'état par sa projection : seul l'état projeté diffère. Ce que le
-        // module tiendrait hors de l'état (un `static`) n'est pas l'affaire de E8.
-        let instantane = match self.partie.definitive().instantane_epreuve() {
-            Ok(i) => i,
-            Err(p) => {
-                self.panne_outil(format!("E8, instantané : {p}"));
-                return;
+            let neuve = self.projection.as_mut().map(Instance::instantane);
+            match neuve {
+                Some(Ok(i)) => self.projection_neuve = Some(i),
+                Some(Err(p)) => {
+                    self.panne_outil(format!("E8, instantané de l'instance neuve : {p}"));
+                    return;
+                }
+                None => return,
             }
-        };
-        if let Some(inst) = self.projection.as_mut()
-            && let Err(p) = inst.restaurer(&instantane)
+        }
+        // L'instance de projection repart, à chaque fois, de la mémoire d'une instance
+        // neuve (après `Bonjour` et `Decrire`), puis `Charger` y pose la projection :
+        // elle ne sait de la partie que ce que la projection en dit. Partir de la
+        // mémoire de la définitive y aurait recopié ce que le module tient hors de
+        // l'état (un `static` où une entrée a recopié un secret), et `vue(état) =
+        // vue(projection)` aurait tenu à tort (revue de la phase 2, constat 1).
+        if let (Some(inst), Some(neuve)) =
+            (self.projection.as_mut(), self.projection_neuve.as_ref())
+            && let Err(p) = inst.restaurer(neuve)
         {
             self.panne_outil(format!("E8, restaurer l'instance de projection : {p}"));
             return;
@@ -1772,6 +2361,16 @@ impl<'m> Soiree<'m> {
             let vue = def.lire(&Appel::Regarder {
                 regards: vec![regard],
             });
+            let carburant_ecran = if regard == RegardFil::Ecran && vue.is_ok() {
+                Instance::carburant(def)
+            } else {
+                None
+            };
+            if let Some(c) = carburant_ecran
+                && self.faits.vue_ecran_max.is_none_or(|(_, m)| c > m)
+            {
+                self.faits.vue_ecran_max = Some((self.pas, c));
+            }
             let (projection, vue) = match (projection, vue) {
                 (Ok(p), Ok(v)) => (p, v),
                 (Err(Echec::Faute(f)), _) | (_, Err(Echec::Faute(f))) => {
@@ -1902,6 +2501,10 @@ impl<'m> Soiree<'m> {
 
     /// La fin de la soirée : la forme canonique finale, les reprises de E14, le
     /// bilan.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "le bilan se lit d'un trait : chaque champ, et ce que le monde a fait"
+    )]
     fn finir(mut self) -> Bilan {
         self.script.push(Op::Canonique);
         let canonique_finale = match self.partie.canonique() {
@@ -1927,6 +2530,51 @@ impl<'m> Soiree<'m> {
             r
         };
         let duree = self.reglage.duree;
+        let mut monde = self.monde;
+        for t in &self.tels {
+            let c = t.compte;
+            let s = |a: &mut u64, b: u64| *a = a.saturating_add(b);
+            s(&mut monde.retransmissions, c.retransmis);
+            s(&mut monde.tenus_perdus, c.tenus_perdus);
+            s(&mut monde.gestes_doubles, c.doubles);
+            s(&mut monde.poignees_ratees, c.poignees_ratees);
+            s(&mut monde.realignements, c.realignements);
+            s(&mut monde.rappels_de_tenu, c.rappels);
+            s(&mut monde.vues_en_rafale, c.vues_en_rafale);
+        }
+        let mut allees_et_venues = std::collections::BTreeMap::new();
+        let allees_manquees: Vec<String> = self
+            .programme
+            .iter()
+            .filter(|p| p.du_plan == Oui::Non && p.etat == Avancement::Manquee)
+            .map(|p| format!("{} au pas {} ({})", p.panne.nom(), p.debut, p.note))
+            .collect();
+        for p in &self.programme {
+            if p.du_plan == Oui::Non && p.etat == Avancement::Constatee {
+                let sorte = match p.panne {
+                    Panne::Coupure { .. } => "coupures",
+                    Panne::Rechargement => "rechargements",
+                    Panne::ArrierePlan { .. } => "arrière-plans",
+                    Panne::Silence { .. } => "sommeils",
+                    Panne::Gel { .. } => "gels",
+                    Panne::TrouNoir { .. }
+                    | Panne::Retenu { .. }
+                    | Panne::Rafales
+                    | Panne::Jumeau
+                    | Panne::RedemarrageAutorite
+                    | Panne::Depart
+                    | Panne::Doublon => "autres",
+                };
+                let n: &mut u64 = allees_et_venues.entry(sorte).or_default();
+                *n = n.saturating_add(1);
+            }
+        }
+        let f = self.fichiers.compte;
+        monde.fichiers_recus = f.recus;
+        monde.fichiers_abimes = f.abimes;
+        monde.fichiers_gros = f.gros;
+        monde.demandes_servies = f.servies;
+        monde.demandes_reussies = f.reussies;
         let pannes_sans_objet = self
             .programme
             .iter()
@@ -1974,6 +2622,11 @@ impl<'m> Soiree<'m> {
             arrivees: self.arrivees,
             e17: self.e17,
             gels: self.gels,
+            reprises: self.reprises,
+            monde,
+            allees_et_venues,
+            allees_manquees,
+            retours: self.retours,
         }
     }
 
@@ -2047,6 +2700,8 @@ pub(crate) enum Coup {
     Action(Vec<u8>),
     Touche(jeu_abi::Touche),
     Composant(ComposantArrivee),
+    /// Des fichiers apportés : nom, type, octets.
+    Fichiers(Vec<(String, String, Vec<u8>)>),
     Rien,
 }
 
@@ -2067,18 +2722,20 @@ impl Coup {
             CoupFil::Composant(ComposantBotFil::Deplace(d)) => {
                 Coup::Composant(ComposantArrivee::Deplace(*d))
             }
-            // Les fichiers d'un bot passent par le sélecteur du commun, que la phase 1
-            // n'a pas : le coup est ignoré, et cela se voit au rapport du jeu qui en
-            // aurait besoin.
-            CoupFil::Composant(ComposantBotFil::Fichiers(_)) | CoupFil::Rien => Coup::Rien,
+            CoupFil::Composant(ComposantBotFil::Fichiers(f)) => Coup::Fichiers(
+                f.iter()
+                    .map(|x| {
+                        (
+                            String::from(x.nom),
+                            String::from(x.genre),
+                            x.octets.to_vec(),
+                        )
+                    })
+                    .collect(),
+            ),
+            CoupFil::Rien => Coup::Rien,
         }
     }
-}
-
-/// Sert aux demandes : la forme possédée d'une demande, depuis son fil.
-#[expect(dead_code, reason = "gardée pour les demandes d'images de la phase 2")]
-fn demande(d: &DemandeFil<'_>) -> DemandeArrivee {
-    DemandeArrivee::depuis_fil(d)
 }
 
 #[cfg(test)]

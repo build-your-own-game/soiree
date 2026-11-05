@@ -423,8 +423,11 @@ pub fn corpus() -> Vec<Cas> {
             Retour::Proprietes(jeu_abi::ProprietesFil {
                 coupure_transparente: ApplicableFil::Oui(Duree::pas(600)),
                 permutation: ApplicableFil::SansObjet(String::from("non")),
+                phases: 3,
+                invariants: vec![String::from("ok")],
             }),
-            "0F 00 D8 04 01 03 6E 6F 6E",
+            // ABI 3 : `phases` (03) et `invariants` (01, puis 02 6F 6B) à la suite.
+            "0F 00 D8 04 01 03 6E 6F 6E 03 01 02 6F 6B",
         ),
         r("Retour::Hypothese", Retour::Hypothese(Oui::Non), "10 01"),
         // --- EntreeFil ---

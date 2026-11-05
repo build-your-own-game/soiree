@@ -37,7 +37,8 @@ pub trait Forme {
 
 /// Ce qui peut vivre dans l'état. Seules `#[jeu::message]` et `#[jeu::etat]`
 /// l'implémentent, en plus des types de `jeu`. Aucun type à mutabilité intérieure ne
-/// l'implémente.
+/// l'implémente. Le trait n'est pas scellé : c'est l'étape 1 de l'épreuve qui refuse
+/// un `impl` écrit à la main dans une crate du jeu (règle « forme calculée »).
 ///
 /// Les deux méthodes cachées sont la forme canonique, scellée : leur écrivain et leur
 /// liseur ne se construisent que dans `jeu` (D24).

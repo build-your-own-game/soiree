@@ -1,0 +1,19 @@
+[package]
+name = "fautif-fichier-qui-panique-module"
+description = "Le module WebAssembly du fautif qui lit un fichier sans en vérifier la taille (E13, dans le monde réel)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

@@ -38,11 +38,13 @@ fn forme_figee() {
 
 #[test]
 fn abi_est_celle_des_octets_figes() {
-    // Les octets de ce fichier sont ceux de l'ABI 2. Changer la forme demande de
+    // Les octets de ce fichier sont ceux de l'ABI 3. Changer la forme demande de
     // monter `ABI` et de réécrire ces octets ensemble. L'ABI 2 a ajouté, à la fin
     // d'`Appel` et de `Retour`, `Proprietes` et `Hypothese` (E10, E11) : les octets
-    // de l'ABI 1 n'ont pas bougé.
-    assert_eq!(ABI, 2);
+    // de l'ABI 1 n'ont pas bougé. L'ABI 3 a ajouté à `ProprietesFil` le nombre de
+    // phases (E3) et les noms des invariants (E4) : seuls les octets de
+    // `Retour::Proprietes` ont changé.
+    assert_eq!(ABI, 3);
 }
 
 /// Le corpus couvre chaque variant d'`Appel`, de `Retour` et d'`EntreeFil` : un

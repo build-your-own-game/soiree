@@ -53,6 +53,39 @@ use crate::traits::{
     Verif,
 };
 
+/// Le jeton de l'hôte de la colle : l'export d'un module écrit par [`crate::module!`],
+/// ou la copie native (`jeu-natif`).
+///
+/// Chaque porte de la colle qui exécute le jeu ou relit son enveloppe le demande :
+/// [`appeler`], [`canonique`], `wasm::boite` et `wasm::appel`. Sans lui, une vue
+/// pourrait rappeler son propre jeu sous le regard d'un joueur, ou relire la forme
+/// canonique de son état, et montrer à la télé un secret que son regard ne voit pas
+/// (§ 2.8, CAT-46). Son constructeur est `unsafe` : la crate de règles, sous
+/// `#![forbid(unsafe_code)]` (CONTRAT, « Pas de code `unsafe` »), ne peut pas le
+/// construire, et rien dans `jeu` ne lui en prête un.
+#[derive(Debug)]
+pub struct Hote {
+    _prive: (),
+}
+
+impl Hote {
+    /// Le jeton.
+    ///
+    /// # Safety
+    ///
+    /// Seul l'hôte de la colle l'appelle : les exports de [`crate::module!`], la copie
+    /// native, et les tests de la colle elle-même. Ce contrat n'est pas de mémoire mais
+    /// de confidentialité : un jeu qui tiendrait ce jeton lirait ses propres secrets.
+    #[expect(
+        unsafe_code,
+        reason = "le seul sceau que la crate de règles, sans unsafe, ne peut pas briser"
+    )]
+    #[must_use]
+    pub const unsafe fn new() -> Hote {
+        Hote { _prive: () }
+    }
+}
+
 /// La capacité de la boîte d'entrée statique du module : une lecture plus grande est
 /// refusée, une écriture plus grande reçoit un tampon du tas (§ 3.3).
 pub const CAPACITE_BOITE: usize = 64 * 1024;
@@ -247,6 +280,43 @@ pub const fn verifier_accord<J: Jeu>() {
     );
 }
 
+/// Deux textes égaux, en `const`.
+const fn memes(a: &str, b: &str) -> bool {
+    let (mut a, mut b) = (a.as_bytes(), b.as_bytes());
+    loop {
+        match (a, b) {
+            ([], []) => return true,
+            ([x, ra @ ..], [y, rb @ ..]) if *x == *y => {
+                a = ra;
+                b = rb;
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// Les noms d'invariants que le jeu déclare (`Epreuve::INVARIANTS`), évalués dans un
+/// `const` : chacun non vide, et chacun une fois. E4 juge le reste : chaque nom
+/// déclaré est évalué au moins une fois, et aucun autre ne l'est (OUT-01).
+pub const fn verifier_invariants<J: Epreuve>() {
+    let mut reste = J::INVARIANTS;
+    while let [nom, suite @ ..] = reste {
+        assert!(
+            !nom.is_empty(),
+            "invariants : un nom déclaré dans `Epreuve::INVARIANTS` est vide"
+        );
+        let mut autres = suite;
+        while let [autre, apres @ ..] = autres {
+            assert!(
+                !memes(nom, autre),
+                "invariants : un nom est déclaré deux fois dans `Epreuve::INVARIANTS`"
+            );
+            autres = apres;
+        }
+        reste = suite;
+    }
+}
+
 fn erreur(quoi: Illisible) -> ErreurFil {
     ErreurFil { ou: 0, quoi }
 }
@@ -313,8 +383,9 @@ fn ecrire_canonique<S: Etat>(
     Ok(e.position())
 }
 
-/// La forme canonique entière d'une enveloppe, secrets compris. Pour la copie native.
-pub fn canonique<J: Jeu>(env: &Enveloppe<J>) -> Result<Vec<u8>, ErreurFil> {
+/// La forme canonique entière d'une enveloppe, secrets compris. Pour la copie native,
+/// sous le jeton de l'hôte.
+pub fn canonique<J: Jeu>(_: &Hote, env: &Enveloppe<J>) -> Result<Vec<u8>, ErreurFil> {
     let mut o = Vec::new();
     let _: usize = ecrire_canonique(
         &mut o,
@@ -448,13 +519,15 @@ fn entree_de<J: Jeu>(e: EntreeFil<'_>, place: u64) -> Result<Entree<'_, J>, Erre
 
 /// Le même chemin pour le module et pour la copie native : décode `entree`, exécute
 /// l'appel, écrit le retour dans `sortie`. Une erreur rendue est déjà écrite comme
-/// `Retour::Illisible`.
+/// `Retour::Illisible`. Sous le jeton de l'hôte ([`Hote`]).
 pub fn appeler<J: Jeu + Epreuve>(
+    _: &Hote,
     e: &mut Option<Enveloppe<J>>,
     entree: &[u8],
     sortie: &mut Sortie<'_>,
 ) -> Result<(), ErreurFil> {
     let () = const { verifier_accord::<J>() };
+    let () = const { verifier_invariants::<J>() };
     let a = match jeu_abi::decoder::<Appel<'_>>(entree) {
         Ok(a) => a,
         Err(err) => return refuser(sortie, err),
@@ -752,6 +825,12 @@ fn executer<J: Jeu + Epreuve>(
                 &Retour::Proprietes(jeu_abi::ProprietesFil {
                     coupure_transparente: p.coupure_transparente.fil(|c| c.moins_de),
                     permutation: p.permutation.fil(|()| ()),
+                    phases: u16::try_from(<J::Phase as Variantes>::TOUTES.len())
+                        .unwrap_or(u16::MAX),
+                    invariants: J::INVARIANTS
+                        .iter()
+                        .map(|n| alloc::string::String::from(*n))
+                        .collect(),
                 }),
             )
         }
@@ -951,7 +1030,7 @@ fn bot<J: Jeu + Epreuve>(
         *debut = graine.to_le_bytes();
     }
     let mut b = Bot::<J> {
-        regard: r,
+        regard: Regard::du_fil(regard),
         style: match style {
             StyleFil::Sage => Style::Sage,
             StyleFil::Hostile => Style::Hostile,
@@ -1149,13 +1228,3 @@ pub const fn reserver(
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
-
-/// Une enveloppe autour d'un état construit hors d'une partie, pour les tests.
-#[doc(hidden)]
-pub fn enveloppe_de_test<J: Jeu>(jeu: J) -> Enveloppe<J> {
-    Enveloppe {
-        jeu,
-        sorties: Sorties::new(Hasard::depuis_graine(&[0; 32]), hasard_declare::<J>()),
-        pas: Pas::ZERO,
-    }
-}

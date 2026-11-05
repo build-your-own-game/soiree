@@ -14,7 +14,7 @@ use moteur_wasmtime::{Moteur, ReglagesMoteur};
 
 /// Les jeux dont le module se compile ici : `devine`, puis les crates de
 /// `exemples/fautifs/modules/`.
-pub const JEUX: [&str; 23] = [
+pub const JEUX: [&str; 35] = [
     "devine",
     "ardoise",
     "sain",
@@ -38,6 +38,18 @@ pub const JEUX: [&str; 23] = [
     "nan-dans-l-etat",
     "gel-qui-enchaine",
     "boucle-au-vote",
+    "phase-sans-cas",
+    "invariant-jamais-evalue",
+    "retient-un-refus",
+    "choix-qui-fuit",
+    "panique-au-temps",
+    "juge-sur-le-fait",
+    "fichier-qui-panique",
+    "pire-cas-trop-lourd",
+    "fin-trop-lourde",
+    "zones-lourdes",
+    "secret-dans-un-static",
+    "pire-cas-trop-leger",
 ];
 
 fn crate_de(nom: &str) -> String {

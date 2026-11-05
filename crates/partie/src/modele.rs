@@ -503,6 +503,8 @@ impl InstanceModele {
                 &Retour::Proprietes(jeu_abi::ProprietesFil {
                     coupure_transparente: sans_objet("le modèle n'est pas éprouvé"),
                     permutation: sans_objet("le modèle n'est pas éprouvé"),
+                    phases: 1,
+                    invariants: Vec::new(),
                 }),
                 sortie,
             ),

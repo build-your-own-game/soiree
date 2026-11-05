@@ -14,8 +14,8 @@ use core::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use jeu_abi::{ErreurFil, Illisible, Retour, SorteAppel};
 
 use super::{
-    CAPACITE_BOITE, CAPACITE_PANIQUE, Cadre, Enveloppe, Mode, Modes, Sortie, Zone, Zones, appeler,
-    effacer_panique, reserver,
+    CAPACITE_BOITE, CAPACITE_PANIQUE, Cadre, Enveloppe, Hote, Mode, Modes, Sortie, Zone, Zones,
+    appeler, effacer_panique, reserver,
 };
 use crate::traits::{Epreuve, Jeu};
 
@@ -212,8 +212,9 @@ impl<J: Jeu> Default for EtatModule<J> {
     }
 }
 
-/// Le corps de `soiree_boite(taille, sorte)` (§ 3.3).
+/// Le corps de `soiree_boite(taille, sorte)` (§ 3.3), sous le jeton de l'hôte.
 pub fn boite<J: Jeu, const N: usize>(
+    _: &Hote,
     etat: &Cellule<EtatModule<J>>,
     alloc: &Allocateur<N>,
     zone: &Zone<CAPACITE_BOITE>,
@@ -244,12 +245,13 @@ pub fn boite<J: Jeu, const N: usize>(
     })
 }
 
-/// Le corps de `soiree_appel(taille)` (§ 3.3, § 3.4).
+/// Le corps de `soiree_appel(taille)` (§ 3.3, § 3.4), sous le jeton de l'hôte.
 #[expect(
     unsafe_code,
     reason = "lire les octets que le moteur a écrits dans la boîte statique"
 )]
 pub fn appel<J: Jeu + Epreuve, const N: usize>(
+    hote: &Hote,
     etat: &Cellule<EtatModule<J>>,
     alloc: &Allocateur<N>,
     zone: &Zone<CAPACITE_BOITE>,
@@ -303,7 +305,7 @@ pub fn appel<J: Jeu + Epreuve, const N: usize>(
             None => &[],
         };
         let mut s = Sortie::new(cadre, sorte);
-        let _: Result<(), ErreurFil> = appeler(&mut e.enveloppe, entree, &mut s);
+        let _: Result<(), ErreurFil> = appeler(hote, &mut e.enveloppe, entree, &mut s);
         alloc.bascule(Mode::Brouillon);
         // Le tampon d'une grande écriture rend sa mémoire au tas (libéré selon son adresse).
         drop(tampon);

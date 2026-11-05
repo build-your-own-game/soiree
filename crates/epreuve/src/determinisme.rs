@@ -132,13 +132,46 @@ pub(crate) fn rejouer(
                 copie = None;
             }
         }
-        for l in lignes {
-            let Ligne::Entree(e) = l else {
-                continue;
+        // Les entrées appliquées aux deux instances, par leur ligne du journal ; la
+        // partie de la dernière entrée vue.
+        let mut appliquees: Vec<usize> = Vec::new();
+        let mut courante = None;
+        for (rang, l) in lignes.iter().enumerate() {
+            let e = match l {
+                Ligne::Entree(e) => e,
+                // Une reprise (§ 4.6) de cette partie : la définitive est revenue à son
+                // point sain ; les deux instances y reviennent, en rejouant depuis la
+                // création les entrées qui le précèdent.
+                Ligne::Reprise { depuis, .. } if courante == Some(*partie) => {
+                    appliquees.retain(|k| k < depuis);
+                    match relancer(module, natif.as_deref_mut(), creer, lignes, &appliquees) {
+                        Ok((j, n)) => {
+                            jumelle = j;
+                            if copie.is_some() {
+                                copie = n;
+                            }
+                        }
+                        Err(p) => {
+                            c.pannes
+                                .push(format!("E9, partie {partie}, après une reprise : {p}"));
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                Ligne::Reprise { .. }
+                | Ligne::Arrivees { .. }
+                | Ligne::Empreinte { .. }
+                | Ligne::Saut { .. }
+                | Ligne::Pause { .. }
+                | Ligne::Vue { .. }
+                | Ligne::Partie { .. } => continue,
             };
+            courante = Some(e.partie);
             if e.partie != *partie || matches!(e.issue, IssueJournal::Ecartee { .. }) {
                 continue;
             }
+            appliquees.push(rang);
             let appel = Appel::Entree {
                 ordre: e.ordre,
                 place: e.place.numero(),
@@ -191,6 +224,66 @@ pub(crate) fn rejouer(
         }
     }
     c
+}
+
+/// Deux instances neuves, la jumelle et la copie native, accueillies, créées par
+/// `creer`, puis menées par les entrées de ces lignes du journal, sans comparaison :
+/// celles que la partie avait jouées avant le point sain d'une reprise.
+fn relancer<'n>(
+    module: &ModuleCharge,
+    natif: Option<&mut (dyn FabriqueDynamique + 'n)>,
+    creer: &[u8],
+    lignes: &[Ligne],
+    entrees: &[usize],
+) -> Result<
+    (
+        moteur_wasmtime::InstanceWasm,
+        Option<Box<dyn InstanceDynamique>>,
+    ),
+    String,
+> {
+    let mut jumelle = Fabrique::neuve(&mut module.fabrique()).map_err(|p| p.to_string())?;
+    let mut copie = match natif {
+        Some(f) => Some(FabriqueDynamique::neuve(f).map_err(|p| p.to_string())?),
+        None => None,
+    };
+    let mut appels: Vec<(SorteAppel, Vec<u8>, u64)> = vec![
+        (
+            SorteAppel::Lecture,
+            encode(&Appel::Bonjour),
+            BUDGETS.lecture,
+        ),
+        (
+            SorteAppel::Lecture,
+            encode(&Appel::Decrire),
+            BUDGETS.lecture,
+        ),
+        (SorteAppel::Ecriture, creer.to_vec(), BUDGETS.creation),
+    ];
+    for k in entrees {
+        if let Some(Ligne::Entree(e)) = lignes.get(*k) {
+            appels.push((
+                SorteAppel::Ecriture,
+                encode(&Appel::Entree {
+                    ordre: e.ordre,
+                    place: e.place.numero(),
+                    entree: &e.octets,
+                }),
+                BUDGETS.entree,
+            ));
+        }
+    }
+    for (sorte, octets, budget) in &appels {
+        let _: Vec<u8> = Instance::appeler(&mut jumelle, *sorte, octets, *budget).map_err(|e| {
+            format!("la jumelle ne refait pas une entrée d'avant le point sain : {e}")
+        })?;
+        if let Some(n) = copie.as_mut() {
+            let _: Vec<u8> = n.as_mut().appeler(*sorte, octets, *budget).map_err(|e| {
+                format!("la copie native ne refait pas une entrée d'avant le point sain : {e}")
+            })?;
+        }
+    }
+    Ok((jumelle, copie))
 }
 
 /// Après une entrée : même forme canonique, même état, mêmes vues.

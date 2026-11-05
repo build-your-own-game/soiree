@@ -1,0 +1,19 @@
+[package]
+name = "fautif-juge-sur-le-fait-module"
+description = "Le module WebAssembly du fautif qui juge sur `fait` ce qu'un joueur a vu (E4, dans le monde réel)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

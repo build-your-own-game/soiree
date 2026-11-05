@@ -172,6 +172,9 @@ pub(crate) fn rejouer(
                     "la soirée des propriétés ne redémarre pas l'autorité",
                 ));
             }
+            Op::Repartir => {
+                let _: Oui = partie.repartir().map_err(|p| format!("repartir : {p}"))?;
+            }
         }
     }
     r.canonique = partie.canonique().ok();
@@ -323,9 +326,12 @@ pub(crate) fn renumeroter(script: &[Op], table: &[(u64, u64)]) -> Vec<Op> {
                     })
                     .collect(),
             ),
-            Op::Avancer(_) | Op::Etat | Op::Canonique | Op::Point | Op::Redemarrer { .. } => {
-                op.clone()
-            }
+            Op::Avancer(_)
+            | Op::Etat
+            | Op::Canonique
+            | Op::Point
+            | Op::Redemarrer { .. }
+            | Op::Repartir => op.clone(),
         })
         .collect()
 }
@@ -498,8 +504,10 @@ fn appareil_de(a: &Arrivee) -> Option<(u64, Oui)> {
 }
 
 /// Les pas, en pas de partie, entre deux lectures de l'hypothèse de la coupure
-/// transparente dans la soirée sans coupure (E11).
-pub(crate) const PERIODE_HYPOTHESE: u64 = 10;
+/// transparente dans la soirée sans coupure (E11). Une seule définition, publique et
+/// documentée : [`jeu_abi::PERIODE_HYPOTHESE`], que le jeu lit aussi (`jeu::PERIODE_HYPOTHESE`,
+/// Sidequest B10).
+pub(crate) const PERIODE_HYPOTHESE: u64 = jeu_abi::PERIODE_HYPOTHESE.en_pas();
 
 /// Les coupures à essayer : sur un appareil sans présence annoncée autour, chacune
 /// plus courte que `moins_de`, au plus `n`, espacées, et là où l'hypothèse a tenu
@@ -548,7 +556,8 @@ pub(crate) fn choisir_coupures(
             | Op::Etat
             | Op::Canonique
             | Op::Point
-            | Op::Redemarrer { .. } => None,
+            | Op::Redemarrer { .. }
+            | Op::Repartir => None,
         })
         .max()
         .unwrap_or(0);
@@ -695,7 +704,11 @@ pub(crate) fn retarder(script: &[Op], w: u64, t: &mut Tirage) -> (Vec<Op>, u64) 
                     Arrivee::Geste {
                         de: *de,
                         octets: octets.clone(),
-                        fait: *fait,
+                        // Le cœur ne garde pas un `fait` après sa réception (§ 4.3) : une
+                        // horloge en avance l'annonce plus tard que `recu`. Le même geste
+                        // reçu plus tard garderait cet instant-là : on le borne comme le
+                        // cœur l'a borné, pour que seule l'arrivée change.
+                        fait: (*fait).min(*recu),
                         vu: *vu,
                         id: *id,
                         demi_aller_retour: demi_aller_retour.plus(Duree::pas(extra)),
@@ -718,7 +731,8 @@ pub(crate) fn retarder(script: &[Op], w: u64, t: &mut Tirage) -> (Vec<Op>, u64) 
             | Op::Etat
             | Op::Canonique
             | Op::Point
-            | Op::Redemarrer { .. } => rendu.push(op.clone()),
+            | Op::Redemarrer { .. }
+            | Op::Repartir => rendu.push(op.clone()),
         }
     }
     (rendu, retardes)

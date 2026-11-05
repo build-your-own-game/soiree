@@ -1,7 +1,9 @@
 //! Ce qui ne doit pas compiler, et ce qui doit (INTERFACE.md, § 8.3) :
 //! `echeance_ne_nait_que_de_maintenant`, `maintenant_ne_se_garde_pas`,
 //! `accord_declaration_types` (chaque ligne de la table de § 2.12, dans les deux sens),
-//! `raison_creuse_refusee`, et un refus qui ne peut rien écrire.
+//! `raison_creuse_refusee`, un refus qui ne peut rien écrire, un regard qui ne se
+//! forge ni ne se garde, un jeton de l'hôte que la crate de règles ne peut pas
+//! construire, et des invariants déclarés deux fois.
 
 #[test]
 fn ce_qui_compile_et_ce_qui_ne_compile_pas() {

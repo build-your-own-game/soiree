@@ -1124,6 +1124,74 @@ fn scene_trop_profonde_ou_trop_grande_refusee() {
     ));
 }
 
+/// § 6.1, RESTE-PHASE-1 (point 25, cargo-mutants) : les bornes elles-mêmes sont
+/// permises. Exactement `NOEUDS_MAX` nœuds, exactement `PROFONDEUR_MAX` étages, une
+/// taille nulle, et un nœud qui touche le bord de la marge de chaque côté passent ;
+/// un 1/256 d'unité plus loin, non.
+#[test]
+fn scene_aux_bornes_exactes_acceptee() {
+    let juste = (0..regles::NOEUDS_MAX as u64)
+        .map(|k| rect(k, None))
+        .collect();
+    assert_eq!(valider(&scene_de(juste)), Ok(()));
+    let mut noeuds = vec![groupe_en(0, None, 0, 0)];
+    for k in 1..regles::PROFONDEUR_MAX as u64 {
+        noeuds.push(groupe_en(k, Some(u32::try_from(k - 1).unwrap()), 0, 0));
+    }
+    assert_eq!(noeuds.len(), regles::PROFONDEUR_MAX);
+    assert_eq!(valider(&scene_de(noeuds)), Ok(()));
+    // Une taille nulle n'est pas négative.
+    for (l, h) in [(0, 1), (1, 0), (0, 0)] {
+        assert_eq!(
+            valider(&scene_de(vec![rect_en(1, None, 2, 2, l, h)])),
+            Ok(()),
+            "({l}, {h})"
+        );
+    }
+    // Le repère fait 16 × 9 et sa marge la moitié : x dans [-8, 24], y dans
+    // [-4,5 ; 13,5]. Chaque bord touché exactement passe ; un 1/256 d'unité plus loin,
+    // dehors.
+    let au_bord = |x: i32, y: i32| {
+        let u = jeu_abi::Fixe::PAR_UNITE;
+        noeud(
+            1,
+            None,
+            SorteNoeud::Rect {
+                r: jeu_abi::Rect {
+                    x: jeu_abi::Fixe::depuis_brut(x),
+                    y: jeu_abi::Fixe::depuis_brut(y),
+                    l: jeu_abi::Fixe::depuis_brut(u),
+                    h: jeu_abi::Fixe::depuis_brut(u),
+                },
+                couleur: jeu_abi::Rgba::NOIR,
+            },
+        )
+    };
+    let u = jeu_abi::Fixe::PAR_UNITE;
+    // (x, y) au bord, et le pas d'un 1/256 vers l'extérieur.
+    for (x, y, dx, dy) in [
+        (-8 * u, 0, -1, 0),
+        (23 * u, 0, 1, 0),
+        (0, -4 * u - u / 2, 0, -1),
+        (0, 12 * u + u / 2, 0, 1),
+    ] {
+        assert_eq!(
+            valider(&scene_de(vec![au_bord(x, y)])),
+            Ok(()),
+            "({x}, {y})"
+        );
+        assert_eq!(
+            valider(&scene_de(vec![au_bord(x + dx, y + dy)])),
+            Err(regles::DefautScene::HorsDuRepere {
+                cle: Cle::du_fil(1)
+            }),
+            "({}, {})",
+            x + dx,
+            y + dy
+        );
+    }
+}
+
 /// § 6.1 : polices et images connues : la police du commun, les assets, et les images
 /// que le jeu dit connaître.
 #[test]

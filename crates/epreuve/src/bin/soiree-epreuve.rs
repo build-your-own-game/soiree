@@ -1,5 +1,6 @@
-//! `soiree-epreuve <module.wasm>` : l'épreuve d'un module, sans copie native (§ 8.8).
-//! Voir `epreuve::ligne_de_commande`.
+//! `soiree-epreuve <dossier du jeu>` : l'épreuve d'un jeu depuis ses sources, avec sa
+//! copie native ; `soiree-epreuve --wasm <module.wasm>` : celle d'un module seul
+//! (§ 8.8 ; CONTRAT, « L'épreuve »). Voir `epreuve::ligne_de_commande`.
 
 #![forbid(unsafe_code)]
 

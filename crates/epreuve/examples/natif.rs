@@ -5,9 +5,10 @@
 //! ```
 //!
 //! `<jeu>` est `devine`, ou le nom d'une crate de `exemples/fautifs/modules/`
-//! (`sain`, `jamais-fini`, …). Le binaire `soiree-epreuve` ne connaît aucun jeu ; une
-//! crate de jeu fait ainsi le sien, en donnant sa copie native à
-//! `epreuve::ligne_de_commande`.
+//! (`sain`, `jamais-fini`, …). Un module seul : l'étape 1 n'est pas faite, et le code
+//! de sortie n'est jamais 0. L'épreuve qui fait foi part des sources
+//! (`soiree-epreuve <dossier>`), qui compile elle-même cette copie native ; cet exemple
+//! éprouve un module déjà compilé, sans rien recompiler.
 
 #![forbid(unsafe_code)]
 
@@ -45,6 +46,18 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         "nan-dans-l-etat" => Box::new(FabriqueNative::<jeux::NanDansLEtat>::new()),
         "gel-qui-enchaine" => Box::new(FabriqueNative::<jeux::GelQuiEnchaine>::new()),
         "boucle-au-vote" => Box::new(FabriqueNative::<jeux::BoucleAuVote>::new()),
+        "phase-sans-cas" => Box::new(FabriqueNative::<jeux::PhaseSansCas>::new()),
+        "invariant-jamais-evalue" => Box::new(FabriqueNative::<jeux::InvariantJamaisEvalue>::new()),
+        "retient-un-refus" => Box::new(FabriqueNative::<jeux::RetientUnRefus>::new()),
+        "choix-qui-fuit" => Box::new(FabriqueNative::<jeux::ChoixQuiFuit>::new()),
+        "secret-dans-un-static" => Box::new(FabriqueNative::<jeux::SecretDansUnStatic>::new()),
+        "pire-cas-trop-leger" => Box::new(FabriqueNative::<jeux::PireCasTropLeger>::new()),
+        "panique-au-temps" => Box::new(FabriqueNative::<jeux::PaniqueAuTemps>::new()),
+        "juge-sur-le-fait" => Box::new(FabriqueNative::<jeux::JugeSurLeFait>::new()),
+        "fichier-qui-panique" => Box::new(FabriqueNative::<jeux::FichierQuiPanique>::new()),
+        "pire-cas-trop-lourd" => Box::new(FabriqueNative::<jeux::PireCasTropLourd>::new()),
+        "fin-trop-lourde" => Box::new(FabriqueNative::<jeux::FinTropLourde>::new()),
+        "zones-lourdes" => Box::new(FabriqueNative::<jeux::ZonesLourdes>::new()),
         _ => return None,
     })
 }

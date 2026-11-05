@@ -1,0 +1,19 @@
+[package]
+name = "fautif-pire-cas-trop-leger-module"
+description = "Le module WebAssembly du fautif dont les pires cas, sans joueur, sont plus légers que l'écran d'une soirée (E16)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

@@ -175,8 +175,17 @@ pub enum Panne {
     /// Le Wi-Fi d'un téléphone livre par rafales de 100 ms, toute la soirée (CONTRAT,
     /// « Le Wi-Fi d'un téléphone arrive par rafales »).
     Rafales,
-    /// Un onglet se recharge : départ, ce qui n'était pas parti se perd, retour.
+    /// Un onglet se recharge : départ, ce qui n'était pas parti se perd, sa
+    /// numérotation des tenus repart de zéro, retour après une poignée de main
+    /// (SAL-38).
     Rechargement,
+    /// Un onglet passe en arrière-plan : il relâche ce qu'il tient (REM-11), se fige,
+    /// ses vues s'accumulent ; au-delà de cinq secondes le système ferme sa connexion
+    /// (SAL-53, OUT-53).
+    ArrierePlan {
+        /// La durée en arrière-plan.
+        duree: Duree,
+    },
     /// Un second onglet du même téléphone joue en même temps que le premier (SAL-15,
     /// SAL-154, SQ-88).
     Jumeau,
@@ -188,6 +197,16 @@ pub enum Panne {
         /// La durée du gel.
         duree: Duree,
     },
+    /// Un téléphone part pour de bon, sans revenir, assez tôt pour que la soirée dure
+    /// encore au-delà de la garde d'une place (PUN-13 : 90 s) : le chemin « place
+    /// libérée » du jeu est joué là où E2, E4 à E9 et E14 jugent (PUN-37, CAT-78 ;
+    /// revue de la phase 2, constat 9).
+    Depart,
+    /// Le réseau livre deux fois le même geste d'un téléphone, à quelques pas
+    /// d'écart : l'ordinateur de la soirée le reconnaît à son identité et le compte une
+    /// fois (CONTRAT : « le réseau perd, retarde, double et réordonne » ; PUN-16 ;
+    /// revue de la phase 2, constat 16). Constatée au premier geste reçu deux fois.
+    Doublon,
 }
 
 impl Panne {
@@ -200,9 +219,12 @@ impl Panne {
             Panne::Retenu { duree } => format!("paquets retenus {} ms", duree.en_ms()),
             Panne::Rafales => String::from("rafales de Wi-Fi"),
             Panne::Rechargement => String::from("rechargement d'un onglet"),
+            Panne::ArrierePlan { duree } => format!("arrière-plan de {} ms", duree.en_ms()),
             Panne::Jumeau => String::from("onglet jumeau"),
             Panne::RedemarrageAutorite => String::from("redémarrage de l'autorité"),
             Panne::Gel { duree } => format!("gel de {} ms", duree.en_ms()),
+            Panne::Depart => String::from("départ pour de bon"),
+            Panne::Doublon => String::from("geste livré deux fois"),
         }
     }
 
@@ -217,7 +239,10 @@ impl Panne {
             | Panne::Retenu { .. }
             | Panne::Rafales
             | Panne::Rechargement
-            | Panne::Jumeau => Oui::Oui,
+            | Panne::ArrierePlan { .. }
+            | Panne::Jumeau
+            | Panne::Depart
+            | Panne::Doublon => Oui::Oui,
             Panne::RedemarrageAutorite | Panne::Gel { .. } => Oui::Non,
         }
     }
@@ -229,11 +254,199 @@ impl Panne {
             | Panne::Silence { duree }
             | Panne::TrouNoir { duree }
             | Panne::Retenu { duree }
+            | Panne::ArrierePlan { duree }
             | Panne::Gel { duree } => Some(duree),
-            Panne::Rafales | Panne::Rechargement | Panne::Jumeau | Panne::RedemarrageAutorite => {
-                None
-            }
+            Panne::Rafales
+            | Panne::Rechargement
+            | Panne::Jumeau
+            | Panne::RedemarrageAutorite
+            | Panne::Depart
+            | Panne::Doublon => None,
         }
+    }
+}
+
+/// Ce que la soirée simulée reproduit du réel (CONTRAT, « Ce que le réel impose » ;
+/// RESTE-PHASE-1, points 20 à 22). [`Monde::REEL`] est celui de l'épreuve ;
+/// [`Monde::PHASE_1`] est le monde trop sage de la phase 1, gardé pour montrer qu'un
+/// fautif ne passe plus grâce au réel.
+///
+/// Ce qui ne se coupe pas : le réseau (canaux WebSocket et WebRTC, pertes,
+/// retransmissions qui retiennent la file, accusés perdus et gestes reçus deux fois,
+/// poignées de main ratées, rappel des tenus, numérotation qui repart de zéro au
+/// rechargement), et la vue que chaque geste emporte, prise quand il est fait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Monde {
+    /// Les bots d'un téléphone décident sur la vue que ce téléphone a reçue, et sur
+    /// l'état de la définitive d'où elle vient, pas sur l'état courant (point 20).
+    /// Sans vue reçue, ils ne font rien.
+    pub vues_recues: Oui,
+    /// Chaque téléphone a son horloge, décalée et qui dérive ; l'estimation de l'heure
+    /// de l'autorité se trompe d'environ un demi-aller-retour, et `fait` porte cette
+    /// erreur ; la demi-latence annoncée est mesurée, gigue comprise (point 21).
+    pub horloges: Oui,
+    /// Les demandes de fichiers (`Image`, `Lire`, `Telecharger`, `Rendu`) sont
+    /// servies avec de vrais contenus, abîmés, trop gros et lents, et les fichiers
+    /// qu'apporte un bot de l'écran arrivent au jeu (constat de Tier list).
+    pub fichiers: Oui,
+}
+
+impl Monde {
+    /// Le monde de l'épreuve.
+    pub const REEL: Monde = Monde {
+        vues_recues: Oui::Oui,
+        horloges: Oui::Oui,
+        fichiers: Oui::Oui,
+    };
+
+    /// Le monde de la phase 1 : bots sur l'état courant, horloges exactes, fichiers
+    /// refusés.
+    pub const PHASE_1: Monde = Monde {
+        vues_recues: Oui::Non,
+        horloges: Oui::Non,
+        fichiers: Oui::Non,
+    };
+}
+
+/// Ce que le monde simulé a vraiment fait, sur toutes les soirées jouées : un
+/// comportement du réel qui n'a pas eu lieu n'a rien éprouvé (OUT-26). Le rapport le
+/// dit, et les tests de l'épreuve le vérifient.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MondeJoue {
+    /// Consultations d'un bot de téléphone sur la vue reçue.
+    pub decisions_sur_vue_recue: u64,
+    /// … dont celles où la vue reçue n'était pas la dernière que l'autorité avait
+    /// envoyée : le bot décidait sur le passé.
+    pub decisions_sur_vue_en_retard: u64,
+    /// Consultations sautées : le téléphone n'avait encore reçu aucune vue.
+    pub sans_vue: u64,
+    /// Gestes annoncés plus tôt, ou plus tard, que l'instant vrai.
+    pub faits_en_avance: u64,
+    /// …
+    pub faits_en_retard: u64,
+    /// Le plus grand écart entre `fait` annoncé et l'instant vrai, en 1/65 536 de pas.
+    pub ecart_d_horloge_max: u64,
+    /// Paquets perdus puis retransmis, qui ont retenu leur file.
+    pub retransmissions: u64,
+    /// Tenus perdus sur le canal non fiable.
+    pub tenus_perdus: u64,
+    /// Gestes reçus deux fois (un accusé perdu), reconnus et comptés une fois.
+    pub gestes_doubles: u64,
+    /// Poignées de main ratées avant une reconnexion.
+    pub poignees_ratees: u64,
+    /// Accueils qui ont réaligné la numérotation des tenus d'une page.
+    pub realignements: u64,
+    /// Rappels réguliers d'un tenu.
+    pub rappels_de_tenu: u64,
+    /// Lectures de plusieurs vues d'un coup, au réveil d'une page figée.
+    pub vues_en_rafale: u64,
+    /// Passages en arrière-plan.
+    pub arriere_plans: u64,
+    /// Fichiers reçus du sélecteur.
+    pub fichiers_recus: u64,
+    /// … abîmés (soirée hostile).
+    pub fichiers_abimes: u64,
+    /// … trop gros.
+    pub fichiers_gros: u64,
+    /// Demandes servies par le monde.
+    pub demandes_servies: u64,
+    /// … et réussies.
+    pub demandes_reussies: u64,
+}
+
+impl MondeJoue {
+    /// Ajoute ce qu'une autre soirée a fait.
+    pub(crate) fn ajouter(&mut self, o: &MondeJoue) {
+        let MondeJoue {
+            decisions_sur_vue_recue,
+            decisions_sur_vue_en_retard,
+            sans_vue,
+            faits_en_avance,
+            faits_en_retard,
+            ecart_d_horloge_max,
+            retransmissions,
+            tenus_perdus,
+            gestes_doubles,
+            poignees_ratees,
+            realignements,
+            rappels_de_tenu,
+            vues_en_rafale,
+            arriere_plans,
+            fichiers_recus,
+            fichiers_abimes,
+            fichiers_gros,
+            demandes_servies,
+            demandes_reussies,
+        } = *o;
+        let s = |a: &mut u64, b: u64| *a = a.saturating_add(b);
+        s(&mut self.decisions_sur_vue_recue, decisions_sur_vue_recue);
+        s(
+            &mut self.decisions_sur_vue_en_retard,
+            decisions_sur_vue_en_retard,
+        );
+        s(&mut self.sans_vue, sans_vue);
+        s(&mut self.faits_en_avance, faits_en_avance);
+        s(&mut self.faits_en_retard, faits_en_retard);
+        self.ecart_d_horloge_max = self.ecart_d_horloge_max.max(ecart_d_horloge_max);
+        s(&mut self.retransmissions, retransmissions);
+        s(&mut self.tenus_perdus, tenus_perdus);
+        s(&mut self.gestes_doubles, gestes_doubles);
+        s(&mut self.poignees_ratees, poignees_ratees);
+        s(&mut self.realignements, realignements);
+        s(&mut self.rappels_de_tenu, rappels_de_tenu);
+        s(&mut self.vues_en_rafale, vues_en_rafale);
+        s(&mut self.arriere_plans, arriere_plans);
+        s(&mut self.fichiers_recus, fichiers_recus);
+        s(&mut self.fichiers_abimes, fichiers_abimes);
+        s(&mut self.fichiers_gros, fichiers_gros);
+        s(&mut self.demandes_servies, demandes_servies);
+        s(&mut self.demandes_reussies, demandes_reussies);
+    }
+
+    /// Un geste annoncé fait à `annonce`, fait vraiment à `vrai` : l'erreur d'horloge.
+    pub(crate) fn noter_fait(&mut self, annonce: (u64, u16), vrai: (u64, u16)) {
+        let f = |(p, x): (u64, u16)| {
+            i128::from(p)
+                .saturating_mul(1 << 16)
+                .saturating_add(i128::from(x))
+        };
+        let e = f(annonce).saturating_sub(f(vrai));
+        if e < 0 {
+            self.faits_en_avance = self.faits_en_avance.saturating_add(1);
+        }
+        if e > 0 {
+            self.faits_en_retard = self.faits_en_retard.saturating_add(1);
+        }
+        let abs = u64::try_from(e.unsigned_abs()).unwrap_or(u64::MAX);
+        self.ecart_d_horloge_max = self.ecart_d_horloge_max.max(abs);
+    }
+
+    /// Ses compteurs, nommés, dans l'ordre : pour le rapport.
+    pub fn compteurs(&self) -> [(&'static str, u64); 19] {
+        [
+            ("decisions_sur_vue_recue", self.decisions_sur_vue_recue),
+            (
+                "decisions_sur_vue_en_retard",
+                self.decisions_sur_vue_en_retard,
+            ),
+            ("sans_vue", self.sans_vue),
+            ("faits_en_avance", self.faits_en_avance),
+            ("faits_en_retard", self.faits_en_retard),
+            ("ecart_d_horloge_max", self.ecart_d_horloge_max),
+            ("retransmissions", self.retransmissions),
+            ("tenus_perdus", self.tenus_perdus),
+            ("gestes_doubles", self.gestes_doubles),
+            ("poignees_ratees", self.poignees_ratees),
+            ("realignements", self.realignements),
+            ("rappels_de_tenu", self.rappels_de_tenu),
+            ("vues_en_rafale", self.vues_en_rafale),
+            ("arriere_plans", self.arriere_plans),
+            ("fichiers_recus", self.fichiers_recus),
+            ("fichiers_abimes", self.fichiers_abimes),
+            ("fichiers_gros", self.fichiers_gros),
+            ("demandes_servies", self.demandes_servies),
+            ("demandes_reussies", self.demandes_reussies),
+        ]
     }
 }
 
@@ -255,6 +468,8 @@ pub struct Plan {
     pub controles: Vec<IdControle>,
     /// La durée de la soirée longue de E15 : six heures au § 7.2.
     pub memoire: Duree,
+    /// Le monde simulé : [`Monde::REEL`], sauf pour montrer ce qu'il change.
+    pub monde: Monde,
 }
 
 impl Plan {
@@ -275,12 +490,15 @@ impl Plan {
             },
             Panne::Rafales,
             Panne::Rechargement,
+            Panne::ArrierePlan { duree: Duree::s(8) },
             Panne::Jumeau,
             Panne::RedemarrageAutorite,
             Panne::Gel { duree: Duree::s(3) },
             Panne::Gel {
                 duree: Duree::s(40),
             },
+            Panne::Depart,
+            Panne::Doublon,
         ]
     }
 
@@ -294,6 +512,7 @@ impl Plan {
             pannes: Plan::pannes_standard(),
             controles: IdControle::TOUS.to_vec(),
             memoire: Duree::s(6 * 3600),
+            monde: Monde::REEL,
         }
     }
 
@@ -308,6 +527,7 @@ impl Plan {
             pannes: Plan::pannes_standard(),
             controles: IdControle::TOUS.to_vec(),
             memoire: Duree::s(3600),
+            monde: Monde::REEL,
         }
     }
 

@@ -25,7 +25,11 @@ use crate::valeurs::{Manette, Oui, TexteCourt};
 /// 2 : `Appel::Proprietes` et `Appel::Hypothese`, `Retour::Proprietes` et
 /// `Retour::Hypothese`, pour les contrôles E10 et E11 de l'épreuve (§ 7.2). Les
 /// variants d'avant gardent leurs octets.
-pub const ABI: u32 = 2;
+///
+/// 3 : [`ProprietesFil`] porte en plus `phases`, le nombre de variantes de `Phase`
+/// (E3), et `invariants`, les noms que le jeu déclare exiger (E4). Seuls les octets
+/// de `Retour::Proprietes` changent.
+pub const ABI: u32 = 3;
 
 /// Un appel du moteur au module.
 ///
@@ -273,6 +277,20 @@ pub enum Retour<'a> {
     Hypothese(OuiFil),
 }
 
+/// Tous les combien l'épreuve lit l'hypothèse de la coupure transparente (E11), dans
+/// la soirée sans coupure : une lecture tous ces pas, de chaque début de coupure à la
+/// première lecture après sa fin. Un jeu dont l'hypothèse ne tient que si elle est lue
+/// assez souvent s'y accorde à la compilation, au lieu de deviner la période de
+/// l'épreuve (Sidequest, B10) :
+///
+/// ```
+/// const _: () = assert!(jeu_abi::PERIODE_HYPOTHESE.en_pas() <= 30);
+/// ```
+///
+/// Elle fait partie du contrat de cette version du commun : la changer se dit au
+/// `CHANGELOG.md`. Elle n'entre pas dans l'enveloppe : aucun octet ne la porte.
+pub const PERIODE_HYPOTHESE: crate::temps::Duree = crate::temps::Duree::pas(10);
+
 /// Les propriétés qu'un jeu promet, que l'épreuve vérifie (E10, E11 ; § 2.13).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProprietesFil {
@@ -283,6 +301,13 @@ pub struct ProprietesFil {
     /// Renuméroter les appareils ne change pas le résumé, ni les vues à renumérotation
     /// près (CAT-27).
     pub permutation: ApplicableFil<()>,
+    /// Le nombre de variantes de `Phase` (`Phase::TOUTES`), rempli par la colle : E3
+    /// vérifie que la partie les parcourt toutes, qu'un pire cas y mène ou non.
+    pub phases: u16,
+    /// Les noms de ce qu'exigent `invariants` et `transition`
+    /// (`Epreuve::INVARIANTS`), dans l'ordre déclaré : E4 vérifie que chacun est
+    /// évalué au moins une fois, et qu'aucun autre ne l'est (OUT-01).
+    pub invariants: Vec<alloc::string::String>,
 }
 
 /// Ce que le module dit de lui-même, au premier appel.

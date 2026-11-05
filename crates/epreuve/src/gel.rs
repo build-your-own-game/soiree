@@ -50,12 +50,21 @@ struct Transition {
     vers: u16,
     place: u64,
     temps: Oui,
+    /// La partie où elle a lieu : une durée ne se mesure pas d'une partie à l'autre.
+    partie: u32,
 }
 
 fn transitions(phases: &[PhaseVue]) -> Vec<Transition> {
     let mut v = Vec::new();
     let mut avant: Option<u16> = None;
+    let mut partie = None;
     for p in phases {
+        // Une partie neuve part de sa propre phase : la dernière phase lue de la partie
+        // finie et la première de la neuve ne font pas une transition.
+        if partie != Some(p.partie) {
+            avant = None;
+            partie = Some(p.partie);
+        }
         if let Some(a) = avant
             && a != p.phase
         {
@@ -64,6 +73,7 @@ fn transitions(phases: &[PhaseVue]) -> Vec<Transition> {
                 vers: p.phase,
                 place: p.place,
                 temps: p.temps,
+                partie: p.partie,
             });
         }
         avant = Some(p.phase);
@@ -117,7 +127,7 @@ pub(crate) fn juger(soirees: &[SoireeGelee<'_>]) -> (Compte, Vec<String>) {
         }
         for (k, paire) in t.windows(2).enumerate() {
             let [entree, sortie] = paire else { continue };
-            if apres.contains(&k) || sortie.temps == Oui::Non {
+            if apres.contains(&k) || sortie.temps == Oui::Non || sortie.partie != entree.partie {
                 continue;
             }
             let d = sortie.place.saturating_sub(entree.place);
@@ -154,7 +164,7 @@ pub(crate) fn juger(soirees: &[SoireeGelee<'_>]) -> (Compte, Vec<String>) {
             let Some(sortie) = t.get(k.saturating_add(1)) else {
                 continue;
             };
-            if sortie.temps == Oui::Non {
+            if sortie.temps == Oui::Non || sortie.partie != entree.partie {
                 continue;
             }
             let d = sortie.place.saturating_sub(entree.place);
@@ -199,6 +209,50 @@ mod tests {
 
     /// Une phase qui reçoit toute sa durée après un gel passe ; une phase enchaînée
     /// aussitôt échoue (PUN-34).
+    /// Revue de la phase 2 : après un gel, « Rejouer » puis « Lancer » arrivent dans
+    /// la même rafale ; la phase lue après « Rejouer » est encore celle de la partie
+    /// finie (3), la suivante celle de la partie neuve (1). Ce n'est pas une
+    /// transition « en une entrée » : le changement de partie coupe la suite.
+    #[test]
+    fn une_nouvelle_partie_n_est_pas_une_transition() {
+        let hors = vec![
+            p(10, 0, N),
+            p(20, 1, N),
+            p(320, 3, T),
+            p(330, 0, N),
+            p(340, 1, N),
+        ];
+        let mut v = hors.clone();
+        v.push(p(1000, 3, N));
+        v.push(PhaseVue {
+            partie: 1,
+            ..p(1001, 1, N)
+        });
+        let (c, _) = juger(&[(&v, &[(800, 1000)])]);
+        assert_eq!(c.echecs, 0, "{:?}", c.details);
+        // Une durée ne se mesure pas d'une partie à l'autre : la fin (3) d'une partie,
+        // puis un `Temps` de la partie neuve, ne font pas une durée de la phase 3.
+        let mut w = vec![
+            p(10, 0, N),
+            p(20, 1, N),
+            p(100, 3, T),
+            p(900, 0, N),
+            p(910, 1, N),
+        ];
+        for (place, phase) in [(1000, 3), (1500, 0)] {
+            w.push(PhaseVue {
+                partie: 1,
+                ..p(place, phase, N)
+            });
+        }
+        w.push(PhaseVue {
+            partie: 2,
+            ..p(1600, 1, T)
+        });
+        let (c, _) = juger(&[(&w, &[(900, 1000)])]);
+        assert_eq!(c.echecs, 0, "{:?}", c.details);
+    }
+
     #[test]
     fn une_phase_enchainee_apres_un_gel_echoue() {
         // Hors du gel : 0 → 1 → 2 → 0, la phase 2 dure 120 pas.

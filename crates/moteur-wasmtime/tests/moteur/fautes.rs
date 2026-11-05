@@ -114,7 +114,9 @@ fn cadres_epais(locaux: u32, appels: u32) -> Colle {
         write!(
             poser,
             " (local.set $l{k} (i64.load (i32.const {})))",
-            8u32.checked_mul(k).and_then(|o| o.checked_add(200_000)).unwrap()
+            8u32.checked_mul(k)
+                .and_then(|o| o.checked_add(200_000))
+                .unwrap()
         )
         .unwrap();
         somme = format!("(i64.add {somme} (local.get $l{k}))");

@@ -1,6 +1,8 @@
 // Un jeu minimal pour les tests de compilation : chaque cas choisit ses types et sa
 // déclaration, puis `jeu::module!` vérifie l'accord en `const` (§ 2.12, D28).
 macro_rules! jeu_minimal {
+    (@invariants) => { &[] };
+    (@invariants $invariants:expr) => { $invariants };
     (
         telephones: $telephones:expr,
         geste: $geste:ty,
@@ -8,7 +10,8 @@ macro_rules! jeu_minimal {
         vue: $vue:ty,
         secrets: $secrets:expr,
         prediction: $prediction:expr,
-        champ: $champ:ty $(,)?
+        champ: $champ:ty
+        $(, invariants: $invariants:expr)? $(,)?
     ) => {
         use jeu::prelude::*;
 
@@ -112,6 +115,7 @@ macro_rules! jeu_minimal {
         impl Epreuve for Minimal {
             type Resume = u8;
             type Cas = Etape;
+            const INVARIANTS: &'static [&'static str] = jeu_minimal!(@invariants $($invariants)?);
             fn resume(&self, _: &Autorite) -> u8 {
                 self.valeur
             }

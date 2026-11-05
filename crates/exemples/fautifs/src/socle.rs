@@ -15,6 +15,11 @@
 //!
 //! Il touche ce que les contrôles lisent : phases (dont une terminale), cas, secret,
 //! hasard, refus, échéances, présences, attente, invariants, transition, bots.
+//!
+//! Deux défauts y ajoutent ce que le monde simulé éprouve : un chiffre affiché qui
+//! change chaque seconde de la manche (`JugeSurLeFait`), et un fichier que l'écran
+//! apporte au salon et que le jeu lit (`FichierQuiPanique`). Pour les autres, le
+//! chiffre reste 0, et le salon n'a pas de sélecteur.
 
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
@@ -28,6 +33,8 @@ jeu::limite!(pub Mot = 16 Capitales);
 
 /// Les mots que la manche tire.
 pub const MOTS: [&str; 4] = ["ANANAS", "BANANIER", "CAROTTIER", "DATTIER"];
+/// Le prénom du bot lent, dans le défaut de la reprise (`PaniqueAuTemps`) seulement.
+pub const PRENOM_LENT: &str = "LENT";
 /// La valeur de chaque chiffre d'un `Choisir`.
 pub const VALEURS: [u32; 10] = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34];
 /// Le plus de joueurs.
@@ -36,6 +43,36 @@ pub const JOUEURS_MAX: usize = 6;
 const MANCHE: Duree = Duree::s(5);
 /// La durée de la prolongation.
 pub const PROLONGATION: Duree = Duree::s(2);
+/// Au-delà, un record : aucune soirée n'y arrive, et le pire cas reste à 9 999.
+const RECORD: u32 = 10_000;
+/// Ce qu'un fichier lu au salon peut peser, au plus.
+pub const FICHIER_MAX: u64 = 256;
+
+/// Ce que le socle exige, dans l'ordre de `invariants` puis de `transition` (E4).
+pub const INVARIANTS: [&str; 4] = [
+    "un point par tape au plus",
+    "six joueurs au plus",
+    "un meneur est un joueur",
+    "un point ne se perd pas",
+];
+
+/// Les écrans du socle pour la galerie des pires cas : ses phases, ou un défaut qui
+/// en oublie une (E3).
+pub trait CasDuSocle: Message + Variantes + Copy + Eq {
+    /// Le cas de cette phase.
+    fn de(phase: Etape) -> Self;
+    /// La phase de ce cas.
+    fn phase(self) -> Etape;
+}
+
+impl CasDuSocle for Etape {
+    fn de(phase: Etape) -> Etape {
+        phase
+    }
+    fn phase(self) -> Etape {
+        self
+    }
+}
 
 /// La déclaration du socle. Un défaut peut en partir pour la changer.
 pub const DECLARATION: Declaration = Declaration {
@@ -88,7 +125,7 @@ pub const DECLARATION: Declaration = Declaration {
 /// L'état du socle.
 #[jeu::etat]
 pub struct Socle<D: Defaut> {
-    /// Le défaut : un marqueur sans donnée.
+    /// Le défaut : un marqueur, sans donnée hors de `RetientUnRefus` (E6).
     defaut: D,
     phase: Etape,
     phase_depuis: Pas,
@@ -107,6 +144,10 @@ pub struct Socle<D: Defaut> {
     /// Les appareils dont le jeu se souvient hors de ses joueurs : vide, dans le jeu
     /// sain.
     vus: Vec<(Appareil, u64)>,
+    /// La lecture du fichier apporté au salon, en cours.
+    lecture: Option<(IdDemande, IdFichier)>,
+    /// Ce que le dernier fichier lu a donné.
+    lu: u32,
 }
 
 /// Un joueur.
@@ -202,6 +243,8 @@ pub enum VueTel {
     Tape {
         /// Ses points.
         points: u32,
+        /// Le chiffre affiché : 0, sauf dans `JugeSurLeFait`.
+        chiffre: u8,
     },
     /// La fin.
     Resultat {
@@ -251,10 +294,12 @@ impl<D: Defaut> Socle<D> {
         } else {
             None
         };
+        D::au_mot(mot.as_str());
         self.mot = Secret::cacher(Qui::Personne, mot);
         for (_, j) in self.joueurs.iter_mut() {
             j.pret = Oui::Non;
         }
+        self.defaut.a_l_ouverture(m);
     }
 
     /// L'échéance est passée.
@@ -322,19 +367,23 @@ impl<D: Defaut> Socle<D> {
     }
 }
 
+/// Un refus : le défaut est prévenu juste avant, avec le pas de l'entrée.
+fn refuser<D: Defaut>(avant: Avant<'_, Socle<D>>, avis: Avis) -> Issue<Socle<D>> {
+    avant.jeu().defaut.avant_refus(avant.maintenant().pas());
+    avant.refuser(avis)
+}
+
 fn rejoindre<D: Defaut>(
     avant: Avant<'_, Socle<D>>,
     de: Appareil,
     prenom: Texte<Prenom>,
 ) -> Issue<Socle<D>> {
     if prenom.vide() == Oui::Oui {
-        D::avant_refus();
-        return avant.refuser(Avis::PasMaintenant);
+        return refuser(avant, Avis::PasMaintenant);
     }
     let deja = avant.jeu().est_joueur(de);
     if !deja && avant.jeu().joueurs.len() >= JOUEURS_MAX {
-        D::avant_refus();
-        return avant.refuser(Avis::Pleine);
+        return refuser(avant, Avis::Pleine);
     }
     let mut e = avant.accepter();
     let j = e.jeu();
@@ -365,15 +414,16 @@ fn taper<D: Defaut>(avant: Avant<'_, Socle<D>>, de: Appareil, quand: Quand) -> I
     let j = avant.jeu();
     let en_jeu = matches!(j.phase, Etape::Manche | Etape::Prolongation);
     if !en_jeu || !j.est_joueur(de) {
-        D::avant_refus();
-        return avant.refuser(Avis::PasMaintenant);
+        return refuser(avant, Avis::PasMaintenant);
     }
     let points = if D::compte(&quand) == Oui::Oui {
         D::points_par_tape()
     } else {
         0
     };
+    let pas = avant.maintenant().pas();
     let mut e = avant.accepter();
+    e.jeu().defaut.a_la_tape(pas);
     if let Some(joueur) = e.jeu().joueurs.get_mut(de) {
         joueur.points = joueur.points.saturating_add(points);
         joueur.tapes = joueur.tapes.saturating_add(D::tapes_par_tape());
@@ -382,17 +432,26 @@ fn taper<D: Defaut>(avant: Avant<'_, Socle<D>>, de: Appareil, quand: Quand) -> I
     e.fin()
 }
 
-fn choisir<D: Defaut>(avant: Avant<'_, Socle<D>>, de: Appareil, n: u8) -> Issue<Socle<D>> {
+fn choisir<D: Defaut>(
+    avant: Avant<'_, Socle<D>>,
+    de: Appareil,
+    n: u8,
+    quand: &Quand,
+) -> Issue<Socle<D>> {
     let j = avant.jeu();
-    if j.phase != Etape::Manche || !j.est_joueur(de) {
-        D::avant_refus();
-        return avant.refuser(Avis::PasMaintenant);
+    let place = avant.maintenant().pas();
+    if j.phase != Etape::Manche
+        || !j.est_joueur(de)
+        || j.defaut.choix_recevable(quand, place) == Oui::Non
+    {
+        return refuser(avant, Avis::PasMaintenant);
     }
     let mut e = avant.accepter();
     let valeur = D::valeur(n).saturating_add(D::compter_le_vote());
     if let Some(joueur) = e.jeu().joueurs.get_mut(de) {
         joueur.choix = valeur;
     }
+    e.jeu().defaut.au_choix(de, n);
     e.fin()
 }
 
@@ -424,8 +483,7 @@ fn pret<D: Defaut>(avant: Avant<'_, Socle<D>>, de: Appareil) -> Issue<Socle<D>> 
     let attend = D::salon_attend_chacun() == Oui::Oui;
     let deja = j.joueurs.get(de).map(|x| x.pret);
     if !attend || j.phase != Etape::Salon || deja != Some(Oui::Non) {
-        D::avant_refus();
-        return avant.refuser(Avis::PasMaintenant);
+        return refuser(avant, Avis::PasMaintenant);
     }
     let mut e = avant.accepter();
     let p = e.parts();
@@ -465,16 +523,82 @@ fn rejouer<D: Defaut>(avant: Avant<'_, Socle<D>>) -> Issue<Socle<D>> {
     e.fin()
 }
 
-fn temps<D: Defaut>(avant: Avant<'_, Socle<D>>) -> Issue<Socle<D>> {
-    let Some(fin) = avant.jeu().fin else {
+fn temps<D: Defaut>(avant: Avant<'_, Socle<D>>, t: &Temps) -> Issue<Socle<D>> {
+    let maintenant = avant.maintenant();
+    // Le chiffre affiché change pendant la manche, au réveil du défaut qui en a un.
+    let tic = avant.jeu().phase == Etape::Manche
+        && avant
+            .jeu()
+            .defaut
+            .tic()
+            .is_some_and(|e| e.atteinte(&maintenant) == Oui::Oui);
+    let echue = avant
+        .jeu()
+        .fin
+        .is_some_and(|f| f.atteinte(&maintenant) == Oui::Oui);
+    if !echue {
+        if !tic {
+            return avant.ignorer();
+        }
+        let mut e = avant.accepter();
+        let p = e.parts();
+        p.jeu.defaut.au_tic(&p.maintenant);
+        return e.fin();
+    }
+    let lent = if avant
+        .jeu()
+        .joueurs
+        .iter()
+        .any(|(_, x)| x.prenom.as_str() == PRENOM_LENT)
+    {
+        Oui::Oui
+    } else {
+        Oui::Non
+    };
+    D::au_temps_echu(avant.jeu().phase, lent, t.saut);
+    let mut e = avant.accepter();
+    let p = e.parts();
+    if tic {
+        p.jeu.defaut.au_tic(&p.maintenant);
+    }
+    p.jeu.avancer(&p.maintenant);
+    e.fin()
+}
+
+/// Un fichier apporté au salon : le premier se lit, s'il n'y en a pas déjà un en
+/// lecture.
+fn fichiers<D: Defaut>(avant: Avant<'_, Socle<D>>, f: &[FichierRecu]) -> Issue<Socle<D>> {
+    let j = avant.jeu();
+    let Some(premier) = f.first().copied() else {
         return avant.ignorer();
     };
-    if fin.atteinte(&avant.maintenant()) == Oui::Non {
+    if D::fichiers() == Oui::Non || j.phase != Etape::Salon || j.lecture.is_some() {
         return avant.ignorer();
     }
     let mut e = avant.accepter();
     let p = e.parts();
-    p.jeu.avancer(&p.maintenant);
+    let id = p.sorties.id();
+    p.jeu.lecture = Some((id, premier.id));
+    e.fin()
+}
+
+/// La réponse à la lecture en cours.
+fn reponse<D: Defaut>(
+    avant: Avant<'_, Socle<D>>,
+    id: IdDemande,
+    r: Reponse<'_>,
+) -> Issue<Socle<D>> {
+    if avant.jeu().lecture.is_none_or(|(l, _)| l != id) {
+        return avant.ignorer();
+    }
+    let lu = match r {
+        Reponse::Lu(Ok(o)) => D::lire_le_fichier(o),
+        Reponse::Lu(Err(_)) | Reponse::Image(_) | Reponse::Rendu(_) | Reponse::Fait(_) => 0,
+    };
+    let mut e = avant.accepter();
+    let j = e.jeu();
+    j.lecture = None;
+    j.lu = lu;
     e.fin()
 }
 
@@ -538,8 +662,8 @@ impl<D: Defaut> Jeu for Socle<D> {
     const DECLARATION: Declaration = D::DECLARATION;
 
     fn creer(mut c: Creation<'_, Self>) -> Self {
-        D::a_la_creation();
         let pas = c.maintenant().pas();
+        D::a_la_creation(pas);
         let mot = match c.hasard() {
             Ok(h) => h.choisir(D::mots()).copied().unwrap_or("ANANAS"),
             Err(Absent) => "ANANAS",
@@ -562,6 +686,8 @@ impl<D: Defaut> Jeu for Socle<D> {
             manche: 0,
             parties,
             vus,
+            lecture: None,
+            lu: 0,
         }
     }
 
@@ -581,8 +707,8 @@ impl<D: Defaut> Jeu for Socle<D> {
             Entree::Geste(Geste {
                 de,
                 geste: GesteTel::Choisir(n),
-                ..
-            }) => choisir(avant, de, n),
+                quand,
+            }) => choisir(avant, de, n, &quand),
             Entree::Geste(Geste {
                 de,
                 geste: GesteTel::Pret,
@@ -596,19 +722,36 @@ impl<D: Defaut> Jeu for Socle<D> {
                 action: ActionEcran::Rejouer,
                 ..
             }) => rejouer(avant),
-            Entree::Temps(_) => temps(avant),
+            Entree::Temps(t) => temps(avant, &t),
             Entree::Presence(p) => presence(avant, p),
+            Entree::Ecran(DeEcran::Composant {
+                evenement: Composant::Fichiers { fichiers: f, .. },
+                ..
+            }) => fichiers(avant, &f),
+            Entree::Reponse(id, r) => reponse(avant, id, r),
             Entree::Ecran(
-                DeEcran::Touche { .. } | DeEcran::Pointeur { .. } | DeEcran::Composant { .. },
+                DeEcran::Touche { .. }
+                | DeEcran::Pointeur { .. }
+                | DeEcran::Composant {
+                    evenement: Composant::Saisie { .. } | Composant::Deplace(_),
+                    ..
+                },
             )
             | Entree::Tenu(_)
-            | Entree::Manette(_)
-            | Entree::Reponse(..) => avant.ignorer(),
+            | Entree::Manette(_) => avant.ignorer(),
         }
     }
 
     fn vue_ecran(&self, r: &Regard, s: &mut Scene<ActionEcran>) {
         D::en_vue_ecran();
+        let record = if self.joueurs.iter().any(|(_, j)| j.points >= 9_999) {
+            Oui::Oui
+        } else {
+            Oui::Non
+        };
+        let _: u32 = core::hint::black_box(crate::defauts::tourner(D::tours_de_la_vue(
+            self.phase, record,
+        )));
         let phase = match self.phase {
             Etape::Salon => "Salon",
             Etape::Manche => "Tapez !",
@@ -659,6 +802,18 @@ impl<D: Defaut> Jeu for Socle<D> {
                     "Lancer",
                     ActionEcran::Lancer,
                 );
+                if D::fichiers() == Oui::Oui {
+                    let _: &mut Noeud = s.composant(
+                        Cle::de(&"fichier"),
+                        ComposantVu::Selecteur {
+                            genres: alloc::vec![TexteCourt::new("application/octet-stream")],
+                            multiple: Oui::Non,
+                            depot_partout: Oui::Non,
+                            collage: Oui::Non,
+                            taille_max: 1 << 20,
+                        },
+                    );
+                }
             }
             Etape::Fin => {
                 let _: &mut Noeud = s.bouton(
@@ -677,7 +832,10 @@ impl<D: Defaut> Jeu for Socle<D> {
         let vue = match (joueur, self.phase) {
             (None, _) => VueTel::Prenom,
             (Some(_), Etape::Salon) => VueTel::Attends,
-            (Some(j), Etape::Manche | Etape::Prolongation) => VueTel::Tape { points: j.points },
+            (Some(j), Etape::Manche | Etape::Prolongation) => VueTel::Tape {
+                points: j.points,
+                chiffre: self.defaut.chiffre(),
+            },
             (Some(j), Etape::Fin) => VueTel::Resultat { points: j.points },
         };
         Montre {
@@ -700,7 +858,15 @@ impl<D: Defaut> Jeu for Socle<D> {
     }
 
     fn reveil(&self) -> Reveil {
-        self.fin.map_or(Reveil::Jamais, Reveil::A)
+        let tic = match self.phase {
+            Etape::Manche => self.defaut.tic(),
+            Etape::Salon | Etape::Prolongation | Etape::Fin => None,
+        };
+        match (self.fin, tic) {
+            (Some(f), Some(t)) => Reveil::A(f.min(t)),
+            (Some(e), None) | (None, Some(e)) => Reveil::A(e),
+            (None, None) => Reveil::Jamais,
+        }
     }
 
     fn attente(&self, a: &mut Attente<'_, Self>) {
@@ -733,7 +899,14 @@ impl<D: Defaut> Jeu for Socle<D> {
         }
     }
 
-    fn demandes<'s>(&'s self, _: &mut Demandes<'s>) {}
+    fn demandes<'s>(&'s self, d: &mut Demandes<'s>) {
+        if let Some((id, fichier)) = self.lecture {
+            d.ajouter(id, || Demande::Lire {
+                fichier,
+                max: FICHIER_MAX,
+            });
+        }
+    }
 
     fn previsible(_: &GesteTel) -> Prevision {
         Prevision::Non
@@ -757,7 +930,8 @@ impl<D: Defaut> Epreuve for Socle<D> {
     /// Les points de chaque joueur, par appareil : un joueur oublié à « Rejouer »
     /// quitte le résumé sans que les autres se décalent.
     type Resume = Vec<(Appareil, u32)>;
-    type Cas = Etape;
+    type Cas = D::Cas;
+    const INVARIANTS: &'static [&'static str] = D::INVARIANTS;
 
     fn resume(&self, _: &Autorite) -> Vec<(Appareil, u32)> {
         self.joueurs.iter().map(|(a, j)| (a, j.points)).collect()
@@ -775,6 +949,18 @@ impl<D: Defaut> Epreuve for Socle<D> {
             self.meneur.is_none() || !self.joueurs.is_empty(),
             "un meneur est un joueur"
         );
+        self.defaut.exiger(v);
+        // Un invariant que seul un record de plus de dix mille points ferait évaluer :
+        // aucune soirée n'y arrive, et le pire cas s'arrête à 9 999 (E4, OUT-01).
+        if D::invariant_hors_d_atteinte() == Oui::Oui
+            && self.joueurs.iter().any(|(_, j)| j.points > RECORD)
+        {
+            jeu::exiger!(
+                v,
+                self.parties > 0,
+                "un record de plus de dix mille points vient après une partie finie"
+            );
+        }
     }
 
     fn transition(avant: &Vec<(Appareil, u32)>, apres: &Vec<(Appareil, u32)>, v: &mut Verif) {
@@ -797,7 +983,7 @@ impl<D: Defaut> Epreuve for Socle<D> {
             VueTel::Prenom => {
                 let nom = match b.style() {
                     Style::Hostile => b.texte_hostile(),
-                    Style::Sage | Style::Lent => "Camille",
+                    style @ (Style::Sage | Style::Lent) => D::prenom_du_bot(style),
                 };
                 b.geste(GesteTel::Rejoindre(Texte::nettoyer(nom)));
             }
@@ -809,13 +995,14 @@ impl<D: Defaut> Epreuve for Socle<D> {
                     b.rien();
                 }
             }
-            VueTel::Tape { .. } => {
+            VueTel::Tape { chiffre, .. } => {
                 if b.hasard().une_sur(deux) == Oui::Oui {
                     b.geste(GesteTel::Taper);
                 }
                 if b.hasard().une_sur(trois) == Oui::Oui {
                     let c = b.hasard().dans::<0, 9>();
-                    b.geste(GesteTel::Choisir(u8::try_from(c.get()).unwrap_or(0)));
+                    let tire = u8::try_from(c.get()).unwrap_or(0);
+                    b.geste(GesteTel::Choisir(D::chiffre_du_bot(*chiffre, tire)));
                 }
             }
             VueTel::Resultat { .. } => {
@@ -829,6 +1016,21 @@ impl<D: Defaut> Epreuve for Socle<D> {
     }
 
     fn bot_ecran(j: &Self, b: &mut Bot<'_, Self>) {
+        let deux = NonZeroU32::MIN.saturating_add(1);
+        // Au salon, l'écran apporte un fichier à lire, quand aucun n'est en lecture.
+        if D::fichiers() == Oui::Oui
+            && j.phase == Etape::Salon
+            && j.lecture.is_none()
+            && b.depuis_vue() <= Duree::s(4)
+            && b.hasard().une_sur(deux) == Oui::Oui
+        {
+            b.composant(ComposantBot::Fichiers(alloc::vec![FichierBot {
+                nom: alloc::string::String::from("note.bin"),
+                genre: alloc::string::String::from("application/octet-stream"),
+                octets: (1..=16).collect(),
+            }]));
+            return;
+        }
         match j.phase {
             // Quatre secondes au salon : assez pour qu'une coupure de moins de deux
             // secondes y tienne tout entière (E11, l'hypothèse lue pendant toute la
@@ -839,14 +1041,15 @@ impl<D: Defaut> Epreuve for Socle<D> {
         }
     }
 
-    fn cas(&self) -> Etape {
-        self.phase
+    fn cas(&self) -> D::Cas {
+        D::Cas::de(self.phase)
     }
 
-    fn pire_cas(c: Etape, construction: &Construction<'_>) -> Self {
+    fn pire_cas(cas: D::Cas, construction: &Construction<'_>) -> Self {
+        let c = cas.phase();
         let m = construction.maintenant();
         let mut joueurs = Appareils::new();
-        for a in construction.appareils().take(JOUEURS_MAX) {
+        for a in construction.appareils().take(D::joueurs_du_pire_cas()) {
             let _: Option<Joueur> = joueurs.inserer(
                 a,
                 Joueur {
@@ -881,6 +1084,8 @@ impl<D: Defaut> Epreuve for Socle<D> {
             manche: 9_999,
             parties: 9_999,
             vus: Vec::new(),
+            lecture: None,
+            lu: 0,
         }
     }
 

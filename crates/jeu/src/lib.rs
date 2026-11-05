@@ -26,6 +26,12 @@
 //! Il n'est pas interdit dans cette crate : l'allocateur à deux modes et l'état du module
 //! (`colle::wasm`, compilé pour `wasm32` seulement) en demandent, chaque fois sous
 //! `#[expect(unsafe_code, reason = "…")]` (§ 2.14, D34). Le reste est du code sûr.
+//!
+//! Le constructeur du jeton de l'hôte, `colle::Hote::new`, est `unsafe` sans toucher à
+//! la mémoire : c'est un sceau. Les portes de la colle qui exécutent le jeu ou relisent
+//! son enveloppe le demandent, et la crate de règles, sans `unsafe`, ne peut pas le
+//! construire : une vue ne peut pas se rappeler sous un autre regard, ni relire ses
+//! propres secrets par la forme canonique.
 
 #![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
@@ -41,6 +47,7 @@ pub mod colle;
 mod collections;
 mod declaration;
 mod etape;
+pub mod fichiers;
 mod forme;
 mod hasard;
 mod scene;
@@ -59,6 +66,10 @@ pub use etape::{
 };
 pub use forme::{Aucun, Contient, Etat, Forme, Message, octets};
 pub use hasard::Hasard;
+/// Tous les combien l'épreuve lit l'hypothèse d'une [`Coupure`] (E11) : un jeu s'y
+/// accorde à la compilation (`const _: () = assert!(jeu::PERIODE_HYPOTHESE.en_pas() <=
+/// 30);`) au lieu de deviner la période de l'épreuve.
+pub use jeu_abi::PERIODE_HYPOTHESE;
 pub use jeu_derive::{Variantes, etat, message};
 pub use scene::{ComposantVu, CompteARebours, Definitif, Montre, Noeud, Scene};
 pub use secret::{Absent, Autorite, Lecteurs, Qui, Regard, Secret};
@@ -105,10 +116,10 @@ pub mod prelude {
         Coupe, Courbe, Cumul, Deplace, Duree, Echantillonnage, EchecDemande, Effet, FichierRecu,
         FinSaisie, Fini, Fixe, Flux, FormatImage, FormeEcran, GenrePointeur, HeureMurale,
         IdDemande, IdEffet, IdFichier, IdGeste, Instant, Lignes, Limites, Manette, Mecanique, Mods,
-        Orientation, Oui, PAS_PAR_SECONDE, Pas, PhasePointeur, PhaseTouche, Places, Pointeur,
-        Presence, Prevision, Rect, Reglages, Repartition, Reponse, Rgba, RoleAppareil, Sensation,
-        Signal, Son, SorteAsset, StyleTexte, Taille, Tenue, TexteCourt, Touche, Unite, Vibration,
-        Visuel, Voulues, ZoneVu,
+        Orientation, Oui, PAS_PAR_SECONDE, PERIODE_HYPOTHESE, Pas, PhasePointeur, PhaseTouche,
+        Places, Pointeur, Presence, Prevision, Rect, Reglages, Repartition, Reponse, Rgba,
+        RoleAppareil, Sensation, Signal, Son, SorteAsset, StyleTexte, Taille, Tenue, TexteCourt,
+        Touche, Unite, Vibration, Visuel, Voulues, ZoneVu,
     };
 }
 
@@ -126,6 +137,7 @@ pub mod prelude {
 macro_rules! module {
     ($jeu:ty) => {
         const _: () = $crate::colle::verifier_accord::<$jeu>();
+        const _: () = $crate::colle::verifier_invariants::<$jeu>();
 
         #[cfg(target_arch = "wasm32")]
         #[doc(hidden)]
@@ -152,13 +164,17 @@ macro_rules! module {
             #[expect(unsafe_code, reason = "l'export que le moteur appelle (§ 3.3)")]
             #[unsafe(no_mangle)]
             pub extern "C" fn soiree_boite(taille: i32, sorte: i32) -> i32 {
-                $crate::colle::wasm::boite(&ETAT, &ALLOCATEUR, &BOITE, taille, sorte)
+                // SAFETY : l'export est l'hôte de la colle ; le jeton ne quitte pas cet appel.
+                let hote = unsafe { $crate::colle::Hote::new() };
+                $crate::colle::wasm::boite(&hote, &ETAT, &ALLOCATEUR, &BOITE, taille, sorte)
             }
 
             #[expect(unsafe_code, reason = "l'export que le moteur appelle (§ 3.3)")]
             #[unsafe(no_mangle)]
             pub extern "C" fn soiree_appel(taille: i32) -> i64 {
-                $crate::colle::wasm::appel(&ETAT, &ALLOCATEUR, &BOITE, &PANIQUE, taille)
+                // SAFETY : l'export est l'hôte de la colle ; le jeton ne quitte pas cet appel.
+                let hote = unsafe { $crate::colle::Hote::new() };
+                $crate::colle::wasm::appel(&hote, &ETAT, &ALLOCATEUR, &BOITE, &PANIQUE, taille)
             }
         }
     };

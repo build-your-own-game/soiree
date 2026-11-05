@@ -87,6 +87,18 @@ wasm-encoder = { version = "0.245.1", features = ["wasmparser"] }
 wasmtime = { version = "50.0.1", default-features = false }
 # Les empreintes côté moteur : module, réécriture, état (§ 3.2, § 3.8).
 blake3 = "1.8.7"
+# L'épreuve qui part des sources (CONTRAT, « L'épreuve », étape 1) : lire le
+# `Cargo.toml` et le `clippy.toml` d'un jeu pour les comparer à ceux du commun. La
+# version que `trybuild` tire déjà.
+toml = "1.1.8"
+# Lire ce que Cargo dit d'un jeu (`cargo metadata`, `--message-format json`) : la
+# version que `trybuild` tire déjà.
+serde_json = "1.0.154"
+# Le monde simulé de l'épreuve sert de vraies images (§ 2.10, `Demande::Image` et
+# `Demande::Rendu`) : décompresser et compresser le zlib des PNG. Pur Rust, sans
+# `unsafe` dans ce qu'on en appelle, et le seul algorithme qu'il faille ; le reste
+# du PNG (morceaux, filtres, CRC) tient en quelques fonctions de `epreuve`.
+miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 
 # Pour les tests seulement.
 # Les propriétés et les octets au hasard (§ 8.1, § 8.6).

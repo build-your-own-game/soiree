@@ -696,6 +696,10 @@ impl<F: Fabrique> Partie<F> {
         // Un point tout de suite : une faute avant la fin du pas se reconstruit
         // depuis la nouvelle partie. Le point de la fin du pas le remplace.
         self.prendre_point()?;
+        // La nouvelle partie est saine : une panne avant son premier `Temps` accepté
+        // repart d'elle, et non d'un point de la partie d'avant, que le cœur ne
+        // saurait plus rejoindre (§ 4.6).
+        self.point_sain = self.periodique.clone();
         Ok(Oui::Oui)
     }
 
@@ -942,4 +946,131 @@ fn divergence(ligne: usize, attendu: &str, obtenu: &impl core::fmt::Debug) -> Pa
         CausePanne::RejeuDivergent,
         alloc::format!("ligne {ligne} du journal : attendu {attendu}, obtenu {obtenu:?}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use jeu_abi::{Appareil, Duree, IdGeste, Instant, Pas, TexteCourt, encoder};
+
+    use crate::journal::Ligne;
+    use crate::modele::{FabriqueModele, GesteModele, ReglageModele};
+    use crate::{Arrivee, Budgets, Ouverture, Partie, Placement};
+
+    fn ouverture() -> Ouverture {
+        Ouverture {
+            graine: [3; 32],
+            pas: 0,
+            heure: 1_000_000,
+            salle: TexteCourt::new("SALLE"),
+            budgets: Budgets {
+                entree: 1_000,
+                lecture: 1_000,
+                creation: 1_000,
+                canonique: 1_000,
+            },
+            point_tous_les: 600,
+        }
+    }
+
+    fn dormant() -> ReglageModele {
+        let mut r = ReglageModele::ordinaire();
+        r.reveil = jeu_abi::ReveilFil::Jamais;
+        r
+    }
+
+    fn geste(g: GesteModele, id: u64) -> Arrivee {
+        let mut octets = Vec::new();
+        encoder(&g, &mut octets).unwrap();
+        Arrivee::Geste {
+            de: Appareil::du_fil(1),
+            octets,
+            fait: Instant::de(Pas::du_fil(1)),
+            vu: Pas::du_fil(1),
+            id: IdGeste::du_fil(id),
+            demi_aller_retour: Duree::ZERO,
+        }
+    }
+
+    /// RESTE-PHASE-1 (point 25, cargo-mutants) : au rejeu, une entrée n'est tenue pour
+    /// écartée que si sa propre ligne du journal le dit. Dans un journal mal aligné,
+    /// la ligne écartée d'une autre entrée ne la dispense pas d'être jouée : elle est
+    /// jouée, puis le rejeu diverge. Un journal mal aligné ne se fabrique pas par
+    /// l'API publique : ce test retire une ligne à la main.
+    #[test]
+    fn une_ligne_ecartee_ne_vaut_que_pour_son_entree() {
+        let mut p = Partie::ouvrir(FabriqueModele::new(dormant()), ouverture()).unwrap();
+        let depart = p.point().unwrap();
+        for (k, g) in [GesteModele::Ajouter(1), GesteModele::Paniquer]
+            .into_iter()
+            .enumerate()
+        {
+            let id = u64::try_from(k).unwrap();
+            let _: Placement = p
+                .arriver(geste(g, id), Instant::de(Pas::du_fil(1)))
+                .unwrap();
+        }
+        let _: crate::Avancee = p.avancer(Pas::du_fil(1)).unwrap();
+        let mut journal = p.journal().clone();
+        let ordres: Vec<(u64, bool)> = journal
+            .entrees()
+            .map(|e| {
+                (
+                    e.ordre,
+                    matches!(e.issue, crate::IssueJournal::Ecartee { .. }),
+                )
+            })
+            .collect();
+        assert_eq!(ordres, vec![(0, false), (1, true)]);
+        // Sans la ligne de l'entrée d'ordre 0, la suivante, écartée, est sous le
+        // curseur quand l'entrée d'ordre 0 se rejoue.
+        journal
+            .lignes
+            .retain(|l| !matches!(l, Ligne::Entree(e) if e.ordre == 0));
+        let f = FabriqueModele::new(dormant());
+        let compteurs = alloc::rc::Rc::clone(&f.compteurs);
+        let r = Partie::reprendre(f, ouverture(), &depart, &journal);
+        assert!(r.is_err(), "un journal mal aligné diverge");
+        assert_eq!(
+            compteurs.ecritures.get(),
+            1,
+            "l'entrée d'ordre 0 est jouée avant que le rejeu ne diverge"
+        );
+    }
+
+    /// RESTE-PHASE-1 (point 25, cargo-mutants) : un journal qui a encore des lignes
+    /// au-delà de son dernier pas définitif diverge : le rejeu ne joue pas de pas que la
+    /// partie n'a pas joués. Ce journal ne se fabrique pas par l'API publique : ce test
+    /// recule son dernier pas à la main.
+    #[test]
+    fn des_lignes_apres_le_dernier_pas_divergent() {
+        let mut p = Partie::ouvrir(FabriqueModele::new(dormant()), ouverture()).unwrap();
+        let depart = p.point().unwrap();
+        for s in 1..=6u64 {
+            let _: Placement = p
+                .arriver(
+                    geste(GesteModele::Ajouter(1), s),
+                    Instant::de(Pas::du_fil(s)),
+                )
+                .unwrap();
+            let _: crate::Avancee = p.avancer(Pas::du_fil(s)).unwrap();
+        }
+        let mut journal = p.journal().clone();
+        journal.pas = Pas::du_fil(3);
+        let r = Partie::reprendre(
+            FabriqueModele::new(dormant()),
+            ouverture(),
+            &depart,
+            &journal,
+        );
+        match r {
+            Err(crate::RefusReprise::Panne(panne)) => {
+                assert_eq!(panne.cause, crate::CausePanne::RejeuDivergent);
+            }
+            Err(autre) => panic!("attendu une divergence, obtenu {autre:?}"),
+            Ok(_) => panic!("un journal aux lignes en trop se rejoue sans diverger"),
+        }
+    }
 }

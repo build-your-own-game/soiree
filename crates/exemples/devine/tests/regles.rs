@@ -463,7 +463,8 @@ fn valider_les_octets_d_un_appareil() {
 }
 
 /// E10, E11 (§ 2.13) : les propriétés promises passent l'enveloppe (ABI 2) ; l'hypothèse
-/// de la coupure transparente tient pour un joueur qui a déjà proposé, pas avant.
+/// de la coupure transparente tient pour un joueur qui a déjà proposé, pas avant. E3 et
+/// E4 (ABI 3) : le nombre de phases et les invariants déclarés y passent aussi.
 #[test]
 fn proprietes_et_hypothese_passent_l_enveloppe() {
     let mut p = pilote();
@@ -471,12 +472,16 @@ fn proprietes_et_hypothese_passent_l_enveloppe() {
         Retour::Proprietes(jeu_abi::ProprietesFil {
             coupure_transparente,
             permutation,
+            phases,
+            invariants,
         }) => {
             assert_eq!(
                 coupure_transparente,
                 jeu_abi::ApplicableFil::Oui(Duree::s(10))
             );
             assert_eq!(permutation, jeu_abi::ApplicableFil::Oui(()));
+            assert_eq!(usize::from(phases), Etape::TOUTES.len());
+            assert_eq!(invariants, <Devine as Epreuve>::INVARIANTS);
         }
         autre => panic!("{autre:?}"),
     });

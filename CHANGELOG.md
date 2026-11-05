@@ -2,7 +2,7 @@
 
 Chaque version a sa section, de la plus récente à la plus ancienne. « Passer à cette version » s'adresse à l'agent d'un jeu (voir `AGENTS.md`).
 
-## Non publié — la refonte, phase 1
+## Non publié — la refonte, phases 1 et 2
 
 Le commun repart de zéro, d'après [`MANIFESTE.md`](MANIFESTE.md), [`CONTRAT.md`](CONTRAT.md) et [`conception/INTERFACE.md`](conception/INTERFACE.md). L'ancien commun est retiré : salon, la télécommande iPhone (`remote/`), le modèle de jeu (`modele/`) et le harnais de certification (`tools/cert/`). Il reste lisible à l'étiquette `avant-refonte`. À sa place, un workspace de crates dans `crates/` : un jeu s'écrit avec `jeu`, se compile en un module WebAssembly qui n'importe rien, est réécrit (`reecriture`), chargé dans wasmtime (`moteur-wasmtime`), joué par le cœur de la partie qui fait foi (`partie`) sur une horloge simulée, et éprouvé (`epreuve`, contrôles E1 à E19, chacun avec son jeu fautif). Il n'y a encore ni navigateur, ni relais, ni rendu, ni prédiction sur appareil, ni outil `soiree` réécrit : un jeu ne se joue pas encore, il s'éprouve. Aucune étiquette n'est posée ; les étiquettes `v0.x` restent celles de l'ancien commun.
 
@@ -13,14 +13,83 @@ Les trois jeux de la soirée sont reconstruits sur ce commun, dans leur branche 
 Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `cert.json` et `verification.toml` n'existent plus. Un jeu se réécrit sur la crate `jeu`.
 
 1. Lis `conception/INTERFACE.md`, § 2 (l'API d'un jeu) et § 9 (`devine`, un jeu complet), puis `crates/exemples/devine/`.
-2. Fais trois crates, comme Punchline et Sidequest : les règles (`#![no_std]`, `#![forbid(unsafe_code)]`, `impl jeu::Jeu`), la crate de module (`jeu::module!(<ton jeu>)`, `crate-type = ["cdylib"]`), et une crate d'épreuve qui donne la copie native à `epreuve::ligne_de_commande`. Reprends les `[workspace.lints]` et le profil `module` du `Cargo.toml` de ce dépôt.
+2. Fais deux crates : les règles (`#![no_std]`, `#![forbid(unsafe_code)]`, `impl jeu::Jeu`) et la crate de module (`jeu::module!(<ton jeu>);` et rien d'autre qu'un attribut `no_std`, `crate-type = ["cdylib"]`, qui ne dépend que de `jeu` et des règles). Reprends les `[workspace.lints]`, `clippy.toml`, `[profile.release]`, `[profile.module]` et `[profile.dev.package."*"]` de ce dépôt, sans rien assouplir : l'épreuve les compare. Une crate d'épreuve écrite à la main n'est plus nécessaire.
 3. Pendant la refonte, dépends du commun par chemin, depuis le dossier de l'hôte : `jeu = { path = "../../soiree/crates/jeu" }`, et de même pour `jeu-abi`, `jeu-natif`, `partie`, `epreuve`, `moteur-wasmtime`. Il n'y a pas encore d'étiquette à nommer, ni de `soiree upgrade`.
-4. Compile le module et éprouve-le :
+4. Éprouve le jeu depuis ses sources, depuis `soiree/` :
    ```sh
-   cargo build -p <jeu>-module --target wasm32-unknown-unknown --profile module
-   cargo run --release -p <jeu>-epreuve -- target/wasm32-unknown-unknown/module/<jeu>_module.wasm
+   cargo run --release -p epreuve --bin soiree-epreuve -- ../games/<jeu>
    ```
-   Le jeu passe quand le code de sortie vaut 0, sur le plan standard. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
+   L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
+
+### Le contrôle final de la phase 2
+
+Rien ne change pour un jeu : ni l'ABI (`jeu_abi::ABI` vaut 3), ni l'API de `jeu`, ni l'épreuve. Le contrôle final (2026-11-05, `conception/RESTE-PHASE-1.md`, « Contrôle final de la phase 2 ») a tout relancé depuis zéro ; ce qui reste après la phase 2, et ce que la phase 3 devra mesurer ou trancher, est dans `conception/RESTE-PHASE-2.md`. Deux choses à savoir en éprouvant :
+
+- **Les fautifs du commun ne passent pas l'étape 1 depuis leurs sources** : la crate `fautifs`, que toutes leurs crates de module partagent, tient cinq `static` (ceux des défauts E6, E7, E8 et E14), que la règle « rien hors de l'état » refuse. `soiree-epreuve crates/exemples/fautifs/modules/<nom>` rend donc 1 même pour `sain` et `avec-fenetre`. Pour voir un fautif échouer exactement son contrôle, l'éprouver par son module et sa copie native (`cargo run --release -p epreuve --example natif -- <nom> <module>`, ou le test `plan_standard`). Un jeu n'est pas touché.
+- **Le plan standard est ce qui fait foi** ; le plan court ne garantit pas le résultat d'un jeu (Punchline y échouait E2 et E15 en phase 1, faute de temps pour deux parties).
+
+### La forme, les sources et l'ABI 3 (phase 2)
+
+Ce qui change pour un jeu écrit sur le commun de la phase 1 :
+
+- **ABI 3** (`jeu_abi::ABI`) : `Retour::Proprietes` porte le nombre de variantes de `Phase` (E3 juge chaque phase, qu'un pire cas y mène ou non) et les noms des invariants (E4). Un module compilé contre l'ABI 2 est refusé au chargement : recompiler.
+- **`Epreuve::INVARIANTS`**, sans valeur par défaut : `const INVARIANTS: &'static [&'static str] = &["…", …];`, la liste exacte des noms passés à `jeu::exiger!` dans `invariants` et `transition`. Un nom vide ou déclaré deux fois ne compile pas ; un nom déclaré jamais évalué dans une soirée, ou évalué sans être déclaré, fait échouer E4.
+- **`Regard` n'est plus `Clone` ni `Copy`**, et ne se construit que dans `jeu` (`jeu::essai::regard` pour les tests natifs, absent sous `wasm32`). `jeu::colle::appeler`, `canonique`, `wasm::boite` et `wasm::appel` demandent un `&colle::Hote`, dont le constructeur est `unsafe` ; `colle::enveloppe_de_test` est retirée. `jeu-natif` est vide sous `wasm32`.
+- **Les règles d'écriture** : `usize` n'est ni `Etat` ni `Message` (écrire `u32` ou `u64`) ; `f32::min`, `f32::max`, `f64::min` et `f64::max` sont interdits par `clippy.toml` (écrire `jeu::math::fminf`, `fmaxf`, `fmin`, `fmax`, ou une comparaison) ; la police du commun se nomme `Cle::POLICE_DU_COMMUN`.
+- **`reecriture::VERSION` vaut 3** : `memory.init` paie sa longueur divisée par 64 ; une fonction a au plus `LOCAUX_MAX` (49 984) paramètres et locaux et `HAUTEUR_MAX` (1 024) valeurs sur la pile d'opérandes ; `soiree_profondeur` compte en étages de 4 096 octets de pile native. Le moteur remet à zéro la pile, la boîte, le brouillon et la zone de panique avant chaque appel.
+- **L'épreuve part des sources** : `soiree-epreuve <dossier du jeu>` (étape 1 : règles d'écriture, clippy natif et `wasm32`, module et copie native compilés par l'épreuve). La crate de module se réduit à `jeu::module!(<chemin du type du jeu>);` ; la crate `<jeu>-epreuve` écrite à la main n'est plus nécessaire. Le rapport nomme les sept étapes du CONTRAT ; un module seul (`--wasm`) rend 3 au mieux.
+- **Les contrôles** : la soirée appelle `Partie::repartir` quand la partie tombe en panne (fautif `panique-au-temps`, E2) ; E6 rejoue l'entrée acceptée qui suit des refus sur l'instantané d'avant eux (« même avenir », fautif `retient-un-refus`) ; E8 rejoue un geste ou un tenu avec un autre dernier octet (fautif `choix-qui-fuit`) ; E3 et E4 comme ci-dessus (fautifs `phase-sans-cas`, `invariant-jamais-evalue`). `etat-hors-enveloppe` échoue désormais E14 sur le plan standard.
+
+Ajouts sans rupture dans `partie` : `Partie::repartir`, `Ligne::Reprise` (un `match` exhaustif sur `Ligne` doit le nommer), `EtatCoeur::reveil`, `Partie::numero_tenu`.
+
+Pour s'adapter : déclarer `INVARIANTS` ; remplacer tout `usize` de l'état ou d'un message, tout `f32::min`/`max`, tout `Cle::du_fil(0)` ; réduire la crate de module à `jeu::module!`, retirer la crate d'épreuve écrite à la main ; reprendre `clippy.toml` et les profils du commun ; relancer `soiree-epreuve` depuis le dossier du jeu.
+
+### L'épreuve, après la revue de la phase 2
+
+Ce qui change pour un jeu, sans changer l'ABI (`jeu_abi::ABI` vaut toujours 3) ni l'API d'un jeu. Les constats sont numérotés dans `conception/RESTE-PHASE-1.md`, « Revue de la phase 2 ».
+
+- **L'étape 1 refuse de nouvelles choses** (règles nouvelles au rapport) :
+  - « rien hors de l'état » : aucun `static` (atomique, `Cell`, `OnceLock`, `static mut`, ou même immuable) ni `thread_local!` dans le code des crates du jeu, hors de `tests/`. Écrire un `const` à la place d'un `static` immuable. Une valeur qui doit durer va dans l'état.
+  - « forme calculée » : aucun `impl Forme`, `impl Etat` ni `impl Message` écrit à la main, aucun `Etat as …` (ou `Forme as`, `Message as` ; `as _` reste permis), aucun usage de `jeu::cache`, `Ecrivain` ou `Liseur`. Seules `#[jeu::etat]` et `#[jeu::message]` écrivent ces traits.
+  - « sans unsafe » : une crate par chemin qui entre dans le module sans être membre du workspace du jeu, ni du commun, échoue ; en faire un membre. Le code tiers (registre, git) reste permis, et le rapport le nomme, avec la présence ou non d'`unsafe` dans ses sources.
+  - « build.rs » : ce que le `build.rs` d'une crate du jeu dit à Cargo (le fichier `output` que Cargo garde) ne peut être que `rerun-if-changed`, `rerun-if-env-changed`, `warning`, `error`, `rustc-check-cfg`, et, pour la crate de module seule, `rustc-link-arg-cdylib=--max-memory=<octets>`. Le rapport nomme les `build.rs` lancés sur la machine.
+- **E8 recharge la projection dans une instance neuve**, et non plus dans la mémoire de la définitive : un `static` où une entrée recopie un secret ne passe plus dans la vue rechargée. **E8 varie aussi un geste ou un tenu d'un seul octet** (un vote en enum plate) ; le rapport dit quand la variation n'a rien jugé. **E8 compare les valeurs secrètes une à une** quand une longueur change : Punchline n'échoue plus à tort au dernier bulletin.
+- **E16 compare chaque pire cas aux soirées** : si une vue de l'écran des soirées coûte plus de carburant que la vue du plus lourd des pires cas, E16 échoue. Un pire cas se construit depuis les limites.
+- **Deux pannes de plus au plan standard** : `Panne::Depart` (un téléphone part pour de bon, assez tôt pour que la soirée dure encore 90 s au moins) et `Panne::Doublon` (le réseau livre deux fois le même geste). Un jeu dont une phase attend pour toujours un joueur parti peut maintenant échouer E5 dans une soirée principale.
+- **Les arriérés de E19** ne sont plus que ce qui arrive dans les deux secondes après le retour d'un appareil ou la fin d'un gel, fait sur une vue d'avant ce retour. Un geste ordinaire sur un écran resté le même paie son coût fixe : un module aux grandes zones peut maintenant échouer E19 quand plusieurs téléphones répondent dans la même image.
+- **La soirée longue (E15)** choisit la cible de chaque allée et venue parmi les téléphones présents quand elle commence ; une allée et venue manquée rend E15 « pas exécuté ».
+- **Le rapport** : l'étape 4 est « faite en partie » (`IssueEtape::FaiteEnPartie`, `"faite_en_partie"` en JSON) tant que la comparaison avec et sans prédiction manque ; le verdict d'un code 0 nomme les étapes du CONTRAT que cette version ne fait pas. Les budgets de E19 sont dits « choisis », non « mesurés ». Les secrets non cherchés par E8 sont décrits avec leur borne exacte (moins de 4 octets, ou de 3 avec leur longueur).
+
+Ruptures dans la crate `epreuve` : `Panne` a deux variants de plus (`Depart`, `Doublon`) ; `IssueEtape` en a un de plus (`FaiteEnPartie`) ; `Rapport::verdict_du_code_0` est nouvelle ; `RATTRAPAGE_PAS` est nouvelle. Deux fautifs nouveaux : `secret-dans-un-static` (E8) et `pire-cas-trop-leger` (E16). `devine` garde son curseur secret pour son joueur.
+
+Pour s'adapter : relancer l'épreuve depuis les sources. Remplacer chaque `static` du code par un `const` ou par un champ de l'état ; supprimer tout `impl Etat`/`Forme`/`Message` écrit à la main au profit de `#[jeu::etat]`/`#[jeu::message]` ; rendre membre du workspace toute crate par chemin dont dépend la crate de règles ; ne garder dans un `build.rs` que ce qui est permis ci-dessus. Lire E5 (le départ pour de bon), E16 (un pire cas plus léger que l'écran d'une soirée) et E19 (le coût fixe des gestes ordinaires).
+
+### Les budgets de E19, dérivés du temps d'une image
+
+Ce qui change pour un jeu, sans changer l'ABI (`jeu_abi::ABI` vaut toujours 3) ni l'API d'un jeu :
+
+- **E19 juge un coût, pas seulement un carburant.** Le coût d'un appel est son carburant plus le coût fixe d'un appel du module : le passage de l'appel et la remise à zéro des zones que le moteur fait avant chaque appel (la pile, la boîte, le brouillon, la zone de panique), que le carburant ne compte pas. Pour un module aux zones de 2 Mio, de l'ordre de 156 000 unités par appel ; pour un brouillon de 24 Mio, de l'ordre de 1,3 million. Un jeu dont le brouillon est grand paie donc chaque appel, même vide.
+- **Ce qui est jugé, et comment** : chaque image des soirées (la somme du coût des entrées de `(fenêtre + 2)` pas consécutifs) à son maximum, et leur 99ᵉ centile ; chaque lecture courante du cœur (`Regarder`, `Etat`, `Valider`, `Ressources`) à son maximum ; la vue de l'écran de chaque pire cas à son maximum, contre son propre budget, plus large que celui d'une lecture courante. Le 99ᵉ centile d'une entrée ou d'une lecture n'est plus jugé seul.
+- **Les budgets sont provisoires, et le rapport le dit** : `epreuve::BUDGETS_E19` les dérive, à un seul endroit (`crates/epreuve/src/budgets.rs`), du temps d'une image du CONTRAT (33 ms au plus, 60 images par seconde), de mesures de wasmtime sur la machine de l'hôte (`examples/etalonner.rs`), d'une marge choisie (4) pour le navigateur et l'ordinateur de la soirée, et de la part de l'image laissée au jeu (la moitié). Aujourd'hui : entrées d'une image 10 312 500 unités au plus et 5 208 333 au 99ᵉ centile, lecture courante 5 208 333 au plus, vue d'un pire cas 10 312 500 au plus. Le mainteneur les fixera dans `CONTRAT.md`.
+- **Une entrée d'un arriéré** (faite sur une vue de plus d'une seconde : un téléphone coupé ou en arrière-plan, un ordinateur de la soirée gelé) ne compte que son carburant dans les images, pas son coût fixe : leur nombre dans un pas est le fait du commun. Le rapport les compte à part.
+
+Ruptures dans la crate `epreuve` : `BUDGET_ENTREE`, `BUDGET_LECTURE` et `BUDGET_IMAGE` sont retirés, remplacés par `BUDGETS_E19` (un `BudgetsE19`), ses constantes d'origine (`PS_PAR_UNITE`, `FIXE_NS`, `PS_PAR_KIO_REMIS_A_ZERO`, `MARGE_NAVIGATEUR`, `MARGE_MACHINE`, `PART_DU_JEU_POUR_CENT`, `PART_DES_ENTREES_POUR_CENT`, `IMAGE_MAX_NS`, `IMAGE_COURANTE_NS`) et `ARRIERE_PAS` ; `Rapport` a deux champs de plus, `budgets: BudgetsE19` et `octets_remis_a_zero: Option<u64>` ; le texte du rapport a une ligne « Budgets de E19 provisoires… », et le JSON un objet `budgets` (`"provisoires": true`). Ajout dans `moteur-wasmtime` : `ModuleCharge::octets_remis_a_zero`. Trois fautifs nouveaux, chacun pour E19 seul : `pire-cas-trop-lourd`, `fin-trop-lourde` et `zones-lourdes`.
+
+Pour s'adapter : relancer l'épreuve et lire E19. Un échec par le coût fixe se corrige en réduisant les zones que le jeu déclare (`limites.brouillon`), un échec d'un pire cas en allégeant la vue de l'écran à ses limites déclarées, un échec d'une lecture courante en allégeant la vue la plus lourde que les soirées atteignent.
+
+### Le monde simulé de l'épreuve ressemble au réel
+
+Ce qui change pour un jeu, sans changer l'ABI (`jeu_abi::ABI` vaut toujours 3) ni l'API d'un jeu :
+
+- **Les bots d'un téléphone décident sur la vue que ce téléphone a reçue**, en retard d'un trajet, et sur l'état de la définitive d'où elle vient (`bot_telephone` reçoit cet état-là). Un téléphone sans vue (à la connexion, après un rechargement) ne fait rien. Un bot qui comptait sur l'état courant pour ne jouer que des gestes acceptables en verra refuser : c'est voulu. Un geste porte, dans `quand.vu`, le pas de la vue que la page montrait quand il a été fait, même renvoyé après une coupure.
+- **`quand.fait` porte l'erreur de l'horloge du téléphone**, jusqu'à un demi-aller-retour, dans les deux sens ; la demi-latence que le cœur reçoit est mesurée, gigue comprise. Un jeu qui juge sur `fait` ce qu'un joueur a vu se trompe : il faut lire `quand.vu` (fautif `juge-sur-le-fait`).
+- **Le réseau** : un téléphone sur trois n'a que WebSocket (une perte retient la file) ; les tenus se perdent et se réordonnent sur WebRTC ; la page redit son tenu toutes les 250 ms ; les poignées de main ratent ; un onglet rechargé renumérote ses tenus, et l'accueil le réaligne ; une panne nouvelle, `Panne::ArrierePlan { duree }`, relâche le tenu, fige la page, et ferme sa connexion au-delà de 5 s. La soirée longue (E15) a ses coupures, rechargements, arrière-plans et sommeils.
+- **Les fichiers** : les fichiers qu'apporte un bot de l'écran arrivent au jeu (`Composant::Fichiers`), et `Image`, `Lire`, `Rendu`, `Telecharger` sont servis avec de vrais contenus. Une image factice revient `Illisible` ; `jeu::fichiers::png_uni` écrit un vrai PNG pour un bot.
+- **E13** tire ses gestes abîmés sorte par sorte (par le premier octet, le variant), et non plus parmi tous les gestes vus : un geste rare parmi ce qu'envoient les bots y a sa chance.
+
+Ajouts sans rupture : `jeu::PERIODE_HYPOTHESE` (et `jeu_abi::PERIODE_HYPOTHESE`, dans le prélude), la période où E11 lit l'hypothèse ; `jeu::fichiers::png_uni` ; `partie::Partie::numero_tenu`. Ruptures dans la crate `epreuve` : `Plan` a un champ `monde: Monde` (`Monde::REEL` dans `Plan::standard` et `Plan::court`), `Rapport` un champ `monde: MondeJoue`, `Panne` une variante `ArrierePlan { duree }` (un `match` exhaustif doit la nommer), et le JSON du rapport un objet `monde`.
+
+Pour s'adapter : relancer l'épreuve ; lire les refus nouveaux de ses bots ; remplacer tout jugement de ce qu'un joueur a vu par `quand.vu` ; Tier list, faire apporter de vrais PNG à son bot ; Sidequest, vérifier `jeu::PERIODE_HYPOTHESE` à la compilation.
 
 ## v0.4.0 — 2026-11-02
 

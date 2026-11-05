@@ -1,0 +1,19 @@
+[package]
+name = "fautif-secret-dans-un-static-module"
+description = "Le module WebAssembly du fautif qui recopie le mot secret dans un `static`, que l'écran montre (E8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

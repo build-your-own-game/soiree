@@ -11,9 +11,20 @@
 //! - la ligne de résultats est une demande, écrite une fois, et retirée à sa réponse ;
 //! - un geste d'une manche passée tombe sur `quand.vu`.
 //!
-//! Écart à § 9 : un `Rejoindre` d'un joueur déjà là ne change que son prénom. Le texte de
-//! § 9 remplaçait le joueur, et lui faisait perdre ses points, ce que l'invariant « un
-//! point ne se perd pas » refuse.
+//! Écarts à § 9 :
+//!
+//! - un `Rejoindre` d'un joueur déjà là ne change que son prénom. Le texte de § 9
+//!   remplaçait le joueur, et lui faisait perdre ses points, ce que l'invariant « un
+//!   point ne se perd pas » refuse ;
+//! - l'invariant « les lignes écrites se retirent » de § 9 (`lignes.len() <= 2`) est
+//!   faux, et la règle juste : trois manches révélées sans réponse laissent trois lignes
+//!   en attente. § 9 dit « une ligne de résultats par manche, jusqu'à sa réponse », et
+//!   § 2.10 qu'une demande existe tant que le jeu la liste : rien ne borne le temps de la
+//!   réponse, qui dépend de l'ordinateur de la soirée. Borner les lignes demanderait de
+//!   refuser `Lancer` (contre SQ-78, « un échec ne bloque rien ») ou de retirer une ligne
+//!   sans réponse (une demande retirée est annulée : contre « écrite une fois »).
+//!   L'invariant dit donc ce que la règle garantit : une ligne par manche révélée au
+//!   plus, chacune sous sa propre identité.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -46,7 +57,7 @@ pub struct Devine {
     nombre: Secret<Chiffre>,
     joueurs: Appareils<Joueur>,
     manche: u32,
-    /// Une ligne de résultats par manche, jusqu'à sa réponse.
+    /// Une ligne de résultats par manche, jusqu'à sa réponse, si tardive soit-elle.
     lignes: Vec<(IdDemande, Vec<u8>)>,
 }
 
@@ -56,7 +67,9 @@ pub struct Joueur {
     prenom: Texte<Prenom>,
     /// Ce qu'il a proposé : lui seul le voit, jusqu'à la révélation.
     essai: Secret<Option<Chiffre>>,
-    curseur: Chiffre,
+    /// Où il a laissé son curseur : lui seul le voit. Public, il disait l'essai à tous
+    /// dès qu'il était proposé (revue de la phase 2, constat 2).
+    curseur: Secret<Chiffre>,
     points: u32,
     present: Oui,
 }
@@ -246,9 +259,9 @@ fn proposer(avant: Avant<'_, Devine>, de: Appareil, quand: Quand) -> Issue<Devin
     let mut e = avant.accepter();
     let p = e.parts();
     if let Some(joueur) = p.jeu.joueurs.get_mut(de) {
-        let curseur = joueur.curseur;
-        if let Ok(essai) = joueur.essai.lire_mut(p.autorite) {
-            *essai = Some(curseur);
+        let curseur = joueur.curseur.lire(p.autorite).ok().copied();
+        if let (Some(c), Ok(essai)) = (curseur, joueur.essai.lire_mut(p.autorite)) {
+            *essai = Some(c);
         }
     }
     e.fin()
@@ -271,7 +284,7 @@ fn rejoindre(avant: Avant<'_, Devine>, de: Appareil, prenom: Texte<Prenom>) -> I
         let joueur = Joueur {
             prenom,
             essai: Secret::cacher(Qui::Appareil(de), None),
-            curseur: Chiffre::PLUS_PETIT,
+            curseur: Secret::cacher(Qui::Appareil(de), Chiffre::PLUS_PETIT),
             points: 0,
             present: Oui::Oui,
         };
@@ -429,7 +442,7 @@ impl Jeu for Devine {
                 }
                 let mut e = avant.accepter();
                 if let Some(j) = e.jeu().joueurs.get_mut(de) {
-                    j.curseur = c;
+                    j.curseur = Secret::cacher(Qui::Appareil(de), c);
                 }
                 e.fin()
             }
@@ -506,7 +519,9 @@ impl Jeu for Devine {
             (Some(_), Etape::Salon) => VueTel::Attends,
             (Some(j), Etape::Essais) => match j.essai.voir(r) {
                 Some(Some(_)) => VueTel::Attends,
-                Some(None) | None => VueTel::Choisis { curseur: j.curseur },
+                Some(None) | None => VueTel::Choisis {
+                    curseur: j.curseur.voir(r).copied().unwrap_or(Chiffre::PLUS_PETIT),
+                },
             },
             (Some(j), Etape::Revelation) => match self.nombre.voir(r) {
                 Some(n) => VueTel::Resultat {
@@ -600,6 +615,12 @@ impl Epreuve for Devine {
     /// Les points, dans l'ordre d'arrivée.
     type Resume = Vec<u32>;
     type Cas = Etape;
+    const INVARIANTS: &'static [&'static str] = &[
+        "au plus un point par manche",
+        "une ligne de résultats par manche révélée, au plus",
+        "huit joueurs au plus",
+        "un point ne se perd pas",
+    ];
 
     fn resume(&self, _: &Autorite) -> Vec<u32> {
         self.joueurs.iter().map(|(_, j)| j.points).collect()
@@ -611,7 +632,21 @@ impl Epreuve for Devine {
             self.joueurs.iter().all(|(_, j)| j.points <= self.manche),
             "au plus un point par manche"
         );
-        jeu::exiger!(v, self.lignes.len() <= 2, "les lignes écrites se retirent");
+        // Une réponse peut tarder autant que l'ordinateur de la soirée : les lignes ne se
+        // bornent pas en nombre, mais chacune vient d'une manche révélée, sous sa propre
+        // identité (CAT-76).
+        let distinctes = self.lignes.iter().enumerate().all(|(k, (id, _))| {
+            self.lignes
+                .iter()
+                .skip(k.saturating_add(1))
+                .all(|(autre, _)| autre != id)
+        });
+        let manches = usize::try_from(self.manche).unwrap_or(usize::MAX);
+        jeu::exiger!(
+            v,
+            distinctes && self.lignes.len() <= manches,
+            "une ligne de résultats par manche révélée, au plus"
+        );
         jeu::exiger!(v, self.joueurs.len() <= JOUEURS_MAX, "huit joueurs au plus");
     }
 
@@ -668,7 +703,7 @@ impl Epreuve for Devine {
                 Joueur {
                     prenom: Texte::nettoyer("WWWWWWWWWWWW"),
                     essai: Secret::cacher(qui, essai),
-                    curseur: Chiffre::PLUS_GRAND,
+                    curseur: Secret::cacher(Qui::Appareil(a), Chiffre::PLUS_GRAND),
                     points: 9_999,
                     present: Oui::Oui,
                 },

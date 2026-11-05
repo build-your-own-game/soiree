@@ -15,14 +15,17 @@
     clippy::let_underscore_untyped,
     reason = "code de test : un échec s'y lit comme l'échec du test qui l'appelle"
 )]
-#![expect(unsafe_code, reason = "un allocateur global de test, à deux modes")]
+#![expect(
+    unsafe_code,
+    reason = "un allocateur global de test, à deux modes, et le jeton de l'hôte de la colle"
+)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use devine::{Devine, GesteTel, Prenom};
-use jeu::colle::{Cadre, Enveloppe, Mode, Modes, Sortie, Zones, appeler, reserver};
+use jeu::colle::{Cadre, Enveloppe, Hote, Mode, Modes, Sortie, Zones, appeler, reserver};
 use jeu::prelude::*;
 use jeu_abi::{Appel, EntreeFil, QuandFil, RegardFil, Retour, StyleFil, decoder, encoder};
 
@@ -122,7 +125,9 @@ fn appel(env: &mut Option<Enveloppe<Devine>>, a: &Appel<'_>, mode_ecriture: Mode
         zones: Zones::default(),
     };
     let mut s = Sortie::new(cadre, sorte);
-    let _ = appeler(env, &octets, &mut s);
+    // SAFETY : ce test est l'hôte de la colle, comme les exports d'un module.
+    let hote = unsafe { Hote::new() };
+    let _ = appeler(&hote, env, &octets, &mut s);
     LECTURE.with(|l| l.set(false));
     modes.bascule(Mode::Tas);
     s.octets.clone()

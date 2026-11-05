@@ -68,4 +68,29 @@ pub mod jeux {
     pub type GelQuiEnchaine = Socle<defauts::GelQuiEnchaine>;
     /// E19.
     pub type BoucleAuVote = Socle<defauts::BoucleAuVote>;
+    /// E3 : une phase sans pire cas, jamais atteinte.
+    pub type PhaseSansCas = Socle<defauts::PhaseSansCas>;
+    /// E4 : un invariant déclaré, jamais évalué.
+    pub type InvariantJamaisEvalue = Socle<defauts::InvariantJamaisEvalue>;
+    /// E6 : un `static` écrit avant un refus, qui change la tape suivante.
+    pub type RetientUnRefus = Socle<defauts::RetientUnRefus>;
+    /// E8 : un secret d'un octet, que le choix public montre.
+    pub type ChoixQuiFuit = Socle<defauts::ChoixQuiFuit>;
+    /// E2 : trois `Temps` qui paniquent ; la partie doit repartir.
+    pub type PaniqueAuTemps = Socle<defauts::PaniqueAuTemps>;
+    /// E4, dans le monde réel : un choix jugé sur `fait`, pas sur `vu`.
+    pub type JugeSurLeFait = Socle<defauts::JugeSurLeFait>;
+    /// E13, dans le monde réel : un fichier abîmé lu sans vérifier sa taille.
+    pub type FichierQuiPanique = Socle<defauts::FichierQuiPanique>;
+    /// E19, sur les pires cas : une vue de l'écran que seuls les pires cas paient.
+    pub type PireCasTropLourd = Socle<defauts::PireCasTropLourd>;
+    /// E19, sur une lecture courante : la vue de la fin, trop lourde pour une image
+    /// de 60 par seconde.
+    pub type FinTropLourde = Socle<defauts::FinTropLourde>;
+    /// E19, par le coût fixe : un brouillon de 32 Mio remis à zéro à chaque appel.
+    pub type ZonesLourdes = Socle<defauts::ZonesLourdes>;
+    /// E8 : un secret recopié dans un `static`, que l'écran montre.
+    pub type SecretDansUnStatic = Socle<defauts::SecretDansUnStatic>;
+    /// E16 : des pires cas plus légers que l'écran d'une soirée.
+    pub type PireCasTropLeger = Socle<defauts::PireCasTropLeger>;
 }

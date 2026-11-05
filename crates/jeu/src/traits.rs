@@ -483,9 +483,9 @@ impl<J: Jeu> Bot<'_, J> {
 pub struct Coupure<J> {
     /// La durée sous laquelle la coupure ne compte pas.
     pub moins_de: Duree,
-    /// L'hypothèse. L'épreuve (E11) la lit dans la soirée **sans** coupure, à chaque
-    /// pas qu'elle échantillonne de la coupure, de son début à la première lecture
-    /// après sa fin : elle doit y tenir partout. Une condition qui ne se sait qu'à la
+    /// L'hypothèse. L'épreuve (E11) la lit dans la soirée **sans** coupure, tous les
+    /// [`crate::PERIODE_HYPOTHESE`] pas de la coupure, de son début à la première
+    /// lecture après sa fin : elle doit y tenir partout. Une condition qui ne se sait qu'à la
     /// fin, comme « personne n'a poussé ce joueur pendant la coupure », s'écrit donc
     /// comme une condition de chaque pas : « personne ne le touche » (besoin 8 des
     /// jeux, `conception/BESOINS-DES-JEUX.md`).
@@ -535,6 +535,14 @@ pub trait Epreuve: Jeu {
     type Resume: Message + PartialEq;
     /// Les écrans du jeu, pour la galerie des pires cas.
     type Cas: Variantes + Message + Copy + Eq;
+
+    /// Les noms de tout ce qu'exigent [`Epreuve::invariants`] et
+    /// [`Epreuve::transition`] (`jeu::exiger!`), chacun une fois. E4 vérifie que chacun
+    /// est évalué au moins une fois pendant les soirées de l'épreuve, et qu'aucun autre
+    /// nom ne l'est : un invariant écrit dans une branche qui n'arrive jamais, ou
+    /// oublié de la liste, se voit (OUT-01). La compilation du module refuse un nom vide
+    /// ou déclaré deux fois.
+    const INVARIANTS: &'static [&'static str];
 
     /// Le résumé de l'histoire définitive.
     fn resume(&self, a: &Autorite) -> Self::Resume;

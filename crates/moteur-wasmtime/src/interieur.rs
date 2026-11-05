@@ -23,6 +23,14 @@ pub(crate) struct Zones {
     pub(crate) panique: Zone,
 }
 
+/// Les quatre zones que le moteur remet à zéro avant chaque appel, et que
+/// l'empreinte exclut : la pile, la boîte, le brouillon et la zone de panique. Une
+/// seule définition, pour `preparer` et pour ce que l'épreuve compte de leur coût
+/// ([`crate::ModuleCharge::octets_remis_a_zero`]).
+pub(crate) const fn remises_a_zero(base: &Base, z: Zones) -> [Zone; 4] {
+    [(0, base.pile_initiale), z.boite, z.brouillon, z.panique]
+}
+
 /// Ce que toutes les instances d'un module partagent.
 pub(crate) struct Base {
     pub(crate) module: Module,
@@ -237,7 +245,7 @@ impl Interieur {
         self.poser(self.bornee, Val::I32(0))?;
         if let Some(z) = zones {
             let memoire = self.memoire.data_mut(&mut self.store);
-            for (a, n) in [(0, base.pile_initiale), z.boite, z.brouillon, z.panique] {
+            for (a, n) in remises_a_zero(base, z) {
                 let debut = usize::try_from(a).map_err(|_| interne("zone hors de la mémoire"))?;
                 let fin = debut.saturating_add(usize::try_from(n).unwrap_or(usize::MAX));
                 memoire

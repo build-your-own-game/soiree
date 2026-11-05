@@ -150,25 +150,25 @@ fn projection_vide_ce_que_le_regard_ne_voit_pas() {
             public: 7,
             cache: Secret::cacher(qui, 42),
         };
-        for (regard, voit) in [(ecran, voit_ecran), (ra, voit_a), (rc, voit_c)] {
-            let p = t.projeter(&regard);
+        for (regard, voit) in [(&ecran, voit_ecran), (&ra, voit_a), (&rc, voit_c)] {
+            let p = t.projeter(regard);
             assert_eq!(p.public, 7, "{qui:?}");
             assert_eq!(p.cache.qui(), &qui, "qui est public");
             assert_eq!(
-                p.cache.voir(&regard).copied(),
+                p.cache.voir(regard).copied(),
                 voit.then_some(42),
                 "{qui:?} {regard:?}"
             );
             assert_eq!(
-                t.cache.voir(&regard).copied(),
+                t.cache.voir(regard).copied(),
                 voit.then_some(42),
                 "{qui:?} {regard:?}"
             );
             // Ce que la projection n'a pas reçu, aucune porte ne l'ouvre.
-            let autres = [ecran, ra, rc];
+            let autres = [&ecran, &ra, &rc];
             for autre in autres {
                 if !voit {
-                    assert_eq!(p.cache.voir(&autre), None);
+                    assert_eq!(p.cache.voir(autre), None);
                 }
             }
         }

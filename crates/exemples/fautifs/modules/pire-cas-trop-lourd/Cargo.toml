@@ -1,0 +1,19 @@
+[package]
+name = "fautif-pire-cas-trop-lourd-module"
+description = "Le module WebAssembly du jeu dont la vue d'un pire cas fait deux millions de tours de boucle, qui fait échouer E19."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

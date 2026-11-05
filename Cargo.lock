@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -475,10 +481,13 @@ dependencies = [
  "jeu",
  "jeu-abi",
  "jeu-natif",
+ "miniz_oxide",
  "moteur-wasmtime",
  "partie",
  "reecriture",
  "serde",
+ "serde_json",
+ "toml",
  "wasmtime",
 ]
 
@@ -529,6 +538,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-choix-qui-fuit-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-compte-le-recu-module"
 version = "0.1.0"
 dependencies = [
@@ -569,6 +586,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-fichier-qui-panique-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-fin-trop-lourde-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-fuit-la-memoire-module"
 version = "0.1.0"
 dependencies = [
@@ -585,6 +618,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-invariant-jamais-evalue-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-invariant-viole-module"
 version = "0.1.0"
 dependencies = [
@@ -594,6 +635,14 @@ dependencies = [
 
 [[package]]
 name = "fautif-jamais-fini-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-juge-sur-le-fait-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",
@@ -625,7 +674,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-panique-au-temps-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-phase-inaccessible-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-phase-sans-cas-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",
@@ -641,6 +706,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-pire-cas-trop-leger-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-pire-cas-trop-lourd-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-refuse-apres-avoir-ecrit-module"
 version = "0.1.0"
 dependencies = [
@@ -649,7 +730,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-retient-un-refus-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-sain-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-secret-dans-un-static-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",
@@ -666,6 +763,14 @@ dependencies = [
 
 [[package]]
 name = "fautif-vue-qui-fuit-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-zones-lourdes-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",
@@ -953,6 +1058,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57804b2c9b69967f1536a56f86297e367a33b19e98852ed624b84551cdbc0d90"
 dependencies = [
  "rustix",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
 ]
 
 [[package]]

@@ -15,7 +15,7 @@
 //! | E16 | chaque pire cas, sur une instance nue (`pires_cas.rs`) |
 //! | E17 | la forme canonique et la scène des soirées principales, et des pires cas |
 //! | E18 | une soirée de gels pendant les échéances (`gel.rs`) |
-//! | E19 | le carburant de chaque appel des soirées principales (`budgets.rs`) |
+//! | E19 | le coût (carburant et coût fixe) de chaque appel et de chaque image des soirées principales, et de la vue de chaque pire cas (`budgets.rs`) |
 //!
 //! Une panne déclarée qui n'a pas été constatée rend « pas exécuté » chaque contrôle
 //! lu dans les soirées principales : il porterait sur un monde qui n'a pas eu lieu
@@ -32,6 +32,7 @@ use jeu_abi::{
 use moteur_wasmtime::{InstanceWasm, ModuleCharge, Moteur};
 use partie::{Echec, Fabrique, Faute, Instance, IssueJournal, LieuFaute, PanneOutil, RapportFaute};
 
+use crate::budgets::BUDGETS_E19;
 use crate::dynamique::{Effacee, FabriqueDynamique};
 use crate::plan::{IdControle, Plan};
 use crate::rapport::{IssueControle, Rapport, Rejeu, ResultatControle};
@@ -60,6 +61,9 @@ const DES_SOIREES: [IdControle; 11] = [
 struct Acc {
     compte: Compte,
     pannes: Vec<String>,
+    /// Ce qui était programmé et n'a pas eu lieu : le contrôle n'a pas tourné comme
+    /// prévu, et ne compte pas comme réussi (OUT-26).
+    manquees: Vec<String>,
     sans_objet: Option<String>,
     notes: Vec<String>,
     rejeu: Option<Rejeu>,
@@ -81,13 +85,33 @@ struct Epreuve<'m, 'n> {
     acc: BTreeMap<IdControle, Acc>,
     joue: Vec<String>,
     pannes_manquees: Vec<String>,
+    /// E16 : la vue de l'écran seul la plus lourde des soirées principales : la
+    /// soirée, le pas, le carburant.
+    vue_ecran_max: Option<(u32, u64, u64)>,
     phases_univers: BTreeSet<u16>,
     cas_univers: Option<u16>,
+    /// E3 : le nombre de variantes de `Phase` que le jeu déclare (`Proprietes`).
+    phases_declarees: Option<u16>,
+    /// E4 : les noms que le jeu déclare exiger (`Epreuve::INVARIANTS`).
+    invariants_declares: Option<Vec<String>>,
+    /// E4 : combien de fois chaque nom a été évalué, sur toutes les soirées principales.
+    invariants_vus: BTreeMap<String, u64>,
+    /// E4 : le rejeu de la première soirée principale, pour un invariant qu'aucune
+    /// soirée n'a évalué.
+    premier_rejeu: Option<Rejeu>,
     /// E19 : le carburant de chaque appel des soirées principales, par nom.
     carburant: BTreeMap<&'static str, Vec<u64>>,
-    /// E19 : le carburant de chaque image des soirées principales : `(fenêtre + 2)`
-    /// pas consécutifs.
+    /// E19 : le coût de chaque image des soirées principales : `(fenêtre + 2)` pas
+    /// consécutifs, le coût fixe de chaque entrée compris.
     carburant_images: Vec<u64>,
+    /// E19 : le coût fixe d'un appel de ce module, en unités de carburant
+    /// ([`crate::budgets::BudgetsE19::cout_fixe`]).
+    fixe: u64,
+    /// E19 : les entrées d'un arriéré, dont le coût fixe n'entre pas dans les images :
+    /// combien en tout, et le plus dans un même pas.
+    arrieres: (u64, u64),
+    /// Ce que le monde simulé a fait, sur toutes les soirées.
+    monde: crate::plan::MondeJoue,
     /// E18 : la phase après chaque entrée, et les gels, de chaque soirée principale.
     phases_des_soirees: Vec<PhasesEtGels>,
 }
@@ -226,6 +250,24 @@ impl Epreuve<'_, '_> {
         Ok(m)
     }
 
+    /// Ce que le jeu déclare de ses phases (E3) et de ses invariants (E4), lu par
+    /// `Proprietes` sur une instance nue (ABI 3).
+    fn declare(&mut self) {
+        match self.lire_proprietes() {
+            Ok(p) => {
+                self.phases_declarees = Some(p.phases);
+                self.invariants_declares = Some(p.invariants);
+            }
+            Err(e) => {
+                for c in [IdControle::E3, IdControle::E4] {
+                    if self.demande(c) {
+                        self.acc(c).pannes.push(e.clone());
+                    }
+                }
+            }
+        }
+    }
+
     /// Les phases et les cas que le jeu connaît, lus sur ses pires cas (E3) : une
     /// instance nue, `PireCas` pour chaque indice jusqu'au refus, puis `Etat`.
     fn univers(&mut self) {
@@ -299,11 +341,13 @@ impl Epreuve<'_, '_> {
                 sorte,
                 graine,
                 duree,
+                monde: self.plan.monde,
                 pannes: self.plan.pannes.clone(),
                 verifs: Verifs {
                     e4: p(IdControle::E4),
                     e6: p(IdControle::E6),
                     e7: p(IdControle::E7),
+                    e8: p(IdControle::E8),
                     releve: Oui::Oui,
                     phases: p(IdControle::E18),
                     budgets: p(IdControle::E19),
@@ -316,6 +360,7 @@ impl Epreuve<'_, '_> {
                 sorte,
                 graine,
                 duree,
+                monde: self.plan.monde,
                 pannes: Vec::new(),
                 verifs: Verifs {
                     releve: Oui::Oui,
@@ -329,6 +374,7 @@ impl Epreuve<'_, '_> {
                 sorte,
                 graine,
                 duree,
+                monde: self.plan.monde,
                 pannes: Vec::new(),
                 verifs: Verifs {
                     phases: if sorte == Sorte::Gel {
@@ -351,7 +397,12 @@ impl Epreuve<'_, '_> {
         match catch_unwind(AssertUnwindSafe(move || {
             Soiree::ouvrir(module, r).map(Soiree::jouer)
         })) {
-            Ok(b) => b,
+            Ok(b) => {
+                if let Ok(bilan) = &b {
+                    self.monde.ajouter(&bilan.monde);
+                }
+                b
+            }
             Err(p) => {
                 let m = p
                     .downcast_ref::<&str>()
@@ -385,10 +436,18 @@ impl Epreuve<'_, '_> {
                 }
             };
             self.joue.push(format!(
-                "soirée principale {k} : {} pas, {} arrivées, {} lignes de journal",
+                "soirée principale {k} : {} pas, {} arrivées, {} lignes de journal{}",
                 bilan.pas_joues,
                 bilan.arrivees,
-                bilan.journal.lignes().len()
+                bilan.journal.lignes().len(),
+                if bilan.reprises > 0 {
+                    format!(
+                        ", {} reprise(s) après trois `Temps` écartés (`Partie::repartir`)",
+                        bilan.reprises
+                    )
+                } else {
+                    String::new()
+                }
             ));
             for p in &bilan.pannes_outil {
                 self.panne_des_soirees(p, &DES_SOIREES);
@@ -422,6 +481,9 @@ impl Epreuve<'_, '_> {
         }
         self.parcours(faits_terminales);
         self.couverture(&phases, &cas);
+        if self.demande(IdControle::E4) {
+            self.invariants_evalues();
+        }
         if self.demande(IdControle::E19) {
             self.budgets();
         }
@@ -435,14 +497,24 @@ impl Epreuve<'_, '_> {
         }
     }
 
-    /// E19 : le carburant des soirées principales, en distribution.
+    /// E19 : le coût des appels et des images des soirées principales.
     fn budgets(&mut self) {
         let fenetre = self.fenetre_declaree();
-        let (compte, notes) =
-            crate::budgets::juger(&self.carburant, &self.carburant_images, fenetre);
+        let (compte, notes) = crate::budgets::juger(
+            &BUDGETS_E19,
+            &self.carburant,
+            &self.carburant_images,
+            fenetre,
+            self.fixe,
+        );
+        let (arrieres, au_plus) = self.arrieres;
         let a = self.acc(IdControle::E19);
         a.compte.ajouter(&compte);
         a.notes.extend(notes);
+        a.notes.push(format!(
+            "{arrieres} entrée(s) d'un arriéré (faites sur une vue de plus de {} pas), jusqu'à {au_plus} dans un même pas : leur carburant compte dans les images, pas leur coût fixe",
+            crate::budgets::ARRIERE_PAS
+        ));
     }
 
     /// Une soirée arrêtée en chemin : par une faute du jeu (déjà rapportée), ou
@@ -456,6 +528,10 @@ impl Epreuve<'_, '_> {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "le bilan d'une soirée se lit d'un trait, un contrôle après l'autre"
+    )]
     fn lire_le_bilan(&mut self, bilan: &Bilan, k: u32) {
         for f in &bilan.fautes {
             let a = self.acc(f.controle);
@@ -464,6 +540,11 @@ impl Epreuve<'_, '_> {
             if a.rejeu.is_none() {
                 a.rejeu = Some(rejeu_de(bilan));
             }
+        }
+        if let Some((pas, c)) = bilan.faits.vue_ecran_max
+            && self.vue_ecran_max.is_none_or(|(_, _, m)| c > m)
+        {
+            self.vue_ecran_max = Some((k, pas, c));
         }
         let obs = bilan.obs.borrow();
         for (ou, f) in &obs.fautes {
@@ -482,14 +563,39 @@ impl Epreuve<'_, '_> {
                 .or_default()
                 .extend(v.iter().copied());
         }
-        // Les entrées comptent une fois chacune ; un pas, la somme des siennes ; une
-        // image, `(fenêtre + 2)` pas consécutifs, pas vides compris.
+        // Les entrées comptent une fois chacune ; un pas, la somme de leurs coûts
+        // (carburant et coût fixe) ; une image, `(fenêtre + 2)` pas consécutifs, pas
+        // vides compris.
+        // Le coût fixe d'une entrée d'un arriéré n'y compte pas : leur nombre dans un
+        // pas est le fait du commun (`budgets.rs`, « Les arriérés »).
         let mut par_pas: BTreeMap<u64, u64> = BTreeMap::new();
-        for (place, c) in obs.carburant_entrees.values() {
-            self.carburant.entry("Entree").or_default().push(*c);
-            let n = par_pas.entry(*place).or_insert(0);
-            *n = n.saturating_add(*c);
+        let mut arrieres: BTreeMap<u64, u64> = BTreeMap::new();
+        // Les retours d'où part un arriéré : ceux des appareils, et la fin de chaque gel.
+        let mut retours = bilan.retours.clone();
+        retours.extend(bilan.gels.iter().map(|(_, fin)| (None, *fin)));
+        for e in obs.carburant_entrees.values() {
+            self.carburant
+                .entry("Entree")
+                .or_default()
+                .push(e.carburant);
+            let fixe = if crate::budgets::d_un_arriere(e.place, e.vu, e.de, &retours) {
+                let n = arrieres.entry(e.place).or_insert(0);
+                *n = n.saturating_add(1);
+                0
+            } else {
+                self.fixe
+            };
+            let n = par_pas.entry(e.place).or_insert(0);
+            *n = n.saturating_add(crate::budgets::cout(e.carburant, fixe));
         }
+        self.arrieres.0 = self
+            .arrieres
+            .0
+            .saturating_add(arrieres.values().fold(0u64, |a, n| a.saturating_add(*n)));
+        self.arrieres.1 = self
+            .arrieres
+            .1
+            .max(arrieres.values().copied().max().unwrap_or(0));
         if !par_pas.is_empty() {
             let dense: Vec<u64> = (1..=bilan.pas_joues)
                 .map(|p| par_pas.get(&p).copied().unwrap_or(0))
@@ -521,6 +627,7 @@ impl Epreuve<'_, '_> {
             (IdControle::E6, &obs.e6),
             (IdControle::E7, &obs.e7),
             (IdControle::E8, &bilan.e8),
+            (IdControle::E8, &obs.e8),
             (IdControle::E14, &bilan.e14),
             (IdControle::E17, &bilan.e17),
         ] {
@@ -531,12 +638,31 @@ impl Epreuve<'_, '_> {
                 a.rejeu = Some(rejeu_de(bilan));
             }
         }
+        if obs.e8.evaluations > 0 {
+            self.acc.entry(IdControle::E8).or_default().noter(format!(
+                "soirée {k} : {} geste(s) ou tenu(s) rejoué(s) avec un autre octet qui change un secret : la projection publique et les vues comparées octet pour octet",
+                obs.e8.evaluations
+            ));
+        } else if obs.verifs.e8 == Oui::Oui {
+            // Zéro jugement n'est pas un succès (OUT-07) : la recherche d'octets a seule
+            // tourné, et le rapport le dit (revue de la phase 2, constat 2).
+            self.acc.entry(IdControle::E8).or_default().noter(format!(
+                "soirée {k} : la variation n'a rien jugé ({} entrée(s) rejouée(s) avec un autre octet, {} variante(s) acceptée(s), aucune n'a changé un secret) ; seule la recherche d'octets a tourné",
+                obs.variations.0, obs.variations.1
+            ));
+        }
         if bilan.faits.secrets_non_cherches > 0 {
             self.acc.entry(IdControle::E8).or_default().noter(format!(
-                "soirée {k} : {} valeur(s) secrète(s) de moins de {} octets (un booléen, un variant, un petit nombre) n'ont pas été cherchées dans les vues : E8 ne voit pas leur fuite",
-                bilan.faits.secrets_non_cherches,
-                crate::controles::SECRET_LONGUEUR_MIN
+                "soirée {k} : {}",
+                crate::controles::trop_courts(bilan.faits.secrets_non_cherches)
             ));
+        }
+        if self.premier_rejeu.is_none() {
+            self.premier_rejeu = Some(rejeu_de(bilan));
+        }
+        for (nom, n) in &obs.invariants {
+            let vu = self.invariants_vus.entry(nom.clone()).or_insert(0);
+            *vu = vu.saturating_add(*n);
         }
         if !obs.invariants.is_empty() {
             let noms: Vec<String> = obs
@@ -692,14 +818,72 @@ impl Epreuve<'_, '_> {
         }
     }
 
+    /// E4 : chaque invariant que le jeu déclare est évalué au moins une fois dans les
+    /// soirées principales, et aucun nom hors de sa déclaration ne l'est (OUT-01,
+    /// RESTE-PHASE-1, point 24). Un invariant écrit dans une branche qui n'arrive
+    /// jamais n'est pas tenu : il n'a pas tourné.
+    fn invariants_evalues(&mut self) {
+        let Some(declares) = self.invariants_declares.clone() else {
+            return;
+        };
+        let vus = self.invariants_vus.clone();
+        // Aucune évaluation du tout : les soirées n'ont accepté aucune entrée, et E4 n'a
+        // pas tourné. Il reste « pas exécuté » (OUT-07), plutôt que d'échouer sur chaque
+        // nom déclaré.
+        if vus.values().all(|n| *n == 0) {
+            return;
+        }
+        let rejeu = self.premier_rejeu.clone();
+        let a = self.acc(IdControle::E4);
+        let mut echecs = 0u32;
+        for nom in &declares {
+            a.compte.evaluer();
+            if vus.get(nom).copied().unwrap_or(0) == 0 {
+                echecs = echecs.saturating_add(1);
+                a.compte.echouer(format!(
+                    "« {nom} », déclaré dans `Epreuve::INVARIANTS`, n'est évalué dans aucune soirée"
+                ));
+            }
+        }
+        for nom in vus.keys() {
+            a.compte.evaluer();
+            if !declares.contains(nom) {
+                echecs = echecs.saturating_add(1);
+                a.compte.echouer(format!(
+                    "« {nom} » est évalué, mais n'est pas déclaré dans `Epreuve::INVARIANTS`"
+                ));
+            }
+        }
+        if echecs > 0 && a.rejeu.is_none() {
+            a.rejeu = rejeu;
+        }
+        a.noter(format!(
+            "{} invariant(s) déclaré(s), {} nom(s) évalué(s)",
+            declares.len(),
+            vus.len()
+        ));
+    }
+
     /// E3 : chaque phase et chaque cas atteints.
     fn couverture(&mut self, phases: &BTreeSet<u16>, cas: &BTreeSet<u16>) {
-        let univers_phases: BTreeSet<u16> = self.phases_univers.union(phases).copied().collect();
+        // Toutes les variantes de `Phase`, qu'un pire cas y mène ou non (RESTE-PHASE-1,
+        // point 23) : celles que le jeu déclare, celles des pires cas, celles vues.
+        let declarees = self.phases_declarees;
+        let mut univers_phases: BTreeSet<u16> =
+            self.phases_univers.union(phases).copied().collect();
+        if let Some(n) = declarees {
+            univers_phases.extend(0..n);
+        }
         let nb_cas = self.cas_univers;
         let a = self.acc(IdControle::E3);
         for p in &univers_phases {
             a.compte.evaluer();
-            if !phases.contains(p) {
+            if declarees.is_some_and(|n| *p >= n) {
+                a.compte.echouer(format!(
+                    "la phase d'indice {p} n'est pas dans `Phase::TOUTES`, qui en déclare {}",
+                    declarees.unwrap_or(0)
+                ));
+            } else if !phases.contains(p) {
                 a.compte.echouer(format!(
                     "la phase d'indice {p} dans `Phase::TOUTES` n'est jamais atteinte"
                 ));
@@ -716,7 +900,11 @@ impl Epreuve<'_, '_> {
                     }
                 }
                 a.noter(format!(
-                    "phases vues {phases:?} sur {univers_phases:?} connues ; cas vus {cas:?} sur {n}"
+                    "phases vues {phases:?} sur {univers_phases:?} connues ({}) ; cas vus {cas:?} sur {n}",
+                    declarees.map_or_else(
+                        || String::from("`Phase::TOUTES` non lue"),
+                        |d| format!("`Phase::TOUTES` en déclare {d}")
+                    )
                 ));
             }
             None => a.noter(String::from("les cas n'ont pas pu être comptés")),
@@ -881,6 +1069,11 @@ impl Epreuve<'_, '_> {
                 return;
             }
         };
+        let allees: Vec<String> = bilan
+            .allees_et_venues
+            .iter()
+            .map(|(sorte, n)| format!("{n} {sorte}"))
+            .collect();
         self.joue.push(format!(
             "soirée longue : {} pas, {} arrivées, {} mesures de la mémoire",
             bilan.pas_joues,
@@ -888,6 +1081,15 @@ impl Epreuve<'_, '_> {
             bilan.memoire.len()
         ));
         let a = self.acc(IdControle::E15);
+        a.noter(format!(
+            "allées et venues de la soirée longue, chacune suivie de son retour : {}",
+            if allees.is_empty() {
+                String::from("aucune")
+            } else {
+                allees.join(", ")
+            }
+        ));
+        a.manquees.extend(bilan.allees_manquees.iter().cloned());
         a.pannes.extend(bilan.pannes_outil.iter().cloned());
         for f in &bilan.fautes {
             a.compte.evaluer();
@@ -906,6 +1108,7 @@ impl Epreuve<'_, '_> {
     fn pires_cas(&mut self) {
         let c = crate::pires_cas::eprouver(self.module);
         self.joue.push(format!("pires cas : {}", c.cas));
+        let vue_ecran_max = self.vue_ecran_max;
         let a = self.acc(IdControle::E16);
         a.compte.ajouter(&c.e16);
         a.pannes.extend(c.pannes.iter().cloned());
@@ -913,20 +1116,48 @@ impl Epreuve<'_, '_> {
             "{} cas construits, chacun : son cas, ses invariants, sa scène",
             c.cas
         ));
+        // Un pire cas se construit depuis les limites, pour être le plus lourd
+        // (INTERFACE, § 2.13) : aucune vue de l'écran des soirées ne doit coûter plus
+        // que le plus lourd d'entre eux. L'épreuve ne connaît pas les limites propres
+        // au jeu (tuiles, joueurs, textes) ; elle tient au moins celle-là (revue de la
+        // phase 2, constat 14).
+        let pire = c.carburant_vue.iter().map(|(_, n)| *n).max();
+        match (vue_ecran_max, pire) {
+            (Some((k, pas, vue)), Some(pire)) => {
+                a.compte.evaluer();
+                let marge = crate::pires_cas::MARGE_DU_PIRE_CAS_POUR_CENT;
+                let plafond = pire.saturating_add(pire.saturating_mul(marge) / 100);
+                if vue > plafond {
+                    a.compte.echouer(format!(
+                        "la vue de l'écran de la soirée {k}, au pas {pas}, coûte {vue} unités, plus que celle de chaque pire cas (au plus {pire}, {marge} % de marge comprise : {plafond}) : un pire cas se construit depuis les limites pour être le plus lourd (INTERFACE, § 2.13)"
+                    ));
+                } else {
+                    a.noter(format!(
+                        "la vue de l'écran la plus lourde des soirées ({vue} unités, soirée {k}, pas {pas}) ne dépasse pas de plus de {marge} % celle du plus lourd des pires cas ({pire})"
+                    ));
+                }
+            }
+            (None, _) => a.noter(
+                "aucune vue de l'écran des soirées n'a été lue par E8 : le pire cas n'est pas comparé à elles",
+            ),
+            (Some(_), None) => {}
+        }
         if self.demande(IdControle::E17) {
             let a = self.acc(IdControle::E17);
             a.compte.ajouter(&c.e17);
             a.noter(format!("et les formes canoniques de {} pires cas", c.cas));
         }
         if self.demande(IdControle::E19) {
-            let (compte, notes) = crate::budgets::juger_les_pires_cas(&c.carburant_vue);
+            let (compte, notes) =
+                crate::budgets::juger_les_pires_cas(&BUDGETS_E19, &c.carburant_vue, self.fixe);
             let a = self.acc(IdControle::E19);
             a.compte.ajouter(&compte);
             a.notes.extend(notes);
         }
     }
 
-    /// Les propriétés que le jeu promet, lues sur une instance nue (ABI 2).
+    /// Les propriétés que le jeu promet, lues sur une instance nue (ABI 2, puis 3 :
+    /// les phases et les invariants déclarés).
     fn lire_proprietes(&self) -> Result<jeu_abi::ProprietesFil, String> {
         let mut i = Fabrique::neuve(&mut self.module.fabrique()).map_err(|p| p.to_string())?;
         for a in [Appel::Bonjour, Appel::Decrire] {
@@ -1275,6 +1506,15 @@ impl Epreuve<'_, '_> {
                 IssueControle::EchecDuJeu
             } else if let Some(r) = a.sans_objet.clone() {
                 IssueControle::SansObjet(r)
+            } else if !a.manquees.is_empty() {
+                detail.insert(
+                    0,
+                    format!(
+                        "des allées et venues programmées n'ont pas eu lieu : {}",
+                        a.manquees.join(" ; ")
+                    ),
+                );
+                IssueControle::PasExecute
             } else if DES_SOIREES.contains(&id) && !self.pannes_manquees.is_empty() {
                 detail.insert(
                     0,
@@ -1405,14 +1645,25 @@ pub fn eprouver(
         acc: BTreeMap::new(),
         joue: Vec::new(),
         pannes_manquees: Vec::new(),
+        vue_ecran_max: None,
         phases_univers: BTreeSet::new(),
         cas_univers: None,
+        phases_declarees: None,
+        invariants_declares: None,
+        invariants_vus: BTreeMap::new(),
+        premier_rejeu: None,
         carburant: BTreeMap::new(),
         carburant_images: Vec::new(),
+        fixe: BUDGETS_E19.cout_fixe(module.octets_remis_a_zero()),
+        arrieres: (0, 0),
         phases_des_soirees: Vec::new(),
+        monde: crate::plan::MondeJoue::default(),
     };
     if plan.demande(IdControle::E1) {
         e.constat();
+    }
+    if plan.demande(IdControle::E3) || plan.demande(IdControle::E4) {
+        e.declare();
     }
     if plan.demande(IdControle::E3) {
         e.univers();
@@ -1451,6 +1702,7 @@ pub fn eprouver(
     if plan.demande(IdControle::E15) {
         e.memoire();
     }
+    let monde = e.monde;
     let (controles, joue) = e.resultats();
     Rapport {
         module: module.empreinte(),
@@ -1458,6 +1710,37 @@ pub fn eprouver(
         controles,
         natif: a_natif,
         joue,
+        compilation: None,
+        monde,
+        budgets: BUDGETS_E19,
+        octets_remis_a_zero: Some(module.octets_remis_a_zero()),
+    }
+}
+
+/// Le rapport d'un jeu dont le module ne s'est pas compilé, ou dont l'étape 1 n'a pas
+/// pu commencer : chaque contrôle « pas exécuté », et l'étape 1 telle qu'elle s'est
+/// arrêtée.
+pub(crate) fn sans_module(plan: &Plan, compilation: crate::etapes::Compilation) -> Rapport {
+    let controles = IdControle::TOUS
+        .into_iter()
+        .map(|id| ResultatControle {
+            id,
+            issue: IssueControle::PasExecute,
+            evaluations: 0,
+            detail: String::from("rien n'est joué : l'étape 1 s'est arrêtée avant le module"),
+            rejeu: None,
+        })
+        .collect();
+    Rapport {
+        module: [0; 32],
+        plan: plan.clone(),
+        controles,
+        natif: false,
+        joue: String::from("rien : l'étape 1 s'est arrêtée avant le module"),
+        compilation: Some(compilation),
+        monde: crate::plan::MondeJoue::default(),
+        budgets: BUDGETS_E19,
+        octets_remis_a_zero: None,
     }
 }
 
@@ -1507,6 +1790,10 @@ pub fn eprouver_octets(
                 controles,
                 natif: natif.is_some(),
                 joue: String::from("rien : le module est refusé"),
+                compilation: None,
+                monde: crate::plan::MondeJoue::default(),
+                budgets: BUDGETS_E19,
+                octets_remis_a_zero: None,
             }
         }
     }

@@ -382,6 +382,9 @@ impl<F: Fabrique> Partie<F> {
         let mut p = Partie::assembler(f, i, o, declaration, coeur, point);
         p.lire_etat()?;
         p.prendre_point()?;
+        // La création est saine : la reprise d'une panne avant le premier `Temps`
+        // accepté repart d'elle (§ 4.6).
+        p.point_sain = p.periodique.clone();
         Ok(p)
     }
 
@@ -523,6 +526,30 @@ impl<F: Fabrique> Partie<F> {
     /// L'empreinte de la définitive.
     pub fn empreinte(&mut self) -> Result<[u8; 32], PanneOutil> {
         self.definitive.empreinte()
+    }
+
+    /// Le plus grand numéro de tenu reçu de cet appareil, toutes clés confondues, qu'il
+    /// soit déjà livré ou qu'il attende son pas : ce que l'accueil d'une page rechargée
+    /// lui redonne, pour qu'elle reprenne sa numérotation au-dessus (SAL-38, REM-14).
+    /// Sans lui, une page qui repart de 1 serait écartée tenu après tenu (`Perimee`),
+    /// sans que rien ne le dise. `None` : rien reçu de lui.
+    pub fn numero_tenu(&self, de: Appareil) -> Option<u64> {
+        let livres = self
+            .coeur
+            .tenus
+            .iter()
+            .filter(|t| t.appareil == de)
+            .filter_map(|t| t.etat.numero);
+        let en_attente = self.en_attente.iter().filter_map(|e| match &e.quoi {
+            QuoiPlace::Tenu { de: d, numero, .. } if *d == de => Some(*numero),
+            QuoiPlace::Tenu { .. }
+            | QuoiPlace::Geste { .. }
+            | QuoiPlace::Manette { .. }
+            | QuoiPlace::Ecran(_)
+            | QuoiPlace::Presence(_)
+            | QuoiPlace::Reponse { .. } => None,
+        });
+        livres.chain(en_attente).max()
     }
 
     /// Les demandes lancées que le jeu liste encore et dont la réponse n'est pas

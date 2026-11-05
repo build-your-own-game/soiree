@@ -417,6 +417,12 @@ impl Epreuve for Ardoise {
     /// Les chiffres écrits, et le nombre d'effacements.
     type Resume = (Vec<u8>, u32);
     type Cas = Ecran;
+    const INVARIANTS: &'static [&'static str] = &[
+        "vingt-quatre traits au plus",
+        "les comptes disent les traits",
+        "un chiffre sans trait n'a pas de compte",
+        "un trait à la fois, ou tout effacé",
+    ];
 
     fn resume(&self, _: &Autorite) -> (Vec<u8>, u32) {
         (self.chiffres(), self.effacements)

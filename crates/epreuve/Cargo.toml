@@ -20,6 +20,12 @@ reecriture.workspace = true
 blake3.workspace = true
 # Encoder les messages du commun (présences, appels) comme le cœur les encode.
 serde.workspace = true
+# L'étape 1 : les manifestes et le `clippy.toml` d'un jeu, comparés à ceux du commun.
+toml.workspace = true
+# L'étape 1 : `cargo metadata` et les messages de compilation de Cargo.
+serde_json.workspace = true
+# Le monde simulé sert de vraies images : le zlib des PNG qu'il lit et écrit.
+miniz_oxide.workspace = true
 
 [dev-dependencies]
 # La copie native d'un jeu, comparée au module (E9, § 8.9 étape 3).

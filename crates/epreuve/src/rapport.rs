@@ -10,23 +10,11 @@ use std::fmt::Write as _;
 
 use partie::{Budgets, Journal};
 
+use crate::budgets::BudgetsE19;
+use crate::etapes::{Compilation, Etape, Exigence, IssueEtape, ResultatEtape};
 use crate::json::Json;
-use crate::plan::{IdControle, Plan};
+use crate::plan::{IdControle, MondeJoue, Plan};
 use crate::soiree::Point;
-
-/// Les étapes de l'épreuve du CONTRAT (« L'épreuve », étapes 1 à 8) que ce binaire
-/// n'exécute pas : il part d'un module déjà compilé, et les leçons, les mutants et
-/// les preuves viennent ensuite, dans l'outil (INTERFACE § 7.2). Le rapport les
-/// nomme à chaque fois : un code 0 n'est jamais l'épreuve entière du contrat.
-pub const ETAPES_NON_EXECUTEES: [(u8, &str); 4] = [
-    (
-        1,
-        "compiler le jeu depuis ses sources (règles d'écriture, overflow-checks, copie native)",
-    ),
-    (3, "examiner les questions de leçons du CAHIER"),
-    (5, "injecter des bugs et voir les tests du jeu échouer"),
-    (6, "revérifier les preuves"),
-];
 
 /// L'issue d'un contrôle.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,6 +100,16 @@ pub struct Rapport {
     pub natif: bool,
     /// Ce que l'épreuve a joué : soirées, pas, entrées.
     pub joue: String,
+    /// L'étape 1, quand l'épreuve est partie des sources (`soiree-epreuve <dossier>`) ;
+    /// `None` : le module a été donné tout compilé, et l'étape 1 n'est pas faite.
+    pub compilation: Option<Compilation>,
+    /// Ce que le monde simulé a vraiment fait, sur toutes les soirées jouées.
+    pub monde: MondeJoue,
+    /// Les budgets que E19 a jugés, provisoires ([`crate::BUDGETS_E19`]).
+    pub budgets: BudgetsE19,
+    /// Les octets que le moteur remet à zéro avant chaque appel du module, d'où son
+    /// coût fixe ; `None` : le module n'est pas chargé.
+    pub octets_remis_a_zero: Option<u64>,
 }
 
 pub(crate) fn hex(o: &[u8]) -> String {
@@ -146,12 +144,12 @@ impl Rapport {
             .collect()
     }
 
-    /// Le code de sortie de `soiree-epreuve` : 0 si chaque contrôle demandé est réussi
-    /// ou sans objet ; 1 si le jeu échoue ; 2 si l'outil a lâché ; 3 si un contrôle
-    /// demandé n'a pas tourné. Un contrôle qu'une version de l'épreuve n'aurait pas
-    /// encore écrit ([`IdControle::ecrit`]) ne changerait pas le code : le texte le
-    /// rappellerait sous le verdict.
-    pub fn code_de_sortie(&self) -> u8 {
+    /// Le code des seuls contrôles : 0 si chaque contrôle demandé est réussi ou sans
+    /// objet ; 1 si le jeu échoue ; 2 si l'outil a lâché ; 3 si un contrôle demandé n'a
+    /// pas tourné. Un contrôle qu'une version de l'épreuve n'aurait pas encore écrit
+    /// ([`IdControle::ecrit`]) ne changerait pas le code : le texte le rappellerait sous
+    /// le verdict.
+    pub fn code_des_controles(&self) -> u8 {
         let demandes: Vec<&ResultatControle> = self
             .controles
             .iter()
@@ -177,7 +175,140 @@ impl Rapport {
         }
     }
 
+    /// Les sept étapes de l'épreuve du CONTRAT, faites ou non (RESTE-PHASE-1, point 13).
+    /// L'étape 1 vient de [`Rapport::compilation`] ; les étapes 2, 4 et 7, des contrôles
+    /// qui les font ([`Etape::controles`]) ; les étapes 3, 5 et 6 ne sont pas faites
+    /// par cette version, chacune avec sa raison.
+    pub fn etapes(&self) -> Vec<ResultatEtape> {
+        Etape::TOUTES
+            .into_iter()
+            .map(|etape| match etape {
+                Etape::Compiler => match &self.compilation {
+                    Some(c) => ResultatEtape {
+                        etape,
+                        issue: c.issue(),
+                        detail: format!("depuis {} : la crate {}, `jeu::module!({})`", c.dossier, c.module, c.jeu),
+                    },
+                    None => ResultatEtape {
+                        etape,
+                        issue: IssueEtape::PasFaite(String::from(
+                            "le module a été donné tout compilé : ni ses sources, ni ses règles d'écriture, ni sa copie native ne sont vus par l'épreuve",
+                        )),
+                        detail: String::new(),
+                    },
+                },
+                Etape::Constater | Etape::Chasser | Etape::Mesurer => self.etape_des_controles(etape),
+                Etape::Examiner | Etape::Injecter | Etape::Reverifier => ResultatEtape {
+                    etape,
+                    issue: IssueEtape::PasFaite(String::from("cette version de l'épreuve ne la fait pas")),
+                    detail: String::new(),
+                },
+            })
+            .collect()
+    }
+
+    /// Une étape que des contrôles font : échouée si l'un d'eux échoue, pas faite si
+    /// l'un d'eux n'est pas demandé, n'a pas tourné ou a vu l'outil lâcher, faite sinon.
+    fn etape_des_controles(&self, etape: Etape) -> ResultatEtape {
+        let ids = etape.controles();
+        let noms = |f: &dyn Fn(&ResultatControle) -> bool| -> Vec<&'static str> {
+            self.controles
+                .iter()
+                .filter(|r| ids.contains(&r.id) && f(r))
+                .map(|r| r.id.nom())
+                .collect()
+        };
+        let echecs = noms(&|r| self.plan.demande(r.id) && r.issue == IssueControle::EchecDuJeu);
+        let manquent = noms(&|r| {
+            !self.plan.demande(r.id)
+                || matches!(
+                    r.issue,
+                    IssueControle::PasExecute | IssueControle::PanneDeLOutil
+                )
+        });
+        let tous: Vec<&str> = ids.iter().map(|c| c.nom()).collect();
+        let mut detail = format!("par {}", tous.join(", "));
+        if etape == Etape::Constater && !self.natif {
+            detail.push_str(" ; copie native absente : le module n'est comparé qu'à lui-même");
+        }
+        // Ce que le CONTRAT range dans l'étape, et que cette version ne fait pas.
+        let manque_au_contrat = (etape == Etape::Chasser).then_some(
+            "sans la comparaison de chaque partie jouée avec et sans prédiction, que le CONTRAT range dans l'étape 4 et que cette version n'a pas (INTERFACE, § 5.3)",
+        );
+        let issue = if !echecs.is_empty() {
+            let _: Result<(), std::fmt::Error> =
+                write!(detail, " ; échoue : {}", echecs.join(", "));
+            IssueEtape::Echouee
+        } else if !manquent.is_empty() {
+            IssueEtape::PasFaite(format!(
+                "pas demandé, pas exécuté ou panne de l'outil : {}",
+                manquent.join(", ")
+            ))
+        } else if let Some(m) = manque_au_contrat {
+            IssueEtape::FaiteEnPartie(String::from(m))
+        } else {
+            IssueEtape::Faite
+        };
+        ResultatEtape {
+            etape,
+            issue,
+            detail,
+        }
+    }
+
+    /// Le code de sortie de `soiree-epreuve` : 1 si le jeu échoue (un contrôle, ou une
+    /// règle de l'étape 1) ; 2 si l'outil a lâché ; 3 si un contrôle demandé n'a pas
+    /// tourné ou si une étape exigée n'est pas faite ; 0 sinon. Un module donné tout
+    /// compilé ne rend donc jamais 0 : l'étape 1 n'est pas faite.
+    pub fn code_de_sortie(&self) -> u8 {
+        let controles = self.code_des_controles();
+        let etapes = self.etapes();
+        if controles == 1 || etapes.iter().any(|e| e.issue == IssueEtape::Echouee) {
+            1
+        } else if controles == 2 {
+            2
+        } else if controles == 3 || etapes.iter().any(ResultatEtape::manque) {
+            3
+        } else {
+            0
+        }
+    }
+
+    /// Le verdict d'un code 0 : ce que cette version de l'épreuve sait faire passe, et
+    /// ce qu'elle ne fait pas du CONTRAT est nommé, étape par étape. Le code 0 ne dit
+    /// pas que le jeu passe l'épreuve du CONTRAT entière (revue de la phase 2,
+    /// constat 15).
+    pub fn verdict_du_code_0(&self) -> String {
+        let reste: Vec<String> = self
+            .etapes()
+            .into_iter()
+            .filter_map(|e| match e.issue {
+                IssueEtape::PasFaite(_) => {
+                    Some(format!("{}. {} pas faite", e.etape.numero(), e.etape.nom()))
+                }
+                IssueEtape::FaiteEnPartie(_) => Some(format!(
+                    "{}. {} faite en partie",
+                    e.etape.numero(),
+                    e.etape.nom()
+                )),
+                IssueEtape::Faite | IssueEtape::Echouee => None,
+            })
+            .collect();
+        if reste.is_empty() {
+            String::from("le jeu passe chaque étape du CONTRAT et chaque contrôle demandé")
+        } else {
+            format!(
+                "le jeu passe chaque contrôle demandé et chaque étape que cette version de l'épreuve exige ; elle ne fait pas toute l'épreuve du CONTRAT : {}",
+                reste.join(", ")
+            )
+        }
+    }
+
     /// Le rapport lisible.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "le rapport se lit d'un trait : le plan, chaque contrôle, chaque étape, le verdict"
+    )]
     pub fn texte(&self) -> String {
         let mut s = String::new();
         let _: Result<(), std::fmt::Error> = writeln!(s, "Épreuve du module {}", hex(&self.module));
@@ -192,6 +323,19 @@ impl Rapport {
             if self.natif { "comparée" } else { "absente" },
         );
         let _: Result<(), std::fmt::Error> = writeln!(s, "Joué : {}", self.joue);
+        let monde: Vec<String> = self
+            .monde
+            .compteurs()
+            .iter()
+            .map(|(n, v)| format!("{n} {v}"))
+            .collect();
+        let _: Result<(), std::fmt::Error> =
+            writeln!(s, "Le monde simulé a fait : {}.", monde.join(", "));
+        let _: Result<(), std::fmt::Error> = writeln!(
+            s,
+            "Budgets de E19 {}.",
+            self.budgets.decrire(self.octets_remis_a_zero)
+        );
         for r in &self.controles {
             let raison = match &r.issue {
                 IssueControle::SansObjet(raison) => format!(" ({raison})"),
@@ -220,12 +364,46 @@ impl Rapport {
                 );
             }
         }
+        let _: Result<(), std::fmt::Error> = writeln!(s, "Étapes de l'épreuve du CONTRAT :");
+        for e in self.etapes() {
+            let exigence = match e.etape.exigence() {
+                Exigence::Exigee => String::from("exigée"),
+                Exigence::NonExigee(raison) => format!("non exigée : {raison}"),
+            };
+            let raison = match &e.issue {
+                IssueEtape::PasFaite(r) | IssueEtape::FaiteEnPartie(r) => format!(" ({r})"),
+                IssueEtape::Faite | IssueEtape::Echouee => String::new(),
+            };
+            let _: Result<(), std::fmt::Error> = writeln!(
+                s,
+                "  {}. {} — {}{raison} [{exigence}]",
+                e.etape.numero(),
+                e.etape.nom(),
+                e.issue.nom()
+            );
+            if !e.detail.is_empty() {
+                let _: Result<(), std::fmt::Error> = writeln!(s, "      {}", e.detail);
+            }
+            if e.etape == Etape::Compiler
+                && let Some(c) = &self.compilation
+            {
+                for r in &c.regles {
+                    let _: Result<(), std::fmt::Error> =
+                        writeln!(s, "      {} : {}", r.nom, r.issue.nom());
+                    for ligne in r.detail.lines().take(12) {
+                        let _: Result<(), std::fmt::Error> = writeln!(s, "        {ligne}");
+                    }
+                }
+            }
+        }
         let code = self.code_de_sortie();
         let verdict = match code {
-            0 => "le jeu passe les contrôles écrits qui sont demandés",
-            1 => "le jeu échoue",
-            2 => "l'outil a lâché : rien n'est jugé",
-            _ => "un contrôle écrit et demandé n'a pas tourné",
+            0 => self.verdict_du_code_0(),
+            1 => String::from("le jeu échoue"),
+            2 => String::from("l'outil a lâché : rien n'est jugé"),
+            _ => String::from(
+                "une étape exigée n'est pas faite, ou un contrôle écrit et demandé n'a pas tourné",
+            ),
         };
         let _: Result<(), std::fmt::Error> = writeln!(s, "Verdict : {verdict} (code {code}).");
         let pas_ecrits: Vec<&str> = self
@@ -241,15 +419,12 @@ impl Rapport {
                 pas_ecrits.join(", ")
             );
         }
-        let etapes: Vec<String> = ETAPES_NON_EXECUTEES
-            .iter()
-            .map(|(n, e)| format!("{n}. {e}"))
-            .collect();
-        let _: Result<(), std::fmt::Error> = writeln!(
-            s,
-            "Étapes de l'épreuve du CONTRAT que ce binaire n'exécute pas, jamais comptées réussies : {}.",
-            etapes.join(" ; ")
-        );
+        if self.compilation.is_none() {
+            let _: Result<(), std::fmt::Error> = writeln!(
+                s,
+                "Module seul : l'épreuve n'est pas partie des sources (étape 1 pas faite) ; `soiree-epreuve <dossier du jeu>` la fait."
+            );
+        }
         if !self.natif {
             let _: Result<(), std::fmt::Error> = writeln!(
                 s,
@@ -260,6 +435,10 @@ impl Rapport {
     }
 
     /// Le rapport en JSON.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "le rapport JSON s'écrit d'un trait, dans l'ordre du rapport lisible"
+    )]
     pub fn json(&self) -> String {
         let controles = self
             .controles
@@ -322,20 +501,87 @@ impl Rapport {
             ),
             ("natif", Json::Booleen(self.natif)),
             (
-                "etapes_non_executees",
+                "compilation",
+                self.compilation
+                    .as_ref()
+                    .map_or(Json::Booleen(false), Compilation::json),
+            ),
+            (
+                "etapes",
                 Json::Liste(
-                    ETAPES_NON_EXECUTEES
+                    self.etapes()
                         .iter()
-                        .map(|(n, e)| {
-                            Json::Objet(vec![
-                                ("etape", Json::Nombre(u64::from(*n))),
-                                ("quoi", Json::texte(e)),
-                            ])
+                        .map(|e| {
+                            let mut o = vec![
+                                ("etape", Json::Nombre(u64::from(e.etape.numero()))),
+                                ("nom", Json::texte(e.etape.nom())),
+                                ("quoi", Json::texte(e.etape.quoi())),
+                                (
+                                    "exigee",
+                                    Json::Booleen(e.etape.exigence() == Exigence::Exigee),
+                                ),
+                                ("issue", Json::texte(e.issue.code())),
+                                ("detail", Json::texte(&e.detail)),
+                            ];
+                            if let IssueEtape::PasFaite(r) | IssueEtape::FaiteEnPartie(r) = &e.issue
+                            {
+                                o.push(("raison", Json::texte(r)));
+                            }
+                            if let Exigence::NonExigee(r) = e.etape.exigence() {
+                                o.push(("non_exigee", Json::texte(r)));
+                            }
+                            Json::Objet(o)
                         })
                         .collect(),
                 ),
             ),
             ("joue", Json::texte(&self.joue)),
+            (
+                "monde",
+                Json::Objet(
+                    self.monde
+                        .compteurs()
+                        .iter()
+                        .map(|(n, v)| (*n, Json::Nombre(*v)))
+                        .collect(),
+                ),
+            ),
+            (
+                "budgets",
+                Json::Objet(vec![
+                    ("provisoires", Json::Booleen(true)),
+                    ("ps_par_unite", Json::Nombre(self.budgets.ps_par_unite)),
+                    ("fixe_ns", Json::Nombre(self.budgets.fixe_ns)),
+                    (
+                        "ps_par_kio_remis_a_zero",
+                        Json::Nombre(self.budgets.ps_par_kio_remis_a_zero),
+                    ),
+                    ("marge", Json::Nombre(self.budgets.marge)),
+                    (
+                        "part_du_jeu_pour_cent",
+                        Json::Nombre(self.budgets.part_du_jeu_pour_cent),
+                    ),
+                    (
+                        "part_des_entrees_pour_cent",
+                        Json::Nombre(self.budgets.part_des_entrees_pour_cent),
+                    ),
+                    ("image_max", Json::Nombre(self.budgets.image_max)),
+                    ("image_courante", Json::Nombre(self.budgets.image_courante)),
+                    ("lecture", Json::Nombre(self.budgets.lecture)),
+                    ("pire_cas", Json::Nombre(self.budgets.pire_cas)),
+                    (
+                        "octets_remis_a_zero",
+                        self.octets_remis_a_zero
+                            .map_or(Json::Booleen(false), Json::Nombre),
+                    ),
+                    (
+                        "cout_fixe",
+                        self.octets_remis_a_zero.map_or(Json::Booleen(false), |o| {
+                            Json::Nombre(self.budgets.cout_fixe(o))
+                        }),
+                    ),
+                ]),
+            ),
             ("controles", Json::Liste(controles)),
             (
                 "code_de_sortie",

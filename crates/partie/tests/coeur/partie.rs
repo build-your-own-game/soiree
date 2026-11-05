@@ -177,6 +177,43 @@ fn panne_au_temps_repart_du_dernier_point_sain() {
     assert_eq!(r.coeur(), p.coeur());
 }
 
+/// § 4.6 : une panne avant le premier `Temps` accepté d'une nouvelle partie repart de
+/// la création de cette partie. Avant, le point sain restait celui de la partie
+/// d'avant (ou aucun) : la définitive y revenait, avec la mémoire d'une autre partie
+/// que celle du cœur (trouvé par le fautif `panique-au-temps` de l'épreuve, dont la
+/// première manche de chaque partie panique à son premier `Temps`).
+#[test]
+fn panne_avant_le_premier_temps_repart_de_la_nouvelle_partie() {
+    let mut p = ouvrir(dormant());
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::Ajouter(3), 1, 1));
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::NouvellePartie, 2, 2));
+    let _: Vec<partie::Avancee> = avancer(&mut p, 4);
+    let debut = p
+        .journal()
+        .lignes()
+        .iter()
+        .rposition(|l| matches!(l, Ligne::Partie { .. }))
+        .expect("la nouvelle partie est au journal");
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::Ajouter(5), 5, 3));
+    // Le temps panique avant même d'être demandé : aucun `Temps` n'est accepté dans
+    // cette partie.
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::PaniquerAuTemps, 6, 4));
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::Reveiller, 7, 5));
+    let avs = avancer(&mut p, 14);
+    assert_eq!(avs.last().unwrap().en_panne, Oui::Oui);
+    assert_eq!(p.repartir().unwrap(), Oui::Oui);
+    let Some(Ligne::Reprise { depuis, .. }) = p.journal().lignes().last() else {
+        panic!("la reprise est au journal");
+    };
+    assert!(
+        *depuis > debut,
+        "la reprise part de la nouvelle partie (ligne {debut}), pas d'avant : {depuis}"
+    );
+    // La définitive est la nouvelle partie à sa création : ni l'ajout de la partie
+    // d'avant, ni ceux d'après la création.
+    assert_eq!(etat(&p).total, 0);
+}
+
 /// § 4.6 : une lecture fautive garde la dernière vue valide.
 #[test]
 fn faute_en_lecture_garde_la_derniere_vue() {
@@ -254,6 +291,38 @@ fn reprise_rend_la_meme_empreinte() {
         assert_eq!(r.coeur(), p.coeur());
         assert_eq!(r.journal(), p.journal());
     }
+}
+
+/// § 4.5, RESTE-PHASE-1 (point 25, cargo-mutants) : un journal dont des pas n'ont
+/// aucune arrivée, et qui finit par des pas vides, se rejoue pas pour pas. Chaque
+/// arrivée est rejouée au pas où elle a été placée, pas au premier pas joué après la
+/// précédente ; et le rejeu va jusqu'au dernier pas définitif, pas seulement jusqu'à
+/// la dernière ligne.
+#[test]
+fn rejeu_aligne_les_arrivees_sur_leur_pas() {
+    let mut p = ouvrir(dormant());
+    let depart = p.point().unwrap();
+    for s in [1u64, 5, 9] {
+        let _: Vec<partie::Avancee> = avancer(&mut p, s - 1);
+        let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::Ajouter(1), s, s));
+    }
+    let _: Vec<partie::Avancee> = avancer(&mut p, 40);
+    let places: Vec<u64> = entrees(p.journal())
+        .iter()
+        .map(|e| e.place.numero())
+        .collect();
+    assert_eq!(places, [1, 5, 9], "trois arrivées, chacune à son pas");
+    let mut r = Partie::reprendre(
+        FabriqueModele::new(dormant()),
+        ouverture(),
+        &depart,
+        p.journal(),
+    )
+    .unwrap();
+    assert_eq!(r.definitif(), p.definitif(), "le rejeu va jusqu'au pas 40");
+    assert_eq!(r.coeur(), p.coeur());
+    assert_eq!(r.journal(), p.journal());
+    assert_eq!(r.empreinte().unwrap(), p.empreinte().unwrap());
 }
 
 /// § 4.5 : un rejeu qui ne retrouve pas l'empreinte notée est une panne de l'outil.
@@ -352,6 +421,83 @@ fn gel_rattrape_au_plus_puis_saute() {
         Some(&(pas(1002), 0)),
         "le saut n'est dit qu'une fois"
     );
+}
+
+/// D14, § 4.5, RESTE-PHASE-1 (point 25, cargo-mutants) : le saut d'un gel se rejoue au
+/// pas où il a eu lieu, ni plus tôt, ni jamais. Les pas d'avant le saut sont vides (le
+/// jeu ne veut le temps qu'au pas 1 500) : un rejeu qui sauterait dès que la ligne du
+/// saut est sous le curseur jetterait trois pas de plus, et le `Temps` d'après le dirait.
+#[test]
+fn rejeu_refait_le_saut_au_pas_du_gel() {
+    let mut reglage = dormant();
+    reglage.reveil = jeu_abi::ReveilFil::A(1500);
+    let mut p = ouvrir(reglage.clone());
+    let depart = p.point().unwrap();
+    let _: partie::Avancee = jouer(&mut p, geste(1, GesteModele::Ajouter(1), 1, 1));
+    let av = p.avancer(pas(1000)).unwrap();
+    assert_eq!(
+        av.saut,
+        Duree::pas(996),
+        "trois pas rattrapés, puis le saut"
+    );
+    let _: Vec<partie::Avancee> = avancer(&mut p, 1600);
+    assert_eq!(
+        temps(p.journal()).first(),
+        Some(&(pas(1500), 996)),
+        "aucun temps avant le réveil, puis le saut tout entier"
+    );
+    let mut r = Partie::reprendre(
+        FabriqueModele::new(reglage),
+        ouverture(),
+        &depart,
+        p.journal(),
+    )
+    .unwrap();
+    assert_eq!(r.definitif(), p.definitif());
+    assert_eq!(r.coeur(), p.coeur());
+    assert_eq!(r.journal(), p.journal());
+    assert_eq!(r.empreinte().unwrap(), p.empreinte().unwrap());
+}
+
+/// § 4.1, § 4.5, RESTE-PHASE-1 (point 25, cargo-mutants) : une pause se rejoue au pas
+/// où elle a commencé et à celui où elle a fini, et chaque vue au pas où elle a été
+/// notée. Pendant la pause, aucun `Temps` : les pas sont vides, et un rejeu qui
+/// finirait la pause dès que sa ligne est sous le curseur livrerait le temps trop tôt.
+#[test]
+fn rejeu_refait_la_pause_et_les_vues_a_leur_pas() {
+    let mut p = ouvrir(ordinaire());
+    let depart = p.point().unwrap();
+    let _: Vec<partie::Avancee> = avancer(&mut p, 5);
+    let _: Vec<partie::Vue> = p.regarder(&[RegardFil::Ecran]).unwrap();
+    assert_eq!(p.pause(Oui::Oui).unwrap(), Oui::Oui);
+    // Rien n'est noté pendant la pause : sa fin suit son début au journal.
+    let _: Vec<partie::Avancee> = avancer(&mut p, 10);
+    assert_eq!(p.pause(Oui::Non).unwrap(), Oui::Oui);
+    let _: Vec<partie::Avancee> = avancer(&mut p, 15);
+    let _: Vec<partie::Vue> = p.regarder(&[RegardFil::Ecran]).unwrap();
+    let _: Vec<partie::Avancee> = avancer(&mut p, 20);
+    let lignes = p.journal().lignes();
+    assert!(lignes.iter().any(|l| matches!(l, Ligne::Vue { .. })));
+    assert_eq!(
+        lignes
+            .iter()
+            .filter(|l| matches!(l, Ligne::Pause { .. }))
+            .count(),
+        2
+    );
+    let pas_du_temps: Vec<u64> = temps(p.journal()).iter().map(|(s, _)| s.numero()).collect();
+    assert_eq!(pas_du_temps, (1..=5).chain(11..=20).collect::<Vec<u64>>());
+    let mut r = Partie::reprendre(
+        FabriqueModele::new(ordinaire()),
+        ouverture(),
+        &depart,
+        p.journal(),
+    )
+    .unwrap();
+    assert_eq!(r.definitif(), p.definitif());
+    assert_eq!(r.coeur(), p.coeur());
+    assert_eq!(r.journal(), p.journal());
+    assert_eq!(r.empreinte().unwrap(), p.empreinte().unwrap());
 }
 
 /// CAT-14 : le même temps, découpé autrement sous le plafond de rattrapage, donne la
@@ -515,6 +661,32 @@ fn tenu_numero_ancien_ecarte() {
     let _: Placement = p.arriver(tenu(1, 0, 6, 11, 4), instant(4)).unwrap();
     avancer(&mut p, 4);
     assert_eq!(etat(&p).tenus, vec![(1, 0, 7)]);
+}
+
+/// SAL-38 : une page rechargée repart de 1, et chacun de ses tenus serait écarté.
+/// L'accueil lui redonne le plus grand numéro reçu, livré ou en attente de son pas ;
+/// numérotée au-dessus, elle est entendue au premier tenu.
+#[test]
+fn l_accueil_d_une_page_rechargee_realigne_ses_tenus() {
+    let mut p = ouvrir(avec_tenu(None, None, 60));
+    assert_eq!(p.numero_tenu(a(1)), None, "rien reçu");
+    let _: partie::Avancee = jouer(&mut p, tenu(1, 0, 5, 40, 1));
+    let _: Placement = p.arriver(tenu(1, 1, 2, 41, 2), instant(2)).unwrap();
+    assert_eq!(p.numero_tenu(a(1)), Some(41), "le tenu en attente compte");
+    assert_eq!(p.numero_tenu(a(2)), None, "par appareil");
+    avancer(&mut p, 2);
+    // La page rechargée repart de 1 : écartée.
+    assert_eq!(
+        p.arriver(tenu(1, 0, 7, 1, 3), instant(3)).unwrap(),
+        Placement::Perimee
+    );
+    let suivant = p.numero_tenu(a(1)).unwrap() + 1;
+    assert!(matches!(
+        p.arriver(tenu(1, 0, 7, suivant, 3), instant(3)).unwrap(),
+        Placement::Place { .. }
+    ));
+    avancer(&mut p, 3);
+    assert_eq!(etat(&p).tenus, vec![(1, 1, 2), (1, 0, 7)]);
 }
 
 /// REM-13, PUN-03 : au plus `debit_max` changements par seconde, et le dernier gagne.

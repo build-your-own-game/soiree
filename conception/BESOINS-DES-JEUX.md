@@ -30,6 +30,8 @@
 | 18 | Des commandes d'organisateur hors de la scène | Sidequest B2 | **refusé** | — |
 | 19 | Le jeu relâche un état tenu | Sidequest B5 | **refusé** | — |
 | 20 | La scène de la phase 2 : mesure de texte, boîte d'un composant, info-bulle, nom accessible, texte de remplacement, sélecteur nommé, nom de fichier d'un lien, images non dessinées, police nommée, glisser annulé par l'état | Tier list 6, 7, 8 ; Punchline 6 ; Sidequest B9 | **différé** à la phase 2 ; la police nommée **refusée** | — |
+| 21 | La période de lecture de l'hypothèse de E11 n'est pas publique | Sidequest B10 | **accordé** (phase 2, le monde simulé) | `jeu-abi`, `jeu` : `PERIODE_HYPOTHESE` |
+| 22 | Aucune soirée ne joue les fichiers (imports d'images, restaurations) | Tier list (constat de la revue) | **accordé** (phase 2, le monde simulé) | `epreuve` : `src/fichiers.rs` ; `jeu::fichiers::png_uni` |
 
 L'ABI ne change pas : `jeu_abi::ABI` vaut toujours 2, et un module compilé avant ces changements se charge et s'éprouve tel quel. `reecriture::VERSION` passe à 2.
 
@@ -235,7 +237,7 @@ Pour une ligne de résultats : annuler une ligne déjà ajoutée au flux ne l'ef
 
 Les colonnes « avant » des trois jeux sont celles de leurs comptes rendus (même date, même machine, même module) ; celles de `devine` et d'`ardoise` sont mesurées ici. Un nœud de la scène d'`ardoise` coûte encore environ 4 800 unités : c'est maintenant du travail exécuté (la clé, la copie du nœud, son encodage, puis celui de la réponse), qu'une optimisation de `jeu::Scene` pourrait réduire ; elle n'est pas faite.
 
-**Ce qui reste au mainteneur.** Le budget lui-même (`BUDGET_LECTURE`, 2²¹) reste un point de départ non mesuré : la question 12 de § 13 est la sienne. Avec ce compte, le 99ᵉ centile de `Regarder` de Tier list, bot bridé, est à 38 % du budget au lieu de 94 %.
+**Ce qui reste au mainteneur.** Le budget lui-même (`BUDGET_LECTURE`, 2²¹ à l'époque ; depuis la phase 2, `BudgetsE19::lecture`, dérivé du temps d'une image et dit provisoire, voir `crates/epreuve/src/budgets.rs`) reste à fixer : la question 12 de § 13 est la sienne. Avec ce compte, le 99ᵉ centile de `Regarder` de Tier list, bot bridé, est à 38 % du budget au lieu de 94 %.
 
 **Vérifié avec ce commun** (le 2026-11-04, aarch64-apple-darwin, `soiree-epreuve` plan standard, sans copie native, sur les modules livrés) : Punchline code 0 en 37 s, Tier list code 0 en 39 s (il rendait 3, besoin 2), Sidequest code 0 en 5 min 08 s. Le temps de Sidequest est celui qu'il rapportait avec l'ancien compte (5 min 01 s) : compter par segment ne ralentit pas l'épreuve de façon visible.
 
@@ -297,6 +299,26 @@ Rien de ce qui suit n'a de sens sans rendu ni page, qui sont la phase 2 (§ 8, �
 
 ---
 
+## 21. La période de lecture de l'hypothèse — accordé
+
+**La réponse du commun.** Une constante publique et documentée, définie une fois : `jeu_abi::PERIODE_HYPOTHESE` (10 pas), réexportée par `jeu` (`jeu::PERIODE_HYPOTHESE`, et dans le prélude) et lue par l'épreuve. Elle fait partie du contrat de la version : la changer se dit au `CHANGELOG.md`.
+
+**Dans Sidequest.** Remplacer la promesse écrite par une vérification : `const _: () = assert!(jeu::PERIODE_HYPOTHESE.en_pas() <= ECART_DES_LECTURES);`. Le test `l_hypothese_tient_quel_que_soit_l_ecart_des_lectures` peut rester.
+
+**Ce qui n'est pas fait.** L'hypothèse ne *reçoit* pas la période : il faudrait changer la signature de `Coupure::hypothese` dans chaque jeu, pour un besoin qu'une constante vérifiée à la compilation couvre.
+
+## 22. Les fichiers dans les soirées — accordé
+
+**La réponse du commun.** Les fichiers qu'apporte un bot de l'écran passent par le sélecteur simulé du commun et arrivent au jeu (`Composant::Fichiers`) ; `Lire`, `Image`, `Rendu` et `Telecharger` sont servis avec de vrais contenus : octets lus, vrai décodage PNG, recadrage et réduction au carré, vrai PNG en sortie (`WebpSinonPng` donne un PNG), un fichier sur huit trop gros, des fichiers abîmés dans la soirée hostile, des délais jusqu'à quinze secondes. Le détail est dans `crates/epreuve/src/fichiers.rs` et `RESTE-PHASE-1.md`.
+
+**Dans Tier list.** Le bot apporte des PNG factices (une signature suivie de n'importe quoi) : le monde les rend `Illisible`, comme le ferait un navigateur. Pour jouer le chemin d'une image lue, réduite et rangée, le bot apporte de vrais PNG : `jeu::fichiers::png_uni(largeur, hauteur, couleur)`. Les restaurations (sauvegardes saines, abîmées, trop grosses) se jouent sans rien changer. Le test du jeu qui jouait ces chemins à la place de l'épreuve peut rester ; E13 voit désormais un fichier abîmé qui ferait paniquer le jeu.
+
+## 23. E8 prend le dernier bulletin d'un vote pour une fuite (Punchline, BESOINS-COMMUN § 9) — accordé
+
+**La réponse du commun.** La variation de E8 compare désormais les valeurs secrètes vidées une à une, dans l'ordre, le hasard exclu (`controles::secret_change`) : une longueur qui change (un score dont le varint grandit à la révélation) ne fait plus croire qu'un secret a changé. C'est le correctif que l'agent de Punchline avait essayé dans une copie du commun. Tenu par `controles::tests::une_longueur_qui_change_ne_change_aucun_secret` ; `RESTE-PHASE-1.md`, « Revue de la phase 2 », constat 8.
+
+**Dans Punchline.** Rien à changer. Sur son module (`--wasm … --controles E8`, plan standard, 2026-11-05, machine de l'hôte) : E8 réussi, 2 820 évaluations, aucun échec (86 avant). Les autres changements de la revue (règles nouvelles de l'étape 1, départ pour de bon, doublons, arriérés de E19, plancher de E16) sont au `CHANGELOG.md` ; ils peuvent faire échouer un jeu qui passait.
+
 ## Les changements d'API, précisément
 
 Aucun changement n'est une rupture de type pour un jeu qui compile aujourd'hui : chaque ajout est une fonction ou une méthode nouvelle, ou une méthode cachée avec un corps par défaut. Les ruptures de sens sont marquées.
@@ -322,7 +344,7 @@ Aucun changement n'est une rupture de type pour un jeu qui compile aujourd'hui :
 
 ## Ce qui n'est pas fait
 
-- **Le téléphone simulé ne redit pas son état tenu.** La page de la phase 2 devra le redire (SQ-01) pour que la fraîcheur et l'âge (besoin 9) ne relâchent pas un pouce resté appuyé ; l'épreuve ne le simule pas encore. Avec un jeu qui n'envoie un tenu qu'au changement, l'âge peut relâcher dans l'épreuve une valeur qu'une vraie page aurait redite.
+- ~~**Le téléphone simulé ne redit pas son état tenu.**~~ Fait en phase 2 (le monde simulé) : la page simulée redit son tenu toutes les 250 ms, fait maintenant (REM-13, `RESTE-PHASE-1.md`, point 22). La page réelle de la phase 2 devra en faire autant.
 - **Le coût d'un nœud de scène** reste d'environ 4 800 unités de carburant (mesuré sur `ardoise`) ; `jeu::Scene` n'est pas optimisée.
 - **Les budgets de E19** restent des points de départ (question 12).
 - **Les modules des jeux n'ont pas été recompilés** contre ce commun : les mesures de ce document portent sur les modules livrés, avec leurs contournements.

@@ -18,9 +18,13 @@
 )]
 
 mod modules;
+mod monde;
 mod pile;
+mod plan_standard;
 
-use epreuve::{FabriqueDynamique, IdControle, IssueControle, Panne, Plan, Rapport};
+use epreuve::{
+    Etape, FabriqueDynamique, IdControle, IssueControle, IssueEtape, Panne, Plan, Rapport,
+};
 use fautifs::jeux;
 use jeu_abi::Duree;
 use jeu_natif::FabriqueNative;
@@ -41,6 +45,8 @@ fn lisible(r: &Rapport) -> String {
 }
 
 /// Chaque contrôle est réussi ou sans objet, et chaque réussite a des évaluations.
+/// Le module est donné tout compilé : l'étape 1 n'est pas faite, et c'est la seule
+/// étape exigée qui manque (code 3, jamais 0 ; RESTE-PHASE-1, point 13).
 fn passe_tout(r: &Rapport) {
     for c in &r.controles {
         assert!(
@@ -54,7 +60,34 @@ fn passe_tout(r: &Rapport) {
             assert!(c.evaluations > 0, "{} réussi sans évaluation", c.id);
         }
     }
-    assert_eq!(r.code_de_sortie(), 0, "{}", lisible(r));
+    assert_eq!(r.code_des_controles(), 0, "{}", lisible(r));
+    let manquent: Vec<Etape> = r
+        .etapes()
+        .into_iter()
+        .filter(epreuve::ResultatEtape::manque)
+        .map(|e| e.etape)
+        .collect();
+    assert_eq!(manquent, [Etape::Compiler], "{}", lisible(r));
+    for e in r.etapes() {
+        if matches!(e.etape, Etape::Constater | Etape::Mesurer) {
+            assert_eq!(e.issue, IssueEtape::Faite, "{:?}\n{}", e.etape, lisible(r));
+        }
+        // Revue de la phase 2, constat 15 : l'étape 4 du CONTRAT compare chaque partie
+        // avec et sans prédiction, que cette version n'a pas ; elle n'est que faite en
+        // partie, et le verdict d'un code 0 le dit.
+        if e.etape == Etape::Chasser {
+            assert!(
+                matches!(e.issue, IssueEtape::FaiteEnPartie(_)),
+                "{:?}\n{}",
+                e.issue,
+                lisible(r)
+            );
+        }
+    }
+    let v = r.verdict_du_code_0();
+    assert!(v.contains("4. Chasser faite en partie"), "{v}");
+    assert!(v.contains("3. Examiner pas faite"), "{v}");
+    assert_eq!(r.code_de_sortie(), 3, "{}", lisible(r));
 }
 
 /// Le fautif fait échouer exactement `vise`, et aucun autre contrôle écrit ; le
@@ -89,6 +122,9 @@ fn devine_passe_tout() {
         &Plan::court(GRAINE),
     );
     passe_tout(&r);
+    // Le monde réel a vraiment joué chacun de ses comportements (RESTE-PHASE-1, points
+    // 20 à 22).
+    monde::le_monde_reel_a_tout_fait(&r);
     // `devine` n'a pas de fin : E2 est sans objet, avec la raison qu'il déclare.
     assert_eq!(
         r.resultat(IdControle::E2).map(|c| c.issue.clone()),
@@ -197,13 +233,27 @@ fautif!(
     jeux::AttendUnAbsent,
     IdControle::E5
 );
-// PUN-27, HIS-44 : un refus ne change rien.
-fautif!(
-    refuse_apres_avoir_ecrit_echoue_e6,
-    "refuse-apres-avoir-ecrit",
-    jeux::RefuseApresAvoirEcrit,
-    IdControle::E6
-);
+/// PUN-27, HIS-44 : un refus ne change rien. Ce fautif montre à l'écran un `static`
+/// qu'un refus écrit : E6 le voit au refus. Depuis que E8 recharge la projection dans
+/// une instance neuve (revue de la phase 2, constat 1), E8 le voit aussi : la vue de
+/// l'écran n'est plus une fonction de la projection, puisque le `static` n'est pas
+/// dans l'état. Les deux échecs sont justes, et seuls ces deux-là ont lieu ; l'étape 1
+/// refuserait ce `static` avant de jouer (« rien hors de l'état »).
+#[test]
+fn refuse_apres_avoir_ecrit_echoue_e6_et_e8() {
+    let r = eprouver(
+        "refuse-apres-avoir-ecrit",
+        &mut FabriqueNative::<jeux::RefuseApresAvoirEcrit>::new(),
+        &Plan::court(GRAINE),
+    );
+    assert_eq!(
+        r.echecs(),
+        [IdControle::E6, IdControle::E8],
+        "{}",
+        lisible(&r)
+    );
+    assert_eq!(r.code_de_sortie(), 1);
+}
 fautif!(
     vue_qui_ecrit_echoue_e7,
     "vue-qui-ecrit",
@@ -291,6 +341,106 @@ fautif!(
     jeux::BoucleAuVote,
     IdControle::E19
 );
+// RESTE-PHASE-1, point 19 : une vue que seuls les pires cas paient.
+fautif!(
+    pire_cas_trop_lourd_echoue_e19,
+    "pire-cas-trop-lourd",
+    jeux::PireCasTropLourd,
+    IdControle::E19
+);
+// RESTE-PHASE-1, point 18 : une lecture courante trop lourde, qu'une vue de pire cas
+// pourrait être.
+fautif!(
+    fin_trop_lourde_echoue_e19,
+    "fin-trop-lourde",
+    jeux::FinTropLourde,
+    IdControle::E19
+);
+// MESURES-PHASE-1, proposition 1 : le carburant seul ne borne pas la durée d'un appel ;
+// la remise à zéro des zones compte.
+fautif!(
+    zones_lourdes_echoue_e19,
+    "zones-lourdes",
+    jeux::ZonesLourdes,
+    IdControle::E19
+);
+// RESTE-PHASE-1, point 23 : une variante de `Phase` sans pire cas, jamais atteinte.
+fautif!(
+    phase_sans_cas_echoue_e3,
+    "phase-sans-cas",
+    jeux::PhaseSansCas,
+    IdControle::E3
+);
+// OUT-01, RESTE-PHASE-1, point 24 : un invariant déclaré qui n'a jamais tourné.
+fautif!(
+    invariant_jamais_evalue_echoue_e4,
+    "invariant-jamais-evalue",
+    jeux::InvariantJamaisEvalue,
+    IdControle::E4
+);
+// PUN-27, HIS-44, RESTE-PHASE-1, point 11 : un `static` écrit dans `Avant`, que la
+// forme canonique et les vues ne montrent pas au refus.
+fautif!(
+    retient_un_refus_echoue_e6,
+    "retient-un-refus",
+    jeux::RetientUnRefus,
+    IdControle::E6
+);
+
+// RESTE-PHASE-1, point 16 ; CAT-46 : un secret d'un octet, qu'un geste écrit et que
+// le choix public montre. Aucune recherche d'octets ne le trouve : la variation, si.
+fautif!(
+    choix_qui_fuit_echoue_e8,
+    "choix-qui-fuit",
+    jeux::ChoixQuiFuit,
+    IdControle::E8
+);
+
+// Revue de la phase 2, constat 1 (INTERFACE, § 2.2) : le mot secret recopié dans un
+// `static`, que l'écran montre. L'instance de projection de E8 partait de la mémoire
+// de la définitive, et le `static` y passait avec elle : `vue(état) = vue(projection)`
+// tenait à tort. Elle part désormais d'une instance neuve.
+fautif!(
+    secret_dans_un_static_echoue_e8,
+    "secret-dans-un-static",
+    jeux::SecretDansUnStatic,
+    IdControle::E8
+);
+
+// Revue de la phase 2, constat 14 (INTERFACE, § 2.13) : des pires cas sans joueur
+// passent leur cas, leurs invariants et leur scène ; l'écran d'une soirée coûte plus
+// que le plus lourd d'entre eux.
+fautif!(
+    pire_cas_trop_leger_echoue_e16,
+    "pire-cas-trop-leger",
+    jeux::PireCasTropLeger,
+    IdControle::E16
+);
+
+/// La reprise (§ 4.6 ; INTERFACE, § 8.8, `panique_au_temps` ; RESTE-PHASE-1, point 9) :
+/// trois `Temps` qui paniquent mettent la partie en panne ; l'épreuve la fait repartir
+/// (`Partie::repartir`), et la soirée continue jusqu'au bout. Seul E2 échoue, avec la
+/// faute ; le rapport dit la reprise.
+#[test]
+fn panique_au_temps_echoue_e2_et_la_partie_repart() {
+    let r = eprouver(
+        "panique-au-temps",
+        &mut FabriqueNative::<jeux::PaniqueAuTemps>::new(),
+        &Plan::court(GRAINE),
+    );
+    echoue_exactement(&r, IdControle::E2);
+    let e2 = r.resultat(IdControle::E2).expect("au rapport");
+    assert!(
+        e2.detail.contains("trois `Temps` écartés de suite"),
+        "{}",
+        e2.detail
+    );
+    assert!(
+        r.joue.contains("reprise(s) après trois `Temps` écartés"),
+        "{}",
+        r.joue
+    );
+}
 
 /// La fenêtre et la tête (§ 4.2, D12) : le socle sain, avec une fenêtre de douze pas,
 /// passe chaque contrôle, et E12 y est jugé, pas sans objet.
@@ -394,7 +544,8 @@ fn le_binaire_rend_un_code_et_un_json() {
     let bin = env!("CARGO_BIN_EXE_soiree-epreuve");
     let dossier = std::env::temp_dir().join(format!("soiree-epreuve-{}", std::process::id()));
     std::fs::create_dir_all(&dossier).expect("dossier");
-    for (nom, code) in [("devine", 0), ("declaration-incoherente", 1)] {
+    // Un module seul ne rend jamais 0 : l'étape 1 n'est pas faite (point 13).
+    for (nom, code) in [("devine", 3), ("declaration-incoherente", 1)] {
         let chemin = dossier.join(format!("{nom}.wasm"));
         std::fs::write(&chemin, modules::module(nom).1).expect("écrire le module");
         let json = dossier.join(format!("{nom}.json"));
@@ -407,14 +558,18 @@ fn le_binaire_rend_un_code_et_un_json() {
         let texte = String::from_utf8_lossy(&sortie.stdout);
         assert_eq!(sortie.status.code(), Some(code), "{nom} :\n{texte}");
         assert!(texte.contains("E1 Constat"), "{texte}");
-        // Un code 0 ne se lit pas comme l'épreuve entière du contrat : les étapes que
-        // le binaire n'exécute pas sont nommées, et la copie native absente aussi.
-        for etape in ["1. compiler", "3. examiner", "5. injecter", "6. revérifier"] {
-            assert!(texte.contains(etape), "{etape} : {texte}");
+        // Chaque étape du CONTRAT est nommée, faite ou non ; le module seul et la
+        // copie native absente aussi.
+        for etape in Etape::TOUTES {
+            let ligne = format!("{}. {} — ", etape.numero(), etape.nom());
+            assert!(texte.contains(&ligne), "{ligne} : {texte}");
         }
+        assert!(texte.contains("1. Compiler — pas faite"), "{texte}");
+        assert!(texte.contains("Module seul"), "{texte}");
         assert!(texte.contains("Copie native absente"), "{texte}");
         let j = std::fs::read_to_string(&json).expect("le rapport JSON");
-        assert!(j.contains("\"etapes_non_executees\""), "{j}");
+        assert!(j.contains("\"etapes\""), "{j}");
+        assert!(j.contains("\"compilation\": false"), "{j}");
         assert!(j.contains(&format!("\"code_de_sortie\": {code}")), "{j}");
         for c in IdControle::TOUS {
             assert!(

@@ -29,7 +29,11 @@ impl Autorite {
 }
 
 /// Qui regarde : l'écran, ou un téléphone. Construit par le commun seul.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Ni `Clone`, ni `Copy` : une vue, un bot ou une projection ne le reçoivent que par
+/// référence, le temps d'un appel. Ils ne peuvent pas le garder pour l'appel suivant,
+/// où il ouvrirait les secrets d'un joueur sous le regard d'un autre (§ 2.8).
+#[derive(Debug, PartialEq, Eq)]
 pub struct Regard {
     qui: RegardFil,
 }

@@ -30,6 +30,17 @@ pub(crate) struct Caches {
     pub(crate) trop_courts: u64,
 }
 
+/// Ce que le rapport dit des valeurs secrètes trop courtes pour être cherchées : la
+/// borne exacte de [`secrets_caches`], moins de [`SECRET_MIN`] octets, ou moins de
+/// [`SECRET_LONGUEUR_MIN`] avec leur longueur en tête. Un entier de 16 384 à
+/// 2 097 151 s'écrit en trois octets sans longueur : il n'est pas cherché (revue de la
+/// phase 2, constat 7).
+pub(crate) fn trop_courts(n: u64) -> String {
+    format!(
+        "{n} valeur(s) secrète(s) de moins de {SECRET_MIN} octets, ou de moins de {SECRET_LONGUEUR_MIN} avec leur longueur en tête (un booléen, un variant, un entier jusqu'à 2 097 151, un mot d'une lettre), n'ont pas été cherchées dans les vues ; seules celles qu'un geste ou un tenu écrit sont éprouvées, par la variation"
+    )
+}
+
 /// La fenêtre qui recale la projection sur la forme canonique après un secret vidé.
 const RECALAGE: usize = 48;
 
@@ -59,10 +70,39 @@ pub(crate) fn octets_de_la_vue(retour: &[u8]) -> Vec<u8> {
 /// longueur. Seules les valeurs d'au moins [`SECRET_MIN`] octets sont rendues, ou
 /// d'au moins [`SECRET_LONGUEUR_MIN`] avec leur longueur ; les autres sont comptées.
 pub(crate) fn secrets_caches(canonique: &[u8], projection: &[u8]) -> Option<Caches> {
-    let mut i = 0usize;
-    let mut j = 0usize;
     let mut trouves = Vec::new();
     let mut trop_courts = 0u64;
+    for (debut, fin) in places_cachees(canonique, projection)? {
+        let valeur = canonique.get(debut..fin)?;
+        let avant = trouves.len();
+        // La valeur, puis chaque longueur en tête retirée tant qu'elle dit exactement
+        // le reste : la forme canonique d'un `Texte` en a deux (ses octets, puis le
+        // texte), une vue n'en écrit qu'une.
+        let mut niveau = Some(valeur);
+        while let Some(v) = niveau {
+            let sans = sans_longueur(v);
+            if v.len() >= SECRET_MIN || (sans.is_some() && v.len() >= SECRET_LONGUEUR_MIN) {
+                trouves.push(v.to_vec());
+            }
+            niveau = sans;
+        }
+        if trouves.len() == avant {
+            trop_courts = trop_courts.saturating_add(1);
+        }
+    }
+    Some(Caches {
+        cherches: trouves,
+        trop_courts,
+    })
+}
+
+/// Où sont, dans la forme canonique, les valeurs secrètes que la projection a vidées :
+/// une place `[début, fin)` par secret vidé, dans l'ordre. Voir [`secrets_caches`] ;
+/// rend `None` si les deux suites ne s'alignent pas.
+pub(crate) fn places_cachees(canonique: &[u8], projection: &[u8]) -> Option<Vec<(usize, usize)>> {
+    let mut i = 0usize;
+    let mut j = 0usize;
+    let mut places = Vec::new();
     while i < canonique.len() && j < projection.len() {
         let (a, b) = (canonique.get(i)?, projection.get(j)?);
         if a == b {
@@ -84,29 +124,105 @@ pub(crate) fn secrets_caches(canonique: &[u8], projection: &[u8]) -> Option<Cach
                 || commun >= RECALAGE
                 || (commun >= 1 && suite.get(commun) == Some(&1) && reste.get(commun) == Some(&0))
         })?;
-        let valeur = canonique.get(debut..fin)?;
-        let avant = trouves.len();
-        // La valeur, puis chaque longueur en tête retirée tant qu'elle dit exactement
-        // le reste : la forme canonique d'un `Texte` en a deux (ses octets, puis le
-        // texte), une vue n'en écrit qu'une.
-        let mut niveau = Some(valeur);
-        while let Some(v) = niveau {
-            let sans = sans_longueur(v);
-            if v.len() >= SECRET_MIN || (sans.is_some() && v.len() >= SECRET_LONGUEUR_MIN) {
-                trouves.push(v.to_vec());
-            }
-            niveau = sans;
-        }
-        if trouves.len() == avant {
-            trop_courts = trop_courts.saturating_add(1);
-        }
+        places.push((debut, fin));
         i = fin;
         j = j.saturating_add(1);
     }
-    (i == canonique.len() && j == projection.len()).then_some(Caches {
-        cherches: trouves,
-        trop_courts,
-    })
+    (i == canonique.len() && j == projection.len()).then_some(places)
+}
+
+/// La longueur d'un varint à cette place.
+fn longueur_varint(o: &[u8], depuis: usize) -> Option<usize> {
+    let mut k = depuis;
+    loop {
+        let b = *o.get(k)?;
+        k = k.saturating_add(1);
+        if b & 0x80 == 0 {
+            return Some(k.saturating_sub(depuis));
+        }
+        if k.saturating_sub(depuis) >= 10 {
+            return None;
+        }
+    }
+}
+
+/// La place de la valeur du hasard de l'enveloppe dans une forme canonique (§ 3.2) :
+/// après l'en-tête de huit octets, le pas, le compteur, puis le `Secret<Hasard>`, son
+/// `Qui::Personne` et son `Option`. `None` : la forme ne se lit pas ainsi, ou le jeu
+/// n'a pas de hasard.
+pub(crate) fn place_du_hasard(canonique: &[u8]) -> Option<(usize, usize)> {
+    let pas = longueur_varint(canonique, 8)?;
+    let compteur = longueur_varint(canonique, 8usize.saturating_add(pas))?;
+    let qui = 8usize.saturating_add(pas).saturating_add(compteur);
+    // `Qui::Personne`, le premier variant, sans donnée.
+    if *canonique.get(qui)? != 0 {
+        return None;
+    }
+    let tag = qui.saturating_add(1);
+    if *canonique.get(tag)? != 1 {
+        return None;
+    }
+    let debut = tag.saturating_add(1);
+    let fin = debut.saturating_add(32);
+    (fin <= canonique.len()).then_some((debut, fin))
+}
+
+/// Où deux formes canoniques diffèrent : chaque octet différent si elles ont la même
+/// longueur ; sinon, d'un seul tenant, ce qui sépare leur début commun de leur fin
+/// commune, dans les coordonnées de la première.
+pub(crate) fn differences(a: &[u8], b: &[u8]) -> Vec<(usize, usize)> {
+    if a.len() == b.len() {
+        return a
+            .iter()
+            .zip(b)
+            .enumerate()
+            .filter(|(_, (x, y))| x != y)
+            .map(|(k, _)| (k, k.saturating_add(1)))
+            .collect();
+    }
+    let debut = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    let fin_commune = a
+        .iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count()
+        .min(a.len().saturating_sub(debut))
+        .min(b.len().saturating_sub(debut));
+    vec![(
+        debut,
+        a.len()
+            .saturating_sub(fin_commune)
+            .max(debut.saturating_add(1)),
+    )]
+}
+
+/// E8, la variation : deux formes canoniques, chacune avec la projection d'un appareil
+/// étranger à la partie, ont-elles changé une valeur secrète ? Les valeurs vidées sont
+/// comparées une à une, dans l'ordre, le hasard exclu : une longueur qui change (un
+/// score dont le varint grandit) déplace les octets sans changer un secret (revue de
+/// la phase 2, constat 8 ; Punchline, BESOINS-COMMUN § 9). `None` : une des deux ne
+/// s'aligne pas sur sa projection.
+pub(crate) fn secret_change(
+    (canon_a, public_a): (&[u8], &[u8]),
+    (canon_b, public_b): (&[u8], &[u8]),
+) -> Option<bool> {
+    let valeurs = |canon: &'_ [u8], public: &[u8]| -> Option<Vec<Vec<u8>>> {
+        let hasard = place_du_hasard(canon);
+        places_cachees(canon, public)?
+            .into_iter()
+            .filter(|p| Some(*p) != hasard)
+            .map(|(d, f)| canon.get(d..f).map(<[u8]>::to_vec))
+            .collect()
+    };
+    let a = valeurs(canon_a, public_a)?;
+    let b = valeurs(canon_b, public_b)?;
+    Some(a != b)
+}
+
+/// Deux suites de places se recouvrent-elles ?
+pub(crate) fn se_recouvrent(a: &[(usize, usize)], b: &[(usize, usize)]) -> bool {
+    a.iter().any(|(d, f)| b.iter().any(|(e, g)| d < g && e < f))
 }
 
 /// La valeur sans sa longueur en tête, si elle en a une qui dit exactement le reste.
@@ -285,14 +401,29 @@ pub(crate) fn arrivee_absurde(
         id: IdGeste::du_fil(tirage.entier()),
         demi_aller_retour: Duree::pas(1),
     };
+    // Les sortes de gestes vues, par leur premier octet (le variant) : chacune a sa
+    // chance, même rare parmi ce que les bots envoient (un choix parmi les tapes).
+    let mut sortes: Vec<u8> = gestes.iter().filter_map(|g| g.first().copied()).collect();
+    sortes.sort_unstable();
+    sortes.dedup();
     match tirage.sous(9) {
         0 | 1 => {
-            let base = gestes
+            let sorte = sortes
                 .get(
-                    usize::try_from(tirage.sous(u64::try_from(gestes.len()).unwrap_or(0)))
+                    usize::try_from(tirage.sous(u64::try_from(sortes.len()).unwrap_or(0)))
                         .unwrap_or(0),
                 )
-                .map_or_else(Vec::new, |octets_vus| (*octets_vus).clone());
+                .copied();
+            let de_la_sorte: Vec<&&Vec<u8>> = gestes
+                .iter()
+                .filter(|g| g.first().copied() == sorte)
+                .collect();
+            let base = de_la_sorte
+                .get(
+                    usize::try_from(tirage.sous(u64::try_from(de_la_sorte.len()).unwrap_or(0)))
+                        .unwrap_or(0),
+                )
+                .map_or_else(Vec::new, |octets_vus| (**octets_vus).clone());
             let octets_vus = abimer(tirage, &base);
             let de = un_connu(tirage);
             geste(de, octets_vus, tirage)
@@ -374,7 +505,73 @@ pub(crate) fn arrivee_absurde(
 
 #[cfg(test)]
 mod tests {
-    use super::{appareils_retenus, secrets_caches, trouve};
+    use super::{
+        appareils_retenus, differences, place_du_hasard, places_cachees, se_recouvrent,
+        secret_change, secrets_caches, trop_courts, trouve,
+    };
+
+    /// Revue de la phase 2, constat 7 : un `u32` secret de 50 000 s'écrit en trois
+    /// octets (D0 86 03), sans longueur en tête ; il n'est pas cherché, et le rapport
+    /// le dit avec la borne exacte, quatre octets, et non « moins de trois ».
+    #[test]
+    fn un_entier_de_trois_octets_n_est_pas_cherche() {
+        let c = [9u8, 1, 0xD0, 0x86, 0x03, 7];
+        let p = [9u8, 0, 7];
+        let caches = secrets_caches(&c, &p).expect("alignées");
+        assert!(caches.cherches.is_empty(), "{:?}", caches.cherches);
+        assert_eq!(caches.trop_courts, 1);
+        let t = trop_courts(1);
+        assert!(t.contains("moins de 4 octets"), "{t}");
+        assert!(t.contains("moins de 3 avec leur longueur en tête"), "{t}");
+    }
+
+    /// RESTE-PHASE-1, point 16 : les places des secrets vidés, et ce qui diffère d'une
+    /// forme canonique à l'autre, pour juger une variation.
+    #[test]
+    fn des_places_et_des_differences() {
+        // Un secret d'un octet (7), un public (3), un secret de deux octets (8, 9).
+        let c = [5, 1, 7, 3, 1, 8, 9, 4];
+        let p = [5, 0, 3, 0, 4];
+        assert_eq!(places_cachees(&c, &p), Some(vec![(2, 3), (5, 7)]));
+        assert_eq!(differences(&c, &[5, 1, 6, 3, 1, 8, 9, 4]), [(2, 3)]);
+        assert_eq!(differences(&c, &[5, 1, 7, 3, 1, 8, 4]), [(6, 7)]);
+        assert!(se_recouvrent(&[(2, 3)], &[(2, 3), (5, 7)]));
+        assert!(!se_recouvrent(&[(3, 4)], &[(2, 3), (5, 7)]));
+        let mut h = vec![0u8; 8];
+        h.extend([3, 0, 0, 1]);
+        h.extend([9u8; 32]);
+        h.push(4);
+        assert_eq!(place_du_hasard(&h), Some((12, 44)));
+        assert_eq!(place_du_hasard(&[0; 9]), None);
+    }
+
+    /// Revue de la phase 2, constat 8 : le dernier bulletin de Punchline ferme le vote
+    /// et publie les points ; la variante change la longueur d'un score public, et
+    /// `differences` rend un seul écart qui recouvre un secret resté le même. Les
+    /// valeurs cachées, comparées une à une, disent qu'aucun secret n'a changé.
+    #[test]
+    fn une_longueur_qui_change_ne_change_aucun_secret() {
+        // Un public (3), un secret (7), un public (2) ; puis les deux publics passent
+        // à 128, deux octets chacun.
+        let (ca, pa) = ([5u8, 3, 1, 7, 2, 4], [5u8, 3, 0, 2, 4]);
+        let (cb, pb) = (
+            [5u8, 0x80, 0x01, 1, 7, 0x80, 0x01, 4],
+            [5u8, 0x80, 0x01, 0, 0x80, 0x01, 4],
+        );
+        let ecarts = differences(&ca, &cb);
+        let caches = places_cachees(&ca, &pa).expect("alignées");
+        assert!(
+            se_recouvrent(&ecarts, &caches),
+            "le seul écart recouvre le secret"
+        );
+        assert_eq!(secret_change((&ca, &pa), (&cb, &pb)), Some(false));
+        let cb2 = [5u8, 0x80, 0x01, 1, 8, 0x80, 0x01, 4];
+        assert_eq!(secret_change((&ca, &pa), (&cb2, &pb)), Some(true));
+        // Un secret de plus : changé.
+        let (cb3, pb3) = ([5u8, 3, 1, 7, 2, 1, 9, 4], [5u8, 3, 0, 2, 0, 4]);
+        assert_eq!(secret_change((&ca, &pa), (&cb3, &pb3)), Some(true));
+        assert_eq!(secret_change((&ca, &[9u8][..]), (&cb, &pb)), None);
+    }
 
     #[test]
     fn un_secret_vide_se_retrouve() {

@@ -12,14 +12,19 @@
 //! - **Un instantané** clone l'enveloppe ; restaurer la remplace.
 //! - **L'empreinte** est le BLAKE3 de la forme canonique de l'enveloppe, secrets compris.
 //!   Elle ne se compare qu'entre copies natives : celle d'un module mesure sa mémoire.
+//! - **Le jeton de l'hôte** (`jeu::colle::Hote`) : chaque instance en construit un, la
+//!   seule ligne `unsafe` de la crate. C'est un sceau, pas un accès à la mémoire.
+//! - **Absente du module** : la crate est vide sous `wasm32`. Un jeu ne peut pas s'y
+//!   faire tourner lui-même pour se regarder sous un autre regard.
 
-#![forbid(unsafe_code)]
+#![cfg(not(target_arch = "wasm32"))]
+#![deny(unsafe_code)]
 
 use std::any::Any;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use jeu::colle::{Cadre, Enveloppe, SansModes, Sortie, Zones, appeler, canonique};
+use jeu::colle::{Cadre, Enveloppe, Hote, SansModes, Sortie, Zones, appeler, canonique};
 use jeu::{Epreuve, Jeu};
 use jeu_abi::SorteAppel;
 use partie::{CausePanne, Echec, Fabrique, Faute, Instance, PanneOutil};
@@ -27,12 +32,22 @@ use partie::{CausePanne, Echec, Fabrique, Faute, Instance, PanneOutil};
 /// La copie native d'un jeu.
 pub struct InstanceNative<J: Jeu + Epreuve> {
     enveloppe: Option<Enveloppe<J>>,
+    hote: Hote,
 }
 
 impl<J: Jeu + Epreuve> InstanceNative<J> {
     /// Une instance neuve, avant `Bonjour`.
     pub const fn new() -> InstanceNative<J> {
-        InstanceNative { enveloppe: None }
+        #[expect(
+            unsafe_code,
+            reason = "la copie native est l'hôte de la colle : elle seule tient son jeton"
+        )]
+        // SAFETY : le jeton reste dans l'instance, que le jeu ne voit pas.
+        let hote = unsafe { Hote::new() };
+        InstanceNative {
+            enveloppe: None,
+            hote,
+        }
     }
 
     /// L'enveloppe, pour les tests.
@@ -101,10 +116,12 @@ impl<J: Jeu + Epreuve> Instance for InstanceNative<J> {
             zones: Zones::default(),
         };
         let mut retour = Sortie::new(cadre, sorte);
-        let enveloppe = &mut self.enveloppe;
+        let (hote, enveloppe) = (&self.hote, &mut self.enveloppe);
         // Une erreur de la colle est déjà écrite dans la sortie, comme `Retour::Illisible` :
         // c'est au cœur de la lire.
-        match catch_unwind(AssertUnwindSafe(|| appeler(enveloppe, appel, &mut retour))) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            appeler(hote, enveloppe, appel, &mut retour)
+        })) {
             Ok(_) => Ok(retour.octets),
             Err(p) => Err(Echec::Faute(Faute::Panique {
                 message: message_de(p.as_ref()),
@@ -132,7 +149,7 @@ impl<J: Jeu + Epreuve> Instance for InstanceNative<J> {
                 let _: &mut blake3::Hasher = h.update(b"jeu-natif : aucune enveloppe");
             }
             Some(e) => {
-                let c = canonique(e)
+                let c = canonique(&self.hote, e)
                     .map_err(|err| PanneOutil::new(CausePanne::Interne, err.to_string()))?;
                 let _: &mut blake3::Hasher = h.update(&c);
             }

@@ -150,6 +150,21 @@ pub(crate) fn rejouer<F: Fabrique + Clone>(
                 }
                 Err(panne) => Err(panne.to_string()),
             },
+            // La partie, en panne, repart de son point sain : les points pris depuis
+            // ne servent plus (une reprise depuis eux ne retrouve pas la reprise).
+            Op::Repartir => match partie.repartir() {
+                Ok(_) => {
+                    if let Some(Ligne::Reprise { depuis, .. }) = partie.journal().lignes().last() {
+                        let depuis = *depuis;
+                        points.retain(|p| p.indice() <= depuis);
+                        if dernier.as_ref().is_some_and(|p| p.indice() > depuis) {
+                            dernier = None;
+                        }
+                    }
+                    Ok(())
+                }
+                Err(panne) => Err(panne.to_string()),
+            },
             Op::Redemarrer { lignes } => {
                 if rejoue.redemarrages == 0
                     && let Some(d) = premiere_difference(partie.journal(), reference, *lignes)
