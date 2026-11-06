@@ -19,6 +19,9 @@ moteur-wasmtime.workspace = true
 # définition pour wasmtime et le navigateur (PHASE-3, lot 3b).
 moteur-commun.workspace = true
 reecriture.workspace = true
+# Les constantes du monde simulé que la vraie pile définit : le silence d'un téléphone
+# avant son départ, la redite d'un état tenu (PHASE-3, P27, lot 4a).
+liaison.workspace = true
 # Les empreintes des soirées et des rapports, comme celles du moteur.
 blake3.workspace = true
 # Encoder les messages du commun (présences, appels) comme le cœur les encode.

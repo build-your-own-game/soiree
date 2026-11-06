@@ -21,6 +21,20 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 4a : la liaison et le chiffrement
+
+Rien ne change pour l'API d'un jeu, ni pour l'ABI (`jeu_abi::ABI` vaut 3), ni pour les empreintes, ni pour ce que l'épreuve joue et juge (`conception/PHASE-3.md`, § 2.6, § 2.7 et lot 4a ; `conception/LOTS-PHASE-3.md`, « Lot 4a »).
+
+- **`liaison`**, une crate nouvelle (`no_std`) : les trames **en clair** entre le relais et les bouts, `VersRelais` et `DuRelais` (le code de salle, les liens, les rôles, la classe d'une trame, les cases de la garde, les adresses, les refus typés, les raisons d'une coupure et les causes d'une fermeture), `PROTOCOLE_RELAIS` = 1, et les constantes du lien : `TRAME_MAX` (256 Kio), `BATTEMENT_MS` (250), `SILENCE_MAX_MS` (3 000) et `SILENCE_MAX` (180 pas), `LIENS_MAX_SANS_AUTORITE` (16), les bornes de la redite d'un état tenu (`REDITE_MIN`, 100 ms ; `REDITE_MAX`, 250 ms) et `periode_de_redite` (P27 : le tiers de la plus courte de la fraîcheur et de l'âge maximal, entre les deux bornes ; 150 ms chez Sidequest, rien chez Punchline). `protocole_d_un_bonjour` lit le protocole d'un bonjour qui ne se décode plus (SAL-40). Le relais (lot 5) ne dépendra que d'elle.
+- **`salle`**, une crate nouvelle, sans entrées-sorties : **`salle::chiffre`**, la poignée de main `Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s` (par `snow`, sans charge, 48 octets par message), les trames de transport (ChaCha20-Poly1305 sous les clés du `Split`, nonce explicite, classe en données associées, fenêtre de rejeu de 1 024), les cases de la garde (XChaCha20-Poly1305, en-tête de la chaîne en données associées), les clés (`SecretDEntree` et sa psk, `PaireAutorite`, `CleDeGarde` et la preuve d'autorité) et le fragment du QR (`Fragment`, base64url strict) ; le hasard y entre en paramètre (`Hasard`), et `snow` reçoit un résolveur qui en tire, jamais le sien ; **`salle::fil`**, les messages chiffrés `VersAutorite` et `VersAppareil`, `PROTOCOLE` = 1. Les octets de chaque message, des dérivations, d'une poignée de main et d'une case à graine fixe sont figés, avec une seconde lecture sans serde ni postcard (SAL-90) ; le vecteur public de cacophony pour ce motif se retrouve octet pour octet.
+- **`epreuve`** relit `liaison::SILENCE_MAX` et `liaison::REDITE_MAX` dans son téléphone simulé (`SILENCE_MAX`, `RAPPEL_TENU`), aux mêmes valeurs qu'avant (180 et 15 pas), une seule définition pour le monde simulé et la vraie pile. Le téléphone simulé redit toujours à 250 ms pour tous les jeux : passer à `periode_de_redite` changerait ce que l'épreuve joue, et attend M7 (lot 12).
+- Dépendances tierces nouvelles : `snow` 0.10.0 (sans fonctionnalités par défaut, ni `getrandom` ni `ring`) et `chacha20poly1305` 0.10.1, dans `salle` seulement. Ni l'une ni l'autre ne tire `getrandom` pour `wasm32-unknown-unknown`.
+
+#### Passer à cette version
+
+1. Un jeu n'a rien à changer à son code, ni ses rapports d'épreuve : l'épreuve joue et juge comme avant.
+2. Un jeu dont le workspace dépend de `epreuve` (Tier list) voit son `Cargo.lock` gagner une ligne à sa prochaine compilation (`liaison` parmi les dépendances de `epreuve`) : à committer dans le jeu.
+
 ### Phase 3, lot 3c : étalonner, la profondeur, Safari
 
 Rien ne change pour l'API d'un jeu, ni pour l'ABI (`jeu_abi::ABI` vaut 3). **Les empreintes réécrites changent toutes** : l'épreuve, la capture du harnais et le navigateur réécrivent désormais sous `ReglagesMoteur::PHASE_3` (`conception/PHASE-3.md`, § 2.3, P4 et lot 3c ; `conception/LOTS-PHASE-3.md`, « Lot 3c »).

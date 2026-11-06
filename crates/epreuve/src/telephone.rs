@@ -48,12 +48,18 @@ use crate::tirage::Tirage;
 
 /// Les pas avant que le commun voie une connexion fermée.
 pub(crate) const FERMETURE: u64 = 30;
-/// Les pas de silence avant que le commun annonce un départ (SQ-01).
-pub(crate) const SILENCE_MAX: u64 = 180;
+/// Les pas de silence avant que le commun annonce un départ (SQ-01) : ceux de la vraie
+/// pile, `liaison::SILENCE_MAX_MS` (3 s, 180 pas), une seule définition (P27).
+pub(crate) const SILENCE_MAX: u64 = liaison::SILENCE_MAX.en_pas();
 /// La rafale du Wi-Fi d'un téléphone, en pas : 100 ms.
 pub(crate) const RAFALE: u64 = 6;
-/// Le rappel du tenu, en pas : 250 ms (REM-13).
-pub(crate) const RAPPEL_TENU: u64 = 15;
+/// Le rappel du tenu, en pas : 250 ms (REM-13), la plus longue redite de la vraie page,
+/// `liaison::REDITE_MAX` (P27), pour tous les jeux. La vraie page redit à
+/// `liaison::periode_de_redite`, propre à chaque jeu (150 ms chez Sidequest, rien chez
+/// Punchline) ; le monde simulé n'y passera qu'avec M7 (la redite mesurée par la vraie
+/// page, lot 12) : ce changement-là change ce que l'épreuve joue, et demande le plan
+/// standard des trois jeux.
+pub(crate) const RAPPEL_TENU: u64 = liaison::REDITE_MAX.en_pas();
 /// Une perte sur ce nombre de paquets d'un canal fiable (WebSocket, ou le canal
 /// ordonné de WebRTC) : il est retransmis, et retient les suivants.
 pub(crate) const PERTE_FIABLE: u64 = 40;
@@ -754,10 +760,36 @@ mod tests {
     use jeu_abi::{Oui, StyleFil};
 
     use super::{
-        Canal, DERIVE_MAX_PPM, EtatEvenement, Horloge, Lien, Paquet, RAPPEL_TENU, SYNCHRO,
-        Telephone,
+        Canal, DERIVE_MAX_PPM, EtatEvenement, Horloge, Lien, Paquet, RAPPEL_TENU, SILENCE_MAX,
+        SYNCHRO, Telephone,
     };
     use crate::tirage::Tirage;
+
+    /// PHASE-3, lot 4a (P27) : le monde simulé relit le silence et la redite de
+    /// `liaison`, sans en changer la valeur : 180 et 15 pas, celles d'avant le lot. La
+    /// période propre à chaque jeu (`periode_de_redite`) n'est pas encore celle du monde
+    /// simulé : elle est plus courte que son rappel, ou absente.
+    #[test]
+    fn les_constantes_relues_de_liaison_sont_celles_d_avant() {
+        use jeu_abi::{ApplicableFil, Duree, ReglesTenuFil};
+
+        assert_eq!(SILENCE_MAX, 180);
+        assert_eq!(RAPPEL_TENU, 15);
+        assert_eq!(liaison::SILENCE_MAX_MS, 3_000);
+        assert_eq!(Duree::pas(RAPPEL_TENU).en_ms(), 250);
+        let sidequest = ReglesTenuFil {
+            fraicheur: ApplicableFil::Oui(Duree::ms(450)),
+            age_max: ApplicableFil::Oui(Duree::s(1)),
+            debit_max: 20,
+        };
+        assert_eq!(liaison::periode_de_redite(&sidequest), Some(Duree::pas(9)));
+        let punchline = ReglesTenuFil {
+            fraicheur: ApplicableFil::SansObjet("pas de fraîcheur".into()),
+            age_max: ApplicableFil::SansObjet("pas d'âge".into()),
+            debit_max: 20,
+        };
+        assert_eq!(liaison::periode_de_redite(&punchline), None);
+    }
 
     fn telephone(graine: u8) -> Telephone {
         let mut t = Telephone::new(

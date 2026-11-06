@@ -864,3 +864,94 @@ Aucune mesure de temps nouvelle : les durées ci-dessus sont celles des commande
 
 - `etalonner --fautif fausser-apres:<n>` rend 1 quand le contrôle négatif voit son écart au `n + 1`-ième appel, et **2** quand il le rate (`controle_rate`) : un contrôle automatique qui lit le code doit attendre 1, et seulement 1.
 - Le lot 13 reprend les queues de M1 (sa ligne au § 7) ; poser avant les tours la règle de validité sur la charge pendant la mesure, si le mainteneur la veut (question 27).
+
+## Lot 4a — La liaison et le chiffrement
+
+Fait le 2026-11-06, de 18 h 45 à 19 h 25 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0). Chaque commande cargo lourde est passée par le portillon (`target/hote/lourd`). Aucun navigateur, aucun serveur. Rien n'est commité.
+
+### Ce qui est fait
+
+**`crates/liaison`** (nouvelle, `no_std`, sans `unsafe`) : les trames en clair du § 2.7, `VersRelais` et `DuRelais`, avec `CodeSalle` (8 chiffres hexadécimaux majuscules, `lire` strict), `Lien`, `Role`, `Classe`, `Case`, `AdresseIp`, `AdresseAnnoncee`, `RefusRelais`, `RaisonCoupure`, `CauseFermeture` ; `PROTOCOLE_RELAIS` (1), `TRAME_MAX` (256 Kio), `BATTEMENT_MS` (250), `SILENCE_MAX_MS` (3 000) et `SILENCE_MAX` (180 pas), `LIENS_MAX_SANS_AUTORITE` (16), `REDITE_MIN` (100 ms), `REDITE_MAX` (250 ms), `periode_de_redite` (P27 ; 150 ms chez Sidequest, rien chez Punchline) ; `protocole_d_un_bonjour`, qui lit le protocole d'un bonjour illisible (SAL-40). `Bonjour` reste le premier variant, `protocole` son premier champ.
+
+**`crates/salle`** (nouvelle, sans `unsafe`, sans entrées-sorties), modules `chiffre` et `fil` :
+- `chiffre` : la poignée de main `Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s` par `snow`, prologue `soiree fil 1`, deux messages de 48 octets exactement (sans charge : la poignée de main ne porte rien, SAL-17) ; `Initiateur::commencer` / `finir` pour l'appareil, `repondre` pour l'autorité, dont la session n'est confirmée (`est_confirmee`) qu'à la première trame ouverte. Les trames : ChaCha20-Poly1305 sous les deux clés du `Split` (`risky-raw-split`), nonce de Noise, `nonce (8, petit-boutiste) ‖ chiffré ‖ étiquette`, la classe en données associées, fenêtre de rejeu de 1 024 qui n'avance qu'après authentification, jusqu'à `TRAME_MAX`. Les cases de la garde : XChaCha20-Poly1305, clé `derive_key("soiree cases de garde 1", G)`, en-tête de chaîne en données associées, `empreinte_case`. Les clés : `SecretDEntree` et sa psk (`derive_key("soiree secret d'entree 1", …)`), `PaireAutorite`, `ClePublique`, `CleDeGarde` et sa preuve (`derive_key("soiree preuve d'autorite 1", G)`) ; leurs `Debug` ne montrent aucun secret. `Fragment`, le fragment du QR en base64url strict (SAL-119). Le hasard entre par le trait `Hasard` ; `snow` reçoit un résolveur qui sert une seule fois les 32 octets d'une clé tirés de ce hasard, et n'a ni `std` ni `getrandom`.
+- `fil` : `VersAutorite`, `VersAppareil`, `TraceTelephone`, `LimitesSalle`, `RefusSalle`, `AttenteCommun`, `CoupBanc`, `PROTOCOLE` (1), `protocole_d_un_bonjour` (SAL-40).
+
+**`epreuve/src/telephone.rs`** relit `liaison::SILENCE_MAX` (`SILENCE_MAX`, 180 pas) et `liaison::REDITE_MAX` (`RAPPEL_TENU`, 15 pas), aux mêmes valeurs. `epreuve` dépend de `liaison`.
+
+**Les dépendances** : `snow` 0.10.0 (la dernière, 2025-07-19 ; sans fonctionnalités par défaut ; `use-curve25519`, `use-chacha20poly1305`, `use-blake2`, `risky-raw-split`) et `chacha20poly1305` 0.10.1 (celle que `snow` tire ; sans fonctionnalités par défaut), déclarées dans `[workspace.dependencies]` avec leur raison, versions vérifiées sur crates.io (`cargo search`, `cargo info`, l'API des versions). Elles ajoutent au `Cargo.lock` `aead`, `blake2`, `chacha20` 0.9.1, `cipher`, `curve25519-dalek` 4.1.3, `fiat-crypto`, `inout`, `opaque-debug`, `poly1305`, `rustc_version`, `subtle`, `universal-hash`, `zeroize`, et `curve25519-dalek-derive` avec `syn` 2, qui ne se compilent que sur `x86_64` ; aucune version existante ne change.
+
+Documents : PHASE-3 (§ 2.2, § 2.6, § 2.7, ligne du lot 4a au § 7, M7, annexe des dépendances), CHANGELOG, `crates/README.md`, `AGENTS.md`, le commentaire de tête de `Cargo.toml`.
+
+### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **`periode_de_redite` n'est pas relue par l'épreuve.** La ligne du lot disait que `telephone.rs` relit `SILENCE_MAX_MS` et `periode_de_redite`, et la règle « Le plan court ou le plan standard » que 4a ne change aucune valeur. Les deux ne tiennent pas ensemble : le téléphone simulé redit à 250 ms pour tous les jeux, et `periode_de_redite` vaut 150 ms chez Sidequest et rien chez Punchline. La relire changerait ce que l'épreuve joue. L'épreuve relit donc `REDITE_MAX` (250 ms, la plus longue redite de P27), et passe à la période propre à chaque jeu avec M7, au lot 12, qui jouera le plan standard des trois jeux.
+2. **Le transport n'est pas celui de `snow`.** Il ne prend pas de données associées, et un message de transport de Noise ne dépasse pas 65 535 octets, quand `TRAME_MAX` en permet 256 Kio (et que la vue d'un téléphone de Sidequest peut faire 128 Kio, `limites.vue`). Les trames sont donc chiffrées directement sous les clés du `Split` (§ 2.6). Le vecteur public tient la poignée de main, le `Split` et ce chiffrement.
+3. **`salle` dépend de `jeu-abi` et de `blake3`**, et pas encore de `partie`, qui viendra au lot 4b (§ 2.2).
+4. **`adresse_jointe` est une `AdresseIp`** (v4 ou v6), et non `[u8; 4]` : le relais écoute aussi sur `[::1]`, et `--adresse` peut en imposer une en IPv6. `CapacitesFil` est `jeu_abi::Capacites`. Les types que le § 2.7 nommait sans les définir sont écrits (§ 2.7).
+5. **`cargo tree -i getrandom` dans `web/`** ne trouve aucun paquet : `salle` n'y entre pas avant le lot 10a. Il est lancé aussi sur `salle` et `liaison` dans le commun (ci-dessous).
+6. `chacha20poly1305` est en 0.10.1, et non en 0.11.0, la plus récente publiée depuis plus de deux semaines (règle de l'annexe) : c'est la version que `snow` 0.10 tire, et deux copies grossiraient le paquet du téléphone.
+
+### Les tests qui le tiennent
+
+Dans `crates/liaison` :
+- `tests/forme.rs` : `les_octets_des_trames_vers_le_relais_sont_figes`, `les_octets_des_trames_du_relais_sont_figes` (chaque variant de chaque enum, 18 et 26 trames) ; `une_seconde_lecture_relit_chaque_trame_sal90` (un lecteur écrit à la main, qui rebâtit chaque valeur) ; `les_octets_figes_couvrent_chaque_variant` (les `nom_*` sans `_`) ; `une_trame_figee_allongee_ou_raccourcie_est_refusee_sal118` ; `les_constantes_du_lien_sont_figees` ; `la_periode_de_redite_est_le_tiers_de_la_plus_courte_borne` ; `un_bonjour_d_un_autre_protocole_se_lit_meme_casse_sal40` ; sous proptest (4 096 cas), `des_octets_au_hasard_ne_font_jamais_paniquer_les_decodeurs_rem64` et `une_trame_abimee_ne_fait_jamais_paniquer_rem64` (ce qui se décode se réencode en un message égal).
+- `src/lib.rs` : `un_code_de_salle_s_ecrit_et_se_relit`, `un_code_de_salle_d_une_autre_forme_est_refuse_sal119`, `le_varint_d_un_u16_se_lit`.
+
+Dans `crates/salle` :
+- `src/chiffre.rs` : **`les_vecteurs_publics_de_noise_nkpsk0_se_retrouvent`** (le vecteur de cacophony que livre `snow` 0.10.0, `tests/vectors/cacophony.txt`, l. 10137 à 10173 : les deux messages de la poignée de main, avec charges, l'empreinte de la poignée de main, et quatre messages de transport aux nonces 0 et 1, retrouvés octet pour octet) ; `la_fenetre_de_rejeu_suit_son_modele_sur_une_suite_fixe`, et `la_fenetre_de_rejeu_suit_son_modele` sous proptest (512 cas).
+- `tests/chiffre.rs` : **`la_psk_derive_du_secret_d_entree_octets_figes`** ; `la_preuve_d_autorite_derive_de_g_octets_figes` ; `la_cle_publique_de_l_autorite_suit_x25519_rfc7748` (RFC 7748, § 6.1) ; `le_prologue_est_fige` ; `une_poignee_de_main_ouvre_une_session_dans_les_deux_sens` ; `les_octets_d_une_poignee_de_main_et_de_ses_trames_sont_figes` (à graine fixe) ; `un_secret_d_une_autre_soiree_refuse_l_entree` ; `un_invite_ne_se_fait_pas_passer_pour_l_autorite` ; `une_poignee_de_main_rejouee_ne_donne_aucune_session_confirmee_sal17` ; `une_poignee_de_main_qui_porte_le_jeton_est_refusee_sal17` (un premier message écrit avec `snow` directement) ; **`une_trame_rejouee_par_le_relais_est_refusee`** ; `une_classe_changee_par_le_relais_est_refusee` ; `une_trame_abimee_ou_d_une_autre_session_est_refusee_sans_rien_changer` (SAL-117) ; `une_trame_va_jusqu_a_trame_max` ; `une_case_se_scelle_et_se_rouvre_octets_figes` ; `une_case_de_garde_intervertie_est_refusee` ; `le_fragment_s_ecrit_et_se_relit` ; `un_fragment_d_une_autre_forme_est_refuse_sal119` ; sous proptest (1 024 cas), `des_octets_au_hasard_ne_font_jamais_paniquer_le_dechiffrement_rem64` et `une_trame_ou_une_case_abimee_est_refusee_rem64`.
+- `tests/fil.rs` : `les_octets_des_messages_vers_l_autorite_sont_figes`, `les_octets_des_messages_vers_un_appareil_sont_figes` (6 et 18 messages, chaque variant) ; `une_seconde_lecture_relit_chaque_message_sal90` ; `les_octets_figes_couvrent_chaque_variant` ; `le_protocole_du_fil_est_fige` ; `un_message_fige_allonge_ou_raccourci_est_refuse_sal118` ; `le_bonjour_d_une_page_d_un_autre_protocole_se_lit_meme_casse_sal40` ; sous proptest (4 096 cas), `des_octets_au_hasard_ne_font_jamais_paniquer_les_decodeurs_rem64` et `un_message_abime_ne_fait_jamais_paniquer_rem64`.
+
+Dans `crates/epreuve`, `telephone::tests::les_constantes_relues_de_liaison_sont_celles_d_avant` : l'égalité des constantes relues avec celles d'avant le lot (180 et 15 pas), et `periode_de_redite` de Sidequest (9 pas) et de Punchline (rien). C'est la preuve que demande la règle du § 7 pour ce lot, à la place d'une épreuve : aucune épreuve n'a été lancée.
+
+**Les contrôles négatifs**, faits par `target/travail/lot-4a/controles.py` (un changement d'une ligne, le test qui doit rougir, le fichier remis tel qu'il était) ; chacun rouge, code 101 :
+
+| Changement | Rougit |
+| --- | --- |
+| le nonce de Noise en gros-boutiste | `les_vecteurs_publics_de_noise_nkpsk0_se_retrouvent` |
+| sans la vérification de la fenêtre de rejeu | `une_trame_rejouee_par_le_relais_est_refusee` |
+| la classe hors des données associées | `une_classe_changee_par_le_relais_est_refusee` |
+| un autre contexte de dérivation de la psk | `la_psk_derive_du_secret_d_entree_octets_figes` |
+| l'empreinte de la case précédente hors des données associées | `une_case_de_garde_intervertie_est_refusee` |
+| sans la longueur exacte ni le refus d'une charge dans la poignée de main | `une_poignee_de_main_qui_porte_le_jeton_est_refusee_sal17` (une première version ne retirait que la longueur, et le test restait vert : le refus d'une charge le tenait encore) |
+| deux champs de `VersRelais::Vers` intervertis | `les_octets_des_trames_vers_le_relais_sont_figes` |
+| deux champs de `VersAutorite::Geste` intervertis | `les_octets_des_messages_vers_l_autorite_sont_figes` |
+| `SILENCE_MAX_MS` à 5 000 ; `REDITE_MAX` à 200 ms | `les_constantes_relues_de_liaison_sont_celles_d_avant` |
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-4a/` (hors dépôt) ; chaque dossier a `commande.txt`, `sortie.txt` (complète, avec la charge et la mémoire que le portillon écrit au départ et à la fin), `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (pour le commun et chaque jeu : `HEAD`, `sha256` de `git diff HEAD`, des fichiers non suivis, et de `git diff HEAD` hors des `.md`). Le commun est à `bc4e885` ; les jeux sont à leur `HEAD`, sans aucun changement (Punchline `dd6d4f0`, Sidequest `6e7219c`, Tier list `eebc5c1`). Le code n'a pas changé du premier au dernier de ces passages : `diff HEAD` hors `.md` vaut `4ced2f42…` et les non suivis `7a1bcee0…` dans chaque empreinte ; seuls des `.md` ont changé entre eux, et après eux (PHASE-3, ce journal).
+
+| Preuve | Commande | Résultat |
+| --- | --- | --- |
+| `fmt` | `cargo fmt --all --check` (et dans `web/`, inchangé) | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0, aucun avertissement ; 13 s ; charge 4,06 au départ |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 548 réussis** (les 502 du lot 3c et 46 nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 318 s ; 1,64 Go de mémoire résidente au plus (le plus gros processus) ; charge 3,74 au départ, 4,10 à la fin |
+| `wasm32` | `lourd /usr/bin/time -l cargo build -p liaison -p salle --target wasm32-unknown-unknown --release` | code 0 ; 0,19 Go au plus (déjà compilé ; la première compilation, plus tôt dans le lot, prenait 2,9 s et 0,31 Go) |
+| `getrandom` | `target/travail/lot-4a/getrandom.sh` | `cargo tree -p salle -i getrandom --target wasm32-unknown-unknown -e normal,build` : rien ; de même pour `liaison` ; dans tout le commun, `getrandom` 0.4.3 seul, par `rand` (sous `proptest`, en test, et `tungstenite`, le banc) ; dans `web/`, aucun paquet `getrandom` |
+| `controles-negatifs` | `python3 -I target/travail/lot-4a/controles.py` | les dix contrôles du tableau, rouges ; un sous-dossier par contrôle |
+
+Non lancés, parce que ce lot ne change ni ce que l'épreuve joue ni ce qu'elle juge (§ 7, « Le plan court ou le plan standard », qui demande ici un test d'égalité et non une épreuve) : le plan court et le plan standard des trois jeux, E20, `soiree-banc`. `web/` n'a pas changé : ses tests, son clippy et la règle « mêmes lints » non plus.
+
+### Les mesures
+
+Aucune mesure nommée (M1 à M15) n'est de ce lot. La mémoire de ses commandes : `cargo test --workspace` 1,64 Go au plus, sous la charge notée ; la compilation de `liaison` et `salle` pour `wasm32`, 0,31 Go la première fois. Estimé au § 7 : « 1 à 2 Go ». Les durées ci-dessus sont celles de commandes sous une charge de 1,8 à 4,1, pas des mesures.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- `une_poignee_de_main_rejouee_ne_remplace_personne_sal17`, le test du § 8.1, demande `salle::Autorite` (lot 4b). Ce lot en tient la part du chiffrement : une poignée de main rejouée donne une session non confirmée, où rien ne s'ouvre (`une_poignee_de_main_rejouee_ne_donne_aucune_session_confirmee_sal17`).
+- La chaîne entière de la garde (refuser une garde plus vieille que le dernier `n`, `Effacer`) est au lot 4b ; ici, seule une case se scelle, s'ouvre sous son en-tête, et refuse un autre en-tête.
+- Le monde simulé ne passe pas à `periode_de_redite` (écart 1).
+- Les sessions ne se gardent pas : une autorité qui redémarre refait la poignée de main avec chaque téléphone (lot 4b).
+- Aucun test dans un navigateur : rien de `salle` ne tourne encore dans `web/`. La compilation pour `wasm32` et clippy pour cette cible sont faits.
+
+### Ce que le lot suivant doit savoir
+
+- Le hasard entre par `salle::chiffre::Hasard` ; les tests en tirent un à graine fixe par BLAKE3 en mode extensible (`tests/chiffre.rs`, `Graine`). Chaque clé tirée (paire, éphémère, nonce de case) consomme le générateur : changer l'ordre des tirages change les octets figés de `les_octets_d_une_poignee_de_main_et_de_ses_trames_sont_figes`.
+- L'autorité ne doit rien annoncer (présence, `Remplace`, accueil, place) avant `Session::est_confirmee` ; le premier `ouvrir` réussi la confirme, et le premier message de transport est `VersAutorite::Bonjour`.
+- `Session::ouvrir` prend la classe que dit le relais (`DuRelais::De`, `classe`) : une trame dont la classe a été changée est refusée sans consommer son nonce. Une trame refusée doit couper son seul lien (`RaisonCoupure::Illisible`, SAL-117).
+- `TRAME_MAX` borne la trame chiffrée ; le clair va jusqu'à `CLAIR_MAX` (262 120 octets). `VersRelais::Ecrire` d'un point de Tier list (16,8 Mio au pire, M3) dépasse de loin cette borne : la garde (lots 4b et 5) devra découper un point en cases, ou donner au lien de garde sa propre borne.
+- La forme des cases et de leurs données associées est figée ici ; le registre et le dernier `n` viennent au lot 4b.
+- Tier list verra son `Cargo.lock` gagner `liaison` à sa prochaine compilation (CHANGELOG).

@@ -1,0 +1,33 @@
+[package]
+name = "salle"
+description = "La salle, sans entrées-sorties : le chiffrement entre l'autorité et les appareils, et leurs messages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Les trames en clair que le relais voit : la classe d'une trame, une case, le code de
+# salle, `TRAME_MAX` (PHASE-3, § 2.7).
+liaison.workspace = true
+# Le format et son décodage strict ; les types du fil que les messages portent (`Pas`,
+# `Instant`, `Capacites`).
+jeu-abi.workspace = true
+# La dérivation des messages chiffrés.
+serde.workspace = true
+# Noise NKpsk0, la poignée de main entre un appareil et l'autorité (§ 2.6, P12).
+snow.workspace = true
+# Les trames de transport et les cases de la garde (§ 2.4, § 2.6).
+chacha20poly1305.workspace = true
+# La psk tirée du secret d'entrée, la preuve d'autorité, la clé des cases de la garde,
+# l'empreinte d'une case (§ 2.6, § 2.7).
+blake3.workspace = true
+
+[dev-dependencies]
+# Des octets au hasard pour les décodeurs et le déchiffrement : jamais de panique
+# (REM-64) ; la fenêtre de rejeu contre un modèle.
+proptest.workspace = true
+
+[lints]
+workspace = true

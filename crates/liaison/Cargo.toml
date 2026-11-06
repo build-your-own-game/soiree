@@ -1,0 +1,22 @@
+[package]
+name = "liaison"
+description = "Les trames en clair entre le relais et les bouts, et les constantes du lien."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Le format et son décodage strict, une seule définition (§ 3.7) ; `Duree` et les règles
+# d'un état tenu, que lit `periode_de_redite` (PHASE-3, P27).
+jeu-abi.workspace = true
+# La dérivation des trames, sans `std`.
+serde.workspace = true
+
+[dev-dependencies]
+# Des octets au hasard pour les décodeurs : jamais de panique (REM-64).
+proptest.workspace = true
+
+[lints]
+workspace = true

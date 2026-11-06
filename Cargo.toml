@@ -5,8 +5,9 @@
 # motif qui désigne un dossier sans `Cargo.toml`, et `crates/exemples` en est un.
 # Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
 # `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2) ;
-# `banc`, la deuxième (lot 3a). Ce qui ne sert que dans le navigateur est dans le second
-# workspace, `web/` (P31), dont les règles d'écriture sont celles-ci, à l'identique.
+# `banc`, la deuxième (lot 3a) ; `liaison` et `salle`, la troisième et la quatrième (lot
+# 4a). Ce qui ne sert que dans le navigateur est dans le second workspace, `web/` (P31),
+# dont les règles d'écriture sont celles-ci, à l'identique.
 #
 # Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
 # INTERFACE.md les sort de la crate du jeu (D8), pas du workspace. Elles partagent
@@ -28,6 +29,10 @@ members = [
     "crates/epreuve",
     # Le banc des navigateurs (PHASE-3, § 2.2 et § 8.2 ; lot 3a).
     "crates/banc",
+    # Les trames en clair du relais, puis la salle : chiffrement et messages chiffrés
+    # (PHASE-3, § 2.2, § 2.6 et § 2.7 ; lot 4a).
+    "crates/liaison",
+    "crates/salle",
     # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
     "crates/exemples/*",
     "crates/exemples/*/module",
@@ -59,6 +64,11 @@ moteur-commun = { path = "crates/moteur-commun", version = "0.1.0" }
 moteur-wasmtime = { path = "crates/moteur-wasmtime", version = "0.1.0" }
 partie = { path = "crates/partie", version = "0.1.0" }
 epreuve = { path = "crates/epreuve", version = "0.1.0" }
+# Les trames en clair entre le relais et les bouts, et les constantes du lien (PHASE-3,
+# § 2.7, P15, P27).
+liaison = { path = "crates/liaison", version = "0.1.0" }
+# La salle, sans entrées-sorties : le chiffrement et les messages chiffrés (lot 4a).
+salle = { path = "crates/salle", version = "0.1.0" }
 devine = { path = "crates/exemples/devine", version = "0.1.0" }
 fautifs = { path = "crates/exemples/fautifs", version = "0.1.0" }
 # Les cinq fautifs dont la faute est un `static`, à part : la règle « rien hors de
@@ -117,6 +127,21 @@ miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-a
 # sans TLS (tout est sur la boucle locale). `handshake`, la poignée de main du client, est
 # sa seule fonctionnalité utile.
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+# Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s entre l'autorité et chaque appareil (PHASE-3,
+# § 2.6, P12) : pur Rust, motifs et vecteurs publics. Sans ses fonctionnalités par
+# défaut : `std` tirerait `getrandom` 0.3 et `ring`, et `use-getrandom` le hasard du
+# système, alors que le hasard entre dans `salle` en paramètre, par un résolveur à nous
+# (§ 2.2). Seulement X25519, ChaChaPoly et BLAKE2s ; et `risky-raw-split`, les clés de
+# transport après la poignée de main : une trame porte son nonce et sa classe en
+# données associées, et dépasse les 65 535 octets d'un message de transport de Noise
+# (`TRAME_MAX`, 256 Kio). La dernière version, publiée le 2025-07-19.
+snow = { version = "0.10.0", default-features = false, features = ["use-curve25519", "use-chacha20poly1305", "use-blake2", "risky-raw-split"] }
+# ChaCha20-Poly1305 des trames et XChaCha20-Poly1305 des cases de la garde (§ 2.4,
+# § 2.6), appelé directement : `snow` la tire déjà, mais on ne s'appuie pas sur sa
+# copie. La version que `snow` 0.10 tire (0.11.0 est publiée, mais deux copies
+# grossiraient le paquet du téléphone) ; sans `getrandom` ni `alloc`, dont on n'a pas
+# besoin : le nonce d'une case vient du hasard donné à `salle`.
+chacha20poly1305 = { version = "0.10.1", default-features = false }
 
 # Pour les tests seulement.
 # Les propriétés et les octets au hasard (§ 8.1, § 8.6).
