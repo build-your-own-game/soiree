@@ -620,6 +620,17 @@ impl<F: Fabrique> Partie<F> {
         livres.chain(en_attente).max()
     }
 
+    /// Ce que la définitive sait de la présence de cet appareil : `None` s'il ne s'est
+    /// jamais annoncé à elle, sinon s'il est présent. Ce qui attend son pas n'y est pas
+    /// encore. La salle en part après une reprise, pour dire à un appareil qui revient
+    /// une arrivée ou un retour (PHASE-3, § 2.4, lot 4b) : ce que la partie reprise sait,
+    /// et non ce que l'autorité morte avait seulement placé.
+    pub fn presence(&self, de: Appareil) -> Option<Oui> {
+        self.coeur
+            .fiche(de)
+            .and_then(|f| f.presence.map(|_| f.present))
+    }
+
     /// Les demandes lancées que le jeu liste encore et dont la réponse n'est pas
     /// arrivée : ce que le commun doit encore exécuter après une reprise.
     pub fn demandes_en_cours(&self) -> Vec<IdDemande> {

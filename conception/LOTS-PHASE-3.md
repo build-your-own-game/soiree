@@ -955,3 +955,191 @@ Aucune mesure nommée (M1 à M15) n'est de ce lot. La mémoire de ses commandes 
 - `TRAME_MAX` borne la trame chiffrée ; le clair va jusqu'à `CLAIR_MAX` (262 120 octets). `VersRelais::Ecrire` d'un point de Tier list (16,8 Mio au pire, M3) dépasse de loin cette borne : la garde (lots 4b et 5) devra découper un point en cases, ou donner au lien de garde sa propre borne.
 - La forme des cases et de leurs données associées est figée ici ; le registre et le dernier `n` viennent au lot 4b.
 - Tier list verra son `Cargo.lock` gagner `liaison` à sa prochaine compilation (CHANGELOG).
+
+## Lot 4b — La salle, sans entrées-sorties
+
+Fait le 2026-11-06, de 19 h 30 à 20 h 30 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0). Chaque commande cargo lourde est passée par le portillon (`target/hote/lourd`). Aucun navigateur, aucun serveur. Rien n'est commité. Le code des jeux n'est pas touché ; le `Cargo.lock` de Tier list, lui, a gagné `liaison` pendant le lot, en compilant l'épreuve (voir « Ce que le lot suivant doit savoir ») : un changement non commité dans le dépôt de Tier list.
+
+### Ce qui est fait
+
+**Dans `crates/salle`** (sans `unsafe`, sans entrées-sorties ; le temps entre en microsecondes et le hasard par `chiffre::Hasard`) :
+
+- **`autorite`** : `Autorite<F: Fabrique, H: Hasard>`, la partie qui fait foi derrière ses deux liens au relais. Le démarrage : bonjour au relais (`Role::Autorite`), puis la garde (`Role::Garde`), `Lister`, `Lire` chaque case, et la partie ouverte (garde vide : partie neuve, son premier point écrit aussitôt) ou reprise (`garde::relire`, `Partie::reprendre`, le registre restauré, la présence de chaque appareil relue dans la partie reprise) ; ce qui arrive des appareils entre-temps attend. Une garde illisible, plus vieille que le dernier numéro que la coque sait écrit, ou vide alors qu'elle en sait un, arrête l'autorité (`Arret`), sans partie neuve en silence. Les appareils : poignée de main sur un lien ouvert, session non confirmée, et **rien avant le bonjour chiffré** (SAL-17) ; une trame qui ne s'ouvre pas, ou un message avant le bonjour, coupe son seul lien (SAL-117) ; une poignée de main sans bonjour en 10 s est coupée ; **le lien le plus récent gagne** dans l'ordre d'ouverture du relais, l'ancien reçoit `Refus(Remplace)` et n'est plus écouté (SAL-18, SAL-19, SAL-21) ; un bonjour répété sur le même lien redonne le même accueil, même session, sans présence (SAL-29) ; l'accueil dit le dernier geste placé de l'onglet et le dernier tenu reçu (`Partie::numero_tenu`, SAL-38), puis accuse ce qui est déjà écrit ; un geste se place une fois par (appareil, onglet), à la suite (SAL-57), avec son identité `id_geste` = `blake3(appareil ‖ onglet ‖ numéro)` tronqué ; il n'est accusé qu'une fois écrite la case de journal qui le contient (SAL-56) ; huit onglets retenus par appareil, ceux qui ont livré (SAL-37) ; la demi-latence mesurée par l'autorité (`AllerRetour`, SAL-129) ; un appareil silencieux plus de `SILENCE_MAX_MS` est dit parti, et revient au premier message ; la salle pleine se refuse (`RefusSalle::Pleine`). Le tour (`reveiller`, sur le signal d'image de la page ou sa minuterie) : `avancer_borne(pas, ARRIERES_PAR_TOUR)`, les avis, les demandes à la page, les vues (une seule lecture `regarder` pour l'écran et chaque appareil accueilli, une vue envoyée seulement si elle change, en trame remplaçable), les échos, les silences, la garde (une case de journal toutes les 100 ms qui ont écrit, un point tous les 600 pas, `Effacer` après chaque point écrit, le journal de la partie tronqué), l'état de la salle et le battement à la page. **Le mode banc** (`ReglagesSalle::banc`) : les coups du bot de chaque appareil accueilli (`Partie::bot`), envoyés par `VersAppareil::Banc`, et ceux du bot de l'écran, entrés comme des entrées de l'écran.
+- **`appareil`** : `Appareil<H>`, le cœur d'un téléphone sans sa page : bonjour au relais, poignée de main sur `AutoritePresente`, bonjour chiffré redit s'il reste sans accueil 2 s, gestes numérotés en file jusqu'à leur accusé (`Envoi::FilePleine`, `Envoi::TropLong`), renvoyés après chaque accueil au-delà du dernier placé, tenu numéroté au-dessus de ce que l'accueil dit et redit à sa période, horloge de l'autorité par écho, réponse aux échos de l'autorité, vue, avis, refus final ; `recharger` (jeton, onglet et file gardés, P26), `reprendre_ici`, `taire_le_banc` (la fin d'une soirée du banc) et `renvoyer_la_file` (un appareil qui renvoie ce qui est placé : le banc s'en sert pour le dédoublonnage).
+- **`garde`** : `Registre` (empreinte du jeton → appareil, onglets et dernier geste écrit), `ContenuPoint`, `ContenuJournal`, `VERSION_CASES` = 1 et leur forme ; `Ecrivain` (une seule suite de numéros, chaque case scellée à la suite de la précédente, le dernier numéro écrit, le numéro avant lequel effacer) ; `relire` (`RefusDeGarde` : `Vide`, `PlusVieille`, `Doublon`, `Trouee`, `SansPoint`, `Scellee`, `Contenu`, `Partie`).
+- **`horloge`** : `Horloge` (le temps de la partie depuis l'ouverture), `instant_de_la_partie`, `debut_du_pas`, `duree_de_us` (au pas supérieur), `Estimation` (SAL-127, SAL-128), `AllerRetour` (SAL-129).
+- **`ecran`** : `VersPage`, `DeLaPage`, `CommandeEcran`, `EtatSalle`, `AppareilVu`, `PanneSalle`, `RapportPanne`, `Trace`, `IdTrace`, `PROTOCOLE` = 1.
+- **`simulation`** : `RelaisEnMemoire` (le modèle du relais : rôles, autorité plus récente qui remplace l'ancienne, garde en mémoire et son historique), `Soiree` (le réseau à latence par sens et ordre gardé par lien, la page réduite à son image et à des refus aux demandes, les pannes tirées de la graine : coupure, rechargement, onglet jumeau, poignée de main rejouée, autorité tuée et relancée depuis la garde ; puis une fin calme), `Graine`, `verifier_l_historique` (la chaîne entière des cases depuis la première, le journal d'un seul tenant, chaque geste au plus une fois) et `Soiree::comparer_a_la_garde` (la partie reprise de la garde finale a la forme canonique et l'empreinte de l'autorité vivante).
+- L'exemple **`soiree_en_memoire`** : `cargo run --release -p salle --example soiree_en_memoire -- <module.wasm> [--telephones N] [--duree S] [--graines 1,2,3]` ; code 0 si tout tient, 1 sinon, 2 si l'outil n'a pas pu jouer.
+
+**Dans `crates/partie`**, deux lectures, sans rien changer à ce qu'elle joue : `Partie::bot` (`Appel::Bot` sur la définitive, rien pendant un pas inachevé, une faute traitée comme celle d'une lecture) et `Partie::presence`.
+
+Documents : PHASE-3 (§ 2.2, § 2.4, § 2.5, § 2.7, ligne du lot 4b au § 7, annexe des valeurs choisies), CHANGELOG, `crates/README.md`, `AGENTS.md`.
+
+### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **`salle::simulation` est dans la crate**, et non dans ses seuls tests : l'exemple qui joue les trois jeux et les tests partagent le même code (§ 2.2).
+2. **`partie` gagne `Partie::bot` et `Partie::presence`** (§ 2.2) : l'autorité du banc lit le bot sur la définitive, et une autorité qui reprend relit la présence dans la partie reprise, pas dans ce que l'autorité morte avait placé.
+3. **La garde** (§ 2.4) : une seule suite de numéros ; un point ne s'écrit qu'entre deux pas, au bord du journal écrit ; chaque case porte le registre entier, et non « ce que la salle a appris pendant ce temps » ; le registre ne garde pas le dernier tenu (la partie reprise le dit) ; la case qui précède le dernier point n'est que hachée ; une garde vide alors qu'un numéro est connu est refusée. Aucune borne de taille : la case de point de Tier list au pire (16,8 Mio, M3) dépasse `TRAME_MAX`, et le lot 5 doit en décider.
+4. **Ce que la salle attend du relais** (§ 2.5) : `AutoritePresente` ou `AutoriteAbsente` après l'accueil d'un appareil ; `Ouvert` pour chaque appareil déjà là et `AutoritePresente` à chacun quand une autorité se présente ; `AutoriteAbsente` quand elle part ; `Ferme` après un `Couper`. Le modèle en mémoire le fait ; le relais du lot 5 doit le faire aussi.
+5. **`salle::ecran`** (§ 2.7) emprunte ses octets et porte `DemandeFil`, `EcranFil`, `ReponseFil` de `jeu-abi`, et non les types possédés de `partie` ; `ChangerDeJeu` porte l'empreinte du module. Le temps donné aux appareils (`Echo`, `Accueil.heure`) est le temps de la partie depuis le pas 0 (le commentaire de `fil::VersAppareil::Accueil` le dit ; la forme ne change pas).
+6. **Le mode banc fait entrer les coups du bot de l'écran sans page** : Tier list, sans téléphone, ne jouerait rien sinon. La page du banc répond à chaque demande par un refus (un téléchargement et une ligne : fait).
+7. Valeurs choisies nouvelles, à l'annexe : le bonjour redit en 2 s, 16 échos retenus, 32 gestes en file avant l'accueil, le bot consulté tous les 15 pas en mode banc, la case écrite en 1 à 20 ms par le relais en mémoire.
+
+### Les tests qui le tiennent
+
+Dans `crates/salle` (64 tests, dont 32 nouveaux) :
+- `tests/salle.rs`, les tests du § 8.1 qui touchent la salle, chacun avec sa leçon : **`rejoindre_est_idempotent_sal29`**, **`le_lien_le_plus_recent_gagne_sal19`** (un bonjour coincé sur une tentative abandonnée, livré après celui du lien suivant, ne déloge personne ; puis un onglet plus récent remplace le courant, qui ne revient pas seul), **`une_poignee_de_main_rejouee_ne_remplace_personne_sal17`** (ni remplacement, ni présence, ni retour d'un téléphone parti ; la poignée de l'invité coupée après 10 s), **`l_accueil_realigne_les_tenus_sal38`**, **`un_geste_compte_une_fois_a_travers_le_redemarrage_de_l_autorite_sal57`** (placé mais pas écrit, puis renvoyé à la suivante ; écrit, l'autorité morte juste après la case qui le contient et son accusé perdu ; renvoyé déjà placé), `un_geste_n_est_accuse_qu_une_fois_ecrit_sal56` (le relais répondait `Ecrit` de 5 à 30 ms après l'`Ecrire`, mais tenait la case pour écrite dès l'`Ecrire` : le test ne voyait pas un accusé envoyé dès l'`Ecrire` ; corrigé après la vérification, voir « Lot 4b, correction après la vérification »), et `des_octets_au_hasard_ne_font_paniquer_ni_l_autorite_ni_un_appareil_rem64` (proptest, 256 cas).
+- `tests/garde.rs` : `la_garde_tient_au_plus_deux_points_et_se_relit`, `une_garde_plus_vieille_que_le_dernier_n_est_refusee`, `une_case_de_garde_intervertie_dans_la_chaine_est_refusee` (interverties, renommée, retirée du milieu, abîmée, la case avant le point changée, une autre salle, une autre clé, un doublon) ; `la_version_des_cases_est_figee`, `les_octets_des_contenus_de_case_sont_figes`, `une_seconde_lecture_relit_chaque_contenu_sal90`, `un_contenu_fige_allonge_ou_raccourci_est_refuse_sal118`, et sous proptest (4 096 cas) `des_octets_au_hasard_ne_font_jamais_paniquer_les_contenus_rem64`.
+- `tests/ecran.rs` : les octets de chaque variant des deux enums figés (13 et 10 messages), `les_octets_figes_couvrent_chaque_variant` (22 variants), `une_seconde_lecture_relit_chaque_message_sal90`, `le_protocole_de_l_ecran_est_fige`, `un_message_fige_allonge_ou_raccourci_est_refuse_sal118`, et sous proptest (4 096 cas) les décodeurs sans panique, ce qui se décode se réencodant égal (REM-64).
+- `tests/horloge.rs` : `l_instant_de_la_partie_se_compte_en_pas`, `une_demi_latence_ne_se_reduit_jamais_en_se_convertissant`, `l_horloge_ne_depend_que_de_l_ouverture`, `l_heure_de_l_autorite_se_garde_au_plus_petit_aller_retour_sal128`, `un_appareil_peut_grossir_sa_latence_pas_la_reduire_sal129`.
+- `tests/soiree.rs`, sur le modèle du cœur, dont l'état garde l'identité de chaque geste reçu : `une_soiree_sans_panne_compte_chaque_geste_une_fois` et `une_soiree_avec_ses_pannes_compte_chaque_geste_une_fois_sal57` (quatre graines, 60 s, six téléphones : la chaîne entière vérifiée, aucun geste en double, chaque geste accusé écrit, tout accusé à la fin sauf ce qu'un onglet jumeau fermé emporte, la garde finale qui reprend la même partie).
+- `tests/devine.rs`, sur le module de `devine` réécrit et chargé dans wasmtime (`PHASE_3`) : `une_soiree_de_devine_en_memoire_survit_a_ses_pannes` et `une_soiree_en_memoire_se_refait_a_l_identique_sal09` (la même graine, la même chaîne, case pour case).
+
+Les tests du § 8.1 que le lot 4a tenait (`une_trame_rejouee_par_le_relais_est_refusee`, `un_secret_d_une_autre_soiree_refuse_l_entree`, `un_invite_ne_se_fait_pas_passer_pour_l_autorite`, `une_case_de_garde_intervertie_est_refusee`, `la_psk_derive_du_secret_d_entree_octets_figes`) restent dans `tests/chiffre.rs` ; ceux de `relais/tests/` sont au lot 5 ; `un_maintenu_dont_la_cle_disparait_est_relache_rem23` vient avec la page (lot 12).
+
+Dans `crates/partie`, `tests/coeur/partie.rs` : `le_bot_se_lit_sur_la_definitive_sans_rien_changer`, `la_presence_est_celle_que_la_definitive_sait`.
+
+**Les contrôles négatifs**, faits par `target/travail/lot-4b/controles.py` (le changement, le test qui doit rougir, le fichier remis) ; chacun rouge, code 101 :
+
+| Changement | Rougit |
+| --- | --- |
+| un geste déjà placé replacé (sans dédoublonnage ni suite) | `un_geste_compte_une_fois_a_travers_le_redemarrage_de_l_autorite_sal57` |
+| le registre d'une case de journal sans les gestes de cette case | idem (le geste écrit compté deux fois après le redémarrage) |
+| un geste en vol qui n'est dans aucune case compté écrit (l'accusé avant l'écriture) | `un_geste_n_est_accuse_qu_une_fois_ecrit_sal56` (une première version, sans latence d'écriture au relais, restait verte : elle a fait ajouter `Pannes::garde_us`) |
+| le lien le plus ancien gagne | `le_lien_le_plus_recent_gagne_sal19` |
+| une session neuve à chaque bonjour | `rejoindre_est_idempotent_sal29` |
+| l'accueil sans le dernier tenu | `l_accueil_realigne_les_tenus_sal38` |
+| une poignée de main jamais coupée | `une_poignee_de_main_rejouee_ne_remplace_personne_sal17` |
+| aucun `Effacer` | `la_garde_tient_au_plus_deux_points_et_se_relit` |
+| une garde d'un numéro de moins acceptée | `une_garde_plus_vieille_que_le_dernier_n_est_refusee` |
+| une garde trouée acceptée | `une_case_de_garde_intervertie_dans_la_chaine_est_refusee` |
+| l'heure de l'autorité au dernier écho, et non au meilleur | `l_heure_de_l_autorite_se_garde_au_plus_petit_aller_retour_sal128` |
+
+Le premier essai de ces contrôles en a trouvé deux verts (le registre sans sa case, l'accusé avant l'écriture) : les tests ne les voyaient pas, parce qu'une case suivante corrigeait le registre, et qu'un relais sans latence répondait `Ecrit` avant tout geste placé que sa case ne contenait pas. Le test du SAL-57 tue désormais l'autorité juste après la case du geste, et le test du SAL-56 a été écrit avec un relais qui met de 5 à 30 ms à écrire.
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-4b/` (hors dépôt) ; chaque dossier a `commande.txt`, `sortie.txt` (complète, avec la charge et la mémoire que le portillon écrit au départ et à la fin), `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (pour le commun et chaque jeu : `HEAD`, `sha256` de `git diff HEAD`, des fichiers non suivis, et de `git diff HEAD` hors des `.md`). Le commun est à `dceea7a` ; les jeux à leur `HEAD` (Punchline `dd6d4f0`, Sidequest `6e7219c`, Tier list `eebc5c1`). Le code suivi n'a pas changé d'une preuve à l'autre (`diff HEAD` hors `.md` : `31e783cf…` partout) ; les fichiers non suivis valent `01f1ec95…` partout, sauf pendant `build-epreuve`, `court-punchline` et `court-sidequest` (`e4e41d5b…`) : l'exemple `soiree_en_memoire` a reçu la période de redite du jeu pendant ces passages, et `epreuve` ne dépend pas de `salle` (`cargo tree -p epreuve` n'y trouve pas `salle`). Seuls des `.md` ont changé après.
+
+| Preuve | Commande | Résultat |
+| --- | --- | --- |
+| `fmt` | `cargo fmt --all --check` (et dans `web/`, inchangé) | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0, aucun avertissement |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `wasm32` | `lourd /usr/bin/time -l cargo build -p salle --target wasm32-unknown-unknown --release` | code 0 ; 0,31 Go au plus |
+| `getrandom` | `cargo tree -p salle -i getrandom --target wasm32-unknown-unknown -e normal,build`, puis le commun entier | rien pour `salle` (avec `partie` désormais) ; dans le commun, `getrandom` 0.4.3 seul, par `tungstenite` (le banc) |
+| `test-salle` | `lourd /usr/bin/time -l cargo test -p salle` | code 0 : 64 réussis ; 0,28 Go au plus ; 14 s |
+| `test-partie` | `lourd cargo test -p partie` | code 0 |
+| `controles-negatifs` | `python3 -I target/travail/lot-4b/controles.py` | les onze contrôles du tableau, rouges (code 101 chacun) ; un sous-dossier par contrôle |
+| `build-epreuve` | `lourd /usr/bin/time -l cargo build --release -p epreuve --bin soiree-epreuve` | code 0 (`partie` a changé) |
+| `court-punchline`, `-sidequest`, `-tier-list` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/<jeu> --court` | **la référence du § 7** : Punchline 1, E2 seul (« une fin, mais aucune autre après la nouvelle partie ») ; Sidequest 0 ; Tier list 1, E15 seul (octets vivants de 201 670 à 213 975) ; 30 s, 123 s, 41 s. Modules livrés (blake3 du rapport) `ad1b7b04…`, `8112385d…`, `73552646…` |
+| `exemple-release` | `lourd cargo build --release -p salle --example soiree_en_memoire` | code 0 |
+| `memoire-devine_module`, `-punchline_module`, `-sidequest_module`, `-tier_list_module` | `shasum -a 256 <module>`, puis `lourd /usr/bin/time -l target/release/examples/soiree_en_memoire <module> --duree 120 --graines 1,2,3` | **code 0 pour chacun, trois graines réussies chacun** (voir ci-dessous) |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 582 réussis** (les 548 du lot 4a et 34 nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 305 s ; 1,65 Go au plus ; charge 3,75 au départ, 2,63 à la fin |
+
+**Les soirées en mémoire des trois jeux et de `devine`**, 120 s simulées par graine, graines 1, 2 et 3, huit téléphones (aucun pour Tier list, qui n'en déclare pas : l'écran seul joue, par son bot), pannes de `Pannes::SOIREE`, une fin calme de 7 s : à chaque graine, l'autorité ne s'est jamais arrêtée ; la chaîne entière des cases de la soirée (de 1 168 à 1 239 cases, 13 points) s'ouvre case après case et porte un journal d'un seul tenant ; aucun geste n'y est deux fois ; chaque geste accusé y est ; plus rien n'attend d'accusé à la fin ; la garde finale reprend une partie de même forme canonique et de même empreinte que l'autorité vivante.
+
+| Module (sha256) | Redémarrages de l'autorité | Coupures, rechargements, jumeaux, poignées rejouées (sur les trois graines) | Gestes émis = accusés = écrits | Mémoire |
+| --- | --- | --- | --- | --- |
+| `devine` (`c6cbe84d…`) | 10, 6, 8 | 19, 16, 9, 8 | 55, 56, 55 | 0,07 Go |
+| Punchline (`d3f4ba08…`) | 7, 8, 6 | 13, 15, 7, 8 | 422, 516, 576 | 0,09 Go |
+| Sidequest (`e2ebb6a7…`) | 5, 6, 7 | 19, 19, 9, 9 | 748, 710, 735 | 0,08 Go |
+| Tier list (`1efe48d6…`) | 4, 8, 5 | aucune (pas de téléphone) | aucun ; de 7 887 à 8 303 lignes de journal, de 19 à 22 demandes refusées par la page du banc | 0,13 Go |
+
+Les gestes placés par les autorités successives dépassent parfois les gestes écrits (Punchline, graine 3 : 578 placés, 576 écrits ; Sidequest, graines 2 et 3) : un geste placé par une autorité morte avant de l'écrire est placé une seconde fois par la suivante, et compte une fois. C'est ce que le SAL-57 demande.
+
+### Les mesures
+
+Aucune mesure nommée (M1 à M15) n'est de ce lot. La mémoire de ses commandes, prise comme le § 7 le demande : `cargo test -p salle` 0,28 Go au plus ; la compilation de `salle` pour `wasm32`, 0,31 Go ; une soirée en mémoire de Tier list, 0,13 Go ; `cargo test --workspace` 1,65 Go. Estimé au § 7 : « 2 à 3 Go ». Les durées ci-dessus sont celles de commandes sous une charge de 1,4 à 4, pas des mesures ; celle d'une soirée en mémoire (quelques secondes pour trois soirées de 120 s) n'en est pas une non plus.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **L'envoi du module aux téléphones** (P18 : morceaux compressés, fenêtre de deux, `ModuleRecu`, `Encombre`) et **les ressources de la page** (`VersAppareil::Ressource`) : les téléphones n'en ont l'usage qu'avec la page (lots 10a et 12). L'autorité ignore `ModuleRecu`, l'appareil ignore `Module` et `Ressource`.
+- Ni `VersPage::Traces` (lot 13), ni `VersPage::EnCours` et l'entrée écartée après deux arrêts muraux (P39, lot 10a), ni `VersAppareil::Ecarte` envoyé par l'autorité, ni les commandes `ChangerDeJeu`, `NouvelleSoiree`, `Marque`, ni `DeLaPage::Fichiers` (lots 10a, 10b, 11). `Reprendre` appelle `Partie::repartir`.
+- **La relâche des tenus côté appareil** (P28 : coupure, arrière-plan) et le geste tenu quand la page change (REM-23) : ils demandent la page et `Tenu::relache` (lot 12). Le tenu d'un appareil natif se redit à sa période sans jamais se relâcher de lui-même.
+- **Une borne de taille pour les cases de la garde** : le relais en mémoire n'en a pas, et une case de point de Tier list au pire dépasse `TRAME_MAX` (écart 3) ; au lot 5.
+- `Retirer` : l'autorité tient l'appareil pour à annoncer de nouveau, sans le couper ; ce que le commun doit dire à un téléphone retiré n'est écrit nulle part (à trancher avec la page, lot 12). Un appareil oublié revient sous le même `Appareil`, par une arrivée.
+- Aucune soirée sur le vrai relais ni sur de vraies WebSocket : lot 5 (`soiree-banc soiree-native`).
+- Le plan standard n'est pas joué : ce lot ne change ni ce que l'épreuve joue ni ce qu'elle juge (§ 7, « Le plan court ou le plan standard »), et le plan court des trois jeux rend la référence. E20 n'est pas relancé : aucun module ni aucune réécriture ne change.
+
+### Ce que le lot suivant doit savoir
+
+- Le relais réel doit faire ce que fait `RelaisEnMemoire` (PHASE-3, § 2.5, « Ce que l'autorité et les appareils attendent du relais ») : sinon un appareil ne commence pas sa poignée de main, et une autorité relancée ne retrouve pas les téléphones. Les tests de la salle tournent sur ce modèle ; la soirée native du lot 5 doit passer par le vrai relais avec les mêmes `Autorite` et `Appareil`, et les mêmes jugements (`verifier_l_historique`, `comparer_a_la_garde`).
+- La coque garde, à côté de G, la clé privée et le secret, le dernier numéro de case écrit (`Autorite::dernier_ecrit`) et le passe à `Autorite::demarrer` : une garde plus vieille est refusée, une garde vide alors qu'il est connu aussi.
+- La garde n'a pas de borne de taille (écart 3) : `VersRelais::Ecrire` d'un point de Tier list peut faire 16,8 Mio.
+- `Pannes::garde_us` (1 à 20 ms) tient lieu de M11 dans la simulation ; à remplacer par la mesure du lot 5.
+- Tier list : son `Cargo.lock` a gagné `liaison` à la compilation de l'épreuve (annoncé au lot 4a, CHANGELOG) ; le changement est dans son dépôt, à committer avec ce lot ou à remettre.
+
+## Lot 4b, correction après la vérification
+
+Fait le 2026-11-06, de 20 h 15 à 21 h environ (GMT), sur la même machine. Chaque commande cargo lourde est passée par le portillon. Aucun navigateur, aucun serveur. Rien n'est commité. Le code des jeux n'est pas touché ; le `Cargo.lock` de Tier list reste modifié comme au lot 4b (`liaison`, diff `53a1f747…`), non commité.
+
+### Les constats, et ce qui en est fait
+
+1. **[bloquant] `un_geste_n_est_accuse_qu_une_fois_ecrit_sal56` ne voyait pas un accusé envoyé dès l'`Ecrire`** : vérifié, juste. `RelaisEnMemoire::recevoir` rangeait la case dans la garde et l'historique dès l'`Ecrire`, et seule la réponse `Ecrit` attendait `garde_us` ; le test jugeait donc « accusé ⇒ case envoyée ». **Corrigé dans `salle::simulation`** : la latence de la garde porte désormais sur ce que la garde envoie au relais (`Soiree::latence`, `(Bout::Garde, Sens::VersRelais)`) ; le relais traite chaque demande de la garde, dans l'ordre, au bout du temps d'écrire, écrit la case et répond `Ecrit` au même instant. Une case n'est dans la garde et l'historique qu'à l'instant de son `Ecrit`. Pour ne pas perdre le cas « case écrite, `Ecrit` jamais reçu » que l'ancien modèle donnait quand l'autorité mourait pendant la réponse : ce qu'une autorité tuée avait déjà donné à sa garde s'écrit jusqu'au bout, et la garde ne se ferme qu'après (une trame vide en fin de file, `Soiree::tuer_l_autorite`) ; une autorité plus récente qui se présente avant refuse toujours l'ancienne garde (SAL-20). Le test compte en plus les instants où une case s'écrit pendant que le téléphone attend un accusé (`Soiree::cases_en_ecriture`), et exige d'en voir plus de 20 : la fenêtre où un accusé trop tôt se verrait est bien parcourue. Le contrôle « accuser dès l'`Ecrire` » (celui du vérificateur, `self.case_ecrite(case)` juste après le `vers_garde(&VersRelais::Ecrire {..})`) **rougit** maintenant : « le geste 1 est accusé avant d'être écrit ». Le comportement de l'autorité n'a pas changé.
+2. **[mineur] « un message avant le bonjour coupe son seul lien » n'avait pas de test** : vérifié, juste. Nouveau test **`un_message_avant_le_bonjour_coupe_son_seul_lien_sal117`** (`tests/salle.rs`) : sur quatre liens dont la poignée de main est faite (par `chiffre::Initiateur`, avec le fragment du QR), un premier message qui n'est pas le bonjour (geste, tenu, écho, morceau reçu) fait envoyer `Couper` pour ce lien et lui seul ; un bonjour scellé ensuite sur le même lien ne fait plus rien sortir ; aucun geste placé, aucun appareil de plus au registre, aucun remplacement, aucun tenu de plus ; le téléphone honnête reste accueilli, ses présences inchangées. Le contrôle du vérificateur (« rien avant le bonjour » qui ne coupe plus) le fait rougir.
+3. **[mineur] Le contrôle négatif du § 8.1 « le jeton dans la poignée de main » manquait** : vérifié, juste. Ajouté (`jeton-dans-la-poignee`) : l'autorité retient chaque premier message de poignée de main qu'elle a vu ; une poignée déjà vue désigne alors son téléphone (comme si le jeton y était), et le lien neuf le remplace aussitôt (`Refus(Remplace)` à l'ancien), avant tout bonjour chiffré. `une_poignee_de_main_rejouee_ne_remplace_personne_sal17` rougit (le vrai téléphone n'est plus accueilli sans refus).
+4. **[mineur] `un_maintenu_dont_la_cle_disparait_est_relache_rem23` reporté sans écart ailleurs** : vérifié. Le report se défend (il demande les clés d'une `PageFil`, § 2.10), mais la ligne du lot 12 au § 7 de PHASE-3 ne le portait pas : elle le porte désormais dans sa colonne « Ce qui le prouve fini », et la ligne du lot 4b dit qu'il y est reporté.
+5. **[mineur] L'exemple sautait en silence un appareil introuvable ; `devine.rs` ne vérifiait pas « tout geste accusé est écrit »** : vérifié, juste. Le jugement est désormais une seule fonction, `Soiree::accuses_non_ecrits` : tout geste accusé absent de la chaîne écrite est une faute, et un téléphone à qui un geste est accusé alors que le registre ne connaît pas son appareil en est une aussi (un téléphone à qui rien n'est accusé n'a rien à vérifier). L'exemple et `tests/devine.rs` s'en servent ; `tests/soiree.rs` garde son `expect` sur chaque téléphone, plus strict.
+6. **[mineur] Tier list : rien ne comptait les coups du bot de l'écran** : vérifié, juste. `Comptes::coups_ecran` (et `ComptesSomme::coups_ecran`) compte les coups du bot de l'écran entrés dans la partie en mode banc ; l'exemple l'imprime, et échoue si personne n'a joué (ni geste d'un téléphone, ni coup de l'écran). Tier list : de 535 à 561 coups de l'écran par soirée. Sans téléphone, la soirée de Tier list n'a toujours pas d'autre panne que l'autorité tuée et relancée : le commentaire de l'exemple le dit.
+7. **[mineur] « Les jeux ne sont pas touchés » alors que le `Cargo.lock` de Tier list a changé** : vérifié, juste. La phrase de la section du lot 4b est corrigée ; le changement (gagné en compilant l'épreuve, annoncé au lot 4a) reste non commité dans le dépôt de Tier list, à committer avec ce lot ou à remettre. Je ne l'ai pas remis : la prochaine compilation de l'épreuve sur Tier list le referait.
+
+La phrase de la section du lot 4b sur le test du SAL-56 (« le relais met de 5 à 30 ms à écrire une case ») est corrigée aussi.
+
+### Les tests qui le tiennent
+
+`crates/salle` : 65 tests (64 + `un_message_avant_le_bonjour_coupe_son_seul_lien_sal117`), dont `un_geste_n_est_accuse_qu_une_fois_ecrit_sal56` renforcé, `tests/devine.rs` qui vérifie désormais chaque accusé.
+
+**Les contrôles négatifs**, refaits tous sur le code final par `target/travail/lot-4b/correction/controles.py` (copié dans la preuve) : les onze du lot 4b et trois nouveaux, **quatorze rouges**, chacun code 101 avec `FAILED` et `panicked` sur son test (et non une erreur de compilation), chaque fichier remis à l'identique (sha256 vérifié par le script, et les sources de `salle` identiques avant et après : `avant-controles.txt`, `apres-controles.txt`).
+
+| Changement nouveau | Rougit |
+| --- | --- |
+| l'accusé dès l'envoi de l'`Ecrire`, avant l'`Ecrit` (§ 8.1) | `un_geste_n_est_accuse_qu_une_fois_ecrit_sal56` |
+| un message avant le bonjour qui ne coupe pas son lien | `un_message_avant_le_bonjour_coupe_son_seul_lien_sal117` |
+| le jeton dans la poignée de main : une poignée déjà vue remplace le lien de son téléphone (§ 8.1) | `une_poignee_de_main_rejouee_ne_remplace_personne_sal17` |
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-4b/correction/`, chaque dossier comme au lot 4b (`commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, `empreinte-fin.txt`). Le commun est à `dceea7a` ; tout le code changé est dans des fichiers non suivis, qui valent `8c48e83e…` dans chaque preuve (`git diff HEAD` hors `.md` : `31e783cf…`, inchangé) ; Punchline et Sidequest propres ; Tier list `53a1f747…` (son `Cargo.lock`). Seuls des `.md` ont changé après les preuves.
+
+| Preuve | Commande | Résultat |
+| --- | --- | --- |
+| `fmt` | `cargo fmt --all --check` | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `controles-negatifs` | `python3 -I target/travail/lot-4b/correction/controles.py` | les quatorze rouges ; un sous-dossier par contrôle |
+| `test-salle` | `lourd /usr/bin/time -l cargo test -p salle` | code 0 : 65 réussis ; 0,27 Go au plus ; 15 s |
+| `exemple-release` | `lourd cargo build --release -p salle --example soiree_en_memoire` | code 0 |
+| `memoire-devine_module`, `-punchline_module`, `-sidequest_module`, `-tier_list_module` | `shasum -a 256 <module>`, puis `lourd /usr/bin/time -l target/release/examples/soiree_en_memoire <module> --duree 120 --graines 1,2,3` | **code 0 pour chacun, trois graines réussies chacun** ; mêmes modules qu'au lot 4b (sha256 `c6cbe84d…`, `d3f4ba08…`, `e2ebb6a7…`, `1efe48d6…`) |
+| `getrandom` | `cargo tree -p salle -i getrandom --target wasm32-unknown-unknown -e normal,build`, puis `cargo tree -p epreuve -e normal,build`, compté sur ` salle ` | rien pour `salle` ; `epreuve` ne dépend pas de `salle` (0 ligne) |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 583 réussis** (les 582 du lot 4b et le nouveau test du SAL-117), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 276 s ; 1,92 Go au plus ; charge 2,72 au départ, 3,53 à la fin |
+
+**Les soirées en mémoire**, sur le relais qui n'écrit qu'au bout du temps d'écrire (120 s, graines 1, 2, 3, pannes de `Pannes::SOIREE`) :
+
+| Module | Redémarrages | Coupures, rechargements, jumeaux, poignées rejouées (sur les trois graines) | Gestes émis ; écrits | Coups du bot de l'écran | Mémoire (résidente, au plus) |
+| --- | --- | --- | --- | --- | --- |
+| `devine` | 6, 6, 12 | 16, 13, 10, 7 | 56, 56, 55 ; les mêmes | 6, 6, 6 | 0,07 Go |
+| Punchline | 7, 5, 7 | 21, 20, 8, 12 | 472, 516, 556 ; 472, 516, 556 (graine 2 : 515 accusés) | 109, 109, 112 | 0,09 Go |
+| Sidequest | 5, 7, 10 | 27, 12, 10, 6 | 759, 702, 711 ; 757, 702, 711 (graine 2 : 701 accusés) | 36, 37, 34 | 0,08 Go |
+| Tier list | 3, 8, 7 | aucune (pas de téléphone) | aucun | 561, 535, 557 | 0,14 Go |
+
+Un geste émis et jamais écrit (Sidequest, graine 1 : deux) ou écrit et jamais accusé (Punchline et Sidequest, graine 2 : un) est celui d'un onglet jumeau fermé, qui emporte sa file et ne reçoit plus d'accusé ; l'exemple ne demande « plus rien en file » qu'aux téléphones qui ne sont pas des jumeaux, comme `tests/soiree.rs`. Tout geste accusé est écrit, dans chaque soirée.
+
+**Le plan court n'est pas relancé** : ni les modules, ni ce dont `soiree-epreuve` dépend n'ont changé depuis les preuves `court-*` du lot 4b (`epreuve` ne dépend pas de `salle`, et `partie` n'a pas changé) ; on relit ces rapports (la référence du § 7).
+
+### Les mesures
+
+Aucune. La mémoire des commandes est prise par `/usr/bin/time -l` ; les durées sont celles de commandes sous une charge de 2 à 4, pas des mesures.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- Le reste de « Ce qui n'est pas fait » du lot 4b tient tel quel.
+- Une soirée de Tier list n'a pas de panne de téléphone : le jeu n'en a pas. Une soirée avec des téléphones ajoutés de force n'aurait pas de sens pour ce jeu.
+
+### Ce que le lot suivant doit savoir
+
+- Le relais réel doit répondre `Ecrit` seulement une fois la case écrite (§ 2.5, déjà dit) ; la simulation le fait maintenant à la lettre, et le test du SAL-56 le voit.
+- Une écriture que la garde d'une autorité tuée avait déjà donnée au relais s'y achève dans la simulation : la nouvelle autorité peut trouver une garde plus récente que le dernier numéro que la coque sait écrit (accepté, seule une garde plus vieille est refusée). Le relais du lot 5 aura le même cas.
+- `Soiree::accuses_non_ecrits` est le jugement « tout geste accusé est écrit » : la soirée native du lot 5 doit s'en servir.
+- `un_maintenu_dont_la_cle_disparait_est_relache_rem23` est dans la colonne du lot 12.

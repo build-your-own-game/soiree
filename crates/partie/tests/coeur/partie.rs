@@ -1292,3 +1292,50 @@ fn l_heure_du_temps_se_deduit_du_pas() {
     }
     let _: Instant = instant(0);
 }
+
+// --- Ce que la salle lit de la partie (PHASE-3, lot 4b) -------------------------
+
+/// Le mode banc de la salle (PHASE-3, § 8.1) : `Partie::bot` rend les coups du bot du
+/// jeu, lus sur la définitive, sans rien changer à l'état ni au journal (D4) ; pendant un
+/// pas inachevé, rien.
+#[test]
+fn le_bot_se_lit_sur_la_definitive_sans_rien_changer() {
+    let mut p = ouvrir(ordinaire());
+    let _: Vec<_> = avancer(&mut p, 3);
+    let empreinte = p.empreinte().unwrap();
+    let lignes = p.journal().lignes().len();
+    let r = p
+        .bot(RegardFil::Appareil(1), jeu_abi::StyleFil::Sage, 7, 0)
+        .unwrap()
+        .expect("des coups");
+    let Ok(jeu_abi::Retour::Bot(coups)) = decoder::<jeu_abi::Retour<'_>>(&r) else {
+        panic!("un retour de bot");
+    };
+    assert_eq!(coups.len(), 1);
+    assert_eq!(p.empreinte().unwrap(), empreinte);
+    assert_eq!(p.journal().lignes().len(), lignes);
+}
+
+/// Ce que la salle relit après une reprise (PHASE-3, § 2.4, lot 4b) : la présence d'un
+/// appareil telle que la définitive la sait, et non telle qu'elle est seulement placée.
+#[test]
+fn la_presence_est_celle_que_la_definitive_sait() {
+    let mut p = ouvrir(ordinaire());
+    assert_eq!(p.presence(a(1)), None);
+    let arrivee = Arrivee::Presence(Presence::Arrivee {
+        appareil: a(1),
+        role: RoleAppareil::Telephone,
+        capacites: jeu_abi::Capacites::AUCUNE,
+    });
+    let _: Placement = p.arriver(arrivee, instant(0)).unwrap();
+    assert_eq!(p.presence(a(1)), None, "placée, pas encore jouée");
+    let _: Vec<_> = avancer(&mut p, 2);
+    assert_eq!(p.presence(a(1)), Some(Oui::Oui));
+    let depart = Arrivee::Presence(Presence::Depart {
+        appareil: a(1),
+        cause: jeu_abi::CauseDepart::Fermeture,
+    });
+    let _: Placement = p.arriver(depart, instant(2)).unwrap();
+    let _: Vec<_> = avancer(&mut p, 4);
+    assert_eq!(p.presence(a(1)), Some(Oui::Non));
+}

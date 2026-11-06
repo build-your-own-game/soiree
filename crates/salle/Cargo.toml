@@ -11,6 +11,9 @@ repository.workspace = true
 # Les trames en clair que le relais voit : la classe d'une trame, une case, le code de
 # salle, `TRAME_MAX` (PHASE-3, § 2.7).
 liaison.workspace = true
+# La partie qui fait foi, que l'autorité tient, et la forme de ce que la garde écrit
+# (PHASE-3, § 2.4, lot 4b).
+partie.workspace = true
 # Le format et son décodage strict ; les types du fil que les messages portent (`Pas`,
 # `Instant`, `Capacites`).
 jeu-abi.workspace = true
@@ -28,6 +31,10 @@ blake3.workspace = true
 # Des octets au hasard pour les décodeurs et le déchiffrement : jamais de panique
 # (REM-64) ; la fenêtre de rejeu contre un modèle.
 proptest.workspace = true
+# Les soirées en mémoire sur un vrai module, réécrit et chargé dans wasmtime : `devine`
+# dans les tests, les trois jeux par l'exemple `soiree_en_memoire` (PHASE-3, § 8.1,
+# lot 4b). En développement seulement : `salle` ne tire jamais de moteur.
+moteur-wasmtime.workspace = true
 
 [lints]
 workspace = true

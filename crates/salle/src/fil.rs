@@ -95,7 +95,8 @@ pub enum VersAppareil<'a> {
         dernier_tenu: Option<u64>,
         /// Le pas définitif de la partie.
         pas: Pas,
-        /// L'heure de l'autorité à l'envoi, en microsecondes.
+        /// L'heure de l'autorité à l'envoi, en microsecondes : le temps de la partie
+        /// depuis son pas 0 (`horloge::Horloge::partie_us`, lot 4b).
         heure: u64,
         /// L'empreinte du module qui se joue, s'il y en a un.
         module: Option<[u8; 32]>,

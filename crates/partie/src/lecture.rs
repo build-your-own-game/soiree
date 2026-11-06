@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use jeu_abi::{
     Appareil, Appel, Cle, IdDemande, MontreFil, Oui, Pas, RegardFil, Retour, SceneFil, SorteAsset,
-    VueFil, decoder,
+    StyleFil, VueFil, decoder,
 };
 
 use crate::arrivee::DemandeArrivee;
@@ -397,6 +397,48 @@ impl<F: Fabrique> Partie<F> {
                     self.rapporter_lecture(Faute::SortieInvalide, "Canonique");
                     return Err(Echec::Faute(Faute::SortieInvalide));
                 }
+            }
+        }
+    }
+
+    /// Ce que le bot du jeu jouerait pour ce regard (`Appel::Bot`), lu sur la définitive :
+    /// le `Retour::Bot` encodé, vérifié. C'est le mode banc de la salle : l'autorité y
+    /// calcule les coups de chaque téléphone natif, qui les joue par le vrai chemin
+    /// (numérotation, file, chiffrement, relais ; PHASE-3, § 8.1, lots 4b et 5). Jamais
+    /// en soirée réelle.
+    ///
+    /// Une lecture : elle ne change pas l'état (D4), ni le journal. Pendant un pas qu'un
+    /// tour borné a laissé inachevé, la définitive est au milieu de ce pas : rien n'est
+    /// lu, et rien n'est rendu. Une faute du jeu se traite comme celle d'une autre
+    /// lecture (la définitive reconstruite, la faute rapportée dans la prochaine
+    /// [`crate::Avancee`]), et ne rend rien.
+    pub fn bot(
+        &mut self,
+        regard: RegardFil,
+        style: StyleFil,
+        graine: u64,
+        depuis_vue: u64,
+    ) -> Result<Option<Vec<u8>>, PanneOutil> {
+        if self.en_cours.is_some() {
+            return Ok(None);
+        }
+        let appel = Appel::Bot {
+            regard,
+            style,
+            graine,
+            depuis_vue,
+        };
+        let r = match self.lire(&appel, "Bot") {
+            Ok(r) => r,
+            Err(Lu::Faute(_)) => return Ok(None),
+            Err(Lu::Panne(p)) => return Err(p),
+        };
+        match decoder::<Retour<'_>>(&r) {
+            Ok(Retour::Bot(_)) => Ok(Some(r)),
+            Ok(Retour::Illisible(x)) => Err(illisible(x)),
+            Ok(_) | Err(_) => {
+                self.rapporter_lecture(Faute::SortieInvalide, "Bot");
+                Ok(None)
             }
         }
     }
