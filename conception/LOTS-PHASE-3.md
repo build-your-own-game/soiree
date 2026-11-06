@@ -1143,3 +1143,221 @@ Aucune. La mémoire des commandes est prise par `/usr/bin/time -l` ; les durées
 - Une écriture que la garde d'une autorité tuée avait déjà donnée au relais s'y achève dans la simulation : la nouvelle autorité peut trouver une garde plus récente que le dernier numéro que la coque sait écrit (accepté, seule une garde plus vieille est refusée). Le relais du lot 5 aura le même cas.
 - `Soiree::accuses_non_ecrits` est le jugement « tout geste accusé est écrit » : la soirée native du lot 5 doit s'en servir.
 - `un_maintenu_dont_la_cle_disparait_est_relache_rem23` est dans la colonne du lot 12.
+
+## Lot 5 — Le relais et la soirée native
+
+Fait le 2026-11-06, de 20 h 50 à 22 h 05 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo lourde, chaque soirée native et chaque mesure sont passées par le portillon (`target/hote/lourd`, `--calme` pour M11). Aucun navigateur. Chaque relais, mandataire et banc lancé est arrêté (aucun processus `soiree-relais` ni `soiree-banc` ne reste). Rien n'est commité. Le code des jeux n'est pas touché ; le `Cargo.lock` de Tier list reste modifié comme au lot 4b (`53a1f747…`), non commité.
+
+### Ce qui est fait
+
+**`crates/relais`** (nouvelle, sans `unsafe`), et le binaire **`soiree-relais`** :
+- **`coeur`**, sans entrées-sorties, le temps en paramètre (µs depuis le lancement), les preuves par un trait (`Preuves` ; `PreuvesEnMemoire` pour les tests, `garde::PreuvesSurDisque` pour la coque, lues à chaque bonjour d'autorité, pour que `oublier` se voie sur un relais qui tourne). Les rôles (`Autorite`, `Garde`, `Appareil`) ; **une seule autorité par salle**, la plus récente dans l'ordre d'ouverture des liens : l'ancienne reçoit `Refus(Remplacee)` sur ses deux liens, un bonjour d'autorité d'un lien plus ancien est refusé de même, une garde qui nomme une autorité passée aussi, et rien d'une garde passée ne s'écrit (SAL-18, SAL-19, SAL-20) ; ce que fait `RelaisEnMemoire` (PHASE-3, § 2.5) : `AutoritePresente`/`AutoriteAbsente` après l'accueil d'un appareil, `Ouvert` et `AutoritePresente` pour chaque appareil à l'autorité qui se présente, `AutoriteAbsente` à chacun quand elle part (SAL-23), `Ferme` à l'autorité, `Ecrit` une fois la case écrite ; une salle dont la preuve est sur disque est connue (un relais relancé reprend les téléphones avant l'autorité) ; les refus typés, chacun suivi de la fermeture du lien (SAL-42, SAL-148), `Protocole` compris pour un bonjour cassé d'un autre protocole (SAL-40) ; `Limites` ; un lien sans bonjour en 10 s ou muet depuis `SILENCE_MAX_MS` fermé, un battement par lien toutes les 250 ms (SAL-43, SAL-49) ; un message illisible ou trop gros ne coûte que son lien ; `Echo` à l'heure du relais.
+- **`file`** : la file d'un lien, fiable bornée en octets (pleine, elle le dit : SAL-06, SAL-07), une place par `(lien d'origine, canal)` remplaçable (SAL-70), le battement, la fin.
+- **`http`** : la requête par `httparse` ; qui parle (SAL-33 : boucle locale, `Host` local, `Origin` de l'écran, ou absente avec `--banc` ; une page du relais n'est qu'un appareil ; le réseau, par une adresse annoncée ; aucun en-tête de mandataire ; deux `Origin` ou deux `Host` étrangers) ; les routes, comparées à des noms, jamais au disque (SAL-150) ; les en-têtes (CSP, COOP et COEP sur l'écran, `no-store`) ; la réponse au WebSocket.
+- **`admission`** : décidée sur le fil d'écoute, avant tout fil (SAL-143), 256 connexions dont 16 réservées à la boucle, le réseau limité à 64 par seconde, rafale de 128 (SAL-78).
+- **`adresses`** : les interfaces (`if-addrs`), chaque adresse joignable annoncée, IPv4 d'abord (SAL-76) ; `--adresse` portée par une interface, sinon un refus qui dit pourquoi (SAL-77) ; l'adresse jointe lue sur chaque connexion (SAL-75).
+- **`garde`** : la garde sur disque (`<dossier>/<SALLE>/cases/<n>-p|j`, `preuve`, `salle`), écrite par `ecrire_durable` (fichier temporaire, `sync_all`, renommage, dossier synchronisé : SAL-26, SAL-27), un temporaire resté jeté, `GARDE_MAX` (256 Mio, `GardePleine`), `oublier`.
+- **`enregistrement`** (`--enregistrer`) : chaque trame reçue et envoyée, d'un seul `write` (un `kill -9` n'en perd aucune écrite).
+- **`coque`** : la boucle locale dans les deux familles au même port (un port pris dans l'une empêche le démarrage), chaque adresse annoncée écoutée ; deux fils par lien (la lecture par `tungstenite`, ses réponses automatiques sous le verrou de l'écrivain ; l'écrivain forme ses trames entières) ; un fil pour les salles, un pour la garde, dans l'ordre ; `catch_unwind` par lien (SAL-79) ; la garde a sa propre borne de lecture (`coeur::CASE_MAX`, 64 Mio) une fois le lien admis ; un lien fermé qui ne part pas est coupé en 2 s.
+- Le binaire : `soiree-relais [--port 7878] [--adresse <ip> | --sans-reseau] [--garde <dossier>] [--banc] [--enregistrer <fichier>]`, `soiree-relais oublier <SALLE>`. L'exemple `mesure_garde` (M11).
+
+**Dans `crates/banc`** : `soiree_native` (le scénario `soiree-banc soiree-native`), `mandataire` (le mandataire TCP de pannes : latence par sens, rafales, retenue, coupure, fermeture lente, fin derrière les données), `ws` (un client WebSocket non bloquant). La soirée : le relais (le binaire en sous-processus, `--sans-reseau --banc --enregistrer`, ou `relais::coque` dans le processus pour les tests), l'autorité native (`salle::Autorite` sur wasmtime, page du banc qui refuse les demandes), des téléphones natifs (`salle::Appareil`, les coups du banc) derrière le mandataire ; les pannes de la graine (téléphone coupé, retenu, rechargé, en rafales, fermé lentement ; onglet jumeau ; poignée de main rejouée par un invité ; « Reprendre ici » ; autorité tuée et relancée depuis la garde) et `--tuer-le-relais N` (`kill -9`, puis relance sur le même port et la même garde) ; la fin calme ; les jugements : aucune autorité arrêtée, la chaîne entière relue dans les enregistrements successifs du relais (une case est écrite quand le relais l'accuse ou la lit sur son disque, la garde finale a le dernier mot) et vérifiée par `verifier_l_historique`, aucun geste deux fois, aucune entrée écartée, tout geste accusé écrit (`accuses_hors_de_l_historique`), plus rien en file, la garde finale relue sur le disque du relais qui reprend la même forme canonique et la même empreinte (`reprendre_de_la_garde`), une phase terminale vue si `--partie-entiere`, quelqu'un a joué, et **aucun secret** dans ce que le relais a vu ni dans sa garde (le secret d'entrée, la psk, G, la clé privée, chaque jeton, chaque geste d'au moins 8 octets, jusqu'à 400 vues d'au moins 16 octets échantillonnées sur les téléphones). M15 lu sur le relais toutes les 5 s.
+
+**Dans `crates/salle`**, `simulation` seulement, sans rien changer de ce que la salle fait : `accuses_hors_de_l_historique`, `TelephoneAccuse`, `reprendre_de_la_garde`, `forme_et_empreinte` et `reponse_par_defaut` publics (`Soiree::accuses_non_ecrits` et `comparer_a_la_garde` s'en servent) ; `Historique` compte `ecartees`, `tenus`, `sauts` et garde `octets_des_gestes`.
+
+Documents : PHASE-3 (§ 2.2, § 2.4, § 2.5, ligne du lot 5 au § 7, M11 et M15 au § 8.6, annexes), MESURES-PHASE-3 (« Lot 5 »), CHANGELOG, `crates/README.md`, `AGENTS.md`, le commentaire de tête de `Cargo.toml`.
+
+### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **Le test du graphe permet `chacha20` par `rand`.** `tungstenite` 0.30 tire `rand` sans option, et `rand` 0.10 tire `chacha20` 0.10 comme générateur. Le test refuse toute suite de chiffrement des trames (`snow`, `chacha20poly1305`, `poly1305`, `aead`, `curve25519-dalek`…), `salle`, et toute crate du commun autre que `liaison` et `jeu-abi`, et n'admet `chacha20` que par `rand` (§ 2.5). Écrire à la main le WebSocket du relais l'aurait évité, au prix d'un code tiers recopié ; ce n'est pas fait.
+2. **La garde a sa propre borne, et ne découpe pas un point** (§ 2.4, la question laissée par le lot 4b) : 64 Mio par case sur le seul lien admis comme garde, 256 Mio par salle.
+3. **Le battement du relais est le `Ping` de WebSocket** (§ 2.5) : aucun message de `liaison` ne s'ajoute ; toute trame reçue, `Pong` compris, dit le lien vivant.
+4. **`--sans-reseau`**, une option du binaire que PHASE-3 ne nommait pas : la boucle seulement ; le banc s'en sert pour ne rien ouvrir sur le Wi-Fi (et ne pas faire demander le pare-feu, SAL-95).
+5. **Les contrôles négatifs du § 8.1** (« une option de test qui désactive le chiffrement », « une option qui ne vérifie pas l'`Origin` ») sont des changements du code faits par `target/travail/lot-5/controles.py`, comme aux lots 4a et 4b, et non des options dans le code livré.
+6. **`le_relais_ne_voit_aucun_secret` est dans `banc/tests/`**, pas dans `relais/tests/` : il demande la salle et un module, que le relais ne doit pas tirer, même en développement (le test du graphe ne regarde que les dépendances livrées, mais une dépendance de développement à `salle` brouillerait la forme).
+7. Les routes `GET /web/…` (la table du paquet, lot 10a), `GET /jeux/…` (lot 10a) et `GET /banc`, `POST /banc/rapport` répondent `404` : le lot 5 n'en a pas l'usage ; `--banc` n'admet aujourd'hui que les outils natifs sans `Origin`. La page servie est minimale (lot 10b). `AjouterLigne` est lu et ignoré (lot 11).
+
+### Les tests qui le tiennent
+
+Dans `crates/relais` (41 tests) : `src/file.rs` (3, dont `une_file_fiable_pleine_refuse_sans_rien_jeter_sal06_sal07`, `la_derniere_trame_d_une_place_remplace_celle_qui_attend_sal70`) ; `tests/relais/`, un seul binaire :
+- `coeur` (13, horloge simulée) : `l_autorite_et_les_appareils_se_trouvent_comme_dans_le_relais_en_memoire`, **`une_seconde_autorite_remplace_la_premiere_sal18`**, `un_bonjour_d_autorite_coince_sur_un_lien_plus_ancien_ne_remplace_personne_sal19`, **`un_ecrire_d_une_autorite_remplacee_est_refuse_sal20`**, `quand_l_autorite_part_chaque_appareil_l_apprend_sal23`, `chaque_refus_est_type_et_ferme_son_lien_sal42_sal148`, `un_message_illisible_ou_trop_gros_ne_coute_que_son_lien`, `le_silence_se_voit_et_chaque_lien_bat_sal43`, `un_lien_sans_bonjour_se_ferme_en_dix_secondes_sal49`, `l_adresse_jointe_par_chaque_appareil_va_a_l_autorite_sal75`, `l_echo_rend_l_instant_et_l_heure_du_relais`, `un_relais_relance_reprend_les_telephones_avant_l_autorite`, et sous proptest (2 048 cas) `des_octets_au_hasard_ne_font_jamais_paniquer_le_coeur_rem64` ;
+- `coque` (8, de vraies connexions) : `un_port_pris_dans_une_famille_empeche_le_demarrage`, `sans_reseau_le_relais_demarre_en_boucle_locale_sal76`, `une_adresse_qu_on_n_ecoute_pas_se_refuse_a_voix_haute_sal77`, `l_adresse_jointe_est_celle_de_la_connexion_sal75` (IPv4 et IPv6), `un_envoi_n_attend_pas_une_lecture_sal146`, `une_file_pleine_ferme_son_lien_sal06_sal07` (et `Encombre` avant), `un_refus_ferme_sa_connexion_sal148`, `le_silence_ferme_un_lien_qui_ne_rend_pas_ses_battements_sal43` ;
+- `http` (7) : `qui_parle_au_relais_se_juge_sur_l_adresse_le_host_et_l_origin_sal33`, **`un_site_etranger_ne_prend_pas_la_salle_sal33`**, **`un_rebond_dns_est_refuse_sal33`**, `aucun_fichier_hors_de_la_table_n_est_servi_sal150`, `la_boucle_locale_garde_ses_places_sal143`, `les_adresses_annoncees_sont_celles_des_interfaces_sal76`, `une_adresse_imposee_doit_etre_celle_d_une_interface_sal77` ;
+- `garde` (8) : `le_nom_d_une_case_se_lit_et_garde_l_ordre_des_numeros`, `une_case_s_ecrit_durablement_se_relit_et_s_efface`, `une_garde_pleine_refuse_l_ecriture_sans_rien_jeter_sal07`, `ecrit_ne_part_qu_une_fois_la_case_sur_disque_sal26`, `une_case_plus_grande_qu_une_trame_passe_par_la_garde`, `un_relais_relance_garde_sa_salle_sa_preuve_et_sa_garde`, `oublier_efface_la_preuve_et_la_garde_et_garde_le_code_p41`, `l_enregistrement_note_tout_ce_que_le_relais_voit` ;
+- `graphe` (2) : `le_relais_ne_tire_ni_la_salle_ni_le_chiffrement`, et son témoin, `le_temoin_qui_tire_snow_fait_echouer_le_test_du_graphe` (`tests/temoins/tire-snow/`, lu dans une copie sous `target/`, hors ligne).
+
+Dans `crates/banc` : `tests/soiree_native.rs`, **`le_relais_ne_voit_aucun_secret`** (une soirée de `devine` sous pannes, 3 téléphones, 15 s, par le relais dans le processus ; tout le reste de la soirée doit tenir aussi).
+
+Les premiers passages des tests du relais en ont trouvé deux instables (`un_relais_relance…` et `oublier…`, rouges un passage sur deux ou trois) : le fil de lecture, quand le fil des salles refusait le bonjour, coupait aussitôt la connexion et jetait le refus encore en file. Corrigé (la lecture finit d'elle-même quand l'écrivain ferme) ; cinq passages de suite verts ensuite.
+
+**Les contrôles négatifs**, par `target/travail/lot-5/controles.py` (le changement, le test qui doit rougir, rouge seulement sur `FAILED` et `panicked` avec le code 101, chaque fichier remis à l'identique, sha256 vérifié) ; **dix-sept rouges** :
+
+| Changement | Rougit |
+|---|---|
+| le lien d'autorité le plus ancien gagne | `un_bonjour_d_autorite_coince…_sal19` |
+| l'ancienne autorité n'est pas refusée | `une_seconde_autorite_remplace_la_premiere_sal18` |
+| une garde qui nomme une autorité passée est admise | `un_ecrire_d_une_autorite_remplacee_est_refuse_sal20` |
+| aucun `AutoriteAbsente` | `quand_l_autorite_part…_sal23` |
+| un refus qui ne ferme pas son lien | `un_refus_ferme_sa_connexion_sal148` (le premier essai restait vert : le test attendait 5 s, et le silence, 3 s, fermait le lien ; il demande désormais la fermeture en 1,5 s) |
+| le silence mille fois plus long | `le_silence_ferme_un_lien…_sal43` |
+| toute `Origin` admise | `un_site_etranger_ne_prend_pas_la_salle_sal33` |
+| le `Host` non vérifié | `un_rebond_dns_est_refuse_sal33` |
+| l'adresse jointe fixée à la boucle | `l_adresse_jointe_est_celle_de_la_connexion_sal75` |
+| les adresses de lien local annoncées | `les_adresses_annoncees_sont_celles_des_interfaces_sal76` |
+| une `--adresse` d'aucune interface acceptée | `une_adresse_imposee_doit_etre_celle_d_une_interface_sal77` |
+| aucune réserve pour la boucle | `la_boucle_locale_garde_ses_places_sal143` |
+| une file fiable sans borne | `une_file_pleine_ferme_son_lien_sal06_sal07` |
+| l'écrivain qui attend 2,5 s avant chaque trame | `un_envoi_n_attend_pas_une_lecture_sal146` |
+| `/web/<chemin>` servi du disque | `aucun_fichier_hors_de_la_table_n_est_servi_sal150` |
+| `Ecrit` sans écrire | `ecrit_ne_part_qu_une_fois_la_case_sur_disque_sal26` |
+| le chiffrement des trames désactivé (le clair à la place du chiffré, des deux côtés) | `le_relais_ne_voit_aucun_secret` (les jetons vus en clair) |
+
+Le témoin du graphe est le contrôle négatif de `le_relais_ne_tire_ni_la_salle_ni_le_chiffrement`.
+
+### Les soirées natives
+
+| Soirée | Module (sha256) | Pannes (graine) | Résultat |
+|---|---|---|---|
+| Punchline, 8 téléphones, 180 s, `--tuer-le-relais 2 --partie-entiere`, graine 1 | `d3f4ba08…` (blake3 `ad1b7b04…`) | 8 autorités tuées, 2 relais tués (`kill -9`), 10 redémarrages de l'autorité ; 5 coupures, 5 retenues, 8 rechargements, 3 rafales, 2 fermetures lentes, 3 jumeaux, 1 poignée rejouée, 3 « Reprendre ici » | **code 0** : 851 gestes émis, 851 écrits, aucun deux fois, 850 accusés (le dernier, d'un jumeau parti) ; 472 tenus ; **4 phases terminales** ; 1 554 cases, 18 points, 88 082 lignes, aucune entrée écartée, 105 sauts (les reprises) ; la garde finale reprend la même partie ; aucun secret parmi 575 aiguilles dans 39,4 Mo vus ; 0,08 Go résidents (le banc) |
+| Sidequest, 71 téléphones, 600 s, `--tuer-le-relais 2`, graine 2 | `e2ebb6a7…` (blake3 `8112385d…`) | 25 autorités tuées, 2 relais tués, 31 redémarrages ; 8 coupures, 23 retenues, 31 rechargements, 12 rafales, 14 fermetures lentes, 16 jumeaux, 11 poignées rejouées, 11 « Reprendre ici » | **code 0** : 30 674 gestes émis, accusés et écrits, aucun deux fois ; **296 236 tenus** écrits ; 23 phases terminales ; 5 014 cases, 60 points, 2 415 532 lignes, aucune entrée écartée, 133 sauts ; la garde finale reprend la même partie ; aucun secret parmi 562 aiguilles dans 306 Mo vus ; M15 : 153 fils, 14,4 Mio ; 0,20 Go résidents (le banc) |
+
+L'autorité native a joué 32 110 images en 600 s à 71 téléphones (53 par seconde) : la boucle du banc, ses 71 téléphones et son mandataire sur la même machine ne tiennent pas 60 images par seconde ; la partie suit pourtant l'horloge (elle joue plusieurs pas par réveil) ; ce n'est pas M13. Les 133 sauts viennent des reprises (le temps d'un redémarrage devient un saut, D14).
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-5/` (hors dépôt) ; chaque dossier a `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (pour le commun et chaque jeu : `HEAD`, `sha256` de `git diff HEAD`, des fichiers non suivis, et de `git diff HEAD` hors des `.md`). Le commun est à `11c65c8` ; les jeux à leur `HEAD` (Punchline `dd6d4f0`, Sidequest `6e7219c`, Tier list `eebc5c1`, son `Cargo.lock` modifié, `53a1f747…`). Les preuves finales (`fmt` à `test-workspace`) ont toutes le même code : non suivis `d56d98c1…`, `diff HEAD` hors `.md` `09f54b26…`. Les soirées natives et M11 ont été prises avant deux changements qui ne touchent aucun binaire : un commentaire du `Cargo.toml` du commun (non suivis `d19b1a01…`, `diff HEAD` hors `.md` `5f9a3ddc…`, devenu `09f54b26…` pendant la soirée de Sidequest), puis `cargo fmt` de l'exemple `mesure_garde` (devenu `d56d98c1…`) ; aucune crate que les soirées lancent n'a changé.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `fmt` | `cargo fmt --all --check` | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `graphe` | `cargo tree -p relais -e normal,build` ; `cargo tree -p epreuve -e normal,build`, compté sur `salle`, `relais`, `banc` ; `cargo tree -p salle -i getrandom --target wasm32-unknown-unknown -e normal,build` | le relais : `liaison`, `jeu-abi`, `tungstenite`, `httparse`, `if-addrs` et leurs dépendances ; `epreuve` ne tire ni `salle`, ni `relais`, ni `banc` (0 ligne) ; `salle` ne tire pas `getrandom` pour `wasm32` |
+| `controles-negatifs` | `python3 -I target/travail/lot-5/controles.py` | les dix-sept rouges ; un sous-dossier par contrôle |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 625 réussis** (les 583 du lot 4b, 41 du relais, `le_relais_ne_voit_aucun_secret`), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 329 s ; 1,77 Go résidents au plus ; charge 2,40 au départ, 3,64 à la fin |
+| `soiree-native-punchline` | `lourd /usr/bin/time -l target/release/soiree-banc soiree-native …/punchline_module.wasm --telephones 8 --duree 180 --graine 1 --tuer-le-relais 2 --partie-entiere` | code 0 (ci-dessus) ; 185 s |
+| `soiree-native-sidequest-71` | `lourd /usr/bin/time -l target/release/soiree-banc soiree-native …/sidequest_module.wasm --telephones 71 --duree 600 --graine 2 --tuer-le-relais 2 --calme 120` | code 0 (ci-dessus) ; 606 s |
+| `m11` | `lourd --calme target/release/examples/mesure_garde …`, puis `lourd --calme python3 -I target/travail/lot-5/fsync.py …` | MESURES-PHASE-3, « Lot 5 » |
+
+Non lancés, parce que ce lot ne change ni ce que l'épreuve joue ni ce qu'elle juge (§ 7, « Le plan court ou le plan standard ») : le plan court et le plan standard des trois jeux, E20. `epreuve` ne dépend ni de `salle` ni de `relais` (preuve `graphe`) ; `partie` n'a pas changé. `web/` n'a pas changé.
+
+### Les mesures
+
+- **M11** (calme, 2026-11-06 21 h 39) : une case de journal écrite et synchronisée en 8,0 à 8,9 ms en médiane, au plus 13,2 ms ; le point de Tier list au pire en 18 ms en médiane, au plus 26 ms ; `sync_all` fait `F_FULLFSYNC` (constaté par son coût : 3,8 ms, contre 22 à 37 µs pour `fsync`). MESURES-PHASE-3, « Lot 5 ».
+- **M15** : 153 fils et 14,4 Mio résidents au plus, à 71 téléphones (Sidequest, 10 min, charge de 2 à 4) ; 27 fils et 10 Mio à 8 (Punchline).
+- La mémoire des commandes : `cargo test --workspace` 1,77 Go ; une soirée native de Sidequest à 71 téléphones, 0,20 Go pour le banc (l'autorité et son wasmtime, 71 téléphones, le mandataire), 14 Mio pour le relais. Estimé au § 7 : « de 0,3 à 1,1 Go » pour 71 instances de wasmtime : les téléphones natifs du lot 5 n'en ont pas (voir plus bas). Les durées ci-dessus, hors M11, sont celles de commandes sous charge, pas des mesures.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Les téléphones natifs ne jouent pas le module** : ils jouent les coups que l'autorité leur envoie (`VersAppareil::Banc`), comme le veut le lot 5 ; « les téléphones natifs partagent un seul `Engine` et un seul `Module` » (§ 8.1) vaudra au lot 12, quand ils passeront par la page.
+- `GET /web/…`, `GET /jeux/…`, `GET /banc`, `POST /banc/rapport`, `AjouterLigne` : lots 9 à 11 (écart 7). La page de démarrage est minimale.
+- Aucun test de coupure de courant (le disque synchronisé est constaté par son coût, pas éprouvé contre une coupure).
+- Le mandataire recopie les valeurs du monde simulé de l'épreuve (16 à 66 ms, 100 ms, 0,5 s) au lieu de les relire : elles sont `pub(crate)` dans `epreuve`, et le banc ne dépend pas d'elle ; M5 les remplacera aux deux endroits (§ 8.1).
+- Le relais ne garde pas de trace des refus d'admission (une connexion refusée est fermée sans un mot, avant tout HTTP : il n'y a personne à qui le dire).
+
+### Ce que le lot suivant doit savoir
+
+- `relais::coque::lancer(&Reglages)` lance le relais dans un processus (les tests) ; `Reglages::page` accueille la page de démarrage (lot 10b) ; la table du paquet `web/` reste à brancher (lot 10a), comme les routes `/jeux/…` et le canal du banc.
+- Le battement est le `Ping` de WebSocket : une page ne le voit pas ; un téléphone juge l'autorité par ses échos, et le Worker doit juger le relais par ce qu'il en reçoit (le relais lui envoie au moins ses `Ping`, invisibles en JavaScript : prévoir un `VersRelais::Echo` périodique si le Worker doit détecter un relais muet).
+- La coque refuse un message de plus de `TRAME_MAX` + 4 Kio sur tout lien qui n'est pas une garde admise ; le Worker de l'écran ne doit pas envoyer un `Ecrire` sur son lien temps réel.
+- `soiree-banc soiree-native` sert de banc à tout changement de `salle` ou du relais : son enregistrement grossit d'environ 0,5 Mo/s à 71 téléphones (306 Mo pour 10 min), lu en flux. Ses jugements sont ceux de `salle::simulation`.
+- M11 ne demande pas de changer la cadence de 100 ms. `Pannes::SOIREE` (1 à 20 ms) peut rester.
+- Le relais lancé sans `--sans-reseau` écoute sur les adresses du réseau local : sous macOS, le pare-feu peut le demander (SAL-95, fiche de la veille).
+
+## Lot 5, correction après la vérification
+
+Fait le 2026-11-06, de 22 h 15 à 23 h 20 environ (GMT), sur la même machine. Chaque commande cargo lourde, chaque contrôle, chaque soirée native et M11 sont passés par le portillon (`--calme` pour M11). Aucun navigateur. Aucun processus `soiree-relais`, `soiree-banc` ni mandataire ne reste. Rien n'est commité. Les jeux ne sont pas touchés ; le `Cargo.lock` de Tier list reste modifié comme au lot 4b (`53a1f747…`).
+
+### Les constats, et ce qui en est fait
+
+1. **[important] Moins de contrôles négatifs qu'annoncé** : vérifié, juste (dix-sept contrôles pour quarante et un tests du relais ; SAL-42, SAL-49, SAL-43 du cœur, SAL-75 du cœur, SAL-76 et SAL-77 de la coque, `qui_parle…_sal33`, SAL-07 de la garde, P41, SAL-70, REM-64 sans le leur). **Corrigé** : chaque test du relais et `le_relais_ne_voit_aucun_secret` a désormais au moins un contrôle négatif qui le fait rougir, par `target/travail/lot-5/correction/controles.py` (quarante-quatre contrôles de tests, plus deux soirées, ci-dessous) ; un contrôle peut nommer plusieurs tests, et n'est rouge que si **chacun** a sa ligne `FAILED` (avec `panicked` et le code 101 ; `--no-fail-fast`, pour qu'un test de la bibliothèque qui rougit n'empêche pas ceux du binaire de test de tourner). Seul `le_relais_ne_tire_ni_la_salle_ni_le_chiffrement` garde pour contrôle son témoin, comme le veut le § 2.5. Le test d'`oublier` est renforcé : il lit `GET /salle` juste après l'oubli, avant que l'autorité suivante ne réécrive le code (sinon un `oublier` qui effaçait aussi le code passait). Les documents (ligne du lot 5, `crates/README.md`) disent maintenant ce qui est.
+2. **[important] La fouille des secrets ne cherchait sur `devine` que les clés et les jetons** : vérifié, juste (les gestes de `devine` font moins de 8 octets, ses vues moins de 16 ; « 7 aiguilles »). **Corrigé** : le banc cherche aussi, dans tout ce que le relais a vu, chaque **message de geste en clair** (`VersAutorite::Geste` jusqu'aux octets du geste : l'onglet de 64 bits, le numéro, la longueur, le geste, le prénom tapé de `devine` compris ; le préfixe commun de deux encodages du message à deux `fait` différents) et chaque **message de vue en clair** (`VersAppareil::Vue`, entier, d'au moins 8 octets), échantillonnés sur les téléphones (400 environ par sorte : la borne se lit avant chaque téléphone, et un téléphone peut en ajouter un de plus, 401 vus dans la soirée de Sidequest). Pour les gestes, le banc lit la file de chaque téléphone : `salle::appareil::Appareil::gestes_en_file`, un accesseur nouveau, sans rien changer de ce que l'appareil fait. `Bilan::aiguilles` compte les aiguilles par sorte, et le test exige 4 clés, au moins 3 jetons, au moins un message de geste et un message de vue (sur `devine` : 6 messages de geste, 12 de vue). Le contrôle négatif (chiffrement désactivé des deux côtés) doit désormais voir des jetons, des messages de geste **et** des messages de vue ; et deux soirées natives sans chiffrement, Punchline et Sidequest (4 téléphones, 40 s, sans pannes, le binaire `soiree-banc` reconstruit avec le changement), doivent rendre 1 en les voyant : elles voient aussi les octets seuls des gestes (les réponses de Punchline) et des vues.
+3. **[mineur] Des preuves prises sur un arbre antérieur** : vérifié. Toutes les preuves de la correction sont prises sur l'arbre final (code hors `.md` `b8a5d3c1…`, non suivis `b82ad863…`, les mêmes au départ et à la fin de chacune) ; les soirées sont refaites avec les binaires reconstruits juste avant (`soiree-banc` `7a66efb8…`, `soiree-relais` `eaaa9077…`), et M11 avec le `mesure_garde` reconstruit (`298e1640…`).
+4. **[mineur] Le plan court n'a pas été joué** : vérifié, et l'omission tient encore : la correction ne touche ni `epreuve`, ni `partie`, ni `liaison`, ni `jeu-abi`, ni les moteurs, ni la réécriture, ni `jeu`, ni `web/` (`salle` gagne un accesseur, et `epreuve` ne dépend pas de `salle` : preuve `graphe`, 0 ligne). Le § 7 dit « les autres lots se contentent du plan court » sous la règle « Le plan court ou le plan standard », qui le demande quand le lot change ce que l'épreuve joue ou juge ; ce lot ne le change pas. Non joué, et dit.
+5. **[mineur] Le test du graphe desserré** : vérifié. L'exception de `chacha20` par `rand` est désormais tenue par un contrôle : le témoin `tire-snow` tire `chacha20` 0.9.1 par `chacha20poly1305`, et son test exige le refus « relais-temoin tire chacha20 autrement que par rand » ; le contrôle `chacha20-permis-partout` (l'exception étendue à tout chemin) le fait rougir. L'écart au texte d'origine (« aucune crate de chiffrement ») reste celui que dit le § 2.5.
+6. **[mineur] Ce que juge `soiree-native`** : vérifié, juste. Rien n'est changé dans le code ; la ligne du lot 5 dit maintenant que « même forme canonique » se juge une fois, à la fin (la garde finale reprise et comparée à l'autorité vivante), chaque reprise en route n'étant jugée que par la chaîne écrite et les accusés, et que « le journal final rejoué retrouve chaque empreinte » (§ 8.1) n'est pas jugé par la soirée native : il est dans la colonne du lot 10a.
+7. **[mineur] La garde sur disque** : vérifié, juste. **Corrigé** : un numéro de case est un seul fichier (`cases/<n sur 20 chiffres>`, la sorte de la case dans son premier octet, `p` ou `j`), écrit par `ecrire_durable_en_morceaux` (l'octet de sorte puis les octets, sans recopier une case de 16,8 Mio) : une case qui en remplace une autre de l'autre sorte prend sa place par le seul renommage, sans instant où le numéro n'a plus de case (l'ancienne, déjà dite `Ecrit`, perdue avant que la nouvelle soit sur disque), ni où il en a deux (que la salle refuserait, `RefusDeGarde::Doublon`). La borne de la garde lit la taille de la case remplacée dans les métadonnées de son fichier, sans le lire, et quelle que soit sa sorte (l'ancien code ne retranchait pas une case de l'autre sorte qu'il allait effacer). Tests : `une_case_remplacee_interrompue_garde_l_ancienne_entiere_sal27` (l'écriture du remplaçant interrompue, son fichier temporaire ne pouvant naître : l'ancienne reste entière et listée ; achevée, la nouvelle seule tient le numéro, un seul fichier), et `une_garde_pleine…_sal07` qui vérifie qu'un remplaçant de l'autre sorte ne compte qu'une fois. Que la taille se lise sans lire la case n'a pas de test (c'est un coût) ; le code se lit.
+8. **[mineur] `Cargo.toml` nommait `tests/graphe.rs`** : corrigé (`tests/relais/graphe.rs`, là et dans `src/lib.rs`). Le mandataire qui recopie les valeurs du monde simulé de l'épreuve reste tel quel, déjà dit (M5 les remplacera aux deux endroits).
+
+### Les tests qui le tiennent
+
+`crates/relais` : 42 tests (les 41 du lot 5 et `une_case_remplacee_interrompue_garde_l_ancienne_entiere_sal27`), dont le test d'`oublier` et le témoin du graphe renforcés. `crates/banc` : `le_relais_ne_voit_aucun_secret`, renforcé.
+
+**Les contrôles négatifs**, tous refaits sur le code final par `target/travail/lot-5/correction/controles.py` (copie de son exécution dans la preuve) : **quarante-six rouges sur quarante-six**, chaque fichier remis à l'identique (sha256 vérifié par le script ; `avant-controles.txt`, `apres-controles.txt`). Les dix-sept du lot 5 restent, quatre d'entre eux nommant désormais plus d'un test (`un-refus-ne-ferme-pas` : SAL-148 de la coque et SAL-42/148 du cœur ; `le-silence-ignore` : SAL-43 des deux ; `l-origin-non-verifiee` et `le-host-non-verifie` : aussi `qui_parle…_sal33` ; `une-file-sans-borne` : aussi le test de la file) ; `une-adresse-absente-acceptee` ne nomme plus que le test d'`adresses` : la coque a une seconde défense (une adresse annoncée qu'elle ne peut pas écouter l'arrête, SAL-77), et son test a son propre contrôle. Les nouveaux :
+
+| Changement | Rougit |
+|---|---|
+| `Pleine` refusée comme `SalleInconnue` | `chaque_refus_est_type_et_ferme_son_lien_sal42_sal148` |
+| un lien sans bonjour gardé cent fois plus longtemps | `un_lien_sans_bonjour_se_ferme_en_dix_secondes_sal49` |
+| un battement toutes les deux périodes | `le_silence_se_voit_et_chaque_lien_bat_sal43`, `le_silence_ferme…_sal43` |
+| l'adresse jointe perdue dans le cœur | `l_adresse_jointe_par_chaque_appareil_va_a_l_autorite_sal75`, `l_adresse_jointe_est_celle_de_la_connexion_sal75` |
+| un index sur le quatrième octet de tout message | `des_octets_au_hasard_ne_font_jamais_paniquer_le_coeur_rem64` |
+| aucun `AutoritePresente` à l'appareil accueilli | `l_autorite_et_les_appareils_se_trouvent_comme_dans_le_relais_en_memoire` |
+| une trame trop grosse d'un appareil transmise | `un_message_illisible_ou_trop_gros_ne_coute_que_son_lien` |
+| l'écho à l'heure fausse d'une µs | `l_echo_rend_l_instant_et_l_heure_du_relais` |
+| la preuve sur disque ignorée à l'accueil d'un appareil | `un_relais_relance_reprend_les_telephones_avant_l_autorite` |
+| le port pris en IPv6 contourné | `un_port_pris_dans_une_famille_empeche_le_demarrage` |
+| sans réseau, le relais refuse de démarrer | `sans_reseau_le_relais_demarre_en_boucle_locale_sal76` |
+| une `--adresse` d'aucune interface acceptée, et l'écoute qui échoue sautée (deux fichiers) | `une_adresse_qu_on_n_ecoute_pas_se_refuse_a_voix_haute_sal77` |
+| un en-tête de mandataire admis | `qui_parle_au_relais_se_juge_sur_l_adresse_le_host_et_l_origin_sal33` |
+| un téléphone qui se dit `localhost` jugé comme la boucle | `qui_parle…_sal33` |
+| la borne de la garde doublée | `une_garde_pleine_refuse_l_ecriture_sans_rien_jeter_sal07` |
+| un fichier temporaire resté gardé | `une_case_s_ecrit_durablement_se_relit_et_s_efface` |
+| l'ancienne case effacée avant d'écrire la nouvelle | `une_case_remplacee_interrompue_garde_l_ancienne_entiere_sal27` |
+| le numéro sans ses zéros | `le_nom_d_une_case_se_lit_et_garde_l_ordre_des_numeros` |
+| la preuve jamais écrite sur disque | `un_relais_relance_garde_sa_salle_sa_preuve_et_sa_garde` |
+| `oublier` qui garde la preuve | `oublier_efface_la_preuve_et_la_garde_et_garde_le_code_p41` |
+| `oublier` qui efface aussi le code | `oublier…_p41` |
+| la garde lue à la borne d'une trame | `une_case_plus_grande_qu_une_trame_passe_par_la_garde` |
+| l'enregistrement sans ce qui arrive | `l_enregistrement_note_tout_ce_que_le_relais_voit` |
+| la lecture du graphe qui n'interdit rien | `le_temoin_qui_tire_snow_fait_echouer_le_test_du_graphe` |
+| `chacha20` permis par tout chemin | `le_temoin_qui_tire_snow…` |
+| une place remplaçable qui ne remplace pas | `la_derniere_trame_d_une_place_remplace_celle_qui_attend_sal70` |
+| la fin avant ce qui attend | `la_fin_passe_apres_ce_qui_attend_et_ferme_la_file` |
+| (le lot 5) le chiffrement désactivé | `le_relais_ne_voit_aucun_secret`, la sortie devant dire un jeton, un message de geste et un message de vue vus |
+| le chiffrement désactivé, `soiree-banc soiree-native` de Punchline (4 téléphones, 40 s, sans pannes, graine 3) | code 1 : jetons, messages de geste, messages de vue, gestes et vues vus |
+| de même, Sidequest | code 1 : de même |
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-5/correction/` (hors dépôt), chaque dossier comme au lot 5 (`commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, `empreinte-fin.txt`). Le commun est à `11c65c8` ; chaque preuve, au départ comme à la fin : non suivis `b82ad863…`, `git diff HEAD` hors `.md` `b8a5d3c1…` ; Punchline (`dd6d4f0`) et Sidequest (`6e7219c`) propres ; Tier list (`eebc5c1`) `53a1f747…`. Seuls des `.md` ont changé après (LOTS, MESURES, PHASE-3). Lancées à la suite par `target/travail/lot-5/correction/final.sh`.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `controles-negatifs` | `python3 -I target/travail/lot-5/correction/controles.py` | **46 rouges sur 46** ; 294 s ; un sous-dossier par contrôle |
+| `construire-release` | `lourd cargo build --release -p relais -p banc --bins --examples` | code 0 (après les soirées sans chiffrement, `soiree-banc` refait depuis les sources remises) |
+| `fmt` | `cargo fmt --all --check` | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `graphe` | les trois `cargo tree` du lot 5 | le relais : `liaison`, `jeu-abi`, `tungstenite`, `httparse`, `if-addrs` et leurs dépendances (`chacha20` par `rand`) ; `epreuve` ne tire ni `salle`, ni `relais`, ni `banc` (0 ligne) ; `salle` ne tire pas `getrandom` pour `wasm32` |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 626 réussis** (les 625 du lot 5 et le test du SAL-27), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 326 s ; 1,99 Go résidents au plus ; charge 2,12 au départ, 3,68 à la fin |
+| `soiree-native-punchline` | `lourd /usr/bin/time -l target/release/soiree-banc soiree-native …/punchline_module.wasm --telephones 8 --duree 180 --graine 1 --tuer-le-relais 2 --partie-entiere --travail …` | **code 0** ; 186 s |
+| `soiree-native-sidequest-71` | même commande sur `sidequest_module.wasm`, `--telephones 71 --duree 600 --graine 2 --tuer-le-relais 2 --calme 120` | **code 0** ; 606 s |
+| `m11` | `lourd --calme target/release/examples/mesure_garde … --fois 64`, puis `lourd --calme python3 -I target/travail/lot-5/fsync.py …` | code 0 ; MESURES-PHASE-3, « M11, refaite après la vérification du lot 5 » |
+
+**Les soirées natives**, refaites :
+
+| Soirée | Module (sha256) | Pannes (graine) | Résultat |
+|---|---|---|---|
+| Punchline, 8 téléphones, 180 s, `--tuer-le-relais 2 --partie-entiere`, graine 1 | `d3f4ba08…` | 8 autorités tuées, 2 relais tués, 10 redémarrages ; 6 coupures, 5 retenues, 8 rechargements, 3 rafales, 2 fermetures lentes, 3 jumeaux, 1 poignée rejouée, 3 « Reprendre ici » | **code 0** : 848 gestes émis, accusés et écrits, aucun deux fois ; 409 tenus ; **3 phases terminales** ; 1 556 cases, 18 points, 87 167 lignes, aucune entrée écartée ; la garde finale reprend la même partie ; aucun secret parmi **1 384 aiguilles** (4 clés, 11 jetons, 169 gestes, 400 messages de geste, 400 vues, 400 messages de vue) dans 40,9 Mo vus ; 0,08 Go résidents (le banc) |
+| Sidequest, 71 téléphones, 600 s, `--tuer-le-relais 2`, graine 2 | `e2ebb6a7…` | 23 autorités tuées, 2 relais tués, 29 redémarrages ; 8 coupures, 15 retenues, 33 rechargements, 9 rafales, 14 fermetures lentes, 17 jumeaux, 11 poignées rejouées, 16 « Reprendre ici » | **code 0** : 30 929 gestes émis et écrits, 30 928 accusés, aucun deux fois (le geste sans accusé n'est en file chez aucun téléphone qui ne soit pas un jumeau à la fin : sinon la soirée le dirait en faute) ; **297 515 tenus** écrits ; 24 phases terminales ; 5 040 cases, 60 points, 2 418 334 lignes, aucune entrée écartée ; la garde finale reprend la même partie ; aucun secret parmi **1 362 aiguilles** (4 clés, 88 jetons, 69 gestes, 401 messages de geste, 400 vues, 400 messages de vue) dans 300 Mo vus ; M15 : 153 fils, 14 736 Kio ; 0,19 Go résidents (le banc) |
+
+### Les mesures
+
+- **M11**, refaite sur machine calme (2026-11-06, 23 h 10, charge 2,71 au départ et à la fin) par `Dossier::ecrire` : 8,0 à 9,2 ms en médiane pour une case de journal, au plus 12,1 ms ; 19,2 ms pour le pire point, au plus 20,2 ms ; `F_FULLFSYNC` 3,8 ms, `fsync` 19 à 28 µs. MESURES-PHASE-3, « M11, refaite après la vérification du lot 5 ».
+- **M15**, relue : 153 fils et 14 736 Kio au plus à 71 téléphones ; 27 fils et 15 696 Kio à 8. Pas une mesure de temps.
+- Les durées des commandes, hors M11, sont celles de commandes sous une charge de 1,7 à 3,7 : pas des mesures.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- Le reste de « Ce qui n'est pas fait » du lot 5 tient tel quel (routes `/web/…`, `/jeux/…`, `/banc` ; téléphones natifs sans module ; aucun test de coupure de courant ; le mandataire qui recopie les valeurs de l'épreuve).
+- Le plan court des trois jeux n'est pas joué (constat 4) : ni l'épreuve ni ce dont elle dépend n'ont changé.
+- La soirée native ne juge toujours pas « le journal final rejoué retrouve chaque empreinte » (lot 10a), ni la forme canonique à chaque reprise (constat 6).
+- Que la borne de la garde lise la taille sans lire la case n'est pas testé (un coût, pas un comportement).
+- Le commentaire de `ECHANTILLON_MAX` (`banc::soiree_native`) dit « gardés au plus » : la borne se lit avant chaque téléphone, et un échantillon peut la dépasser d'un (401 vus). Sans effet sur ce qui est jugé ; laissé pour ne pas refaire les preuves après elles.
+
+### Ce que le lot suivant doit savoir
+
+- La garde sur disque : `cases/<n sur 20 chiffres>`, l'octet de sorte en tête (`relais::garde::octet_de_sorte`, `case_de_sorte`). Toute lecture de la garde passe par `Dossier::lister` et `Dossier::lire`, qui retirent l'octet ; un outil qui lirait les fichiers à la main doit le savoir.
+- `le_relais_ne_voit_aucun_secret` et la soirée native cherchent les messages en clair, pas seulement les octets des jeux : un changement de la forme de `VersAutorite::Geste` (l'ordre de ses champs) ou de `VersAppareil::Vue` doit garder `message_du_geste` juste ; il rend `None` si le préfixe ne finit pas par les octets du geste, et le test échoue alors faute de messages de geste cherchés.
+- Les contrôles négatifs du relais sont dans `target/travail/lot-5/correction/controles.py` ; un test nouveau du relais y gagne le sien (la règle d'`AGENTS.md`).

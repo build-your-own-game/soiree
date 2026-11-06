@@ -28,7 +28,7 @@ use liaison::{
     AdresseIp, Case, CauseFermeture, CodeSalle, DuRelais, Lien, RefusRelais, Role, VersRelais,
 };
 use partie::persistance::{InstantaneGarde, decoder_journal, decoder_point};
-use partie::{Fabrique, Instance, Ligne, QuoiPlace};
+use partie::{Fabrique, Instance, IssueJournal, Ligne, LigneEntree, Partie, QuoiPlace};
 
 use crate::appareil::Appareil;
 use crate::autorite::{Autorite, Cles, Comptes, ReglagesSalle};
@@ -37,7 +37,7 @@ use crate::chiffre::{
     SecretDEntree, empreinte_case, ouvrir_case,
 };
 use crate::ecran::{DeLaPage, VersPage};
-use crate::garde::{decoder_contenu_journal, decoder_contenu_point, numero};
+use crate::garde::{Registre, decoder_contenu_journal, decoder_contenu_point, numero};
 
 /// Un pas de 1/60 s, en microsecondes, arrondi : la cadence des images de la page.
 pub const PAS_US: u64 = 16_667;
@@ -1264,36 +1264,16 @@ where
     /// de l'autorité ne connaît pas est une faute aussi. Rend une ligne par faute.
     pub fn accuses_non_ecrits(&self, h: &Historique) -> Vec<String> {
         let registre = self.autorite.as_ref().and_then(Autorite::registre);
-        let mut fautes = Vec::new();
-        for (k, t) in self.telephones.iter().enumerate() {
-            let accuse = t.appareil.accuse();
-            if accuse == 0 {
-                continue;
-            }
-            let Some(appareil) = registre
-                .as_ref()
-                .and_then(|r| r.par_jeton(&crate::garde::empreinte_jeton(&t.jeton)))
-                .map(|i| i.appareil)
-            else {
-                fautes.push(format!(
-                    "téléphone {k} : {accuse} geste(s) accusés, et son appareil n'est pas au registre"
-                ));
-                continue;
-            };
-            let absents = (1..=accuse)
-                .filter(|&n| {
-                    !h.gestes.contains(
-                        &crate::autorite::id_geste(appareil, t.appareil.onglet(), n).fil(),
-                    )
-                })
-                .count();
-            if absents > 0 {
-                fautes.push(format!(
-                    "téléphone {k} : {absents} geste(s) accusés mais pas écrits"
-                ));
-            }
-        }
-        fautes
+        let telephones: Vec<TelephoneAccuse> = self
+            .telephones
+            .iter()
+            .map(|t| TelephoneAccuse {
+                jeton: t.jeton,
+                onglet: t.appareil.onglet(),
+                accuse: t.appareil.accuse(),
+            })
+            .collect();
+        accuses_hors_de_l_historique(registre.as_ref(), &telephones, h)
     }
 
     /// Livre ce qui est en route, sans qu'aucune image ne passe : la partie n'avance pas.
@@ -1319,24 +1299,14 @@ where
         let a = self.autorite.as_mut().ok_or("aucune autorité")?;
         let dernier = a.dernier_ecrit();
         let p = a.partie_mut().ok_or("aucune partie")?;
-        let vivante = (
-            hacher(&p.canonique().map_err(|e| format!("canonique : {e:?}"))?),
-            p.empreinte().map_err(|e| format!("empreinte : {e}"))?,
-        );
-        let lue = crate::garde::relire::<<F::I as Instance>::Instantane>(
+        let vivante = forme_et_empreinte(p)?;
+        let reprise = reprendre_de_la_garde(
+            (self.fabriquer)(),
             &self.cle_de_garde(),
             self.reglages.salle,
             &self.relais.cases(),
             dernier,
-        )
-        .map_err(|e| format!("la garde ne se relit pas : {e:?}"))?;
-        let mut r =
-            partie::Partie::reprendre((self.fabriquer)(), lue.ouverture, &lue.point, &lue.journal)
-                .map_err(|e| format!("la reprise échoue : {e:?}"))?;
-        let reprise = (
-            hacher(&r.canonique().map_err(|e| format!("canonique : {e:?}"))?),
-            r.empreinte().map_err(|e| format!("empreinte : {e}"))?,
-        );
+        )?;
         if vivante != reprise {
             return Err(format!("vivante {vivante:?}, reprise {reprise:?}"));
         }
@@ -1361,9 +1331,91 @@ fn hacher(o: &[u8]) -> [u8; 32] {
     *blake3::hash(o).as_bytes()
 }
 
+/// La forme canonique (hachée) et l'empreinte d'une partie : ce qu'une reprise depuis la
+/// garde doit retrouver (PHASE-3, § 2.4).
+pub fn forme_et_empreinte<F: Fabrique>(p: &mut Partie<F>) -> Result<([u8; 32], [u8; 32]), String>
+where
+    <F::I as Instance>::Instantane: InstantaneGarde + PartialEq + Clone,
+{
+    Ok((
+        hacher(&p.canonique().map_err(|e| format!("canonique : {e:?}"))?),
+        p.empreinte().map_err(|e| format!("empreinte : {e}"))?,
+    ))
+}
+
+/// Une partie neuve, reprise de la garde `cases` (`garde::relire`, puis
+/// `Partie::reprendre`) : sa forme canonique hachée et son empreinte. Le banc s'en sert
+/// sur la garde que le vrai relais a écrite sur disque (lot 5).
+pub fn reprendre_de_la_garde<F: Fabrique>(
+    fabrique: F,
+    g: &CleDeGarde,
+    salle: CodeSalle,
+    cases: &[(Case, Vec<u8>)],
+    dernier: Option<u64>,
+) -> Result<([u8; 32], [u8; 32]), String>
+where
+    <F::I as Instance>::Instantane: InstantaneGarde + PartialEq + Clone,
+{
+    let lue = crate::garde::relire::<<F::I as Instance>::Instantane>(g, salle, cases, dernier)
+        .map_err(|e| format!("la garde ne se relit pas : {e:?}"))?;
+    let mut r = Partie::reprendre(fabrique, lue.ouverture, &lue.point, &lue.journal)
+        .map_err(|e| format!("la reprise échoue : {e:?}"))?;
+    forme_et_empreinte(&mut r)
+}
+
+/// Ce qu'un téléphone dit de ses accusés, pour [`accuses_hors_de_l_historique`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TelephoneAccuse {
+    /// Son jeton.
+    pub jeton: [u8; 32],
+    /// Son onglet.
+    pub onglet: u64,
+    /// Le dernier geste qui lui est accusé.
+    pub accuse: u64,
+}
+
+/// Ce qui est accusé à un téléphone sans être dans la chaîne écrite `h` : rien ne devrait
+/// l'être (SAL-56). Un téléphone à qui un geste est accusé et que le `registre` de
+/// l'autorité ne connaît pas est une faute aussi. Rend une ligne par faute. Le jugement
+/// unique de la soirée en mémoire et de la soirée native (lot 5).
+pub fn accuses_hors_de_l_historique(
+    registre: Option<&Registre>,
+    telephones: &[TelephoneAccuse],
+    h: &Historique,
+) -> Vec<String> {
+    let mut fautes = Vec::new();
+    for (k, t) in telephones.iter().enumerate() {
+        if t.accuse == 0 {
+            continue;
+        }
+        let Some(appareil) = registre
+            .and_then(|r| r.par_jeton(&crate::garde::empreinte_jeton(&t.jeton)))
+            .map(|i| i.appareil)
+        else {
+            fautes.push(format!(
+                "téléphone {k} : {} geste(s) accusés, et son appareil n'est pas au registre",
+                t.accuse
+            ));
+            continue;
+        };
+        let absents = (1..=t.accuse)
+            .filter(|&n| {
+                !h.gestes
+                    .contains(&crate::autorite::id_geste(appareil, t.onglet, n).fil())
+            })
+            .count();
+        if absents > 0 {
+            fautes.push(format!(
+                "téléphone {k} : {absents} geste(s) accusés mais pas écrits"
+            ));
+        }
+    }
+    fautes
+}
+
 /// La réponse de la page du banc à une demande : un refus, sauf pour ce qui se fait
 /// sans rien rendre (un téléchargement, une ligne).
-fn reponse_par_defaut<'a>(d: &DemandeFil<'_>) -> ReponseFil<'a> {
+pub fn reponse_par_defaut<'a>(d: &DemandeFil<'_>) -> ReponseFil<'a> {
     match d {
         DemandeFil::Image { .. } => ReponseFil::Image(Err(EchecDemande::Refuse)),
         DemandeFil::Rendu { .. } => ReponseFil::Rendu(Err(EchecDemande::Refuse)),
@@ -1389,6 +1441,16 @@ pub struct Historique {
     pub gestes: BTreeSet<u64>,
     /// Les gestes qui y sont plus d'une fois : aucun ne devrait (SAL-57).
     pub en_double: Vec<u64>,
+    /// Les entrées écartées parce que le jeu a fauté : aucune ne devrait, dans une
+    /// soirée d'un jeu sain (lot 5).
+    pub ecartees: u64,
+    /// Les tenus de téléphone placés.
+    pub tenus: u64,
+    /// Les sauts du numéro de pas (la partie n'a pas suivi l'horloge, D14).
+    pub sauts: u64,
+    /// Les octets de chaque geste placé, tels que le jeu les a encodés : ce que le relais
+    /// ne doit jamais voir en clair (`le_relais_ne_voit_aucun_secret`, lot 5).
+    pub octets_des_gestes: BTreeSet<Vec<u8>>,
 }
 
 /// Vérifie la chaîne entière des cases écrites dans une soirée (l'historique du relais) :
@@ -1451,15 +1513,38 @@ pub fn verifier_l_historique<S: InstantaneGarde + Clone>(
                     .lignes
                     .saturating_add(u64::try_from(j.lignes().len()).unwrap_or(u64::MAX));
                 for l in j.lignes() {
-                    if let Ligne::Arrivees { arrivees, .. } = l {
-                        for a in arrivees {
-                            if let QuoiPlace::Geste { id, .. } = &a.quoi {
-                                let id: IdGeste = *id;
-                                if !h.gestes.insert(id.fil()) {
-                                    h.en_double.push(id.fil());
+                    match l {
+                        Ligne::Arrivees { arrivees, .. } => {
+                            for a in arrivees {
+                                match &a.quoi {
+                                    QuoiPlace::Geste { id, octets, .. } => {
+                                        let id: IdGeste = *id;
+                                        if !h.gestes.insert(id.fil()) {
+                                            h.en_double.push(id.fil());
+                                        }
+                                        h.octets_des_gestes.insert(octets.clone());
+                                    }
+                                    QuoiPlace::Tenu { .. } => {
+                                        h.tenus = h.tenus.saturating_add(1);
+                                    }
+                                    QuoiPlace::Manette { .. }
+                                    | QuoiPlace::Ecran(_)
+                                    | QuoiPlace::Presence(_)
+                                    | QuoiPlace::Reponse { .. } => {}
                                 }
                             }
                         }
+                        Ligne::Entree(LigneEntree {
+                            issue: IssueJournal::Ecartee { .. },
+                            ..
+                        }) => h.ecartees = h.ecartees.saturating_add(1),
+                        Ligne::Saut { .. } => h.sauts = h.sauts.saturating_add(1),
+                        Ligne::Entree(_)
+                        | Ligne::Empreinte { .. }
+                        | Ligne::Pause { .. }
+                        | Ligne::Vue { .. }
+                        | Ligne::Partie { .. }
+                        | Ligne::Reprise { .. } => {}
                     }
                 }
             }

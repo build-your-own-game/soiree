@@ -6,7 +6,7 @@
 # Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
 # `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2) ;
 # `banc`, la deuxième (lot 3a) ; `liaison` et `salle`, la troisième et la quatrième (lot
-# 4a). Ce qui ne sert que dans le navigateur est dans le second workspace, `web/` (P31),
+# 4a) ; `relais`, la cinquième (lot 5). Ce qui ne sert que dans le navigateur est dans le second workspace, `web/` (P31),
 # dont les règles d'écriture sont celles-ci, à l'identique.
 #
 # Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
@@ -33,6 +33,8 @@ members = [
     # (PHASE-3, § 2.2, § 2.6 et § 2.7 ; lot 4a).
     "crates/liaison",
     "crates/salle",
+    # Le relais de la soirée, `soiree-relais` (PHASE-3, § 2.5 ; lot 5).
+    "crates/relais",
     # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
     "crates/exemples/*",
     "crates/exemples/*/module",
@@ -69,6 +71,9 @@ epreuve = { path = "crates/epreuve", version = "0.1.0" }
 liaison = { path = "crates/liaison", version = "0.1.0" }
 # La salle, sans entrées-sorties : le chiffrement et les messages chiffrés (lot 4a).
 salle = { path = "crates/salle", version = "0.1.0" }
+# Le relais, `soiree-relais` : son cœur, sa coque et sa garde sur disque (lot 5). Le banc
+# le lance dans ses tests et lit sa garde.
+relais = { path = "crates/relais", version = "0.1.0" }
 devine = { path = "crates/exemples/devine", version = "0.1.0" }
 fautifs = { path = "crates/exemples/fautifs", version = "0.1.0" }
 # Les cinq fautifs dont la faute est un `static`, à part : la règle « rien hors de
@@ -127,6 +132,14 @@ miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-a
 # sans TLS (tout est sur la boucle locale). `handshake`, la poignée de main du client, est
 # sa seule fonctionnalité utile.
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+# Le relais lit la requête (`Host`, `Origin`) avant de choisir entre une page et le
+# WebSocket, sur le seul port du QR (PHASE-3, § 2.5). La version que `tungstenite` tire
+# déjà, la dernière publiée (2025-03-03).
+httparse = "1.10.1"
+# Le relais liste les interfaces réseau de la machine, ce que `std` ne fait pas (SAL-76) :
+# l'adresse annoncée est celle d'une interface, pas la route par défaut. La dernière
+# version (0.15.0, publiée le 2026-02-08) ; elle ne tire que `libc` sous Unix.
+if-addrs = "0.15.0"
 # Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s entre l'autorité et chaque appareil (PHASE-3,
 # § 2.6, P12) : pur Rust, motifs et vecteurs publics. Sans ses fonctionnalités par
 # défaut : `std` tirerait `getrandom` 0.3 et `ring`, et `use-getrandom` le hasard du

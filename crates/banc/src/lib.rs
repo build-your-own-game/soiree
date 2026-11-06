@@ -23,7 +23,10 @@
 //! - [`etalonner`] : le scénario `soiree-banc etalonner`, M1 (la trace de la capture du
 //!   harnais rejouée sur le protocole du commun, appel par appel), M10 (la boucle vide)
 //!   et la profondeur que tient chaque navigateur (M9) ;
-//! - [`rapport`] : le jugement de ce qu'une page rapporte.
+//! - [`rapport`] : le jugement de ce qu'une page rapporte ;
+//! - [`soiree_native`] : le scénario `soiree-banc soiree-native` (lot 5), une soirée par
+//!   le vrai relais, l'autorité et des téléphones natifs, sous les pannes du
+//!   [`mandataire`], sur des WebSocket non bloquantes ([`ws`]).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -35,12 +38,15 @@ pub mod etalonner;
 pub mod firefox;
 mod horloge;
 pub mod machine;
+pub mod mandataire;
 pub mod navigateur;
 pub mod rapport;
 pub mod rejouer;
 pub mod safari;
 pub mod serveur;
+pub mod soiree_native;
 pub mod web;
+pub mod ws;
 
 use std::path::PathBuf;
 

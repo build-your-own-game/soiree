@@ -243,6 +243,13 @@ impl<H: Hasard> Appareil<H> {
         self.file.len()
     }
 
+    /// Le numéro et les octets de chaque geste qui attend son accusé : ce qui voyage
+    /// dans chaque `VersAutorite::Geste`. Le banc s'en sert pour chercher ces gestes en
+    /// clair dans ce que le relais voit (`le_relais_ne_voit_aucun_secret`, lot 5).
+    pub fn gestes_en_file(&self) -> impl Iterator<Item = (u64, &[u8])> + '_ {
+        self.file.iter().map(|g| (g.numero, g.octets.as_slice()))
+    }
+
     /// Le dernier numéro de tenu envoyé.
     pub const fn numero_tenu(&self) -> u64 {
         self.numero_tenu

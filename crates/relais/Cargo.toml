@@ -1,0 +1,33 @@
+[package]
+name = "relais"
+description = "Le relais de la soirée, soiree-relais : des trames qu'il ne sait pas lire, et une garde chiffrée sur disque."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "soiree-relais"
+path = "src/bin/soiree-relais.rs"
+
+# Le relais ne dépend que de `liaison` dans le commun, et d'aucune crate de chiffrement
+# (PHASE-3, § 2.5) : `tests/relais/graphe.rs` le vérifie.
+[dependencies]
+# Les trames en clair, une seule définition.
+liaison.workspace = true
+# Le WebSocket, synchrone, sur un `TcpStream` de `std`, sans runtime (SAL-146).
+tungstenite.workspace = true
+# Lire la requête (`Host`, `Origin`) avant de choisir entre une page et le WebSocket.
+httparse.workspace = true
+# Les interfaces réseau de la machine, ce que `std` ne fait pas (SAL-76).
+if-addrs.workspace = true
+
+[dev-dependencies]
+# Lire le graphe des dépendances que Cargo dit (`cargo metadata`), dans `tests/relais/graphe.rs`.
+serde_json.workspace = true
+# Des octets au hasard pour le cœur : jamais de panique (REM-64).
+proptest.workspace = true
+
+[lints]
+workspace = true

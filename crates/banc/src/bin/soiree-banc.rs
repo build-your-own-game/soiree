@@ -9,12 +9,18 @@
 //!                       [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]
 //!                       [--fautif fausser-apres:<n>]
 //! soiree-banc regles-web
+//! soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes]
+//!                           [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne]
+//!                           [--travail <dossier>] [--calme S]
 //! ```
 //!
 //! `machine` : les essais de `Machine` (lot 3a). `rejouer` : E20, que `soiree-epreuve
 //! --navigateurs` lance sur le dossier qu'il écrit (lot 3b, `banc::rejouer`).
 //! `etalonner` : M1, M10 et M9 dans chaque navigateur (lot 3c, `banc::etalonner`), sur
-//! la capture du harnais (`mesures/navigateur/README.md`).
+//! la capture du harnais (`mesures/navigateur/README.md`). `soiree-native` : une soirée
+//! par le vrai relais (le binaire `soiree-relais` à côté de celui-ci, `SOIREE_RELAIS`, ou
+//! `--relais`), l'autorité et des téléphones natifs, sous pannes (lot 5,
+//! `banc::soiree_native`) ; code 0 si tout tient, 1 sinon, 2 si l'outil n'a pas pu jouer.
 //!
 //! Code de sortie : 0 réussi (pour `etalonner` : tout a été mesuré, sans défaut) ; 1
 //! échec (dont la règle « mêmes lints » qui refuse `web/`, une page qui ne rapporte
@@ -42,10 +48,11 @@ use banc::machine::{self, Arret, Options};
 use banc::navigateur::Navigateur;
 use banc::rapport::Attendu;
 use banc::rejouer;
+use banc::soiree_native;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]"
     );
     ExitCode::from(2)
 }
@@ -309,6 +316,124 @@ fn etalonner_(args: &[String]) -> ExitCode {
     ExitCode::from(code)
 }
 
+/// `soiree-native` (lot 5) : une soirée par le vrai relais, l'autorité et des téléphones
+/// natifs, sous pannes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "la lecture des options d'une commande, une par une"
+)]
+fn soiree_native(args: &[String]) -> ExitCode {
+    let mut module = None;
+    let mut o = soiree_native::Options {
+        module: PathBuf::new(),
+        telephones: None,
+        duree_s: 120,
+        graine: 1,
+        pannes: jeu_abi::Oui::Oui,
+        tuer_le_relais: 0,
+        partie_entiere: jeu_abi::Oui::Non,
+        relais: soiree_native::SorteRelais::DansLeProcessus,
+        travail: PathBuf::new(),
+        calme_max_s: 60,
+    };
+    let mut relais = std::env::var_os("SOIREE_RELAIS")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|d| d.join("soiree-relais")))
+        });
+    let mut travail = None;
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        let nombre = |v: Option<&String>| v.and_then(|x| x.parse::<u64>().ok());
+        match a.as_str() {
+            "--telephones" => match nombre(i.next()) {
+                Some(n) => o.telephones = usize::try_from(n).ok(),
+                None => return usage(),
+            },
+            "--duree" => match nombre(i.next()) {
+                Some(n) => o.duree_s = n,
+                None => return usage(),
+            },
+            "--graine" => match nombre(i.next()) {
+                Some(n) => o.graine = n,
+                None => return usage(),
+            },
+            "--calme" => match nombre(i.next()) {
+                Some(n) => o.calme_max_s = n,
+                None => return usage(),
+            },
+            "--tuer-le-relais" => match nombre(i.next()).and_then(|n| u32::try_from(n).ok()) {
+                Some(n) => o.tuer_le_relais = n,
+                None => return usage(),
+            },
+            "--sans-pannes" => o.pannes = jeu_abi::Oui::Non,
+            "--partie-entiere" => o.partie_entiere = jeu_abi::Oui::Oui,
+            "--relais" => match i.next() {
+                Some(r) => relais = Some(PathBuf::from(r)),
+                None => return usage(),
+            },
+            "--relais-interne" => relais = None,
+            "--travail" => match i.next() {
+                Some(t) => travail = Some(PathBuf::from(t)),
+                None => return usage(),
+            },
+            _ if a.starts_with("--") || module.is_some() => return usage(),
+            _ => module = Some(PathBuf::from(a)),
+        }
+    }
+    let Some(module) = module else {
+        return usage();
+    };
+    o.module = module;
+    if let Some(r) = relais {
+        if !r.exists() {
+            eprintln!(
+                "soiree-native : le relais {} n'existe pas (cargo build --release -p relais, ou --relais <binaire>)",
+                r.display()
+            );
+            return ExitCode::from(2);
+        }
+        o.relais = soiree_native::SorteRelais::Processus(r);
+    }
+    o.travail = travail.unwrap_or_else(|| {
+        let nom = o
+            .module
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        banc::commun().join(format!(
+            "target/travail/soiree-native/{nom}-graine{}-{}",
+            o.graine,
+            std::process::id()
+        ))
+    });
+    println!(
+        "soiree-native : {} ; travail dans {}",
+        o.module.display(),
+        o.travail.display()
+    );
+    match soiree_native::jouer(&o) {
+        Ok(b) => {
+            print!("{b}");
+            if b.fautes.is_empty() {
+                println!("réussie");
+                ExitCode::SUCCESS
+            } else {
+                for f in &b.fautes {
+                    println!("ÉCHEC : {f}");
+                }
+                ExitCode::from(1)
+            }
+        }
+        Err(e) => {
+            eprintln!("soiree-native : panne de l'outil : {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
@@ -316,6 +441,7 @@ fn main() -> ExitCode {
         Some((c, reste)) if c == "rejouer" => rejouer_e20(reste),
         Some((c, reste)) if c == "etalonner" => etalonner_(reste),
         Some((c, reste)) if c == "regles-web" && reste.is_empty() => regles_web(),
+        Some((c, reste)) if c == "soiree-native" => soiree_native(reste),
         _ => usage(),
     }
 }

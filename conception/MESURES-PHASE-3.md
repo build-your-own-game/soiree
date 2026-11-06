@@ -586,6 +586,50 @@ Ce qui se lit :
 
 Commandes : `target/release/soiree-banc etalonner --mesures m10 --navigateurs chrome,firefox` ; sous charge, lancer d'abord quatorze `yes > /dev/null &`, puis `--etiquette <navigateur>-sous-charge --budget 268435456`, et les arrêter après.
 
+## Lot 5 : M11 (une case de garde) et M15 (le relais à 71 liens)
+
+### M11 : le coût d'une case de garde
+
+Le 2026-11-06 à 21 h 39 (GMT), MacBook Apple M5, 16 Go, macOS 27.2 (26B123), disque interne APFS (`/dev/disk3s1s1`, « Solid State : Yes », protocole Apple Fabric) ; `lourd --calme` (charge 2,65 au départ, 2,52 à la fin, 51 % de mémoire libre). Chaque case est écrite comme le relais l'écrit, `relais::garde::ecrire_durable` : fichier temporaire, `File::sync_all`, renommage, dossier ouvert et synchronisé. 64 écritures par taille (8 pour le point), en microsecondes, « médiane ; 99ᵉ centile ; maximum » :
+
+| Taille | Écrite et synchronisée | Sans synchronisation (écrite, renommée) |
+|---|---|---|
+| 100 o (une case de journal) | 8 000 ; 9 407 ; 13 188 | 244 ; 714 ; 825 |
+| 4 Kio | 8 872 ; 9 799 ; 12 659 | 234 ; 640 ; 766 |
+| 64 Kio | 8 073 ; 9 061 ; 9 070 | 255 ; 725 ; 830 |
+| 1 Mio | 9 951 ; 10 276 ; 11 027 | 434 ; 1 141 ; 3 321 |
+| 17 625 193 o (le point de Tier list au pire, M3) | 18 080 ; 20 937 ; 25 951 | 3 274 ; 6 137 ; 7 015 |
+
+Et, sur le même disque, le même soir, par Python (`os.fsync`, puis `fcntl(fd, F_FULLFSYNC)`), sur un fichier de 100 o et de 64 Kio : `fsync` seul 22 et 37 µs en médiane (au plus 25 et 143) ; `F_FULLFSYNC` 3 873 et 3 769 µs (au plus 5 710 et 4 667). Une case synchronisée coûte deux `F_FULLFSYNC` (le fichier, le dossier) : **`File::sync_all` de `std` fait bien `F_FULLFSYNC` sous macOS**, constaté par son coût (la source de `std` n'est pas installée sur la machine pour le lire) ; la synchronisation d'un dossier ouvert en lecture réussit.
+
+Ce qu'elle remplace : « plusieurs ms seraient plausibles » (§ 2.4) ; la cadence de 100 ms tient (au plus dix cases par seconde, moins de 90 ms de disque par seconde, sur le fil de la garde du relais, pas sur celui des salles) ; la fourchette choisie de la simulation (1 à 20 ms, `Pannes::SOIREE`) couvre une case de journal, pas tout à fait le pire point (26 ms au plus, une case toutes les 10 s).
+
+Commande : `cargo build --release -p relais --example mesure_garde`, puis `target/hote/lourd --calme target/release/examples/mesure_garde <dossier> --fois 64` et `target/hote/lourd --calme python3 -I target/travail/lot-5/fsync.py <dossier>` (preuve : `target/preuves/lot-5/m11/`).
+
+### M11, refaite après la vérification du lot 5
+
+La mesure ci-dessus a été prise avec un `mesure_garde` construit avant `cargo fmt`, qui écrivait par `ecrire_durable` des fichiers nommés `<n>-j`. Après la vérification, la garde tient une case par numéro (la sorte dans le premier octet du fichier, PHASE-3, § 2.4), et `mesure_garde` écrit chaque case par `relais::garde::Dossier::ecrire`, comme le relais : l'octet de sorte et les octets dans un fichier temporaire, `File::sync_all`, renommage, dossier synchronisé. Refaite le 2026-11-06 à 23 h 10 (GMT), même machine (MacBook Apple M5, 16 Go, macOS 27.2, 26B123), même disque (`/dev/disk3s1s1`, APFS, « Solid State : Yes », Apple Fabric) ; `lourd --calme` (charge 2,71 au départ et à la fin, 48 % de mémoire libre ; le portillon a d'abord attendu une charge de 3,09) ; `mesure_garde` de sha256 `298e1640…`. 64 écritures par taille (8 pour le point), en microsecondes, « médiane ; 99ᵉ centile ; maximum » :
+
+| Taille | Écrite et synchronisée | Sans synchronisation (écrite, renommée) |
+|---|---|---|
+| 100 o (une case de journal) | 8 010 ; 9 005 ; 10 720 | 255 ; 629 ; 843 |
+| 4 Kio | 8 994 ; 9 993 ; 10 005 | 275 ; 434 ; 438 |
+| 64 Kio | 9 185 ; 10 211 ; 10 217 | 291 ; 744 ; 870 |
+| 1 Mio | 9 900 ; 11 052 ; 12 102 | 470 ; 918 ; 5 567 |
+| 17 625 193 o (le point de Tier list au pire, M3) | 19 200 ; 20 024 ; 20 162 | 3 490 ; 4 762 ; 6 899 |
+
+Par Python, le même soir : `fsync` seul 19 et 28 µs en médiane (100 o, 64 Kio ; au plus 27 et 44) ; `F_FULLFSYNC` 3 853 et 3 781 µs (au plus 9 378 et 4 846). Ce qui se lit est inchangé : une case coûte deux `F_FULLFSYNC`, de 8 à 9 ms en médiane pour une case de journal, au plus 12 ms ; le pire point 19 ms en médiane, au plus 20 ms. La cadence de 100 ms tient.
+
+Commande : `cargo build --release -p relais --example mesure_garde`, puis `target/hote/lourd --calme target/release/examples/mesure_garde <dossier> --fois 64` et `target/hote/lourd --calme python3 -I target/travail/lot-5/fsync.py <dossier>` (preuve : `target/preuves/lot-5/correction/m11/`).
+
+### M15 : les fils et la mémoire du relais à 71 liens
+
+Le 2026-11-06, de 21 h 43 à 21 h 53 (GMT), même machine, pendant `soiree-banc soiree-native` de Sidequest à 71 téléphones, 10 minutes (graine 2, deux `kill -9` du relais), charge 2,08 au départ et 4,05 à la fin (le banc, ses 71 téléphones, son mandataire et l'autorité tournent sur la même machine). Le banc lit le relais toutes les 5 s (`ps -M -p <pid>`, `ps -o rss= -p <pid>`) ; le maximum sur les trois relais successifs : **153 fils**, **14 784 Kio résidents** (14,4 Mio). Les 153 fils : deux par lien (71 téléphones, les onglets jumeaux du moment, l'autorité et sa garde), le fil des salles, celui de la garde, les fils d'écoute ; l'estimation du § 2.5 (environ 150) tient, et la mémoire ne gêne pas : rien ne demande le fil de lecture commun par `poll`. Dans la soirée de Punchline à 8 téléphones : 27 fils, 10 320 Kio. Ce n'est pas une mesure de temps.
+
+Commande : `target/release/soiree-banc soiree-native ../games/sidequest/target/wasm32-unknown-unknown/module/sidequest_module.wasm --telephones 71 --duree 600 --graine 2 --tuer-le-relais 2 --calme 120` (preuve : `target/preuves/lot-5/soiree-native-sidequest-71/`).
+
+Relue après la vérification (2026-11-06, de 23 h 00 à 23 h 10, GMT, même commande avec `--travail`, le relais à sa garde d'un fichier par numéro, charge 1,73 au départ et 3,09 à la fin) : **153 fils**, **14 736 Kio** au plus ; à 8 téléphones (Punchline) : 27 fils, 15 696 Kio (preuves : `target/preuves/lot-5/correction/soiree-native-sidequest-71/`, `soiree-native-punchline/`).
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).

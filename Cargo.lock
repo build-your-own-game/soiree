@@ -90,8 +90,13 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "banc"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "jeu-abi",
+ "liaison",
  "moteur-commun",
+ "moteur-wasmtime",
+ "relais",
+ "salle",
  "serde_json",
  "toml",
  "tungstenite",
@@ -1111,6 +1116,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1499,6 +1514,18 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "relais"
+version = "0.1.0"
+dependencies = [
+ "httparse",
+ "if-addrs",
+ "liaison",
+ "proptest",
+ "serde_json",
+ "tungstenite",
+]
 
 [[package]]
 name = "rustc-demangle"

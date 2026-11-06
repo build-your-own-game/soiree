@@ -15,6 +15,22 @@ path = "src/bin/soiree-banc.rs"
 # E20 : relire le relevé de wasmtime (ses événements, ses appels, son empreinte) pour
 # juger ce qu'une page rapporte sans la croire sur parole.
 moteur-commun.workspace = true
+# `soiree-native` (lot 5) : l'autorité et les téléphones natifs, et les jugements de la
+# soirée (la chaîne écrite, les accusés, la reprise depuis la garde).
+salle.workspace = true
+# Les trames en clair que les bouts natifs échangent avec le relais.
+liaison.workspace = true
+# Le relais de la soirée : lancé dans le processus pour les tests, et sa garde sur
+# disque relue à la fin d'une soirée native.
+relais.workspace = true
+# L'autorité native joue le module du jeu dans wasmtime, comme l'épreuve ; les
+# téléphones natifs partageront son `Engine` quand ils joueront la page (lot 12).
+moteur-wasmtime.workspace = true
+# La déclaration du jeu (ses téléphones, sa redite) et les types du fil ; aussi, en test,
+# la sorte d'un appel, pour écrire la trace d'une capture d'essai (`etalonner::tests`).
+jeu-abi.workspace = true
+# L'empreinte du module joué, au rapport.
+blake3.workspace = true
 # Les pilotes de Chrome et de Firefox : CDP et WebDriver BiDi sont des WebSocket.
 tungstenite.workspace = true
 # Les messages de CDP et de BiDi, et le rapport qu'une page envoie à `POST /banc/rapport`.
@@ -29,8 +45,6 @@ toml.workspace = true
 wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
 # Le module des essais, écrit en `wat`.
 wat.workspace = true
-# La sorte d'un appel, pour écrire la trace d'une capture d'essai (`etalonner::tests`).
-jeu-abi.workspace = true
 
 [lints]
 workspace = true

@@ -1,0 +1,15 @@
+# Le témoin du test du graphe du relais (`crates/relais/tests/relais/graphe.rs`, PHASE-3,
+# § 2.5 et § 8.3, lot 5) : une crate qui tire une crate de chiffrement, `snow`. Il n'est
+# membre d'aucun workspace et ne se compile jamais ; le test lit seulement son graphe
+# (`cargo metadata`, hors ligne), dans une copie sous `target/`, et vérifie que la même
+# fonction qui juge le relais le refuse, en nommant `snow`.
+[package]
+name = "relais-temoin"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+snow = { version = "0.10.0", default-features = false, features = ["use-curve25519", "use-chacha20poly1305", "use-blake2"] }
+
+[workspace]
