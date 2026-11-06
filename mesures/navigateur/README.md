@@ -59,6 +59,10 @@ CARGO_BUILD_JOBS=4 cargo build --release -p banc
 #    comme le harnais. Code 1 dès un écart de carburant avec wasmtime, ou une récursion
 #    de M9 sous PHASE_3 qui n'est pas la faute Profondeur ; 2 si tout n'a pas été mesuré.
 target/release/soiree-banc etalonner --tours 4 --navigateurs chrome,firefox,safari
+# Le contrôle négatif de M1 : un moteur qui fausse le carburant passé 100 appels ; il
+# doit rendre le code 1, le premier écart à l'appel 101 (2, panne de l'outil, s'il ne
+# le voit pas là).
+target/release/soiree-banc etalonner --mesures m1 --modules devine --fautif fausser-apres:100 --sans-construire
 # Une seule mesure, ou sous charge (lancer d'abord quatorze `yes > /dev/null &`) :
 target/release/soiree-banc etalonner --mesures m10 --etiquette chrome-sous-charge --navigateurs chrome --sans-construire
 ```

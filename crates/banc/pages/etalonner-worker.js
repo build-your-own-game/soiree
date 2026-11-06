@@ -17,7 +17,7 @@ self.onmessage = async (m) => {
     if (d.quoi === "etalonner") {
       const base = `/donnees/${encodeURIComponent(d.module)}`;
       const [livre, trace] = await Promise.all([lire(`${base}/livre.wasm`), lire(`${base}/trace.bin`)]);
-      r = etalonner(livre, trace, d.passes);
+      r = etalonner(livre, trace, d.passes, d.fautif);
     } else if (d.quoi === "boucle") {
       r = boucle_vide(d.fois, d.budget);
     } else if (d.quoi === "profondeur") {

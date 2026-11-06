@@ -8,7 +8,8 @@
   `web/moteur-navigateur` par sa colle `wasm-bindgen`, et joue ce que `?quoi=` demande :
 
   - `etalonner` (M1) : le module livré et la trace de la capture, servis sous
-    `/donnees/<module>/`, rejoués `?passes=` fois ;
+    `/donnees/<module>/`, rejoués `?passes=` fois, sur le moteur fautif si
+    `?fautif=fausser-apres:<n>` (le contrôle négatif) ;
   - `boucle` (M10) : le module de `Bonjour` qui boucle, `?fois=` chargements, puis la
     boucle sous `?budget=` unités ;
   - `profondeur` (M9) : la profondeur que tient le Worker, puis celle que tient le fil
@@ -41,6 +42,7 @@ try {
       quoi,
       module: p.get("module") ?? "",
       passes: Number(p.get("passes") ?? 2),
+      fautif: p.get("fautif") ?? "",
       fois: Number(p.get("fois") ?? 15),
       budget: Number(p.get("budget") ?? 2 ** 30),
     });

@@ -740,3 +740,127 @@ Non relancés, parce que rien de ce que cette correction change ne les touche (n
 - `PHASE_3` est figé à 64 par un test ; le changer demande de refaire M9 (les deux moitiés), qui vérifie maintenant aussi, dans le navigateur, que la profondeur pique avant la pile native.
 - Le harnais retiré se reprend au commit `44160f9` (`mesures/navigateur/mesurer.mjs`, `analyser.mjs`, `page/banc.html`, `banc.js`, `banc-coeur.js`, `trace.js`) ; il lit encore la capture d'aujourd'hui.
 
+
+## Lot 3c, fin
+
+Le 2026-11-06, en deux temps : de 02 h 50 à 04 h 10 environ (GMT) par un premier agent, interrompu par un redémarrage de la machine ; puis de 17 h 35 à 18 h 10 par un second, qui a relu et fini ses changements. Même machine (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface. Chaque commande lourde est passée par le portillon de l'hôte (`target/hote/lourd`), chaque mesure par `lourd --calme`. Rien n'est commité.
+
+### Ce qui est fait
+
+1. **La mesure 1 sur machine calme, les deux outils en alternance.** Le harnais retiré repris de `44160f9` sous `target/travail/lot-3c/harnais/` (le dossier temporaire du premier agent a disparu au redémarrage), puis un tour du harnais, un tour du banc (`soiree-banc etalonner --mesures m1 --navigateurs chrome,firefox`), et ainsi de suite : **huit tours valides chacun**, Chrome et Firefox, tous pris avec une charge sous 3 au départ (de 1,74 à 2,97 ; de 2,52 à 5,54 à la fin, le navigateur compris). Les tours 1 et 2 sont ceux du premier agent (04 h 00 à 04 h 08), gardés : pris sous 3, sur le même code de M1 (l'exemple construit à 03 h 02, l'arbre de travail de ses changements de code inchangé depuis) ; son troisième tour du harnais, interrompu avant de partir, n'a rien mesuré (`calme-harnais-3-interrompu`). Quatre tours étaient demandés au moins ; après les quatre premiers, ni les queues ni les médianes de Chrome ne tombaient dans l'étendue du harnais, et quatre autres ont été pris, décidés avant de les voir et tous gardés, pour que l'étendue de chaque outil ne repose pas sur quatre valeurs. Résultat (`MESURES-PHASE-3.md`, « La mesure 1 sur machine calme ») :
+   - aucun écart de carburant, d'issue ou de retour, aucune panne, sur les 116 807 appels, dans chaque rejeu de chaque tour, par les deux outils ;
+   - médianes : Firefox, banc 65 à 75 ps dans l'étendue du harnais (63 à 83) ; Chrome, banc 36 à 49 contre 36 à 43, **deux tours sur huit au-dessus** (46 et 49) ;
+   - 99ᵉ centile : Chrome dedans (64 à 100 contre 60 à 105) ; Firefox non (120 à 207 contre 107 à 144) ;
+   - maxima : non (Chrome 84 à 501 contre 108 à 175, six tours sur huit au-dessus, sur la soirée de Tier list ; Firefox 152 à 3 814 contre 172 à 300, un appel lourd de Punchline à 247 à 432 ps dans six tours sur huit, au plus 87 au harnais).
+
+   Les queues du banc ne tombent donc pas dans l'étendue du harnais sur machine calme : **la décision de l'agent principal pour l'hôte s'applique.** Le critère du § 7 pour ce lot devient « zéro écart de carburant, d'issue et de retour, et médianes dans l'étendue du harnais d'un tour à l'autre » ; les queues se remesurent au lot 13 sur machine calme ; la question 27, nouvelle, porte les chiffres au mainteneur. Écrit dans PHASE-3 (la ligne du lot 3c au § 7, M1 au § 8.6, la question 27 au § 9.1). **Ce critère lui-même n'est tenu que dans Firefox** : dans Chrome, deux médianes sur huit le dépassent, de 3 et 6 ps. C'est dit tel quel, ni arrondi ni relu.
+2. **Le contrôle négatif de M1** : `soiree-banc etalonner --fautif fausser-apres:<n>` rejoue la trace sur un moteur fautif (`Faussee` dans l'exemple `etalonnage-navigateur`, la machine fautive de E20 recopiée : passé `n` appels, le carburant restant lu d'une unité de trop) ; ses résultats s'écrivent sous `etalonnage/<navigateur>-fautif/`. L'analyse vérifie que chaque passe compte un écart, le premier au `n + 1`-ième appel (`premier_ecart_appel`, rapporté par la page), et le dit sinon. Dans Chrome et Firefox, sur `devine`, `fausser-apres:100` : 7 840 écarts par passe, le premier à l'appel 101, **code 1**. Le code de sortie est tiré dans `etalonner::code_de_sortie`, que le binaire appelle et que le test voit.
+3. **M9** : un essai sans plafond qui ne s'arrête pas sur la pile native (un retour, un autre piège, aucun essai, aucun cadre) est un **défaut** (code 1), et non plus un « ATTENTION » (`defauts_des_cadres`). Refait dans Chrome et Firefox : code 0, les mêmes étages tenus (247 et 480 ; 492 et 893), chaque récursion sous `PHASE_3` en faute `Profondeur`.
+4. **`rejouer_la_trace`** (l'exemple `etalonnage-navigateur`) : un `Instantane` ou un `Restaurer` qui nomme une instance ou un instantané absent est une **panne du rejeu**, qui fait un défaut et le code 1, et non plus un événement sauté. La fonction est devenue générique sur la fabrique (le vrai moteur, ou le moteur fautif) ; la comparaison d'un appel est `Rejeu::comparer`. Contrôle dans les navigateurs : la trace de `devine` à laquelle sont ajoutés, avant la fin, un instantané de l'instance 999 et une restauration vers l'instantané 999 (`target/travail/lot-3c/abimer.py`, `--donnees target/travail/lot-3c/donnees-abimee`) : 0 écart, 2 pannes par passe, **code 1**, dans Chrome et Firefox.
+5. **Les en-têtes et la largeur** : `epreuve/examples/profondeur.rs` dit « M9, la première moitié » (la profondeur qu'atteignent les jeux), l'exemple `etalonnage-navigateur` « la seconde moitié » (celle que tient chaque navigateur), comme `MESURES-PHASE-3.md` ; les commentaires ajoutés ou repris (`soiree-banc.rs`, `rejouer.rs`, `moteur-wasmtime/src/lib.rs`, `etalonner.rs`, l'exemple) tiennent dans 88 colonnes (le code qui les entoure monte par endroits à 90) ; seules restent plus larges les lignes d'usage de `soiree-banc.rs`, qui sont du texte de commande.
+
+Documents : `PHASE-3.md` (§ 7, § 8.6, § 9.1), `MESURES-PHASE-3.md`, `CHANGELOG.md`, `AGENTS.md`, `crates/README.md`, `mesures/navigateur/README.md`, la documentation de `soiree-banc` et de `etalonner`, `etalonner.html`.
+
+### Les tests qui le tiennent
+
+- `banc`, `etalonner::tests::un_ecart_avec_wasmtime_fait_le_code_1` : d'une capture d'essai et d'un rapport de page jusqu'au code de sortie ; sans écart 0, un écart 1, le contrôle négatif qui voit son écart au bon appel, qui ne voit rien, qui le voit trop tôt, une trace trop courte, un passage non mesuré 2 (né du constat 2 de la vérification : rien ne prouvait qu'un écart de M1 compte).
+- `banc`, `etalonner::tests::m9_un_essai_hors_de_la_pile_native_est_un_defaut`.
+- Dans les navigateurs : `etalonner --fautif fausser-apres:100` (code 1, écart à l'appel 101), la trace abîmée (code 1, deux pannes par passe), `etalonner --mesures m9` (code 0).
+- **Aucun test natif ne tient le point 4** : l'exemple ne tourne que dans un navigateur (son horloge est `performance.now()`) ; il est tenu par le contrôle de la trace abîmée, joué à la main et gardé dans les preuves.
+
+Aucune leçon de `lecons/sources/` n'a fait naître ces tests.
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-3c/` (hors dépôt) ; chaque dossier a `commande.txt`, `sortie.txt` (complète, avec la charge et la mémoire que le portillon écrit au départ et à la fin), `code.txt` (code, durée, fin) et `empreinte.txt` (pour le commun et chaque jeu : `HEAD`, `sha256` de `git diff HEAD` et des fichiers non suivis). Le commun est à `f4fba17` pour toutes ; `diff HEAD` vaut `968018f9…` pour toutes, sauf `calme-harnais-1` (`622405fb…`, lancé à 03 h 02, avant que le premier agent ne finisse quatre documents `.md` à 03 h 03 ; le code était déjà celui-ci). Après les preuves, seuls des documents ont changé (PHASE-3, MESURES-PHASE-3, ce journal, CHANGELOG, AGENTS) : l'empreinte finale de l'arbre diffère donc, ses sources de code non. Le module éprouvé est l'exemple `etalonnage-navigateur` construit à 03 h 02 : `sha256` `7fc15e87314d4f4b092c568f31e52cf9f08ba91167c127b773ae0d2910e1f283` (`web/target/wasm32-unknown-unknown/release/examples/etalonnage_navigateur.wasm`) ; le paquet `wasm-bindgen` servi, `target/banc/paquet/etalonnage_navigateur_bg.wasm`, `c6ab00d3e5702323…` (réécrit à 17 h 59 depuis le même module). Les jeux n'ont pas changé.
+
+| Preuve | Commande | Résultat |
+| --- | --- | --- |
+| `calme-harnais-1` à `-8`, `calme-banc-1` à `-8` | `lourd --calme node mesurer.mjs --navigateurs chrome,firefox --tour <n>` ; `lourd --calme target/release/soiree-banc etalonner --mesures m1 --navigateurs chrome,firefox --sans-construire` | code 0 chacun ; de 28 à 51 s de mesure par tour (le portillon l'écrit), l'attente du calme en plus (57 min pour le premier tour du harnais, au plus 4 min ensuite) ; `analyse.json` de chaque tour du banc dans son dossier |
+| `harnais-analyse/` | `node analyser.mjs --tour <n>`, n de 1 à 8 | les analyses (Markdown et `analyse-harnais-tour-<n>.json`) |
+| `comparaison.txt`, `comparaison-8-tours.txt` | `python3 -I target/travail/lot-3c/comparer.py 1 2 3 4` (puis `… 5 6 7 8`) | les étendues ci-dessus |
+| `m1-fautif` | `lourd target/release/soiree-banc etalonner --mesures m1 --modules devine --navigateurs chrome,firefox --fautif fausser-apres:100` | **code 1**, écart à l'appel 101 dans les deux, 5 s |
+| `m1-trace-abimee` | `lourd target/release/soiree-banc etalonner --mesures m1 --modules devine --navigateurs chrome,firefox --donnees target/travail/lot-3c/donnees-abimee --sans-construire` | **code 1**, 2 pannes par passe dans les deux, 4 s |
+| `m9` | `lourd target/release/soiree-banc etalonner --mesures m9 --navigateurs chrome,firefox --sans-construire` | code 0, 3 s |
+| `test-banc` | `lourd cargo test -p banc` | code 0, 36 réussis |
+| `clippy-commun`, `clippy-web-wasm`, `clippy-web-natif` | `lourd cargo clippy --workspace --all-targets -- -D warnings` ; dans `web/`, `--target wasm32-unknown-unknown` et en natif | aucun avertissement |
+| `test-web` | dans `web/`, `lourd cargo test` | code 0, 9 réussis |
+| `fmt` | `cargo fmt --all --check`, commun et `web/` | rien à reformater |
+| `regles-web` | `lourd target/release/soiree-banc regles-web` | code 0 |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0** : 502 réussis (les 500 de la correction et les 2 nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 287 s ; 1,49 Go au plus (le plus gros processus) |
+| `m1-fautif-avant-redemarrage`, `m9-avant-redemarrage`, `avant-harnais-0137` | du premier agent, sur un état antérieur du code | gardés pour l'histoire, non comptés |
+
+Non relancés, parce que rien de ce que cette fin change ne les touche (ni l'épreuve, ni `rejouer`, hors d'un commentaire, ni `PHASE_3`, ni `partie`, ni les essais de `Machine`) : le plan standard des trois jeux, E20, M10, `soiree-banc machine`.
+
+État laissé : aucun navigateur, serveur ni tâche de fond de moi ; le harnais et les données abîmées restent sous `target/travail/lot-3c/` (hors dépôt).
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Les queues de la mesure 1 ne se retrouvent pas, même au calme** ; le critère est changé par décision (plus haut), et **même le critère changé n'est pas tenu dans Chrome** (deux médianes sur huit au-dessus de l'étendue du harnais, 46 et 49 ps contre 43). Ce n'est pas corrigé : ni la décision ni ce document n'élargissent l'étendue. À trancher par le mainteneur (question 27), ou à remesurer au lot 13.
+- La cause des queues du banc n'est pas cherchée : dans Chrome, la soirée de Tier list ; dans Firefox, un appel lourd de Punchline qui revient six tours sur huit. Le lot 13 peut chronométrer la remise à zéro à part et comparer appel par appel.
+- Safari reste « pas exécuté » (question 8) ; rien n'a été touché aux réglages de la machine.
+- Le point 4 n'a pas de test natif (plus haut).
+
+### Ce que le lot suivant doit savoir
+
+- Une mesure de M1 se prend par `target/hote/lourd --calme`, et sur plusieurs tours ; sous charge, les médianes de Firefox doublent. Les queues ne se jugent pas sur une soirée (question 27), et aucun budget ne se règle sur un maximum (question 4).
+- `etalonner --fautif fausser-apres:<n>` est le contrôle négatif de M1 ; il doit rendre 1.
+- Le harnais retiré se reprend par `git archive 44160f9 mesures/navigateur`, avec un lien `target` vers `soiree/target` et un lien `../games` à côté : ses résultats vont dans `target/mesures-navigateur/resultats/<navigateur>/<module>-<tour>.json`, où les huit tours de cette fin sont gardés.
+
+## Lot 3c, seconde correction après la vérification de la fin
+
+Le 2026-11-06, de 18 h 13 à 18 h 42 environ (GMT), même machine, Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface. Chaque commande lourde par `target/hote/lourd`. Rien n'est commité.
+
+### Les constats, et ce qui en est fait
+
+1. **[bloquant] Même le critère changé n'est pas tenu dans Chrome.** Vérifié : les médianes de Chrome du banc vont de 36 à 49 ps, celles du harnais de 36 à 43 ; les tours 2 et 3 du banc (49 et 46) sont au-dessus (`comparaison-8-tours.txt`, recalculé par la vérification depuis les données brutes). Le critère est appliqué tel quel, comme l'hôte l'a décidé : rien n'est élargi, arrondi, retiré ni rejoué pour le faire passer. **Non corrigé, et le lot n'est pas fini selon sa colonne** ; c'est écrit dans la ligne du lot 3c au § 7 et à la question 27. Ce qui est ajouté pour le mainteneur, sans changer le verdict : la charge pendant la partie Chrome de chaque tour (constat 4), et l'étendue sans les tours 1 et 2 (constat 3), qui reste au-dessus (banc 36 à 46, harnais 36 à 42).
+2. **[mineur] Sous `--fautif`, le code ne distinguait pas un contrôle négatif réussi d'un contrôle raté.** Vérifié : `controle_negatif` ajoutait ses lignes aux défauts, et un contrôle qui ne voyait rien rendait 1 comme un contrôle qui voit son écart. Fait : ses lignes vont dans une liste à part (`controle_rate`, dans `analyse.json` et dans la sortie, « CONTRÔLE NÉGATIF RATÉ ») ; `etalonner::code_de_sortie` rend **2** dès qu'elle n'est pas vide, avant tout défaut : une panne de l'outil, comme `rejouer --fautif` classe « le contrôle négatif n'a rien vu ». Un contrôle qui ne voit pas son écart, qui le voit ailleurs qu'au `n + 1`-ième appel, sans objet (trace trop courte), sans passe, non jugé (nombre d'appels différent, capture illisible) ou sans aucun module de M1 rejoué fait le code 2. Un contrôle réussi rend toujours 1. Le binaire le dit en une ligne. Documents : PHASE-3 § 7, `AGENTS.md`, `crates/README.md`, `mesures/navigateur/README.md`, `CHANGELOG.md`, la documentation de `soiree-banc` et de `etalonner`.
+3. **[mineur] Les tours 1 et 2 ne sont pas passés par le portillon de l'hôte.** Vérifié : leurs `commande.txt` nomment une copie de `lourd` dans le dossier temporaire de la session, qui n'existe plus (le dossier ne contient plus qu'un script de la vérification) ; elle ne peut pas être comparée au portillon. Ses lignes de sortie ont la forme exacte du portillon, et ses charges au départ sont confirmées par les relevés indépendants du banc et du harnais, sauf le 3,07 que lit le harnais au premier module de son tour 1. Ces tours ne sont pas écartés (la règle de validité n'était pas posée avant), ni rejoués (ce serait rejouer jusqu'à passer) ; c'est écrit dans `MESURES-PHASE-3.md` et à la question 27, avec l'étendue sans eux, qui ne change pas le verdict.
+4. **[mineur] « Sous 3 » ne vaut que pour la charge au départ.** Vérifié. Fait : `MESURES-PHASE-3.md` donne, tour par tour, la plus haute charge sur une minute pendant la partie Chrome (banc, avant et après chaque module : 3,95 ; 5,26 ; 5,22 ; 2,50 ; 3,92 ; 3,12 ; 2,99 ; 3,14 ; harnais, au départ de chaque module seulement : 4,34 ; 2,75 ; 2,24 ; 2,97 ; 4,33 ; 3,06 ; 2,66 ; 3,00). Les deux tours du banc au-dessus de 5 sont ceux des deux médianes au-dessus ; au harnais, le tour 5, à 4,33, reste à 37 ps : un lien n'est ni établi ni exclu. La question 27 demande s'il faut à M1 une règle de validité posée avant les tours, sur la charge pendant la mesure.
+5. **[mineur] La ligne du lot 13 ne disait pas que les queues de M1 s'y remesurent.** Vérifié. Fait : la colonne « Ce qui le prouve fini » du lot 13 dit maintenant, « reporté du lot 3c », les queues de M1 remesurées dans Chrome et Firefox sur machine calme, banc et harnais retiré en alternance, plusieurs tours, la charge relevée pendant chaque tour, et la médiane de Chrome avec elles ; ce qui ne se retrouve pas va à la question 27.
+6. **[mineur] Le plan standard des trois jeux sous `PHASE_3` et E20 n'avaient aucune preuve gardée.** Vérifié. Fait : relancés, preuves gardées (tableau plus bas). Le plan standard rend **0** pour Punchline, Sidequest et Tier list ; E20 sur le plan court, dans Chrome et Firefox, est réussi pour chacun, son contrôle négatif vu à l'appel 100, et les codes rendent **la référence du § 7** : Sidequest 0 ; Punchline 1, E2 seul (« une fin, mais aucune autre après la nouvelle partie », 13 783 lignes) ; Tier list 1, E15 seul (201 670 au début, 213 975 à la fin). Les modules éprouvés ont les empreintes du lot (Punchline `ad1b7b04…`, Sidequest `8112385d…`, Tier list `73552646…`, telles que l'épreuve les écrit), et leur `sha256` est gardé dans chaque preuve (`module.sha256`).
+
+Aucun constat n'est écarté.
+
+### Les tests qui le tiennent
+
+- `banc`, `etalonner::tests::un_ecart_avec_wasmtime_fait_le_code_1`, étendu : sans écart 0 ; un écart 1 ; le contrôle qui voit son écart au bon appel 1, sans contrôle raté ; qui ne voit rien 2 (une ligne par passe, aucun défaut) ; trop tôt 2 (l'écart en défaut, le contrôle raté l'emporte) ; trace trop courte 2 ; nombre d'appels différent 2 ; `--fautif` sans module de M1 2 ; un passage non mesuré 2 (né du constat 2 de cette vérification).
+- Dans les navigateurs, sur `devine` : `--fautif fausser-apres:100`, **code 1**, 7 840 écarts par passe, le premier à l'appel 101, aucun contrôle raté ; `--fautif fausser-apres:8000` (la trace n'a que 7 940 appels), **code 2**, « CONTRÔLE NÉGATIF RATÉ », un par navigateur : le code distingue maintenant les deux.
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-3c/seconde-correction/` (hors dépôt), chaque dossier comme ceux de la fin du lot (`commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, et `module.sha256` pour une épreuve). Le commun est à `f4fba17` ; le code n'a pas changé depuis 18 h 17 : `git diff HEAD -- . ':(exclude)*.md'` vaut `5930472b4ee92cce…` du premier au dernier de ces passages (`target/travail/lot-3c/empreinte-code-1817.txt`, puis `empreinte-code.txt` à la fin) ; seuls des `.md` ont changé entre les preuves, d'où des `diff HEAD` différents dans leurs empreintes. Les jeux n'ont aucun diff. Le module de M1 est toujours l'exemple `etalonnage-navigateur` de 03 h 02 (`7fc15e87…`) : `web/` n'a pas changé.
+
+| Preuve | Commande | Résultat |
+| --- | --- | --- |
+| `build-release` | `lourd cargo build --release -p banc -p epreuve` | code 0, 7 s |
+| `m1-fautif` | `lourd target/release/soiree-banc etalonner --mesures m1 --modules devine --navigateurs chrome,firefox --fautif fausser-apres:100 --sans-construire` | **code 1**, écart à l'appel 101 dans les deux, aucun contrôle raté, 5 s |
+| `m1-fautif-sans-objet` | la même, `--fautif fausser-apres:8000` | **code 2**, contrôle négatif raté (sans objet) dans les deux, 4 s |
+| `m1-trace-abimee` | la même sans `--fautif`, `--donnees target/travail/lot-3c/donnees-abimee` | **code 1**, 0 écart et 2 pannes par passe dans les deux, 4 s |
+| `m9` | `lourd target/release/soiree-banc etalonner --mesures m9 --navigateurs chrome,firefox --sans-construire` | code 0 ; 247 et 480 (Chrome), 492 et 893 (Firefox) ; chaque récursion sous `PHASE_3` en faute `Profondeur` ; 3 s |
+| `plan-standard-punchline`, `-sidequest`, `-tier-list` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/<jeu>` | **code 0** chacun ; 99 s, 502 s, 164 s ; 1,61, 2,49 et 1,02 Go au plus |
+| `e20-court-punchline`, `-sidequest`, `-tier-list` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/<jeu> --court --navigateurs chrome,firefox` | 1, 0, 1 : la référence du § 7 ; E20 réussi dans les deux navigateurs pour chacun ; 31 s, 163 s, 57 s |
+| `test-banc` | `lourd cargo test -p banc` | code 0, 36 réussis |
+| `clippy-commun`, `clippy-web-wasm`, `clippy-web-natif` | `lourd cargo clippy --workspace --all-targets -- -D warnings` ; dans `web/`, `--target wasm32-unknown-unknown` et en natif | aucun avertissement |
+| `test-web` | dans `web/`, `lourd cargo test` | code 0, 9 réussis |
+| `fmt` | `cargo fmt --all --check`, commun et `web/` | rien à reformater |
+| `regles-web` | `lourd target/release/soiree-banc regles-web` | code 0 |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0** : 502 réussis, 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 263 s ; 1,62 Go au plus |
+
+Non relancés : les seize tours de M1 (le code de M1 n'a pas changé : l'exemple et sa page sont les mêmes ; la vérification les a recalculés depuis les données brutes), M10, `soiree-banc machine` ; Safari reste « pas exécuté », aucun réglage de la machine touché.
+
+État laissé : aucun navigateur sans interface, serveur ni tâche de fond de moi. Les scripts de cette correction sont dans `target/travail/lot-3c/` (`preuve2.sh`, `epreuves.sh`, `finales.sh`).
+
+### Les mesures
+
+Aucune mesure de temps nouvelle : les durées ci-dessus sont celles des commandes, sous la charge que le portillon a notée, pas des mesures au sens du § 8.6. La mémoire : le plan standard de Sidequest 2,49 Go au plus, `cargo test --workspace` 1,62 Go (`/usr/bin/time -l`, le plus gros processus).
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Le critère changé du lot 3c n'est pas tenu dans Chrome** (constat 1) : deux médianes du banc sur huit, 46 et 49 ps, au-dessus de l'étendue du harnais (36 à 43). Le lot n'est donc pas fini selon sa colonne. Ce n'est pas corrigeable ici sans affaiblir le critère : à trancher par le mainteneur (question 27), ou à remesurer au lot 13 (sa ligne le dit maintenant).
+- La cause des queues, et des deux médianes de Chrome, n'est pas cherchée ; la charge pendant la partie Chrome est notée, sans conclusion.
+
+### Ce que le lot suivant doit savoir
+
+- `etalonner --fautif fausser-apres:<n>` rend 1 quand le contrôle négatif voit son écart au `n + 1`-ième appel, et **2** quand il le rate (`controle_rate`) : un contrôle automatique qui lit le code doit attendre 1, et seulement 1.
+- Le lot 13 reprend les queues de M1 (sa ligne au § 7) ; poser avant les tours la règle de validité sur la charge pendant la mesure, si le mainteneur la veut (question 27).

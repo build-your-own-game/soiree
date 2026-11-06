@@ -7,6 +7,7 @@
 //! soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9]
 //!                       [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>]
 //!                       [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]
+//!                       [--fautif fausser-apres:<n>]
 //! soiree-banc regles-web
 //! ```
 //!
@@ -15,14 +16,19 @@
 //! `etalonner` : M1, M10 et M9 dans chaque navigateur (lot 3c, `banc::etalonner`), sur
 //! la capture du harnais (`mesures/navigateur/README.md`).
 //!
-//! Code de sortie : 0 réussi (pour `etalonner` : tout a été mesuré, sans défaut) ; 1 échec (dont la règle « mêmes lints » qui refuse
-//! `web/`, une page qui ne rapporte rien ou rapporte une erreur pour `machine`, un
-//! écart pour `rejouer` ; pour `etalonner`, un défaut : un écart de carburant, d'issue
-//! ou de retour avec wasmtime, un module réécrit autrement que dans la capture, une
-//! récursion de M9 sous `PHASE_3` qui n'est pas la faute `Profondeur`, qui l'emporte
-//! sur « pas exécuté ») ; 2 pas exécuté ou panne de l'outil (un navigateur absent, une
-//! construction ratée, une commande illisible, un rejeu qui n'a pas tourné). Un
-//! scénario à la fois, jamais à côté d'une compilation (OUT-89, OUT-115).
+//! Code de sortie : 0 réussi (pour `etalonner` : tout a été mesuré, sans défaut) ; 1
+//! échec (dont la règle « mêmes lints » qui refuse `web/`, une page qui ne rapporte
+//! rien ou rapporte une erreur pour `machine`, un écart pour `rejouer` ; pour
+//! `etalonner`, un défaut : un écart de carburant, d'issue ou de retour avec wasmtime,
+//! un module réécrit autrement que dans la capture, une récursion de M9 sous `PHASE_3`
+//! qui n'est pas la faute `Profondeur` ou sans plafond que la pile native n'arrête pas,
+//! et, sous `--fautif`, l'écart que le contrôle négatif de M1 doit compter ; il
+//! l'emporte sur « pas exécuté ») ; 2 pas exécuté ou panne de l'outil (un navigateur
+//! absent, une construction ratée, une commande illisible, un rejeu qui n'a pas
+//! tourné, et, sous `--fautif`, un contrôle négatif qui n'a pas vu son écart au
+//! `n + 1`-ième appel, ce qui l'emporte sur tout, pour `rejouer` comme pour
+//! `etalonner`). Un scénario à la fois, jamais à côté d'une compilation (OUT-89,
+//! OUT-115).
 
 #![forbid(unsafe_code)]
 
@@ -39,7 +45,7 @@ use banc::rejouer;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]\n        soiree-banc regles-web"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web"
     );
     ExitCode::from(2)
 }
@@ -249,6 +255,14 @@ fn etalonner_(args: &[String]) -> ExitCode {
                 o.etiquette = Some(v.clone());
                 Ok(())
             }
+            "--fautif" => v
+                .strip_prefix(rejouer::FAUSSER_APRES)
+                .ok_or_else(|| format!("fautif inconnu : {v}"))
+                .and_then(|n| {
+                    n.parse()
+                        .map_err(|e| format!("fautif illisible : {v} ({e})"))
+                })
+                .map(|n| o.fautif = Some(n)),
             _ => Err(format!("option inconnue : {a}")),
         };
         if let Err(e) = lu {
@@ -272,18 +286,27 @@ fn etalonner_(args: &[String]) -> ExitCode {
     // Une mesure n'est pas un jugement : le code dit si tout a été mesuré. Mais un
     // défaut (un écart avec wasmtime, D32 ; `PHASE_3` qui laisse la pile native céder
     // d'abord, § 8.7) en est un, et l'emporte, comme un échec de `rejouer`.
-    let defauts = resume
-        .get("defauts")
-        .and_then(serde_json::Value::as_array)
-        .map_or(0, Vec::len);
-    if defauts > 0 {
-        println!("etalonner : {defauts} défauts (voir « DÉFAUTS » plus haut)");
-        ExitCode::from(1)
-    } else if passages.iter().all(|p| p.rapport.is_ok()) {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(2)
+    // Sous `--fautif`, un contrôle négatif qui n'a pas vu son écart est une panne de
+    // l'outil : le code 2, jamais le 1 d'un contrôle réussi.
+    let code = etalonner::code_de_sortie(&resume, &passages);
+    let compte = |cle: &str| {
+        resume
+            .get(cle)
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len)
+    };
+    if compte("controle_rate") > 0 {
+        println!(
+            "etalonner : panne de l'outil, le contrôle négatif a raté {} fois (voir « CONTRÔLE NÉGATIF RATÉ » plus haut)",
+            compte("controle_rate")
+        );
+    } else if code == 1 {
+        println!(
+            "etalonner : {} défauts (voir « DÉFAUTS » plus haut)",
+            compte("defauts")
+        );
     }
+    ExitCode::from(code)
 }
 
 fn main() -> ExitCode {

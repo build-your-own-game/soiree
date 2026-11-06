@@ -29,6 +29,8 @@ toml.workspace = true
 wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
 # Le module des essais, écrit en `wat`.
 wat.workspace = true
+# La sorte d'un appel, pour écrire la trace d'une capture d'essai (`etalonner::tests`).
+jeu-abi.workspace = true
 
 [lints]
 workspace = true

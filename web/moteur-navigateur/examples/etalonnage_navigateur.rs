@@ -1,5 +1,5 @@
 //! L'étalonnage dans un vrai navigateur (PHASE-3, § 8.3 et § 8.6, lot 3c) : M1, M10 et
-//! la première moitié de M9.
+//! la seconde moitié de M9.
 //!
 //! Une bibliothèque WebAssembly : `wasm-bindgen` la relie au Worker de la page de
 //! `soiree-banc etalonner` (`crates/banc/pages/etalonner.html`), qui appelle l'une des
@@ -14,7 +14,8 @@
 //!   deux mille `Bonjour` d'un bloc ; puis la trace de la capture
 //!   (`moteur_commun::trace`) rejouée appel par appel, chaque appel, instance neuve,
 //!   instantané et restauration chronométrés, et le carburant, l'issue et le retour de
-//!   chaque appel comparés à ceux de wasmtime.
+//!   chaque appel comparés à ceux de wasmtime. Son contrôle négatif,
+//!   `fausser-apres:<n>`, rejoue la trace sur un moteur fautif (voir [`Faussee`]).
 //! - [`boucle_vide`] (M10) : le module de `Bonjour` qui boucle chargé jusqu'à sa faute
 //!   `Budget`, et un témoin qui piège dès l'entrée ; puis la même boucle sur un plus
 //!   grand budget, par la machine seule.
@@ -32,15 +33,20 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
 use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use moteur_commun::trace::{self, Evenement};
-use moteur_commun::{BUDGET_DE_CHARGEMENT, Bits, Instantane, Machine, Piege, RefusModule};
-use moteur_navigateur::{InstanceNavigateur, MachineNavigateur, ModuleNavigateur, charger};
-use partie::{Fabrique, Faute, Instance};
+use moteur_commun::{
+    BUDGET_DE_CHARGEMENT, Bits, Instantane, Machine, Piege, Protocole, RefusModule,
+};
+use moteur_navigateur::{
+    InstanceNavigateur, MachineNavigateur, ModuleCharge, ModuleNavigateur, charger,
+};
+use partie::{Fabrique, Faute, Instance, PanneOutil};
 use reecriture::{CARBURANT, MEMOIRE_MAX, PROFONDEUR, Reglages};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
@@ -176,6 +182,85 @@ fn avec_nonce(octets: &[u8], k: u32, horloge: &Horloge) -> Vec<u8> {
 
 // M1 : la trace rejouée.
 
+/// Le préfixe du moteur fautif dans `fautif`, comme celui de E20.
+const FAUSSER_APRES: &str = "fausser-apres:";
+
+/// Le contrôle négatif de M1 (lot 3c, vérification de la correction) : une machine
+/// qui, passé `apres` appels de `soiree_appel` comptés sur toutes les machines de sa
+/// fabrique, lit le carburant restant d'une unité de trop. Le rejeu doit compter un
+/// écart au `apres + 1`-ième appel de la trace, et `soiree-banc etalonner` rendre le
+/// code 1 ; sans lui, rien ne dirait que M1 sait voir un écart. C'est la machine
+/// fautive de E20 (`rejeu_navigateur.rs`), recopiée : un exemple ne se partage pas.
+struct Faussee {
+    vraie: MachineNavigateur,
+    appels: Rc<Cell<u64>>,
+    apres: u64,
+}
+
+impl Machine for Faussee {
+    fn neuve(&mut self) -> Result<Faussee, PanneOutil> {
+        Ok(Faussee {
+            vraie: self.vraie.neuve()?,
+            appels: Rc::clone(&self.appels),
+            apres: self.apres,
+        })
+    }
+    fn pages(&mut self) -> u64 {
+        self.vraie.pages()
+    }
+    fn lire(&mut self, adresse: u32, dans: &mut [u8]) -> Result<(), PanneOutil> {
+        self.vraie.lire(adresse, dans)
+    }
+    fn ecrire(&mut self, adresse: u32, octets: &[u8]) -> Result<(), PanneOutil> {
+        self.vraie.ecrire(adresse, octets)
+    }
+    fn remplir_de_zeros(&mut self, adresse: u32, longueur: u32) -> Result<(), PanneOutil> {
+        self.vraie.remplir_de_zeros(adresse, longueur)
+    }
+    fn grandir_jusqu_a(&mut self, pages: u64) -> Result<(), PanneOutil> {
+        self.vraie.grandir_jusqu_a(pages)
+    }
+    fn globale(&mut self, nom: &str) -> Result<Bits, PanneOutil> {
+        let b = self.vraie.globale(nom)?;
+        Ok(match b {
+            Bits::I64(x) if nom == CARBURANT && self.appels.get() > self.apres => {
+                Bits::I64(x.wrapping_add(1))
+            }
+            autre @ (Bits::I32(_) | Bits::I64(_) | Bits::F32(_) | Bits::F64(_)) => autre,
+        })
+    }
+    fn poser_globale(&mut self, nom: &str, b: Bits) -> Result<(), PanneOutil> {
+        self.vraie.poser_globale(nom, b)
+    }
+    fn boite(&mut self, taille: i32, sorte: i32) -> Result<i32, Piege> {
+        self.vraie.boite(taille, sorte)
+    }
+    fn appel(&mut self, taille: i32) -> Result<i64, Piege> {
+        self.appels.set(self.appels.get().saturating_add(1));
+        self.vraie.appel(taille)
+    }
+}
+
+/// La fabrique du moteur fautif : un compte d'appels neuf à chaque rejeu.
+struct FabriqueFaussee<'a> {
+    module: &'a ModuleCharge,
+    appels: Rc<Cell<u64>>,
+    apres: u64,
+}
+
+impl Fabrique for FabriqueFaussee<'_> {
+    type I = Protocole<Faussee>;
+
+    fn neuve(&mut self) -> Result<Protocole<Faussee>, PanneOutil> {
+        let (appels, apres) = (Rc::clone(&self.appels), self.apres);
+        self.module.instance_sur(|vraie| Faussee {
+            vraie,
+            appels,
+            apres,
+        })
+    }
+}
+
 /// Ce qu'un rejeu de la trace a constaté.
 #[derive(Default)]
 struct Rejeu {
@@ -189,29 +274,58 @@ struct Rejeu {
     instantanes_octets: Vec<f64>,
     ecarts: u64,
     premier_ecart: Option<String>,
+    /// Le rang, parmi les appels de la trace (le premier vaut 1), du premier écart.
+    premier_ecart_appel: Option<u64>,
     pannes: Vec<String>,
     total_ms: f64,
 }
 
-fn rejouer_la_trace(
-    module: &moteur_navigateur::ModuleCharge,
-    evenements: &[Evenement],
-    horloge: &Horloge,
-) -> Rejeu {
-    let mut fabrique = module.fabrique();
-    let mut instances: BTreeMap<u32, InstanceNavigateur> = BTreeMap::new();
+impl Rejeu {
+    /// Compare l'appel `rang` de la trace (l'événement `k`) à ce que wasmtime en a
+    /// rendu (carburant, issue, longueur et empreinte du retour) ; compte l'écart, et
+    /// garde le premier. Le carburant d'une panne ne se compare pas.
+    fn comparer(
+        &mut self,
+        (k, rang): (usize, u64),
+        (carburant, issue, longueur, empreinte): (u64, u8, u32, u32),
+        (brule, (iss, lon, emp)): (u64, (u8, u32, u32)),
+    ) {
+        let meme_carburant = issue == trace::ISSUE_PANNE || brule == carburant;
+        if meme_carburant && iss == issue && lon == longueur && emp == empreinte {
+            return;
+        }
+        self.ecarts = self.ecarts.saturating_add(1);
+        if self.premier_ecart.is_none() {
+            self.premier_ecart_appel = Some(rang);
+            self.premier_ecart = Some(format!(
+                "événement {k} : carburant {brule} au lieu de {carburant}, issue {iss} au lieu de {issue}, retour {lon} octets ({emp:08x}) au lieu de {longueur} ({empreinte:08x})"
+            ));
+        }
+    }
+}
+
+/// Rejoue la trace sur les instances de `fabrique`. Une instance ou un instantané que
+/// la trace nomme sans qu'il existe est une panne du rejeu, jamais un événement sauté :
+/// la suite ne rejouerait plus la trace de wasmtime.
+fn rejouer_la_trace<F>(mut fabrique: F, evenements: &[Evenement], horloge: &Horloge) -> Rejeu
+where
+    F: Fabrique,
+    F::I: Instance<Instantane = Instantane>,
+{
+    let mut instances: BTreeMap<u32, F::I> = BTreeMap::new();
     let mut instantanes: BTreeMap<u32, Instantane> = BTreeMap::new();
     let mut rejeu = Rejeu::default();
+    let mut appels = 0u64;
     let debut = horloge.ms();
     for (k, e) in evenements.iter().enumerate() {
         match e {
             Evenement::Neuve { inst } => {
                 let debut_op = horloge.ms();
-                let i = Fabrique::neuve(&mut fabrique);
+                let i = fabrique.neuve();
                 rejeu.neuves_us.push((horloge.ms() - debut_op) * 1000.0);
                 match i {
                     Ok(i) => {
-                        let _: Option<InstanceNavigateur> = instances.insert(*inst, i);
+                        let _: Option<F::I> = instances.insert(*inst, i);
                     }
                     Err(p) => rejeu.pannes.push(format!("événement {k} : neuve : {p}")),
                 }
@@ -227,6 +341,7 @@ fn rejouer_la_trace(
                 sortie_fnv,
                 ..
             } => {
+                appels = appels.saturating_add(1);
                 let Some(i) = instances.get_mut(inst) else {
                     rejeu
                         .pannes
@@ -238,61 +353,86 @@ fn rejouer_la_trace(
                 let res = Instance::appeler(i, *sorte, octets, *budget);
                 rejeu.appels_us.push((horloge.ms() - debut_op) * 1000.0);
                 let brule = Instance::carburant(i).unwrap_or(0);
-                let (iss, lon, emp) = trace::issue_de(&res);
-                let meme_carburant = *issue == trace::ISSUE_PANNE || brule == *carburant;
-                if !meme_carburant || iss != *issue || lon != *sortie_longueur || emp != *sortie_fnv
-                {
-                    rejeu.ecarts = rejeu.ecarts.saturating_add(1);
-                    if rejeu.premier_ecart.is_none() {
-                        rejeu.premier_ecart = Some(format!(
-                            "événement {k} : carburant {brule} au lieu de {carburant}, issue {iss} au lieu de {issue}, retour {lon} octets ({emp:08x}) au lieu de {sortie_longueur} ({sortie_fnv:08x})"
-                        ));
-                    }
-                }
+                rejeu.comparer(
+                    (k, appels),
+                    (*carburant, *issue, *sortie_longueur, *sortie_fnv),
+                    (brule, trace::issue_de(&res)),
+                );
             }
             Evenement::Instantane { inst, id } => {
-                if let Some(i) = instances.get_mut(inst) {
-                    let debut_op = horloge.ms();
-                    let s = Instance::instantane(i);
-                    rejeu
-                        .instantanes_us
-                        .push((horloge.ms() - debut_op) * 1000.0);
-                    match s {
-                        Ok(s) => {
-                            let n = u32::try_from(s.octets().len()).unwrap_or(u32::MAX);
-                            rejeu.instantanes_octets.push(f64::from(n));
-                            let _: Option<Instantane> = instantanes.insert(*id, s);
-                        }
-                        Err(p) => rejeu
-                            .pannes
-                            .push(format!("événement {k} : instantané : {p}")),
+                let Some(i) = instances.get_mut(inst) else {
+                    rejeu.pannes.push(format!(
+                        "événement {k} : instantané de l'instance {inst}, absente"
+                    ));
+                    continue;
+                };
+                let debut_op = horloge.ms();
+                let s = Instance::instantane(i);
+                rejeu
+                    .instantanes_us
+                    .push((horloge.ms() - debut_op) * 1000.0);
+                match s {
+                    Ok(s) => {
+                        let n = u32::try_from(s.octets().len()).unwrap_or(u32::MAX);
+                        rejeu.instantanes_octets.push(f64::from(n));
+                        let _: Option<Instantane> = instantanes.insert(*id, s);
                     }
+                    Err(p) => rejeu
+                        .pannes
+                        .push(format!("événement {k} : instantané : {p}")),
                 }
             }
             Evenement::Restaurer { inst, id } => {
-                if let (Some(i), Some(s)) = (instances.get_mut(inst), instantanes.get(id)) {
-                    let debut_op = horloge.ms();
-                    let x = Instance::restaurer(i, s);
+                let (Some(i), Some(s)) = (instances.get_mut(inst), instantanes.get(id)) else {
+                    rejeu.pannes.push(format!(
+                        "événement {k} : restaurer l'instance {inst} à l'instantané {id} : \
+                         l'une ou l'autre absente"
+                    ));
+                    continue;
+                };
+                let debut_op = horloge.ms();
+                let x = Instance::restaurer(i, s);
+                rejeu
+                    .restaurations_us
+                    .push((horloge.ms() - debut_op) * 1000.0);
+                if let Err(p) = x {
                     rejeu
-                        .restaurations_us
-                        .push((horloge.ms() - debut_op) * 1000.0);
-                    if let Err(p) = x {
-                        rejeu
-                            .pannes
-                            .push(format!("événement {k} : restaurer : {p}"));
-                    }
+                        .pannes
+                        .push(format!("événement {k} : restaurer : {p}"));
                 }
             }
             Evenement::Oublier { id } => {
                 let _: Option<Instantane> = instantanes.remove(id);
             }
             Evenement::Lacher { inst } => {
-                let _: Option<InstanceNavigateur> = instances.remove(inst);
+                let _: Option<F::I> = instances.remove(inst);
             }
         }
     }
     rejeu.total_ms = horloge.ms() - debut;
     rejeu
+}
+
+/// Un rejeu de la trace, sur le vrai moteur, ou sur le moteur fautif
+/// `fausser-apres:<n>` (un compte d'appels neuf à chaque rejeu).
+fn rejouer(
+    module: &ModuleCharge,
+    evenements: &[Evenement],
+    horloge: &Horloge,
+    fautif: Option<u64>,
+) -> Rejeu {
+    match fautif {
+        None => rejouer_la_trace(module.fabrique(), evenements, horloge),
+        Some(apres) => rejouer_la_trace(
+            FabriqueFaussee {
+                module,
+                appels: Rc::new(Cell::new(0)),
+                apres,
+            },
+            evenements,
+            horloge,
+        ),
+    }
 }
 
 fn rejeu_js(r: &Rejeu) -> JsValue {
@@ -313,6 +453,10 @@ fn rejeu_js(r: &Rejeu) -> JsValue {
             r.premier_ecart
                 .as_deref()
                 .map_or(JsValue::NULL, JsValue::from_str),
+        ),
+        (
+            "premier_ecart_appel",
+            r.premier_ecart_appel.map_or(JsValue::NULL, entier),
         ),
         ("pannes", pannes.into()),
     ])
@@ -377,7 +521,12 @@ fn bonjours(
     Ok(v)
 }
 
-fn mesurer(livre: &[u8], octets_trace: &[u8], passes: u32) -> Result<JsValue, String> {
+fn mesurer(
+    livre: &[u8],
+    octets_trace: &[u8],
+    passes: u32,
+    fautif: Option<u64>,
+) -> Result<JsValue, String> {
     let horloge = Horloge::new()?;
     let evenements = trace::lire(octets_trace)?;
     let granularite = horloge.granularite();
@@ -434,11 +583,17 @@ fn mesurer(livre: &[u8], octets_trace: &[u8], passes: u32) -> Result<JsValue, St
     let blocs = bonjours(&module, &bonjour, &horloge)?;
     let liste = Array::new();
     for _ in 0..passes {
-        liste.push(&rejeu_js(&rejouer_la_trace(&module, &evenements, &horloge)));
+        liste.push(&rejeu_js(&rejouer(&module, &evenements, &horloge, fautif)));
     }
     let (b, d) = module.carburant_du_chargement();
     Ok(objet(&[
         ("granularite_ms", JsValue::from_f64(granularite)),
+        (
+            "fautif",
+            fautif.map_or(JsValue::NULL, |n| {
+                JsValue::from_str(&format!("{FAUSSER_APRES}{n}"))
+            }),
+        ),
         (
             "empreinte_reecrite",
             JsValue::from_str(&hex(&module.reecrit().empreinte)),
@@ -467,12 +622,24 @@ fn mesurer(livre: &[u8], octets_trace: &[u8], passes: u32) -> Result<JsValue, St
 
 /// M1 : charge `livre` comme l'autorité, chronomètre la mise en route, la remise à zéro
 /// et deux mille `Bonjour`, puis rejoue `octets_trace` `passes` fois, chaque appel
-/// chronométré et comparé à wasmtime. Rend `{ granularite_ms, empreinte_reecrite, …,
-/// passes: [{ total_ms, appels_us, …, ecarts, premier_ecart, pannes }] }`, ou
-/// `{ erreur }` si l'étalonnage n'a pas pu tourner.
+/// chronométré et comparé à wasmtime. Rend `{ granularite_ms, fautif,
+/// empreinte_reecrite, …, passes: [{ total_ms, appels_us, …, ecarts, premier_ecart,
+/// premier_ecart_appel, pannes }] }`, ou `{ erreur }` si l'étalonnage n'a pas pu
+/// tourner. `fautif` vaut `""` pour le vrai moteur, `"fausser-apres:<n>"` pour rejouer
+/// la trace sur le moteur fautif ([`Faussee`]).
 #[wasm_bindgen]
-pub fn etalonner(livre: &[u8], octets_trace: &[u8], passes: u32) -> JsValue {
-    mesurer(livre, octets_trace, passes).unwrap_or_else(|e| erreur(&e))
+pub fn etalonner(livre: &[u8], octets_trace: &[u8], passes: u32, fautif: &str) -> JsValue {
+    let apres = if fautif.is_empty() {
+        None
+    } else if let Some(n) = fautif.strip_prefix(FAUSSER_APRES) {
+        match n.parse::<u64>() {
+            Ok(n) => Some(n),
+            Err(_) => return erreur(&format!("fautif illisible : {fautif}")),
+        }
+    } else {
+        return erreur(&format!("fautif inconnu : {fautif}"));
+    };
+    mesurer(livre, octets_trace, passes, apres).unwrap_or_else(|e| erreur(&e))
 }
 
 // M10 : la boucle vide.

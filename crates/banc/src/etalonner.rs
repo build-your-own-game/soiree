@@ -25,8 +25,14 @@
 //!
 //! Une mesure n'est pas un jugement, sauf deux choses qu'elle vérifie au passage et
 //! qui font le code 1 : un écart avec wasmtime en M1 (carburant, issue, retour, module
-//! réécrit ; D32) et une récursion de M9 sous `PHASE_3` qui n'est pas la faute
-//! `Profondeur` (§ 8.7). Le résumé les liste sous `defauts`.
+//! réécrit ; D32) et, en M9, une récursion sous `PHASE_3` qui n'est pas la faute
+//! `Profondeur` ou une récursion sans plafond que la pile native n'arrête pas (§ 8.7).
+//! Le résumé les liste sous `defauts` ([`code_de_sortie`]). Le contrôle négatif de M1,
+//! `--fautif fausser-apres:<n>`, rejoue la trace sur un moteur qui fausse le carburant
+//! passé `n` appels : il doit compter un écart au `n + 1`-ième appel, donc le code 1.
+//! Un contrôle qui ne le voit pas, ou pas là, ou qui n'a pas pu être jugé, est une
+//! panne de l'outil, comme sous `rejouer --fautif` : le code 2, qui l'emporte sur
+//! tout, et le résumé les liste sous `controle_rate`.
 //!
 //! La règle « mêmes lints » de `web/` et la construction de l'exemple
 //! `etalonnage-navigateur` finissent avant qu'un navigateur ne parte (OUT-89). Un
@@ -107,8 +113,11 @@ pub struct Options {
     /// Le grand budget de la boucle (M10).
     pub budget: u64,
     /// Le nom sous lequel les résultats s'écrivent (`chrome-sous-charge`) ; par défaut,
-    /// celui du navigateur.
+    /// celui du navigateur (suivi de `-fautif` sous le moteur fautif).
     pub etiquette: Option<String>,
+    /// Le contrôle négatif de M1 : la trace rejouée sur le moteur fautif
+    /// `fausser-apres:<n>`, qui doit compter un écart au `n + 1`-ième appel.
+    pub fautif: Option<u64>,
     /// Le plus long qu'on attend le rapport d'une page.
     pub delai: Duration,
 }
@@ -126,6 +135,7 @@ impl Default for Options {
             fois: 15,
             budget: 1 << 30,
             etiquette: None,
+            fautif: None,
             delai: Duration::from_mins(9),
         }
     }
@@ -260,8 +270,12 @@ fn travaux(m: Mesure, modules: &[String], origine: &str, o: &Options) -> Vec<(St
                 (
                     format!("m1-{module}"),
                     format!(
-                        "{origine}/banc/etalonner.html?quoi=etalonner&module={module}&passes={}",
-                        o.passes
+                        "{origine}/banc/etalonner.html?quoi=etalonner&module={module}&passes={}{}",
+                        o.passes,
+                        o.fautif.map_or_else(String::new, |n| format!(
+                            "&fautif={}{n}",
+                            crate::rejouer::FAUSSER_APRES
+                        ))
                     ),
                 )
             })
@@ -278,6 +292,15 @@ fn travaux(m: Mesure, modules: &[String], origine: &str, o: &Options) -> Vec<(St
             format!("{origine}/banc/etalonner.html?quoi=profondeur"),
         )],
     }
+}
+
+/// Le nom sous lequel s'écrivent les résultats d'un navigateur : `--etiquette`, ou son
+/// nom, suivi de `-fautif` sous le moteur fautif (qui n'écrase pas une vraie mesure).
+fn etiquette(o: &Options, n: Navigateur) -> String {
+    o.etiquette.clone().unwrap_or_else(|| match o.fautif {
+        None => String::from(n.nom()),
+        Some(_) => format!("{}-fautif", n.nom()),
+    })
 }
 
 /// Joue les mesures demandées dans chaque navigateur, un à la fois, et écrit leurs
@@ -332,7 +355,7 @@ pub fn jouer(o: &Options) -> Result<Vec<Passage>, Arret> {
     // charge de la machine tombe ainsi sur chacun. M10 et M9 ne jouent qu'au premier.
     for tour in 1..=tours {
         for n in &o.navigateurs {
-            let etiquette = o.etiquette.clone().unwrap_or_else(|| String::from(n.nom()));
+            let etiquette = etiquette(o, *n);
             let sortie = o.donnees.join("etalonnage").join(&etiquette);
             for m in &o.mesures {
                 if tour > 1 && *m != Mesure::M1 {
@@ -531,6 +554,9 @@ struct Ensemble {
     /// panne du rejeu, un module réécrit autrement, un nombre d'appels différent. Une
     /// mesure n'est pas un jugement, mais D32 en est un : un seul défaut fait le code 1.
     defauts: Vec<String>,
+    /// Sous `--fautif` : ce qui dit que le contrôle négatif n'a pas vu son écart au
+    /// `n + 1`-ième appel, ou n'a pas pu être jugé. Une panne de l'outil (le code 2).
+    controle_rate: Vec<String>,
 }
 
 #[expect(
@@ -543,6 +569,7 @@ fn analyser_un_module(
     c: &Capture,
     r: &Json,
     ensemble: &mut Ensemble,
+    fautif: Option<u64>,
 ) -> Json {
     let titre = tour.map_or_else(|| String::from(module), |t| format!("{module}, tour {t}"));
     let passes = r
@@ -565,6 +592,11 @@ fn analyser_un_module(
             nav.len(),
             wt.len()
         ));
+        if let Some(n) = fautif {
+            ensemble.controle_rate.push(format!(
+                "{titre} : contrôle négatif fausser-apres:{n} non jugé, le nombre d'appels diffère"
+            ));
+        }
         let _: std::fmt::Result = writeln!(
             sortie,
             "appels : {} dans la trace, {} rejoués dans le navigateur, {} dans wasmtime : rien n'est comparé",
@@ -663,6 +695,11 @@ fn analyser_un_module(
         .iter()
         .find_map(|p| p.get("premier_ecart").and_then(Json::as_str))
         .unwrap_or("aucun");
+    if let Some(n) = fautif {
+        ensemble
+            .controle_rate
+            .extend(controle_negatif(&titre, n, &passes, c.appels.len()));
+    }
     let empreinte = r
         .get("empreinte_reecrite")
         .and_then(Json::as_str)
@@ -701,6 +738,23 @@ fn analyser_un_module(
             ecarts.join(" / ")
         ),
     );
+    if let Some(n) = fautif {
+        w(
+            sortie,
+            format!(
+                "- contrôle négatif, moteur fautif fausser-apres:{n} : premier écart attendu à l'appel {}, vu, par passe, à l'appel {}",
+                n.saturating_add(1),
+                passes
+                    .iter()
+                    .map(|p| p
+                        .get("premier_ecart_appel")
+                        .and_then(Json::as_u64)
+                        .map_or_else(|| String::from("—"), |a| a.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            ),
+        );
+    }
     w(
         sortie,
         format!(
@@ -878,6 +932,93 @@ fn etages_tenus(r: &Json) -> Vec<(u64, f64, f64, Vec<String>)> {
         .collect()
 }
 
+/// Les défauts des essais sans plafond de M9 : chacun doit s'arrêter sur la pile native
+/// (`PileNative`). Un essai qui rend, ou tombe sur un autre piège, ne mesure pas la
+/// pile du fil : la profondeur tenue qu'on en tirerait est fausse, et `PHASE_3` se
+/// réglerait sur elle (lot 3c, vérification de la correction). Aucun cadre, ou un cadre
+/// sans essai, est aussi un défaut.
+fn defauts_des_cadres(cadres: &[(u64, f64, f64, Vec<String>)]) -> Vec<String> {
+    let mut defauts: Vec<String> = cadres
+        .iter()
+        .filter_map(|(locaux, _, _, pieges)| {
+            let autres: Vec<&str> = pieges
+                .iter()
+                .map(String::as_str)
+                .filter(|p| *p != "PileNative")
+                .collect();
+            if pieges.is_empty() {
+                Some(format!("{locaux} valeurs par étage : aucun essai"))
+            } else if autres.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "{locaux} valeurs par étage, sans plafond : {}, et non la pile native",
+                    autres.join(", ")
+                ))
+            }
+        })
+        .collect();
+    if cadres.is_empty() {
+        defauts.push(String::from("aucun cadre essayé sans plafond"));
+    }
+    defauts
+}
+
+/// Le contrôle négatif de M1 : sous le moteur fautif `fausser-apres:<n>`, chaque passe
+/// doit compter un écart, et le premier au `n + 1`-ième appel de la trace. L'écart
+/// lui-même est déjà un défaut (il fait le code 1, ce que le contrôle vérifie) ; ici,
+/// ce qui dirait que le contrôle n'a pas vu ce qu'il devait voir : une panne de
+/// l'outil, qui fait le code 2 et non le 1 que le contrôle réussi rend.
+fn controle_negatif(titre: &str, n: u64, passes: &[Json], appels: usize) -> Vec<String> {
+    let attendu = n.saturating_add(1);
+    if u64::try_from(appels).unwrap_or(u64::MAX) < attendu {
+        return vec![format!(
+            "{titre} : contrôle négatif fausser-apres:{n} sans objet, la trace n'a que {appels} appels"
+        )];
+    }
+    if passes.is_empty() {
+        return vec![format!(
+            "{titre} : contrôle négatif fausser-apres:{n} : aucune passe"
+        )];
+    }
+    passes
+        .iter()
+        .enumerate()
+        .filter_map(|(k, p)| {
+            let ecarts = p.get("ecarts").and_then(Json::as_u64).unwrap_or(0);
+            let premier = p.get("premier_ecart_appel").and_then(Json::as_u64);
+            (ecarts == 0 || premier != Some(attendu)).then(|| {
+                format!(
+                    "{titre} : le contrôle négatif fausser-apres:{n} n'a pas vu son écart au {attendu}ᵉ appel (passe {} : {ecarts} écarts, le premier à l'appel {})",
+                    k.saturating_add(1),
+                    premier.map_or_else(|| String::from("—"), |a| a.to_string())
+                )
+            })
+        })
+        .collect()
+}
+
+/// Le code de sortie de `soiree-banc etalonner`, d'après le résumé d'[`analyser`] et
+/// les passages : 2 d'abord si le contrôle négatif de M1 (`--fautif`) n'a pas vu son
+/// écart au bon appel, ou n'a pas pu être jugé (`controle_rate` : une panne de
+/// l'outil, comme sous `rejouer --fautif`, que le code 1 d'un contrôle réussi ne doit
+/// jamais cacher) ; puis 1 dès un défaut (un écart avec wasmtime, D32 ; une récursion
+/// de M9 sous `PHASE_3` qui n'est pas la faute `Profondeur`, ou sans plafond que la
+/// pile native n'arrête pas, § 8.7), qui l'emporte sur « pas exécuté », comme un échec
+/// de `rejouer` ; sinon 0 si tout a été mesuré, 2 si un passage ne l'a pas été.
+pub fn code_de_sortie(resume: &Json, passages: &[Passage]) -> u8 {
+    let compte = |cle: &str| resume.get(cle).and_then(Json::as_array).map_or(0, Vec::len);
+    if compte("controle_rate") > 0 {
+        2
+    } else if compte("defauts") > 0 {
+        1
+    } else if passages.iter().all(|p| p.rapport.is_ok()) {
+        0
+    } else {
+        2
+    }
+}
+
 /// Les récursions de M9 réécrites sous `reecriture::Reglages::PHASE_3` et chargées par
 /// `moteur_navigateur::charger` sur le même fil : chacune doit être la faute
 /// `Profondeur` du jeu, jamais la pile native (une panne de l'outil, § 8.7). Rend le
@@ -938,6 +1079,11 @@ fn analyser_m9(sortie: &mut String, r: &Json, defauts: &mut Vec<String>) -> Json
                 .map(|d| format!("M9, {fil} : {d}")),
         );
         let cadres = etages_tenus(x);
+        defauts.extend(
+            defauts_des_cadres(&cadres)
+                .into_iter()
+                .map(|d| format!("M9, {fil} : {d}")),
+        );
         let tenue = cadres
             .iter()
             .map(|(_, m, _, _)| *m)
@@ -956,7 +1102,7 @@ fn analyser_m9(sortie: &mut String, r: &Json, defauts: &mut Vec<String>) -> Json
             if toutes_natives {
                 ""
             } else {
-                " ; ATTENTION : un essai ne s'est pas arrêté sur la pile native"
+                " ; DÉFAUT : un essai ne s'est pas arrêté sur la pile native"
             }
         );
         let _: Option<Json> = resume.insert(
@@ -1041,6 +1187,7 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
     let mut sortie = String::new();
     let mut resume = Vec::new();
     let mut tous_les_defauts = Vec::new();
+    let mut tous_les_rates = Vec::new();
     let plusieurs_tours = o.tours > 1;
     for n in &o.navigateurs {
         let les_siens: Vec<&Passage> = passages.iter().filter(|p| p.navigateur == *n).collect();
@@ -1056,6 +1203,7 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
         let mut tours: std::collections::BTreeMap<u32, Ensemble> =
             std::collections::BTreeMap::new();
         let mut defauts = Vec::new();
+        let mut rates = Vec::new();
         let mut modules = Vec::new();
         let mut m10 = Json::Null;
         let mut m9 = Json::Null;
@@ -1098,6 +1246,7 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
                             &c,
                             r,
                             ensemble,
+                            o.fautif,
                         ));
                     }
                     Err(e) => {
@@ -1105,6 +1254,11 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
                         ensemble
                             .defauts
                             .push(format!("{module} : capture illisible : {e}"));
+                        if let Some(n) = o.fautif {
+                            ensemble.controle_rate.push(format!(
+                                "{module} : contrôle négatif fausser-apres:{n} non jugé, capture illisible"
+                            ));
+                        }
                     }
                 }
             } else if p.quoi == "m10" {
@@ -1145,6 +1299,15 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
         }
         for e in tours.values_mut() {
             defauts.append(&mut e.defauts);
+            rates.append(&mut e.controle_rate);
+        }
+        if !rates.is_empty() {
+            let _: std::fmt::Result = writeln!(
+                sortie,
+                "\n#### CONTRÔLE NÉGATIF RATÉ ({}) : panne de l'outil, le code 2\n- {}",
+                rates.len(),
+                rates.join("\n- ")
+            );
         }
         if !defauts.is_empty() {
             let _: std::fmt::Result = writeln!(
@@ -1155,6 +1318,7 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
             );
         }
         tous_les_defauts.extend(defauts.iter().map(|d| format!("{} : {d}", n.nom())));
+        tous_les_rates.extend(rates.iter().map(|d| format!("{} : {d}", n.nom())));
         resume.push(json!({
             "navigateur": n.nom(),
             "version": premier.version,
@@ -1169,11 +1333,27 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
                 j
             }).collect::<Vec<_>>(),
             "defauts": defauts,
+            "controle_rate": rates,
             "m10": m10,
             "m9": m9,
         }));
     }
-    let resume = json!({ "navigateurs": resume, "defauts": tous_les_defauts });
+    if let Some(n) = o.fautif
+        && !resume
+            .iter()
+            .any(|j| j["modules"].as_array().is_some_and(|m| !m.is_empty()))
+        && tous_les_rates.is_empty()
+        && passages.iter().any(|p| p.rapport.is_ok())
+    {
+        tous_les_rates.push(format!(
+            "contrôle négatif fausser-apres:{n} : aucun module de M1 rejoué"
+        ));
+    }
+    let resume = json!({
+        "navigateurs": resume,
+        "defauts": tous_les_defauts,
+        "controle_rate": tous_les_rates,
+    });
     ecrire_json(&o.donnees.join("etalonnage").join("analyse.json"), &resume);
     (sortie, resume)
 }
@@ -1182,7 +1362,196 @@ pub fn analyser(o: &Options, passages: &[Passage]) -> (String, Json) {
 mod tests {
     use serde_json::json;
 
-    use super::{Mesure, etages_tenus, etendue, sous_phase_3, stats};
+    use std::path::{Path, PathBuf};
+
+    use jeu_abi::SorteAppel;
+    use moteur_commun::trace::{self, Evenement};
+    use serde_json::Value as Json;
+
+    use super::{
+        Mesure, Options, Passage, analyser, code_de_sortie, defauts_des_cadres, etages_tenus,
+        etendue, sous_phase_3, stats,
+    };
+    use crate::navigateur::Navigateur;
+
+    /// Une capture d'essai de `n` `Bonjour` sur une instance, sous `dossier/devine`,
+    /// telle que `capture-navigateur` l'écrit : la trace, le rejeu de wasmtime, `meta`.
+    fn capture_d_essai(dossier: &Path, n: u32) -> PathBuf {
+        let module = dossier.join("devine");
+        std::fs::create_dir_all(&module).unwrap();
+        let mut evenements = vec![Evenement::Neuve { inst: 0 }];
+        for _ in 0..n {
+            evenements.push(Evenement::Appel {
+                inst: 0,
+                section: trace::BONJOURS,
+                nom: 0,
+                sorte: SorteAppel::Lecture,
+                budget: 1 << 20,
+                octets: vec![0],
+                carburant: 3000,
+                issue: trace::ISSUE_RENDU,
+                sortie_longueur: 4,
+                sortie_fnv: 7,
+            });
+        }
+        std::fs::write(module.join("trace.bin"), trace::ecrire(&evenements)).unwrap();
+        let durees: Vec<u64> = (0..n).map(|_| 20_000).collect();
+        let wasmtime = json!({ "passes": [{ "durees_ns": durees }, { "durees_ns": durees }] });
+        std::fs::write(module.join("wasmtime.json"), wasmtime.to_string()).unwrap();
+        let meta = json!({ "empreinte_reecrite": "ab12", "remise_a_zero_ns": 1000 });
+        std::fs::write(module.join("meta.json"), meta.to_string()).unwrap();
+        module
+    }
+
+    /// Ce que la page rapporte de M1 sur `n` appels : deux passes, avec `ecarts`
+    /// écarts, le premier au `premier`-ième appel.
+    fn rapport_m1(n: u32, ecarts: u64, premier: Option<u64>) -> Json {
+        let appels: Vec<f64> = (0..n).map(|_| 20.0).collect();
+        let passe = json!({ "appels_us": appels, "ecarts": ecarts, "pannes": [],
+                            "premier_ecart_appel": premier });
+        json!({ "empreinte_reecrite": "ab12", "octets_remis_a_zero": 2048,
+                "passes": [passe, passe] })
+    }
+
+    fn passage(rapport: Json) -> Passage {
+        Passage {
+            navigateur: Navigateur::Chrome,
+            version: String::from("essai"),
+            quoi: String::from("m1-devine"),
+            tour: 1,
+            rapport: Ok(rapport),
+            charge: (String::new(), String::new()),
+            console: Vec::new(),
+        }
+    }
+
+    fn liste(resume: &Json, cle: &str) -> Vec<String> {
+        resume[cle]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn defauts(resume: &Json) -> Vec<String> {
+        liste(resume, "defauts")
+    }
+
+    /// Un écart avec wasmtime en M1 fait le code 1 de `soiree-banc etalonner`, de la
+    /// page au code de sortie ; le contrôle négatif (`--fautif fausser-apres:<n>`) doit
+    /// voir son écart au `n + 1`-ième appel, et un contrôle qui ne voit rien, ou trop
+    /// tôt, se dit (lot 3c, vérification de la correction : rien ne prouvait qu'un
+    /// écart de M1 compte). Il fait le code 2, panne de l'outil, et non le 1 d'un
+    /// contrôle réussi (lot 3c, seconde vérification de la fin : sous `--fautif`, un
+    /// contrôle qui ne voyait rien rendait 1 comme un contrôle qui voit son écart).
+    #[test]
+    fn un_ecart_avec_wasmtime_fait_le_code_1() {
+        let dossier = std::env::temp_dir().join(format!("banc-etalonner-{}", std::process::id()));
+        let _: PathBuf = capture_d_essai(&dossier, 5);
+        let mut o = Options {
+            navigateurs: vec![Navigateur::Chrome],
+            mesures: vec![Mesure::M1],
+            donnees: dossier.clone(),
+            modules: vec![String::from("devine")],
+            ..Options::default()
+        };
+        let juger = |o: &Options, r: Json| {
+            let p = [passage(r)];
+            let (_, resume) = analyser(o, &p);
+            (
+                code_de_sortie(&resume, &p),
+                defauts(&resume),
+                liste(&resume, "controle_rate"),
+            )
+        };
+        // Sans écart : code 0.
+        assert_eq!(
+            juger(&o, rapport_m1(5, 0, None)),
+            (0, Vec::new(), Vec::new())
+        );
+        // Un écart : code 1, quel que soit le moteur.
+        let (code, d, rate) = juger(&o, rapport_m1(5, 1, Some(4)));
+        assert_eq!((code, d.len(), rate.len()), (1, 1, 0), "{d:?} {rate:?}");
+        // Le contrôle négatif qui voit son écart au bon appel : code 1, un seul
+        // défaut, l'écart, et aucun contrôle raté.
+        o.fautif = Some(3);
+        let (code, d, rate) = juger(&o, rapport_m1(5, 2, Some(4)));
+        assert_eq!((code, d.len()), (1, 1), "{d:?}");
+        assert!(d[0].contains("différent de wasmtime"), "{d:?}");
+        assert!(rate.is_empty(), "{rate:?}");
+        // Le contrôle négatif qui ne voit rien : code 2, une ligne par passe.
+        let (code, d, rate) = juger(&o, rapport_m1(5, 0, None));
+        assert_eq!(code, 2, "{d:?} {rate:?}");
+        assert!(d.is_empty(), "{d:?}");
+        assert!(
+            rate.iter()
+                .all(|x| x.contains("n'a pas vu son écart au 4ᵉ appel")),
+            "{rate:?}"
+        );
+        assert_eq!(rate.len(), 2, "une ligne par passe : {rate:?}");
+        // Trop tôt : l'écart est un défaut, mais le contrôle raté l'emporte, code 2.
+        let (code, d, rate) = juger(&o, rapport_m1(5, 3, Some(2)));
+        assert_eq!((code, d.len(), rate.len()), (2, 1, 2), "{d:?} {rate:?}");
+        // Une trace trop courte pour le moteur fautif : code 2.
+        o.fautif = Some(5);
+        let (code, _, rate) = juger(&o, rapport_m1(5, 0, None));
+        assert_eq!(code, 2);
+        assert!(rate[0].contains("sans objet"), "{rate:?}");
+        // Un nombre d'appels différent : le contrôle n'est pas jugé, code 2.
+        o.fautif = Some(3);
+        let (code, d, rate) = juger(&o, rapport_m1(4, 2, Some(4)));
+        assert_eq!((code, d.len(), rate.len()), (2, 1, 1), "{d:?} {rate:?}");
+        assert!(rate[0].contains("non jugé"), "{rate:?}");
+        // Sous --fautif, aucun module de M1 rejoué : code 2.
+        let m9 = Passage {
+            quoi: String::from("m9"),
+            ..passage(json!({}))
+        };
+        let (_, resume) = analyser(&o, std::slice::from_ref(&m9));
+        assert_eq!(code_de_sortie(&resume, &[m9]), 2);
+        assert!(liste(&resume, "controle_rate")[0].contains("aucun module"));
+        // Un passage non mesuré, sans défaut : code 2.
+        o.fautif = None;
+        let p = [Passage {
+            rapport: Err(String::from("pas exécuté : essai")),
+            ..passage(Json::Null)
+        }];
+        let (_, resume) = analyser(&o, &p);
+        assert_eq!(code_de_sortie(&resume, &p), 2);
+        let _: std::io::Result<()> = std::fs::remove_dir_all(&dossier);
+    }
+
+    /// En M9, un essai sans plafond qui ne s'arrête pas sur la pile native est un
+    /// défaut, pas un avertissement : la profondeur tenue qu'on en tirerait ne mesure
+    /// pas la pile du fil (lot 3c, vérification de la correction).
+    #[test]
+    fn m9_un_essai_hors_de_la_pile_native_est_un_defaut() {
+        let r = json!({ "cadres": [
+            { "locaux": 0, "essais": [
+                { "piege": "PileNative", "etages": 9000, "appels": 9000 } ] },
+            { "locaux": 250, "essais": [
+                { "piege": "PileNative", "etages": 250, "appels": 250 },
+                { "piege": "rendu 3", "etages": 0, "appels": 1 } ] },
+            { "locaux": 500, "essais": [] } ] });
+        let d = defauts_des_cadres(&etages_tenus(&r));
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert!(
+            d[0].starts_with("250 valeurs") && d[0].contains("rendu 3"),
+            "{d:?}"
+        );
+        assert!(
+            d[1].starts_with("500 valeurs") && d[1].contains("aucun essai"),
+            "{d:?}"
+        );
+        assert_eq!(defauts_des_cadres(&[]), ["aucun cadre essayé sans plafond"]);
+        let bon = json!({ "cadres": [
+            { "locaux": 0, "essais": [{ "piege": "PileNative", "etages": 1, "appels": 1 }] } ] });
+        assert_eq!(
+            defauts_des_cadres(&etages_tenus(&bon)),
+            Vec::<String>::new()
+        );
+    }
 
     /// Le rang le plus proche, comme l'analyse du harnais : la médiane de quatre valeurs
     /// est la deuxième, le 99ᵉ centile de cent la quatre-vingt-dix-neuvième.

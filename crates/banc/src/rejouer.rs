@@ -30,8 +30,8 @@
 //! Le résultat, un par navigateur : réussi, échec (la première entrée qui diverge),
 //! panne de l'outil (la page n'a pas tourné, le contrôle négatif n'a rien vu), ou pas
 //! exécuté (un navigateur que la machine ne permet pas : Safari, tant que l'hôte n'a pas
-//! autorisé l'automatisation à distance, avec le message de `safaridriver`). Il va sur la sortie standard, et en JSON dans le
-//! fichier `--sortie` que l'épreuve relit.
+//! autorisé l'automatisation à distance, avec le message de `safaridriver`). Il va sur
+//! la sortie standard, et en JSON dans le fichier `--sortie` que l'épreuve relit.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;

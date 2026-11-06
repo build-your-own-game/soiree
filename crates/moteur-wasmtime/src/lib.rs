@@ -148,12 +148,12 @@ impl Moteur {
     }
 
     /// [`Moteur::charger`], par la variante de mesure de la réécriture
-    /// ([`reecriture::reecrire_en_mesurant_la_profondeur`]) : après chaque appel d'une de
-    /// ses instances, le protocole garde la plus grande profondeur atteinte
-    /// ([`moteur_commun::profondeur_atteinte`]). **Réservé au banc et aux mesures** (M9,
-    /// PHASE-3, § 2.3) : le module chargé brûle le même carburant et rend les mêmes octets
-    /// que celui de [`Moteur::charger`], mais son empreinte réécrite diffère ; il ne sert
-    /// ni à une partie, ni à un rapport.
+    /// ([`reecriture::reecrire_en_mesurant_la_profondeur`]) : après chaque appel d'une
+    /// de ses instances, le protocole garde la plus grande profondeur atteinte
+    /// ([`moteur_commun::profondeur_atteinte`]). **Réservé au banc et aux mesures**
+    /// (M9, PHASE-3, § 2.3) : le module chargé brûle le même carburant et rend les
+    /// mêmes octets que celui de [`Moteur::charger`], mais son empreinte réécrite
+    /// diffère ; il ne sert ni à une partie, ni à un rapport.
     pub fn charger_en_mesurant_la_profondeur(
         &self,
         original: &[u8],

@@ -1,4 +1,4 @@
-//! M9, la seconde moitié (PHASE-3, § 2.3 et § 8.6) : la profondeur d'appels imbriqués
+//! M9, la première moitié (PHASE-3, § 2.3 et § 8.6) : la profondeur d'appels imbriqués
 //! qu'un jeu atteint pendant toute son épreuve, en étages de `soiree_profondeur`.
 //!
 //! ```text
