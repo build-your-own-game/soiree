@@ -1,7 +1,7 @@
 # La capture du banc de mesure dans les navigateurs (`../README.md`) : elle réécrit
 # chaque module comme `moteur-wasmtime` le charge, enregistre les appels d'une soirée
-# et des pires cas, puis les rejoue dans wasmtime, chronométrés. Les pages du banc
-# rejouent la même trace dans chaque navigateur.
+# et des pires cas, puis les rejoue dans wasmtime, chronométrés. `soiree-banc
+# etalonner` rejoue la même trace dans chaque navigateur (lot 3c).
 #
 # Un workspace à lui seul : ce n'est pas une crate du commun (le découpage de
 # `soiree/Cargo.toml` est voulu), seulement un outil de mesure qui en dépend par
@@ -21,6 +21,9 @@ publish = false
 moteur-wasmtime = { path = "../../../crates/moteur-wasmtime" }
 # La réécriture seule, chronométrée à part du chargement.
 reecriture = { path = "../../../crates/reecriture" }
+# La trace d'étalonnage, son format et ses noms : une seule définition, que
+# `soiree-banc etalonner` relit dans les navigateurs (lot 3c).
+moteur-commun = { path = "../../../crates/moteur-commun" }
 # Le contrat `Instance` et `Fabrique`, que la capture enveloppe pour enregistrer.
 partie = { path = "../../../crates/partie" }
 # Encoder les appels des pires cas et des Bonjour, décoder leurs retours.

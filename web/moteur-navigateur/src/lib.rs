@@ -29,7 +29,8 @@
 //!   (PHASE-3, § 2.3 ; lot 10a).
 //! - **Pas de fil par instance.** La pile native est celle du fil qui appelle (le
 //!   Worker de l'autorité, la page d'un téléphone) : la profondeur que la réécriture
-//!   permet doit piquer avant elle, ce que mesure le lot 3c (M9).
+//!   permet doit piquer avant elle : le lot 3c l'a mesurée (M9, l'exemple
+//!   `etalonnage-navigateur`), et `reecriture::Reglages::PHASE_3` se règle d'après elle.
 //! - **Le nom d'un piège** vient du message du navigateur ; seuls les messages de la
 //!   table [`MESSAGES`] prennent le nom que wasmtime donne au même piège. Dans Chrome,
 //!   tous les pièges des essais sauf un : V8 dit `float unrepresentable in integer range`

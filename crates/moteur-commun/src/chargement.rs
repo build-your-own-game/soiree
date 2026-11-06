@@ -19,25 +19,28 @@ use crate::protocole::{Carte, OCTETS_PAR_PAGE, Plan, Zones, appeler};
 
 /// Le carburant de `Bonjour` et de `Decrire` au chargement : de quoi décrire un gros
 /// jeu, sans laisser une boucle infinie au seul garde-fou mural (PHASE-3, P5 ;
-/// RESTE-PHASE-2, point 16). 2²⁶ unités, choisi le 2026-11-05 d'après deux mesures
-/// (`MESURES-PHASE-3.md`, « Lot 2 ») :
+/// RESTE-PHASE-2, point 16). 2²⁴ unités depuis le lot 3c, d'après deux mesures
+/// (`MESURES-PHASE-3.md`, « Lot 2 » et « Lot 3c ») :
 ///
 /// - **ce que les modules en brûlent** : `Bonjour` de 3 104 à 3 194 unités, `Decrire`
-///   de 7 304 à 9 322, chez `devine`, `ardoise`, Punchline, Sidequest et Tier list ;
-///   `Creer`, qui a son propre budget (`partie::Budgets::creation`), au plus 343 002
-///   (Sidequest). 2²⁶ en laisse plus de 7 000 fois à `Decrire`, et 195 fois au plus gros
-///   `Creer` ;
+///   de 7 304 à 9 322, chez `devine`, `ardoise`, Punchline, Sidequest et Tier list.
+///   2²⁴ en laisse encore 1 800 fois à `Decrire`. `Creer` a son propre budget
+///   (`partie::Budgets::creation`, 2²⁸), que ce budget-ci ne touche pas ;
 /// - **ce que coûte une unité sur une boucle vide** (M10, le module de `Bonjour` qui
-///   boucle, [`crate::essais::BONJOUR_QUI_BOUCLE`]) dans wasmtime : 481 à 539 ps sur la
-///   machine de l'hôte peu chargée, jusqu'à 1 492 ps sous quatorze `yes` qui occupent
-///   ses dix cœurs. 2²⁶ unités y prennent au plus 100 ms environ : dix fois sous le
-///   garde-fou d'une seconde de `ReglagesMoteur::PHASE_1`. Une boucle dans `Bonjour`
-///   est donc la faute `Budget` du jeu, et non une panne de l'outil, même sur une
-///   machine chargée.
+///   boucle, [`crate::essais::BONJOUR_QUI_BOUCLE`]), le chargement entier compris :
+///   dans wasmtime, de 481 à 539 ps sur la machine de l'hôte peu chargée, jusqu'à
+///   1 492 ps sous quatorze `yes` (lot 2) ; dans Chrome 156, 415 ps en médiane et au
+///   plus 1 886 ; dans **Firefox 158, 1 699 ps en médiane, au plus 2 031, et jusqu'à
+///   6 092 ps sous charge** (lot 3c, dans un Worker : le chargement d'un module neuf
+///   tourne dans son code de base). À 2²⁶, la valeur du lot 2, Firefox chargé mettait
+///   410 ms à épuiser le budget : deux fois et demie sous le garde-fou d'une seconde,
+///   et non dix. 2²⁴ unités y prennent au plus 102 ms : dix fois sous lui, dans chaque
+///   moteur mesuré. Une boucle dans `Bonjour` est donc la faute `Budget` du jeu, et non
+///   une panne de l'outil, même sur une machine chargée.
 ///
-/// L'ancienne valeur, 2³² (« point de départ, non mesuré »), demandait de 2 à 6,4 s
-/// sur une boucle vide : plus que le garde-fou. Les navigateurs se mesurent au lot 3c.
-pub const BUDGET_DE_CHARGEMENT: u64 = 1 << 26;
+/// Les anciennes valeurs : 2³² (« point de départ, non mesuré »), de 2 à 6,4 s sur une
+/// boucle vide dans wasmtime ; 2²⁶ (lot 2), sur wasmtime seul.
+pub const BUDGET_DE_CHARGEMENT: u64 = 1 << 24;
 
 /// Pourquoi un module n'est pas chargé.
 #[derive(Debug, Clone, PartialEq, Eq)]

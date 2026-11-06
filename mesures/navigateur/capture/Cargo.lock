@@ -95,6 +95,7 @@ version = "0.0.0"
 dependencies = [
  "epreuve",
  "jeu-abi",
+ "moteur-commun",
  "moteur-wasmtime",
  "partie",
  "reecriture",
@@ -361,6 +362,7 @@ dependencies = [
  "blake3",
  "jeu-abi",
  "miniz_oxide",
+ "moteur-commun",
  "moteur-wasmtime",
  "partie",
  "reecriture",
@@ -614,11 +616,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "moteur-wasmtime"
+name = "moteur-commun"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "jeu-abi",
+ "partie",
+ "reecriture",
+]
+
+[[package]]
+name = "moteur-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "jeu-abi",
+ "moteur-commun",
  "partie",
  "reecriture",
  "wasmtime",

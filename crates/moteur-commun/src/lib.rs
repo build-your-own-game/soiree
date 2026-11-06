@@ -15,11 +15,16 @@
 //! - ce que le chargement vérifie : `Bonjour`, les zones, `Decrire`, l'accord de la
 //!   déclaration ([`verifier_chargement`]), sous [`BUDGET_DE_CHARGEMENT`] ;
 //! - le relevé de chaque appel d'une instance, et la reprise des journaux de l'épreuve
-//!   qui le produit, que E20 compare d'un moteur à l'autre ([`releve`], lot 3b).
+//!   qui le produit, que E20 compare d'un moteur à l'autre ([`releve`], lot 3b) ;
+//! - la trace d'étalonnage, que la capture du harnais écrit dans wasmtime et que
+//!   `soiree-banc etalonner` rejoue dans les navigateurs ([`trace`], lot 3c) ; la
+//!   profondeur atteinte par un module de la variante de mesure de la réécriture
+//!   ([`profondeur_atteinte`], M9, lot 3c).
 //!
 //! Deux morceaux qui s'accordent n'ont qu'une définition : le harnais de mesure des
 //! navigateurs avait recopié ce protocole en JavaScript (`mesures/navigateur/page/
-//! banc-coeur.js`) ; le lot 3c le retire.
+//! banc-coeur.js`) ; le lot 3c l'a retiré : `soiree-banc etalonner` rejoue la trace du
+//! harnais sur ce protocole-ci.
 //!
 //! # Une faute, une panne
 //!
@@ -67,13 +72,16 @@ mod instantane;
 mod machine;
 mod protocole;
 pub mod releve;
+pub mod trace;
 
 pub use chargement::{
     BUDGET_DE_CHARGEMENT, Charge, RefusModule, globales_d_origine, verifier_chargement,
 };
 pub use instantane::Instantane;
 pub use machine::{Bits, Machine, Piege};
-pub use protocole::{Carte, Plan, Protocole, Zone, Zones};
+pub use protocole::{
+    Carte, Plan, Protocole, Zone, Zones, oublier_la_profondeur_atteinte, profondeur_atteinte,
+};
 
 use alloc::string::String;
 use partie::{CausePanne, PanneOutil};

@@ -585,3 +585,158 @@ Les mesures : MESURES-PHASE-3, « Lot 3b », « Après la vérification » (la d
 - Le lot 3c change toutes les empreintes réécrites, et peut changer le coût de `Decrire` : les budgets provoqués suivent d'eux-mêmes (`c / 2`, `c - 1`, relevés à chaque fois).
 - Pour lever l'ambiguïté de `index out of bounds` (et faire de même pour JavaScriptCore) : lire dans `error.stack` le décalage de la trame wasm, puis l'opérateur du module réécrit à ce décalage (`wasmparser`, déjà dans `moteur-navigateur`) — un accès mémoire donne `HorsMemoire`, un `call_indirect` le code de la table —, avec un essai de `Machine` qui le vérifie dans Firefox.
 - Le code de sortie de `soiree-banc rejouer` fait foi avec son JSON : un scénario qui change ses codes (0, 1, 2) doit changer `deux_moteurs::code_coherent` avec lui.
+
+## Lot 3c — Étalonner, la profondeur, Safari
+
+Fait du 2026-11-05 au 2026-11-06, de 22 h 30 à 00 h 40 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), avec Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface ; Safari 27.2 et `safaridriver` (« Included with Safari 27.2 (21625.2.8.18.4) ») présents, mais la session refusée. Rien n'est commité.
+
+### Ce qui est fait
+
+**M9, la profondeur, et `PHASE_3`** (PHASE-3, § 2.3, P4) :
+- `reecriture::passes::profondeur_mesuree` et `reecriture::reecrire_en_mesurant_la_profondeur` : la variante de mesure de la passe de profondeur, qui garde le plus grand `soiree_profondeur` vu dans une seconde globale exportée, `soiree_profondeur_atteinte` (`reecriture::PROFONDEUR_ATTEINTE`). Le carburant est compté avant : la variante brûle le même carburant et rend les mêmes octets ; seule son empreinte diffère.
+- `moteur_commun::Plan::en_mesurant_la_profondeur`, et dans le protocole, après chaque appel d'un tel module, la lecture de la globale ; `moteur_commun::profondeur_atteinte()` en rend le maximum du processus (`oublier_la_profondeur_atteinte()` le remet à zéro). Un module de partie n'est jamais lu ainsi.
+- `moteur_wasmtime::Moteur::charger_en_mesurant_la_profondeur`.
+- `epreuve/examples/profondeur.rs` : l'épreuve entière (plan standard, ou `--court`) sur un module ainsi réécrit, sans copie native, sous `PHASE_1` : la profondeur atteinte. Au plus **18 étages** (Tier list).
+- Dans `web/moteur-navigateur`, l'exemple `etalonnage-navigateur`, `profondeur_tenue` : huit récursions sans fin écrites en `wat`, de 0 à 4 000 valeurs `i64` vivantes par étage, réécrites sans plafond utile ; dans le Worker puis sur le fil de la page. Au plus juste, **247 étages** (Worker de Chrome, 250 valeurs par étage) ; 492 dans un Worker de Firefox.
+- `reecriture::Reglages::PHASE_3` et `moteur_wasmtime::ReglagesMoteur::PHASE_3` : **64 étages** de profondeur, le reste comme `PHASE_1`. L'épreuve (`ligne.rs`), ses tests (`deux_instances`, `tests/epreuve/modules.rs`), l'exemple `etalonner`, le Worker de E20 (`rejeu_navigateur.rs`), les essais de `Machine` et la capture du harnais réécrivent sous `PHASE_3`. Toutes les empreintes réécrites changent (tableau plus bas).
+
+**M1 et M10, `soiree-banc etalonner`** (`crates/banc/src/etalonner.rs`, `pages/etalonner.html` et `etalonner-worker.js`, l'exemple `etalonnage-navigateur`) :
+- M1 : pour chaque module de la capture, un navigateur neuf ; dans un Worker, le module livré chargé par `moteur_navigateur::charger` sous `PHASE_3` (réécriture, compilation et mise en route chronométrées), la remise à zéro des zones par la machine, deux mille `Bonjour` d'un bloc, puis la trace rejouée deux fois sur le protocole du commun, chaque appel, instance neuve, instantané et restauration chronométrés, le carburant, l'issue et le retour de chaque appel comparés à wasmtime. Le banc en tire les tableaux de la mesure 1 (`etalonner::analyser`, au rang le plus proche, comme l'analyse du harnais).
+- M10 : le module de `Bonjour` qui boucle chargé quinze fois jusqu'à sa faute `Budget`, moins un témoin ; la même boucle par la machine seule sous un plus grand budget (`--budget`).
+- `moteur_commun::trace` : le format de la trace d'étalonnage, une seule définition (la capture l'écrit, le navigateur la relit). La capture (`mesures/navigateur/capture`) s'en sert, réécrit sous `PHASE_3` et écrit aussi le module livré (`livre.wasm`).
+- **`page/banc-coeur.js` retiré**, avec ce qui en dépendait : `page/banc.js`, `page/banc.html`, `page/trace.js`, `mesurer.mjs`, `analyser.mjs`, `hors-navigateur.mjs`. La mesure 6 (`cadence.mjs`) reste. `mesures/navigateur/README.md` réécrit.
+
+**Le garde-fou de chargement revu d'après M10** : `moteur_commun::BUDGET_DE_CHARGEMENT` baisse de 2²⁶ à **2²⁴** : Firefox chargé a mis jusqu'à 6 092 ps par unité de boucle vide au chargement (410 ms pour 2²⁶ unités : deux fois et demie sous la seconde, au lieu de dix). `Creer` (2²⁸) n'est pas changé : jugé et dit (PHASE-3, § 2.3), à reprendre au lot 10a avec le garde-fou de partie. Le constat du lot 3a sur l'instanciation coupée par l'époque a été regardé : rien dans le code ne l'explique (aucun code du module ne tourne dans `Instance::new`), il n'a pas été reproduit, et rien n'est changé.
+
+**Safari par `safaridriver`** (`crates/banc/src/safari.rs`) : WebDriver classique en HTTP sur la boucle locale, sans dépendance nouvelle (une requête par connexion, `Content-Length`), derrière `navigateur::Lance` ; `machine`, `rejouer` et `etalonner` le prennent (`--navigateur safari`, `--navigateurs …,safari`). `moteur_navigateur::MoteurJs::JavaScriptCore` reconnaît l'agent de Safari ; aucun de ses messages n'est rangé, et l'essai `pieges_la_table_est_constatee` échoue pour un moteur sans message (il réussissait à vide).
+
+Documents : `PHASE-3.md` (§ 2.2, `moteur-commun` et `banc` ; § 2.3, la pile d'un Worker, le garde-fou de chargement, l'instanciation ; la ligne du lot 3c au § 7 ; Safari au § 8.2 ; M1, M9, M10 au § 8.6 ; la question 8 ; l'annexe des valeurs choisies), `MESURES-PHASE-3.md` (« Lot 3c »), `mesures/navigateur/README.md`, `CHANGELOG.md`, `crates/README.md`, `AGENTS.md`.
+
+### Les tests qui le tiennent
+
+- `reecriture/tests/reecriture/passes.rs` : `la_variante_de_mesure_garde_la_profondeur_atteinte` (le maximum d'un appel à l'autre, `soiree_profondeur` rendu à zéro, le même étage au piège) ; `la_variante_de_mesure_ne_change_ni_le_carburant_ni_l_issue` (mêmes issues, même carburant, même profondeur que la passe de la partie ; seule la variante exporte la globale).
+- `moteur-wasmtime/tests/moteur/fautes.rs` : `la_variante_de_mesure_dit_la_profondeur_atteinte` (1 étage au chargement, 32 après l'appel, le même retour et le même carburant que le module de la partie, et le module de la partie ne la change pas) ; `cadres_epais_jamais_la_pile_native` joue désormais sous `PHASE_1` **et** `PHASE_3`.
+- `moteur-wasmtime/tests/moteur/chargement_borne.rs` : `bonjour_qui_boucle_est_une_faute_avec_le_garde_fou_de_chargement`, la valeur figée passée à 2²⁴ ; `epreuve/tests/deux_instances`, `le_chargement_tient_largement_son_budget`, tient toujours (`devine` brûle mille fois moins).
+- `moteur-commun/src/trace.rs` : `la_trace_se_relit_a_l_identique` (octets figés de l'en-tête), `une_trace_abimee_ne_se_lit_pas` (chaque troncature, un octet en trop, un événement inconnu), `fnv_est_celle_du_harnais`.
+- `banc` : `safari::tests::une_reponse_de_safaridriver_se_lit` ; `etalonner::tests` (`les_statistiques_au_rang_le_plus_proche`, `les_noms_des_mesures`, `la_profondeur_tenue_est_le_plus_petit_essai`) ; `navigateur::tests` inchangé.
+- `moteur-navigateur` : `le_moteur_d_un_navigateur` reconnaît Safari (`JavaScriptCore`) et ne reconnaît pas un agent quelconque.
+- Dans les navigateurs : `soiree-banc machine` dans Chrome et Firefox, code 0 (33 essais ; le contrôle négatif n'a fait échouer que les trois `globales_i64`), dans Safari code 2, « pas exécuté » ; E20 réussi partout où il a tourné.
+
+Aucune leçon de `lecons/sources/` n'a fait naître un test de ce lot ; OUT-01 (« pas exécuté », jamais réussi) est cité dans `safari.rs` et `navigateur.rs`.
+
+### Les vérifications
+
+`CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation ; de 23 à 70 % de mémoire libre avant chaque commande lourde ; `vm.loadavg` de 5 à 21, sauf pendant la mesure de M10 « sous charge » (jusqu'à 161, des services de macOS en plus des quatorze `yes`) et juste après (35 à 38).
+
+| Commande | Résultat |
+| --- | --- |
+| `cargo clippy -p reecriture -p moteur-commun -p moteur-wasmtime -p banc -p epreuve --all-targets -- -D warnings` ; dans `web/`, `--target wasm32-unknown-unknown` et en natif ; la capture (`--release`) | aucun avertissement |
+| `cargo fmt --all --check` (commun, `web/`) | rien à reformater |
+| `cargo test -p reecriture -p moteur-commun -p moteur-wasmtime` ; `-p banc` ; `cargo test` dans `web/` | réussis (53 ; 8 et 14 ; 34 ; 29 et 3 ; 9) |
+| `target/release/examples/profondeur` sur les cinq modules, plan standard (22 h 58 à 23 h 17) | 10, 9, 15, 13, 18 étages ; code des contrôles 0 pour chacun (sans copie native) ; 1 149 s, 2,60 Go au plus |
+| `soiree-banc etalonner --mesures m9` dans Chrome, puis Firefox et Safari (vers 23 h 20) | Worker 247 et 492 étages tenus au plus juste ; page 480 et 893 ; Safari pas exécuté (code 2) |
+| `capture-navigateur` sous `PHASE_3` (23 h 24) | 116 807 appels, 0 écart dans les deux rejeux de wasmtime ; 49 s |
+| `soiree-banc etalonner --mesures m1,m10 --navigateurs chrome,firefox,safari` (23 h 25 à 23 h 29) | 0 écart de carburant, d'issue ou de retour sur les 116 807 appels, deux rejeux, dans chaque navigateur ; empreintes réécrites égales à celles de la capture ; Safari pas exécuté (code 2 : tout n'a pas été mesuré) ; 245 s |
+| M10 sous charge (23 h 31), puis après la baisse de `BUDGET_DE_CHARGEMENT` (23 h 36) | `MESURES-PHASE-3.md`, « Lot 3c » |
+| `soiree-banc machine --navigateur chrome`, `firefox`, `safari` (23 h 37) | 0, 0, 2 (Safari pas exécuté) |
+| E20, plan court, `--navigateurs chrome,firefox,safari` : `devine`, `ardoise` (`--wasm`), Sidequest (23 h 35 à 23 h 41) | E20 réussi dans Chrome et Firefox, Safari pas exécuté, donc E20 « pas exécuté » (il prend le pire) et le code 3 ; E1 à E19 de Sidequest réussis ou sans objet |
+| E20, plan court, `--navigateurs chrome,firefox`, les trois jeux depuis leurs sources (23 h 41 à 23 h 49) | Sidequest **0** ; Punchline **1**, E2 seul (« une fin, mais aucune autre après la nouvelle partie », graine `b4e6…61c5`, 13 783 lignes) ; Tier list **1**, E15 seul (201 670 au début, 213 975 à la fin) : **la référence du § 7, inchangée** ; E20 réussi dans les deux navigateurs pour chacun (`Budget × 2` classées pareil, le contrôle négatif vu à l'appel 100) |
+| le plan standard des trois jeux, depuis leurs sources, sous `PHASE_3`, sans E20 (23 h 50 à 00 h 21) | Punchline **0** (387 s, 0,38 Go) ; Sidequest **0** (1 145 s, 2,29 Go) ; Tier list **0** (318 s, 0,62 Go) |
+| `cargo test --workspace --no-fail-fast` (00 h 21 à 00 h 30, arrière-plan) | **code 0** : 497 réussis (les 487 du lot 3b et les 10 nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 496 s ; 0,62 Go au plus |
+| `cargo clippy --workspace --all-targets -- -D warnings` ; dans `web/`, `wasm32` et natif ; `cargo fmt --all --check` des deux ; `soiree-banc regles-web` | aucun avertissement ; rien à reformater ; code 0 |
+
+État laissé : aucun navigateur, `safaridriver`, serveur, `yes` ni tâche de fond de moi ; aucun profil sous `target/banc/profils` ; les trois dossiers `soiree-e20-*` laissés par les E20 où Safari était demandé (« pas exécuté », donc gardés par l'épreuve) effacés à la main. Les trois jeux : `git status` propre. La capture a son `Cargo.lock` à jour (`moteur-commun` en dépendance directe ; il manquait aussi, depuis le lot 3b, parmi celles de `epreuve`). Les résultats bruts sont dans `target/mesures-navigateur/` (hors dépôt) : la capture, `etalonnage/<navigateur>/` et `analyse.json` ; la mesure M10 à 2²⁶ dans Chrome et Firefox a été écrasée dans `etalonnage/chrome/m10.json` et `firefox/m10.json` par celle à 2²⁴ ; ses chiffres sont dans `MESURES-PHASE-3.md`.
+
+### Les mesures
+
+Dans `MESURES-PHASE-3.md`, « Lot 3c » : M9 (les deux moitiés), la mesure 1 refaite par le banc et sa comparaison au harnais, M10 dans Chrome et Firefox, au repos et sous charge, avant et après la baisse de `BUDGET_DE_CHARGEMENT`. La mémoire, mesurée en premier comme le § 7 le demande : l'exemple `profondeur` 2,60 Go (plan standard des cinq modules) ; `soiree-banc etalonner` (M1 et M10, trois navigateurs, l'analyse comprise) 0,76 Go ; les épreuves du plan court avec E20, de 0,61 à 0,94 Go, du plan standard de 0,38 à 2,29 Go (`/usr/bin/time -l`, navigateurs non comptés). Estimé au § 7 : « léger ; un navigateur à la fois ».
+
+La durée de E20 sur le plan court, sous une charge de 9 à 21 : Sidequest, reprise de 16,5 s dans Chrome et 20,5 s dans Firefox (19,7 s et 25,3 s lancement et fermeture compris) ; Punchline 2,6 s et 2,9 s ; Tier list 8,0 s et 9,6 s ; du même ordre qu'au lot 3b après la vérification.
+
+Les nouvelles empreintes réécrites, sous `PHASE_3` (`target/mesures-navigateur/<module>/meta.json`), et celles d'avant (`PHASE_1`), pour les mêmes modules livrés :
+
+| Module (livré) | Réécrit sous `PHASE_1` | Réécrit sous `PHASE_3` |
+| --- | --- | --- |
+| `devine` (`ac0c95aa…`) | `367cd2b34e653b83…` | `365e513999d6e3e2…` |
+| `ardoise` (`2964ab9c…`) | `aac085379031b13e…` | `589d154735c3a5c6…` |
+| Punchline (`ad1b7b04…`) | `d37ddb637d39e50f…` | `a63d05e9521c682b…` |
+| Sidequest (`8112385d…`) | `f2a6310f3939308f…` | `58995a7ee5925921…` |
+| Tier list (`73552646…`) | `dcd70ccb0b2ddf07…` | `ec7da1d169b7b6ba…` |
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Safari n'est pas exécuté**, nulle part : `safaridriver` refuse la session (« Could not create a session: The session timed out while connecting to a Safari instance… », au bout de 30 s), l'automatisation à distance n'étant pas autorisée sur la machine. Le lot demandait « réussi, échec, ou pas exécuté avec le message de `safaridriver` » : c'est le troisième, dit par chaque scénario. Aucun réglage de la machine n'a été touché. Les messages de pièges de `JavaScriptCore`, la profondeur que tient Safari, M1 et M10 dans Safari restent à faire dès que l'hôte aura coché le réglage (question 8).
+- **Le plan standard avec E20** n'est pas joué : E20 est relancé sur le plan court, comme au lot 3b ; le plan standard des trois jeux, sans E20, rend le code 0 sous `PHASE_3`.
+- **La mesure 1 n'est refaite qu'en un tour**, et ses queues sont plus hautes que celles des quatre tours du harnais (Chrome : 99ᵉ centile de 138 ps au lieu de 52 à 74 ; Firefox : maximum de 3 600 ps au lieu de 336 à 678), sous une charge plus haute ; les médianes se retrouvent. La proposition de budgets de E19 n'est pas refaite : elle reste sur les quatre tours du harnais. Node, deno et bun ne se mesurent plus (le protocole JavaScript est retiré).
+- **Le bloc « sans remise à zéro »** du harnais n'existe plus : le banc ne recopie pas le protocole pour sauter la remise à zéro ; il la chronomètre par `Machine::remplir_de_zeros`, dans la mémoire d'une instance.
+- **`Creer` sous 2²⁸** : jugé, pas changé (au pire mesuré dans Firefox, 1,64 s calculées pour une boucle, sous le garde-fou de partie de 2 s du Worker, avec un facteur 1,2) : à reprendre avec le garde-fou de partie au lot 10a, ou par le mainteneur (question 4).
+- **L'instanciation coupée par l'époque** (lot 3a) : regardée, non expliquée, non reproduite, rien de changé (PHASE-3, § 2.3).
+- **Les tests des jeux** chargent encore leur module sous `ReglagesMoteur::PHASE_1` (dans leurs dépôts) : ils passent, mais n'éprouvent pas la profondeur de l'autorité. À leurs agents d'y passer (CHANGELOG, « Passer à cette version ») ; ce lot ne touche pas les dépôts des jeux.
+
+### Ce que le lot suivant doit savoir
+
+- **`ReglagesMoteur::PHASE_3` est le réglage de la partie** : l'autorité du lot 10a charge sous `reecriture::Reglages::PHASE_3`, comme le Worker de E20. Changer sa profondeur change toutes les empreintes réécrites : relancer la capture, `etalonner`, le plan standard des trois jeux et E20, et refaire M9 (les deux commandes sont dans `MESURES-PHASE-3.md`). Un jeu qui dépasserait 64 étages se verrait en faute `Profondeur` ; l'exemple `profondeur` dit où en est chacun.
+- La pile d'un Worker de Chrome tient la moitié de celle de sa page, et la moitié de celle d'un Worker de Firefox : c'est elle qui borne. Le fil d'un téléphone (page, Safari iOS) n'est pas mesuré.
+- `BUDGET_DE_CHARGEMENT` vaut 2²⁴. Le garde-fou de chargement du Worker (lot 10a) peut s'appuyer sur M10 : au plus 6 092 ps par unité dans Firefox chargé, au chargement, soit 102 ms (calculé) ; `Creer` (2²⁸) reste à juger avec le garde-fou de partie.
+- **E20 avec Safari** : tant que `safaridriver` refuse, demander Safari rend E20 « pas exécuté » (il prend le pire) et le code 3, et l'épreuve garde son dossier `soiree-e20-*` dans le dossier temporaire ; pour la référence du § 7, `--navigateurs chrome,firefox`.
+- `soiree-banc etalonner` relit la capture de `target/mesures-navigateur` ; une capture d'un autre réglage se voit (« AUTRE que celle de la capture : rien n'est comparable »). Le code de sortie d'`etalonner` dit seulement si tout a été mesuré (2 dès qu'un navigateur est « pas exécuté ») : une mesure n'est pas un jugement. *Corrigé après la vérification : 1 dès un défaut (écart avec wasmtime, récursion de M9 sous `PHASE_3` qui n'est pas la faute `Profondeur`), qui l'emporte.*
+- Les entrées des pilotes (`Input.dispatch*`, `input.performActions`) ne sont toujours pas écrites (lots 9 à 12) ; Safari, en WebDriver classique, les aura par `/actions`.
+
+## Lot 3c, correction après la vérification
+
+Le 2026-11-06, de 01 h 20 à 02 h 10 environ (GMT), sur la machine de l'hôte (la même ; Chrome 156.0.8078.80, Firefox 158.0.1). Rien n'est commité.
+
+### Les constats, et ce qui en est fait
+
+1. **[important] « `etalonner` retrouve la mesure 1 du harnais » avait été relu après coup** (la colonne du § 7 ne gardait que ce qui s'était retrouvé en un tour). Constat vérifié : c'était écrit tel quel au § 7 et dans `MESURES-PHASE-3.md`. Fait : `soiree-banc etalonner --tours <n>` (M1 rejouée `n` fois, un navigateur neuf par module et par tour, les tours s'enchaînant d'un navigateur à l'autre ; l'étendue de la médiane, du 99ᵉ centile et du maximum sur les tours) ; la capture refaite ; la mesure 1 jouée en **quatre tours** dans Chrome et Firefox ; et, pour séparer l'outil de l'état de la machine, **le harnais retiré rejoué juste après, sur la même capture** (ses six fichiers repris du commit `44160f9`, hors du dépôt). Résultat (`MESURES-PHASE-3.md`, « La mesure 1 en quatre tours, et le harnais rejoué à côté ») : le carburant, l'issue et le retour égaux appel par appel (aucun écart, quarante pages de chaque outil) ; le coût fixe et la remise à zéro retrouvés ; la médiane et le 99ᵉ centile d'une unité au niveau du harnais rejoué, ou en dessous (Chrome 39 à 44 et 78 à 129 ps contre 37 à 48 et 113 à 142 ; Firefox 68 à 100 et 135 à 299 contre 94 à 143 et 299 à 402) ; **les maxima ne se retrouvent pas** : ni ceux du matin, que le harnais rejoué ne retrouve pas non plus (pas plus que ses médianes de Firefox), ni, dans Chrome, ceux du harnais rejoué à côté (389 à 1 181 ps contre 123 à 527, à chaque tour plus haut). Ils tombent sur les appels de la soirée de Tier list, où une milliseconde de pause ou de remise à zéro lente des 25 Mio pèse 400 à 800 ps par unité ; que le Worker du banc en subisse plus que la page du harnais n'est ni expliqué ni exclu. La colonne du § 7 garde le critère tel qu'il était, et dit ce qui en est tenu et ce qui ne l'est pas ; elle ne le relit plus.
+2. **[mineur] La proposition de budgets de E19 disait que 800 ps « couvrent le maximum mesuré dans Firefox (678 ps) »**, contredit par le lot 3c. Vérifié. Fait : la phrase dit maintenant que ce maximum est celui du matin, que le même soir le maximum de Firefox est monté à 900 ps (harnais) et jusqu'à 3 096 ps (banc), et qu'aucun maximum d'une seule soirée ne peut servir d'unité ; la proposition n'est pas refaite, la question 4 reste au mainteneur.
+3. **[mineur] Les résultats bruts de M9 dans les navigateurs n'existaient nulle part.** Vérifié : aucun `m9.json` sous `target/mesures-navigateur/etalonnage/`, et rien dans le code ne l'efface ; la cause n'est pas retrouvée (sans doute un `--donnees` ou un dossier de travail autre au moment du lot). Fait : M9 refait, ses `m9.json` sont dans `etalonnage/chrome/` et `etalonnage/firefox/` ; les chiffres sont ceux du lot (247 et 480 ; 492 et 893).
+4. **[mineur] Rien ne figeait `PHASE_3.profondeur_max = 64`, et rien ne vérifiait dans le navigateur qu'une récursion à cadres épais tombe en faute `Profondeur` sous `PHASE_3`.** Vérifié. Fait : le test `phase_3_se_tient_entre_les_jeux_et_la_pile_du_worker` (`reecriture/tests/reecriture/passes.rs`) fige 64, et que 64 laisse un facteur 3 au-dessus du jeu le plus profond (18) et sous le Worker le plus court (247) ; et M9 charge maintenant chacune de ses huit récursions (0 à 4 000 valeurs par étage) sous `PHASE_3` par `moteur_navigateur::charger`, dans le Worker puis sur la page : chacune doit être la faute `Profondeur`, sinon un défaut et le code 1. Dans Chrome et Firefox, toutes le sont. Contrôle négatif : chargées sous `PHASE_1`, treize défauts (Worker de Chrome dès 16 valeurs, page dès 64, « pile native épuisée avant soiree_profondeur »), code 1. Un retour de `PHASE_3` à 4 096 fait donc échouer un test du commun, et `etalonner --mesures m9`.
+5. **[mineur] `etalonner` rendait 0 même avec des écarts de carburant.** Vérifié (c'était voulu et écrit). Fait : un défaut fait le code 1, qui l'emporte sur « pas exécuté », comme un échec de `rejouer` : un écart de carburant, d'issue ou de retour, une panne du rejeu, un nombre d'appels différent, un module réécrit autrement que dans la capture, une capture illisible, une récursion de M9 sous `PHASE_3` qui n'est pas la faute `Profondeur` ou un M9 qui n'a pas tourné. Les défauts sont listés à la fin de la sortie (« DÉFAUTS ») et dans `analyse.json` (`defauts`). Le code 2 reste « tout n'a pas été mesuré ».
+6. **[mineur] Le message de `safaridriver` cité dépend du moment.** Vérifié : à 01 h 44, `soiree-banc machine --navigateur safari` rend le code 2 avec « You must enable 'Allow remote automation' in the Developer section of Safari Settings to control Safari via WebDriver. », tout de suite. Fait : `MESURES-PHASE-3.md` (en-tête du lot 3c) et PHASE-3 § 8.2 citent les deux messages et disent que le banc relaie celui du moment ; l'issue ne change pas. Aucun réglage de la machine touché.
+
+Aucun constat n'est écarté.
+
+### Les tests qui le tiennent
+
+- `reecriture/tests/reecriture/passes.rs` : `phase_3_se_tient_entre_les_jeux_et_la_pile_du_worker` (né du constat 4 de cette vérification).
+- `banc`, `etalonner::tests` : `sous_phase_3_tout_ce_qui_n_est_pas_profondeur_est_un_defaut` (une issue autre que `Profondeur`, des récursions absentes ou vides sont des défauts) ; `l_etendue_sur_les_tours`.
+- Dans le navigateur : `soiree-banc etalonner --mesures m9`, code 0 dans Chrome et Firefox, code 1 sur son contrôle négatif (`PHASE_1` à la place de `PHASE_3`, le temps d'un essai, puis rendu).
+
+### Les vérifications
+
+`CARGO_BUILD_JOBS=4`, une commande lourde à la fois, jamais de navigateur pendant une compilation ; de 31 à 68 % de mémoire libre avant chaque commande lourde ; `vm.loadavg` de 4 à 12, et jusqu'à 28 pendant les deux derniers tours du harnais.
+
+| Commande | Résultat |
+| --- | --- |
+| `cargo clippy -p banc -p reecriture --all-targets -- -D warnings` ; dans `web/`, `--target wasm32-unknown-unknown` et en natif | aucun avertissement |
+| `cargo fmt --all --check` (commun, `web/`) | rien à reformater |
+| `cargo test -p banc -p reecriture` ; `cargo test` dans `web/` | réussis (31, 1, 2 et 54 ; 9) |
+| `capture-navigateur` (01 h 32) | 116 807 appels, 0 écart dans les deux rejeux de wasmtime ; 55 s ; empreintes réécrites celles du lot |
+| `soiree-banc etalonner --mesures m9,m1 --tours 4 --navigateurs chrome,firefox` (01 h 33 à 01 h 37) | code 0 ; 0 écart sur les 116 807 appels à chaque tour et chaque rejeu ; M9 : 247, 480, 492, 893, chaque récursion sous `PHASE_3` en faute `Profondeur` ; 197 s, 0,74 Go |
+| le harnais retiré, quatre tours, `node mesurer.mjs`, puis `node analyser.mjs` (01 h 37 à 01 h 41) | 0 écart partout ; les chiffres dans `MESURES-PHASE-3.md` |
+| `etalonner --mesures m9 --navigateurs chrome` sous `PHASE_1` (contrôle négatif), puis `--navigateurs chrome,firefox` rendu | code 1 (treize défauts), puis code 0 |
+| `soiree-banc machine --navigateur safari` (01 h 44) | code 2, pas exécuté, avec le message de `safaridriver` du moment |
+| `cargo test --workspace --no-fail-fast` (01 h 46 à 01 h 54, arrière-plan) ; `cargo clippy --workspace --all-targets -- -D warnings` ; `soiree-banc regles-web` | **code 0** : 500 réussis (les 497 du lot et les 3 nouveaux), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 466 s ; 0,89 Go au plus ; aucun avertissement ; code 0 |
+
+Non relancés, parce que rien de ce que cette correction change ne les touche (ni l'épreuve, ni `rejouer`, ni `PHASE_3`, ni les essais de `Machine`) : le plan standard des trois jeux sous `PHASE_3`, E20 sur le plan court, M10. La vérification les a relancés le 2026-11-06 vers 01 h 0x, avec les mêmes résultats que le lot.
+
+### Les mesures
+
+`MESURES-PHASE-3.md`, « La mesure 1 en quatre tours, et le harnais rejoué à côté » et M9 refait. La mémoire : la capture 0,15 Go, `etalonner` (M9 et quatre tours de M1, l'analyse comprise) 0,74 Go, navigateurs non comptés.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Les maxima de la mesure 1 ne se retrouvent pas** (constat 1) : ce point du critère du § 7 n'est pas tenu. Ni le banc ni le harnais ne retrouvent les maxima du matin, et dans Chrome les maxima du banc dépassent, à chaque tour, ceux du harnais rejoué à côté. Ce qu'il faudrait pour trancher : séparer la remise à zéro et les pauses de la part du carburant dans les appels de la soirée de Tier list (par exemple chronométrer la remise à zéro de chaque appel à part, dans le banc comme dans le harnais), ou rejouer les deux outils en alternance sur plusieurs soirées. Ou décider que le maximum d'une soirée n'est pas une mesure de l'outil, ce qui est une décision sur le critère, pas une mesure : elle revient au mainteneur, ou à la prochaine vérification.
+- **La proposition de budgets de E19** n'est pas refaite (constat 2) : elle reposait sur un maximum, et aucun maximum d'une soirée ne tient.
+- **Safari** reste « pas exécuté », partout.
+- Le plan standard, E20 et M10 ne sont pas relancés par cette correction (voir plus haut).
+- Un Safari tournait sur la machine depuis 01 h 03 (avant cette correction, sans doute la vérification ou l'hôte) ; il n'est pas de moi et je ne l'ai pas fermé.
+
+### Ce que le lot suivant doit savoir
+
+- `soiree-banc etalonner --tours 4` est la façon de refaire la mesure 1 ; un seul tour ne dit rien des queues. Les maxima de la durée d'une unité tombent sur la soirée de Tier list : à lire comme des pauses, pas comme du calcul.
+- `etalonner` rend 1 dès un défaut ; son résumé (`target/mesures-navigateur/etalonnage/analyse.json`) a une liste `defauts`, et chaque navigateur ses `tours`. `analyse.json` est réécrit à chaque lancement : il ne garde que le dernier.
+- `PHASE_3` est figé à 64 par un test ; le changer demande de refaire M9 (les deux moitiés), qui vérifie maintenant aussi, dans le navigateur, que la profondeur pique avant la pile native.
+- Le harnais retiré se reprend au commit `44160f9` (`mesures/navigateur/mesurer.mjs`, `analyser.mjs`, `page/banc.html`, `banc.js`, `banc-coeur.js`, `trace.js`) ; il lit encore la capture d'aujourd'hui.
+

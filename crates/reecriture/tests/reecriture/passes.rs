@@ -4,8 +4,8 @@
 
 use reecriture::passes::{NAN_F32, NAN_F64};
 use reecriture::{
-    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, MEMOIRE_MAX, PROFONDEUR, nom_de_globale,
-    passes,
+    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, MEMOIRE_MAX, PROFONDEUR, PROFONDEUR_ATTEINTE,
+    nom_de_globale, passes,
 };
 use wasmtime::{Trap, Val};
 
@@ -196,6 +196,123 @@ fn profondeur_rendue_apres_chaque_appel() {
         Issue::Valeurs(vec![Valeur::I32(100)])
     );
     assert_eq!(e.globale(PROFONDEUR), Valeur::I32(0));
+}
+
+/// Une récursion de `n` étages par un `call_indirect`, puis une seconde, plus courte :
+/// le module que mesurent les deux tests de la variante de la passe de profondeur.
+fn deux_recursions() -> Vec<u8> {
+    wat(r#"(module (memory 1 1)
+      (type $t (func (param i32) (result i32)))
+      (table 1 1 funcref) (elem (i32.const 0) $g)
+      (func $g (param i32) (result i32)
+        (if (result i32) (i32.eqz (local.get 0))
+          (then (return (i32.const 0)))
+          (else (i32.add (i32.const 1) (call $g (i32.sub (local.get 0) (i32.const 1)))))))
+      (func (export "f") (param i32) (result i32)
+        (i32.add
+          (call_indirect (type $t) (local.get 0) (i32.const 0))
+          (call $g (i32.const 3)))))"#)
+}
+
+/// La chaîne de [`chaine`], la passe de profondeur remplacée par sa variante de mesure
+/// (M9).
+fn chaine_mesuree(m: &[u8]) -> Vec<u8> {
+    let mut m = passes::globales(m).unwrap();
+    m = passes::carburant(&m).unwrap();
+    m = passes::profondeur_mesuree(&m, REGLAGES.profondeur_max).unwrap();
+    m = passes::nan(&m).unwrap();
+    m = passes::croissance(&m, REGLAGES.memoire_plafond_pages).unwrap();
+    wasmparser::validate(&m).unwrap();
+    m
+}
+
+/// La variante de mesure garde la plus grande profondeur vue, d'un appel à l'autre, et
+/// rend `soiree_profondeur` à zéro comme la passe de la partie (PHASE-3, M9).
+#[test]
+fn la_variante_de_mesure_garde_la_profondeur_atteinte() {
+    let m = chaine_mesuree(&deux_recursions());
+    let mut e = Execution::new(&m, MOTEUR_A);
+    assert_eq!(
+        e.appeler("f", &[Valeur::I32(40)]),
+        Issue::Valeurs(vec![Valeur::I32(43)])
+    );
+    assert_eq!(e.globale(PROFONDEUR), Valeur::I32(0));
+    // L'appel indirect, puis quarante appels imbriqués de `$g`.
+    assert_eq!(e.globale(PROFONDEUR_ATTEINTE), Valeur::I32(41));
+    // Un appel moins profond ne la baisse pas ; un plus profond la monte.
+    e.appeler("f", &[Valeur::I32(5)]);
+    assert_eq!(e.globale(PROFONDEUR_ATTEINTE), Valeur::I32(41));
+    e.appeler("f", &[Valeur::I32(90)]);
+    assert_eq!(e.globale(PROFONDEUR_ATTEINTE), Valeur::I32(91));
+    // Au-delà du plafond, la variante pique comme la passe de la partie, au même étage.
+    let mut e = Execution::new(&m, MOTEUR_A);
+    assert_eq!(
+        e.appeler("f", &[Valeur::I32(10_000)]),
+        Issue::Piege(Trap::UnreachableCodeReached)
+    );
+    let max = i32::try_from(REGLAGES.profondeur_max).unwrap() + 1;
+    assert_eq!(e.globale(PROFONDEUR), Valeur::I32(max));
+    assert_eq!(e.globale(PROFONDEUR_ATTEINTE), Valeur::I32(max));
+}
+
+/// `Reglages::PHASE_3` est réglé entre les deux moitiés de M9 (`MESURES-PHASE-3.md`,
+/// « Lot 3c ») : au-dessus de la profondeur que les jeux atteignent sur toute leur
+/// épreuve, sous celle que tient la pile du Worker le plus court. Un retour à 4 096
+/// étages (`PHASE_1`) laisserait un Worker de Chrome épuiser sa pile native avant la
+/// faute `Profondeur` (une panne de l'outil, § 8.7) ; ce test le fige, comme
+/// `BUDGET_DE_CHARGEMENT` est figé dans `chargement_borne.rs`. Ce que le navigateur
+/// tient vraiment sous `PHASE_3` se vérifie dans le navigateur, par
+/// `soiree-banc etalonner --mesures m9` (code 1 si une récursion n'y est pas la faute
+/// `Profondeur`). Né de la vérification du lot 3c, constat 4.
+#[test]
+fn phase_3_se_tient_entre_les_jeux_et_la_pile_du_worker() {
+    /// M9, première moitié : Tier list, le jeu le plus profond, au plan standard.
+    const JEU_LE_PLUS_PROFOND: u32 = 18;
+    /// M9, seconde moitié : un Worker de Chrome 156, 250 valeurs `i64` par étage.
+    const WORKER_LE_PLUS_COURT: u32 = 247;
+    let p = reecriture::Reglages::PHASE_3.profondeur_max;
+    assert_eq!(p, 64);
+    assert!(p >= 3 * JEU_LE_PLUS_PROFOND, "{p}");
+    assert!(3 * p <= WORKER_LE_PLUS_COURT, "{p}");
+    const { assert!(reecriture::Reglages::PHASE_1.profondeur_max > WORKER_LE_PLUS_COURT) };
+}
+
+/// La variante de mesure brûle le même carburant et rend la même chose que la passe de
+/// la partie : seuls ses octets diffèrent, et le module de la partie n'a pas sa globale.
+#[test]
+fn la_variante_de_mesure_ne_change_ni_le_carburant_ni_l_issue() {
+    let partie = chaine(&deux_recursions(), None);
+    let mesure = chaine_mesuree(&deux_recursions());
+    assert_ne!(partie, mesure);
+    for n in [0, 7, 300, 10_000] {
+        let mut a = Execution::new(&partie, MOTEUR_A);
+        let mut b = Execution::new(&mesure, MOTEUR_A);
+        a.poser(CARBURANT, Val::I64(1_000_000));
+        b.poser(CARBURANT, Val::I64(1_000_000));
+        assert_eq!(
+            a.appeler("f", &[Valeur::I32(n)]),
+            b.appeler("f", &[Valeur::I32(n)]),
+            "{n}"
+        );
+        assert_eq!(a.globale(CARBURANT), b.globale(CARBURANT), "{n}");
+        assert_eq!(a.globale(PROFONDEUR), b.globale(PROFONDEUR), "{n}");
+    }
+    let exports = |m: &[u8]| -> Vec<String> {
+        wasmparser::Parser::new(0)
+            .parse_all(m)
+            .filter_map(|p| match p.unwrap() {
+                wasmparser::Payload::ExportSection(s) => Some(
+                    s.into_iter()
+                        .map(|e| String::from(e.unwrap().name))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    };
+    assert!(!exports(&partie).iter().any(|e| e == PROFONDEUR_ATTEINTE));
+    assert!(exports(&mesure).iter().any(|e| e == PROFONDEUR_ATTEINTE));
 }
 
 /// Des NaN de toutes les formes : charges utiles, signes, NaN signalants, et chaque

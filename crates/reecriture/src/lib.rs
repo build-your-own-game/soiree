@@ -14,7 +14,7 @@
 //! | [`passes::valider`] | § 3.1, exactement les exports de § 3.3, un maximum de mémoire, la pile en bas |
 //! | [`passes::globales`] | exporte chaque globale mutable d'origine sous `soiree_globale_<n>` ; `data.drop` devient `nop` |
 //! | [`passes::carburant`] | `soiree_carburant`, décrémenté au début de chaque segment : entrée de fonction, tête de boucle, branche, jonction |
-//! | [`passes::profondeur`] | `soiree_profondeur`, compté autour de chaque appel |
+//! | [`passes::profondeur`] | `soiree_profondeur`, compté autour de chaque appel (et, pour les seules mesures, [`passes::profondeur_mesuree`]) |
 //! | [`passes::nan`] | un NaN calculé devient le NaN canonique |
 //! | [`passes::croissance`] | `memory.grow` borné par `soiree_memoire_max` |
 //! | [`passes::pile`] | la pile remise à zéro au début de chaque écriture |
@@ -73,6 +73,10 @@ pub const HAUTEUR_MAX: u32 = 1024;
 pub const CARBURANT: &str = "soiree_carburant";
 /// Le nom de la globale de profondeur d'appel, exportée.
 pub const PROFONDEUR: &str = "soiree_profondeur";
+/// Le nom de la globale de la plus grande profondeur atteinte, exportée par la seule
+/// variante de mesure ([`reecrire_en_mesurant_la_profondeur`], M9) : jamais dans un
+/// module de partie.
+pub const PROFONDEUR_ATTEINTE: &str = "soiree_profondeur_atteinte";
 /// Le nom de la globale du maximum de mémoire, en pages, exportée.
 pub const MEMOIRE_MAX: &str = "soiree_memoire_max";
 /// Le nom de la globale posée quand un `memory.grow` permis a échoué : la machine.
@@ -109,6 +113,30 @@ impl Reglages {
     /// question 12) : 4 096 appels imbriqués, 1 Gio de mémoire.
     pub const PHASE_1: Reglages = Reglages {
         profondeur_max: 4096,
+        memoire_plafond_pages: 16_384,
+    };
+
+    /// Les réglages de la partie depuis la phase 3, les mêmes pour wasmtime et pour
+    /// chaque navigateur (PHASE-3, P4) : le module réécrit est le même partout, et ses
+    /// empreintes changent avec eux.
+    ///
+    /// La profondeur, 64 étages, est réglée entre les deux moitiés de M9, mesurées le
+    /// 2026-11-05 (`conception/MESURES-PHASE-3.md`, « Lot 3c ») :
+    ///
+    /// - **ce que les jeux atteignent**, sur toute leur épreuve au plan standard
+    ///   (`epreuve/examples/profondeur.rs`, la variante de mesure de la passe) : `devine`
+    ///   10 étages, `ardoise` 9, Punchline 15, Sidequest 13, Tier list 18 ;
+    /// - **ce que tient la pile d'un Worker**, sur la récursion la plus épaisse par
+    ///   étage (250 valeurs `i64` vivantes, un étage par appel) : 247 étages dans Chrome
+    ///   156, 492 dans Firefox 158 ; deux fois plus sur le fil d'une page. Safari n'est
+    ///   pas mesuré (`safaridriver` refuse la session).
+    ///
+    /// 64 laisse un facteur 3,5 au jeu le plus profond, et 3,9 à la pile du Worker le
+    /// plus court. Les 4 096 étages de [`Reglages::PHASE_1`] auraient laissé un Worker
+    /// de Chrome épuiser sa pile native (une panne de l'outil) avant la faute
+    /// `Profondeur` du jeu.
+    pub const PHASE_3: Reglages = Reglages {
+        profondeur_max: 64,
         memoire_plafond_pages: 16_384,
     };
 }
@@ -252,10 +280,31 @@ impl std::error::Error for Refus {}
 ///
 /// Fonction pure : les mêmes octets et les mêmes réglages donnent les mêmes octets.
 pub fn reecrire(original: &[u8], r: &Reglages) -> Result<Reecrit, Refus> {
+    reecrire_et_mesurer(original, *r, passes::Variante::Partie)
+}
+
+/// [`reecrire`], avec la variante de mesure de la passe de profondeur
+/// ([`passes::profondeur_mesuree`]) : le module garde aussi la plus grande profondeur
+/// atteinte dans [`PROFONDEUR_ATTEINTE`]. **Réservée au banc et aux mesures** (M9,
+/// PHASE-3, § 2.3) : le module rendu brûle le même carburant et rend les mêmes octets
+/// que celui de [`reecrire`], mais ses octets, donc son empreinte, diffèrent. Il ne sert
+/// jamais à une partie, ni à un rapport de l'épreuve.
+pub fn reecrire_en_mesurant_la_profondeur(original: &[u8], r: &Reglages) -> Result<Reecrit, Refus> {
+    reecrire_et_mesurer(original, *r, passes::Variante::Mesure)
+}
+
+fn reecrire_et_mesurer(
+    original: &[u8],
+    r: Reglages,
+    variante: passes::Variante,
+) -> Result<Reecrit, Refus> {
     let examen = valider::examiner(original)?;
     let m = passes::globales(original)?;
     let m = passes::carburant(&m)?;
-    let m = passes::profondeur(&m, r.profondeur_max)?;
+    let m = match variante {
+        passes::Variante::Partie => passes::profondeur(&m, r.profondeur_max)?,
+        passes::Variante::Mesure => passes::profondeur_mesuree(&m, r.profondeur_max)?,
+    };
     let m = passes::nan(&m)?;
     let m = passes::croissance(&m, r.memoire_plafond_pages)?;
     let m = passes::pile(&m, examen.pile_globale)?;

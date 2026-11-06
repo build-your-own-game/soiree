@@ -77,6 +77,15 @@ impl ReglagesMoteur {
         reecriture: reecriture::Reglages::PHASE_1,
         garde_fou_murale_ms: 1000,
     };
+
+    /// Les réglages de la partie depuis la phase 3 : ceux de la réécriture que partagent
+    /// wasmtime et les navigateurs ([`reecriture::Reglages::PHASE_3`]), et le garde-fou
+    /// d'une seconde, que le lot 3c a revu d'après M10 sans le changer
+    /// (`moteur_commun::BUDGET_DE_CHARGEMENT`).
+    pub const PHASE_3: ReglagesMoteur = ReglagesMoteur {
+        reecriture: reecriture::Reglages::PHASE_3,
+        garde_fou_murale_ms: 1000,
+    };
 }
 
 /// Le moteur : wasmtime réglé pour la partie, et son garde-fou.
@@ -135,10 +144,34 @@ impl Moteur {
     /// `limites.memoire` pour chaque instance.
     pub fn charger(&self, original: &[u8]) -> Result<ModuleCharge, RefusModule> {
         let reecrit = reecriture::reecrire(original, &self.reglages.reecriture)?;
+        self.charger_reecrit(reecrit, |p| p)
+    }
+
+    /// [`Moteur::charger`], par la variante de mesure de la réécriture
+    /// ([`reecriture::reecrire_en_mesurant_la_profondeur`]) : après chaque appel d'une de
+    /// ses instances, le protocole garde la plus grande profondeur atteinte
+    /// ([`moteur_commun::profondeur_atteinte`]). **Réservé au banc et aux mesures** (M9,
+    /// PHASE-3, § 2.3) : le module chargé brûle le même carburant et rend les mêmes octets
+    /// que celui de [`Moteur::charger`], mais son empreinte réécrite diffère ; il ne sert
+    /// ni à une partie, ni à un rapport.
+    pub fn charger_en_mesurant_la_profondeur(
+        &self,
+        original: &[u8],
+    ) -> Result<ModuleCharge, RefusModule> {
+        let reecrit =
+            reecriture::reecrire_en_mesurant_la_profondeur(original, &self.reglages.reecriture)?;
+        self.charger_reecrit(reecrit, Plan::en_mesurant_la_profondeur)
+    }
+
+    fn charger_reecrit(
+        &self,
+        reecrit: Reecrit,
+        plan: impl FnOnce(Plan) -> Plan,
+    ) -> Result<ModuleCharge, RefusModule> {
         let module = Module::new(&self.engine, &reecrit.octets)
             .map_err(|e| interne(format!("wasmtime refuse le module réécrit : {e}")))?;
         let globales = globales_d_origine(module.exports().map(|e| e.name()))?;
-        let plan = Plan::new(&reecrit, &self.reglages.reecriture, &globales);
+        let plan = plan(Plan::new(&reecrit, &self.reglages.reecriture, &globales));
         let base = Arc::new(Base {
             module,
             garde_fou_tics: horloge::tics(self.reglages.garde_fou_murale_ms),

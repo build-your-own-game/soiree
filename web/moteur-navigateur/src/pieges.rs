@@ -56,16 +56,24 @@ pub enum MoteurJs {
     V8,
     /// `SpiderMonkey` (Firefox).
     SpiderMonkey,
+    /// `JavaScriptCore` (Safari). Aucun de ses messages n'est constaté : le banc n'a pas
+    /// encore pu piloter Safari (PHASE-3, lot 3c, question 8). Ses pièges gardent le
+    /// texte du navigateur ([`PREFIXE_NON_RAMENE`]), et les essais du banc échouent pour
+    /// lui tant qu'aucun n'est rangé.
+    JavaScriptCore,
 }
 
 impl MoteurJs {
     /// Le moteur d'un navigateur, d'après son `navigator.userAgent` ; `None` pour un
-    /// navigateur dont les messages ne sont pas encore rangés (Safari, lot 3c).
+    /// navigateur qu'on ne reconnaît pas. L'agent de Chrome dit aussi `Safari/` : Chrome
+    /// se reconnaît d'abord.
     pub fn depuis_agent(agent: &str) -> Option<MoteurJs> {
         if agent.contains("Firefox/") {
             Some(MoteurJs::SpiderMonkey)
         } else if agent.contains("Chrome/") {
             Some(MoteurJs::V8)
+        } else if agent.contains("Safari/") && agent.contains("Version/") {
+            Some(MoteurJs::JavaScriptCore)
         } else {
             None
         }
@@ -79,8 +87,8 @@ impl MoteurJs {
 /// `soiree-banc machine` (lot 3a), ceux de `SpiderMonkey` dans Firefox 158.0.1 le même
 /// jour (lot 3b, `--navigateur firefox`), un piège provoqué par scénario
 /// (`essais/machine.wat`, `essais/pieges.txt`). Aucun message n'est commun aux deux
-/// moteurs : le classement n'a pas à savoir lequel tourne. Safari s'y ajoute quand on le
-/// constate (lot 3c).
+/// moteurs : le classement n'a pas à savoir lequel tourne. Ceux de `JavaScriptCore`
+/// (Safari) s'y ajouteront quand le banc pourra le piloter (lot 3c : « pas exécuté »).
 pub const MESSAGES: &[(MoteurJs, &str, Ramene)] = &[
     // V8 (Chrome).
     (
@@ -276,7 +284,11 @@ mod tests {
             MoteurJs::depuis_agent(firefox),
             Some(MoteurJs::SpiderMonkey)
         );
-        assert_eq!(MoteurJs::depuis_agent(safari), None);
+        assert_eq!(
+            MoteurJs::depuis_agent(safari),
+            Some(MoteurJs::JavaScriptCore)
+        );
+        assert_eq!(MoteurJs::depuis_agent("curl/8.7.1"), None);
     }
 
     /// Un message inconnu reste un piège du module, et se voit : il n'est pas déguisé

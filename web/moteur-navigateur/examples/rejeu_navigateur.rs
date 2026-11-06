@@ -163,7 +163,7 @@ fn constater(
     fautif: Option<u64>,
 ) -> Constat {
     let debut = maintenant_ms();
-    let charge = charger(module, &reecriture::Reglages::PHASE_1);
+    let charge = charger(module, &reecriture::Reglages::PHASE_3);
     let chargement = match &charge {
         Ok(m) => Chargement::Accepte {
             empreinte: m.reecrit().empreinte,

@@ -1,12 +1,14 @@
-//! Les navigateurs du banc, derrière un même pilote (PHASE-3, § 8.2, lot 3b) : Chrome
-//! par CDP ([`crate::chrome`]), Firefox par `WebDriver` `BiDi` ([`crate::firefox`]).
-//! Safari, par `safaridriver`, vient au lot 3c : d'ici là, il est « pas exécuté », dit
-//! comme tel, jamais réussi (OUT-01).
+//! Les navigateurs du banc, derrière un même pilote (PHASE-3, § 8.2, lots 3b et 3c) :
+//! Chrome par CDP ([`crate::chrome`]), Firefox par `WebDriver` `BiDi`
+//! ([`crate::firefox`]), Safari par `safaridriver` ([`crate::safari`]).
 //!
-//! Chaque navigateur part sans interface, sur un profil neuf sous
-//! `target/banc/profils/`, effacé à la fermeture ; le banc lit l'adresse de son
-//! protocole sur sa sortie d'erreur, ouvre une page, écoute sa console et ses
-//! exceptions, puis le ferme (au plus 10 s, puis il le tue).
+//! Chrome et Firefox partent sans interface, sur un profil neuf sous
+//! `target/banc/profils/`, effacé à la fermeture ; le banc lit l'adresse de leur
+//! protocole sur leur sortie d'erreur, ouvre une page, écoute sa console et ses
+//! exceptions, puis les ferme (au plus 10 s, puis il les tue). Safari ouvre une vraie
+//! fenêtre, sans profil neuf, et ne dit pas sa console ; sans « Autoriser
+//! l'automatisation à distance », `safaridriver` refuse la session, et Safari est « pas
+//! exécuté », avec son message, jamais réussi (OUT-01).
 
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -18,6 +20,7 @@ use std::time::Duration;
 use crate::chrome::Chrome;
 use crate::firefox::Firefox;
 use crate::horloge::{maintenant, reste};
+use crate::safari::Safari;
 
 /// Un navigateur que le banc sait nommer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +29,7 @@ pub enum Navigateur {
     Chrome,
     /// Firefox, par `WebDriver` `BiDi`.
     Firefox,
-    /// Safari, par `safaridriver` : lot 3c.
+    /// Safari, par `safaridriver`.
     Safari,
 }
 
@@ -60,7 +63,7 @@ impl Navigateur {
         PathBuf::from(match self {
             Navigateur::Chrome => crate::chrome::CHROME,
             Navigateur::Firefox => crate::firefox::FIREFOX,
-            Navigateur::Safari => "/usr/bin/safaridriver",
+            Navigateur::Safari => crate::safari::SAFARIDRIVER,
         })
     }
 }
@@ -71,12 +74,15 @@ pub enum Lance {
     Chrome(Chrome),
     /// Firefox.
     Firefox(Firefox),
+    /// Safari.
+    Safari(Safari),
 }
 
 impl Lance {
-    /// Lance `n` (son exécutable : `executable`, ou celui de la machine) sur un profil
-    /// neuf sous `profils`. `Err` : il ne part pas, ou le banc ne sait pas encore le
-    /// piloter (Safari) ; c'est « pas exécuté ».
+    /// Lance `n` (son exécutable : `executable`, ou celui de la machine ; pour Safari,
+    /// `safaridriver`) sur un profil neuf sous `profils` (Safari n'en a pas). `Err` : il
+    /// ne part pas, ou il refuse la session (Safari sans l'automatisation à distance) ;
+    /// c'est « pas exécuté ».
     pub fn lancer(
         n: Navigateur,
         executable: Option<&Path>,
@@ -86,9 +92,7 @@ impl Lance {
         match n {
             Navigateur::Chrome => Chrome::lancer(&exe, profils).map(Lance::Chrome),
             Navigateur::Firefox => Firefox::lancer(&exe, profils).map(Lance::Firefox),
-            Navigateur::Safari => Err(String::from(
-                "Safari se pilote par safaridriver, que le banc n'a qu'au lot 3c (PHASE-3, § 7)",
-            )),
+            Navigateur::Safari => Safari::lancer(&exe).map(Lance::Safari),
         }
     }
 
@@ -97,6 +101,7 @@ impl Lance {
         match self {
             Lance::Chrome(c) => &c.version,
             Lance::Firefox(f) => &f.version,
+            Lance::Safari(s) => &s.version,
         }
     }
 
@@ -105,15 +110,17 @@ impl Lance {
         match self {
             Lance::Chrome(c) => c.ouvrir(url),
             Lance::Firefox(f) => f.ouvrir(url),
+            Lance::Safari(s) => s.ouvrir(url),
         }
     }
 
     /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont
-    /// dit.
+    /// dit (rien pour Safari, que `WebDriver` classique ne dit pas).
     pub fn ecouter(&mut self, delai: Duration) -> Result<Vec<String>, String> {
         match self {
             Lance::Chrome(c) => c.ecouter(delai),
             Lance::Firefox(f) => f.ecouter(delai),
+            Lance::Safari(s) => Ok(s.ecouter(delai)),
         }
     }
 
@@ -122,6 +129,7 @@ impl Lance {
         match self {
             Lance::Chrome(c) => c.fermer(),
             Lance::Firefox(f) => f.fermer(),
+            Lance::Safari(s) => s.fermer(),
         }
     }
 }

@@ -524,7 +524,8 @@ fn leve(module: &WebAssembly::Module, k: i32) -> Result<(String, String), String
 
 /// Chaque message des deux tables que lève le moteur de ce navigateur a été levé par un
 /// scénario : elles ne tiennent que des messages constatés. Un navigateur dont le moteur
-/// n'est pas rangé (Safari, lot 3c) échoue : ses messages ne sont pas dans les tables.
+/// n'a aucun message rangé (Safari, `JavaScriptCore`) échoue : ses messages ne sont pas
+/// dans les tables.
 fn pieges_la_table_est_constatee(leves: &[(i32, String, String)]) -> Issue {
     let agent = Reflect::get(&js_sys::global(), &JsValue::from_str("navigator"))
         .and_then(|n| Reflect::get(&n, &JsValue::from_str("userAgent")))
@@ -533,6 +534,12 @@ fn pieges_la_table_est_constatee(leves: &[(i32, String, String)]) -> Issue {
         .unwrap_or_default();
     let moteur = MoteurJs::depuis_agent(&agent)
         .ok_or_else(|| format!("moteur inconnu, aucun message rangé pour lui : {agent}"))?;
+    // Un moteur sans aucun message rangé (JavaScriptCore, lot 3c) ne réussit pas à vide.
+    if !MESSAGES.iter().any(|(x, _, _)| *x == moteur) {
+        return Err(format!(
+            "aucun message de {moteur:?} n'est constaté : les tables sont à remplir pour lui"
+        ));
+    }
     let siens = MESSAGES
         .iter()
         .filter(|(x, _, _)| *x == moteur)
@@ -569,7 +576,7 @@ fn pieges_la_table_est_constatee(leves: &[(i32, String, String)]) -> Issue {
 fn chargement_d_une_boucle_est_la_faute_budget() -> Issue {
     let octets =
         wat::parse_str(moteur_commun::essais::BONJOUR_QUI_BOUCLE).map_err(|e| e.to_string())?;
-    match charger(&octets, &reecriture::Reglages::PHASE_1) {
+    match charger(&octets, &reecriture::Reglages::PHASE_3) {
         Err(RefusModule::Faute {
             appel,
             faute: Faute::Budget,

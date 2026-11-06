@@ -7,11 +7,11 @@
 //! Pour chaque module livré (compilé au profil `module`) :
 //!
 //! 1. **Le module réécrit**, exactement comme `moteur-wasmtime` le charge
-//!    ([`Moteur::charger`] avec [`ReglagesMoteur::PHASE_1`], puis
-//!    [`ModuleCharge::reecrit`]) : `<sortie>/<nom>/reecrit.wasm`, avec ce qu'il faut
-//!    pour l'appeler comme le moteur (zones, pile, `soiree_memoire_max`) dans
-//!    `meta.json`. La durée de la réécriture seule et de la compilation Cranelift
-//!    seule y sont notées (mesure 4).
+//!    ([`Moteur::charger`] avec [`ReglagesMoteur::PHASE_3`], les réglages de la partie
+//!    depuis le lot 3c, puis [`ModuleCharge::reecrit`]) : `<sortie>/<nom>/reecrit.wasm`,
+//!    et le module livré lui-même, `livre.wasm`, avec ce qu'il faut pour l'appeler
+//!    comme le moteur (zones, pile, `soiree_memoire_max`) dans `meta.json`. La durée de
+//!    la réécriture seule et de la compilation Cranelift seule y sont notées (mesure 4).
 //! 2. **La trace** : chaque appel fait au module, avec ses octets, son budget, le
 //!    carburant qu'il a brûlé et une empreinte de son retour, et chaque instantané,
 //!    restauration, instance neuve ou lâchée, dans l'ordre :
@@ -23,16 +23,17 @@
 //!      et E14 sur les instances enregistrées, passées à l'épreuve à la place de la
 //!      copie native, comme le fait `epreuve/examples/etalonner.rs`.
 //!
-//!    `trace.bin`, au format décrit par [`ecrire_trace`].
+//!    `trace.bin`, au format de `moteur_commun::trace`, une seule définition.
 //! 3. **Le rejeu dans wasmtime** : la trace rejouée [`PASSES`] fois sur des
 //!    instances neuves du même module chargé, chaque appel chronométré autour de
 //!    [`Instance::appeler`] (le fil de l'instance, la remise à zéro des zones, l'appel,
 //!    la copie du retour : ce que la partie paie), son carburant et son retour
 //!    comparés à ceux de l'enregistrement. `wasmtime.json`.
 //!
-//! Les pages du banc (`../page/banc.js`) rejouent la même trace, dans le même ordre,
-//! avec le même protocole d'appel, dans chaque navigateur : c'est ce qui permet de
-//! comparer appel par appel.
+//! `soiree-banc etalonner` (lot 3c) rejoue la même trace, dans le même ordre, sur le
+//! protocole du commun, dans chaque navigateur : c'est ce qui permet de comparer appel
+//! par appel. (Le harnais la rejouait avec un protocole recopié en JavaScript,
+//! `page/banc-coeur.js`, retiré au lot 3c.)
 //!
 //! Les durées ne valent que pour la machine qui lance la capture : c'est à qui la
 //! lance d'écrire la date et la machine à côté des chiffres.
@@ -52,6 +53,10 @@ use jeu_abi::{Appel, RegardFil, Retour, SorteAppel, decoder, encoder};
 use moteur_wasmtime::{
     FabriqueWasm, InstanceWasm, InstantaneWasm, ModuleCharge, Moteur, ReglagesMoteur,
 };
+use moteur_commun::trace::{
+    self, ACCUEIL, BONJOURS as SECTION_BONJOURS, Evenement, ISSUE_PANNE, NOMS, PIRES_CAS,
+    SECTIONS, SOIREE, indice_du_nom, issue_de,
+};
 use partie::{Echec, Fabrique, Instance, PanneOutil};
 use serde_json::json;
 
@@ -67,112 +72,6 @@ const BUDGET_HORS_SOIREE: u64 = 1 << 28;
 /// Les compilations et réécritures chronométrées par module.
 const COMPILATIONS: usize = 5;
 
-/// Le nom de chaque appel, par son indice dans la trace. Le même tableau est dans
-/// `../page/trace.js` : l'ordre compte.
-const NOMS: [&str; 21] = [
-    "Bonjour",
-    "Decrire",
-    "Creer",
-    "Valider",
-    "Entree",
-    "Regarder",
-    "Etat",
-    "Ressources",
-    "Projeter",
-    "Charger",
-    "Canonique",
-    "DepuisCanonique",
-    "Garder",
-    "Resumer",
-    "Verifier",
-    "Transition",
-    "Bot",
-    "PireCas",
-    "Memoire",
-    "Proprietes",
-    "Hypothese",
-];
-
-/// Les sections de la trace. Le même tableau est dans `../page/trace.js`.
-const SECTIONS: [&str; 4] = ["accueil", "bonjours", "pires_cas", "soiree"];
-const ACCUEIL: u8 = 0;
-const SECTION_BONJOURS: u8 = 1;
-const PIRES_CAS: u8 = 2;
-const SOIREE: u8 = 3;
-
-/// L'issue d'un appel, telle que la trace l'écrit.
-const ISSUE_OK: u8 = 0;
-const ISSUE_FAUTE: u8 = 1;
-const ISSUE_PANNE: u8 = 2;
-
-const fn indice_du_nom(a: &Appel<'_>) -> u8 {
-    match a {
-        Appel::Bonjour => 0,
-        Appel::Decrire => 1,
-        Appel::Creer { .. } => 2,
-        Appel::Valider { .. } => 3,
-        Appel::Entree { .. } => 4,
-        Appel::Regarder { .. } => 5,
-        Appel::Etat { .. } => 6,
-        Appel::Ressources { .. } => 7,
-        Appel::Projeter { .. } => 8,
-        Appel::Charger { .. } => 9,
-        Appel::Canonique { .. } => 10,
-        Appel::DepuisCanonique { .. } => 11,
-        Appel::Garder => 12,
-        Appel::Resumer => 13,
-        Appel::Verifier => 14,
-        Appel::Transition { .. } => 15,
-        Appel::Bot { .. } => 16,
-        Appel::PireCas { .. } => 17,
-        Appel::Memoire => 18,
-        Appel::Proprietes => 19,
-        Appel::Hypothese { .. } => 20,
-    }
-}
-
-/// FNV-1a sur 32 bits : une empreinte courte du retour, que la page recalcule à
-/// l'identique. Elle ne sert qu'à voir qu'un rejeu rend la même chose.
-fn fnv(octets: &[u8]) -> u32 {
-    octets.iter().fold(0x811c_9dc5_u32, |h, b| {
-        (h ^ u32::from(*b)).wrapping_mul(0x0100_0193)
-    })
-}
-
-/// Un événement de la trace.
-#[derive(Debug, Clone)]
-enum Evenement {
-    Neuve {
-        inst: u32,
-    },
-    Appel {
-        inst: u32,
-        section: u8,
-        nom: u8,
-        sorte: SorteAppel,
-        budget: u64,
-        octets: Vec<u8>,
-        carburant: u64,
-        issue: u8,
-        sortie_longueur: u32,
-        sortie_fnv: u32,
-    },
-    Instantane {
-        inst: u32,
-        id: u32,
-    },
-    Restaurer {
-        inst: u32,
-        id: u32,
-    },
-    Oublier {
-        id: u32,
-    },
-    Lacher {
-        inst: u32,
-    },
-}
-
 #[derive(Default)]
 struct Journal {
     evenements: Vec<Evenement>,
@@ -182,14 +81,6 @@ struct Journal {
 }
 
 type Partage = Rc<RefCell<Journal>>;
-
-fn issue_de(r: &Result<Vec<u8>, Echec>) -> (u8, u32, u32) {
-    match r {
-        Ok(o) => (ISSUE_OK, u32::try_from(o.len()).unwrap_or(u32::MAX), fnv(o)),
-        Err(Echec::Faute(_)) => (ISSUE_FAUTE, 0, 0),
-        Err(Echec::Panne(_)) => (ISSUE_PANNE, 0, 0),
-    }
-}
 
 /// Une instance du module dont chaque opération s'écrit dans la trace.
 struct Enregistree {
@@ -409,80 +300,6 @@ fn ajouter_les_oublis(ev: Vec<Evenement>) -> Vec<Evenement> {
     sortie
 }
 
-/// Le format de la trace, petit-boutiste, que `../page/trace.js` lit :
-///
-/// ```text
-/// "SOIRTRC1"
-/// puis des événements, chacun introduit par un octet :
-///   1 Neuve       u32 instance
-///   2 Appel       u32 instance, u8 section, u8 nom, i32 sorte (code de soiree_boite),
-///                 u64 budget, u32 longueur, octets de l'appel,
-///                 u64 carburant brûlé, u8 issue (0 rendu, 1 faute, 2 panne),
-///                 u32 longueur du retour, u32 FNV-1a du retour
-///   3 Instantane  u32 instance, u32 numéro
-///   4 Restaurer   u32 instance, u32 numéro
-///   5 Oublier     u32 numéro
-///   6 Lacher      u32 instance
-///   0 Fin
-/// ```
-fn ecrire_trace(ev: &[Evenement]) -> Vec<u8> {
-    let mut o = Vec::new();
-    o.extend_from_slice(b"SOIRTRC1");
-    for e in ev {
-        match e {
-            Evenement::Neuve { inst } => {
-                o.push(1);
-                o.extend_from_slice(&inst.to_le_bytes());
-            }
-            Evenement::Appel {
-                inst,
-                section,
-                nom,
-                sorte,
-                budget,
-                octets,
-                carburant,
-                issue,
-                sortie_longueur,
-                sortie_fnv,
-            } => {
-                o.push(2);
-                o.extend_from_slice(&inst.to_le_bytes());
-                o.push(*section);
-                o.push(*nom);
-                o.extend_from_slice(&sorte.code().to_le_bytes());
-                o.extend_from_slice(&budget.to_le_bytes());
-                o.extend_from_slice(&u32::try_from(octets.len()).unwrap_or(0).to_le_bytes());
-                o.extend_from_slice(octets);
-                o.extend_from_slice(&carburant.to_le_bytes());
-                o.push(*issue);
-                o.extend_from_slice(&sortie_longueur.to_le_bytes());
-                o.extend_from_slice(&sortie_fnv.to_le_bytes());
-            }
-            Evenement::Instantane { inst, id } => {
-                o.push(3);
-                o.extend_from_slice(&inst.to_le_bytes());
-                o.extend_from_slice(&id.to_le_bytes());
-            }
-            Evenement::Restaurer { inst, id } => {
-                o.push(4);
-                o.extend_from_slice(&inst.to_le_bytes());
-                o.extend_from_slice(&id.to_le_bytes());
-            }
-            Evenement::Oublier { id } => {
-                o.push(5);
-                o.extend_from_slice(&id.to_le_bytes());
-            }
-            Evenement::Lacher { inst } => {
-                o.push(6);
-                o.extend_from_slice(&inst.to_le_bytes());
-            }
-        }
-    }
-    o.push(0);
-    o
-}
-
 /// Ce qu'un rejeu a constaté.
 #[derive(Default)]
 struct Rejeu {
@@ -593,7 +410,7 @@ fn remise_a_zero(octets: u64) -> u64 {
 /// Les réglages de wasmtime de `moteur-wasmtime` (`Moteur::new`), recopiés : la
 /// compilation seule se chronomètre avec eux.
 fn engine_du_moteur() -> Result<wasmtime::Engine, String> {
-    let r = ReglagesMoteur::PHASE_1;
+    let r = ReglagesMoteur::PHASE_3;
     let pile = usize::try_from(r.reecriture.profondeur_max)
         .unwrap_or(usize::MAX)
         .saturating_add(16)
@@ -657,7 +474,7 @@ fn capturer(moteur: &Moteur, engine: &wasmtime::Engine, sortie: &Path, nom: &str
     let mut reecrit = None;
     for _ in 0..COMPILATIONS {
         let debut = maintenant();
-        let r = reecriture::reecrire(&original, &ReglagesMoteur::PHASE_1.reecriture)
+        let r = reecriture::reecrire(&original, &ReglagesMoteur::PHASE_3.reecriture)
             .map_err(|r| r.to_string())?;
         reecrire_ns.push(ns(debut.elapsed()));
         reecrit = Some(r);
@@ -679,6 +496,9 @@ fn capturer(moteur: &Moteur, engine: &wasmtime::Engine, sortie: &Path, nom: &str
         ));
     }
     ecrire(&dossier.join("reecrit.wasm"), &module.reecrit().octets)?;
+    // Le module livré : `soiree-banc etalonner` le charge dans le navigateur comme
+    // l'autorité, réécriture comprise.
+    ecrire(&dossier.join("livre.wasm"), &original)?;
     let b = module.bonjour();
     let pile = module.reecrit().pile_initiale;
     let zones = [(0, pile), b.boite, b.brouillon, b.panique];
@@ -715,7 +535,7 @@ fn capturer(moteur: &Moteur, engine: &wasmtime::Engine, sortie: &Path, nom: &str
         .iter()
         .filter(|e| matches!(e, Evenement::Appel { .. }))
         .count();
-    let trace = ecrire_trace(&evenements);
+    let trace = trace::ecrire(&evenements);
     ecrire(&dossier.join("trace.bin"), &trace)?;
     println!(
         "  trace : {} événements, {appels} appels, {pires} pires cas, {} octets",
@@ -783,7 +603,7 @@ fn capturer(moteur: &Moteur, engine: &wasmtime::Engine, sortie: &Path, nom: &str
             .as_bytes(),
     )?;
     let wasmtime_json = json!({
-        "moteur": "wasmtime 50.0.1 (Cranelift), moteur-wasmtime, ReglagesMoteur::PHASE_1",
+        "moteur": "wasmtime 50.0.1 (Cranelift), moteur-wasmtime, ReglagesMoteur::PHASE_3",
         "passes": passes,
     });
     ecrire(
@@ -801,7 +621,7 @@ fn main() -> ExitCode {
         eprintln!("usage : capture-navigateur <sortie> <nom>=<module.wasm>…");
         return ExitCode::from(64);
     };
-    let moteur = match Moteur::new(ReglagesMoteur::PHASE_1) {
+    let moteur = match Moteur::new(ReglagesMoteur::PHASE_3) {
         Ok(m) => m,
         Err(p) => {
             eprintln!("moteur : {p}");

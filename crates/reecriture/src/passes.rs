@@ -12,8 +12,8 @@ use wasmparser::Operator;
 use crate::analyse::analyser;
 use crate::ecriture::{Ajouts, Corps, GlobaleAjoutee, Transformation, reecrire_avec, reprendre};
 use crate::{
-    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, Constat, MEMOIRE_MAX, PROFONDEUR, Refus,
-    nom_de_globale, valider as v,
+    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, Constat, MEMOIRE_MAX, PROFONDEUR,
+    PROFONDEUR_ATTEINTE, Refus, nom_de_globale, valider as v,
 };
 
 /// Le NaN canonique de `f32` (§ 3.6).
@@ -268,6 +268,9 @@ pub fn etages(valeurs: u64) -> u32 {
 
 struct Profondeur {
     globale: u32,
+    /// La globale de la profondeur atteinte, dans la variante de mesure
+    /// ([`profondeur_mesuree`]) seulement.
+    atteinte: Option<u32>,
     max: u32,
     /// Les étages de chaque fonction définie, par indice ; une fonction importée
     /// (un module de test) compte comme un `call_indirect`.
@@ -304,6 +307,16 @@ impl Transformation for Profondeur {
                 corps.pousser(Instruction::I32Const(n));
                 corps.pousser(Instruction::I32Add);
                 corps.pousser(Instruction::GlobalSet(g));
+                if let Some(a) = self.atteinte {
+                    // La variante de mesure : la plus grande profondeur vue.
+                    corps.pousser(Instruction::GlobalGet(g));
+                    corps.pousser(Instruction::GlobalGet(a));
+                    corps.pousser(Instruction::I32GtU);
+                    corps.pousser(Instruction::If(BlockType::Empty));
+                    corps.pousser(Instruction::GlobalGet(g));
+                    corps.pousser(Instruction::GlobalSet(a));
+                    corps.pousser(Instruction::End);
+                }
                 corps.pousser(Instruction::GlobalGet(g));
                 corps.pousser(Instruction::I32Const(self.max.cast_signed()));
                 corps.pousser(Instruction::I32GtU);
@@ -336,14 +349,50 @@ impl Transformation for Profondeur {
 /// d'elle-même, au retour. L'appel du moteur lui-même ne compte pas : `max` est le
 /// nombre d'appels imbriqués sous lui.
 pub fn profondeur(m: &[u8], max: u32) -> Result<Vec<u8>, Refus> {
+    profondeur_et_mesure(m, max, Variante::Partie)
+}
+
+/// La passe de profondeur de la partie, ou sa variante de mesure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Variante {
+    /// [`profondeur`] : le module de la partie.
+    Partie,
+    /// [`profondeur_mesuree`] : la profondeur atteinte, en plus (M9).
+    Mesure,
+}
+
+/// La variante de mesure de [`profondeur`], **réservée au banc et aux mesures** (M9,
+/// PHASE-3, § 2.3) : le même compte, et une seconde globale exportée,
+/// [`PROFONDEUR_ATTEINTE`], qui garde le plus grand `soiree_profondeur` vu depuis la
+/// création de l'instance. Le moteur ne la pose ni ne la remet jamais à zéro : il la lit
+/// après chaque appel. Le carburant est compté avant cette passe : la variante brûle le
+/// même carburant et rend les mêmes octets que le module de la partie ; seuls ses octets
+/// réécrits, donc son empreinte, diffèrent. Un module réécrit ainsi ne sert jamais à une
+/// partie.
+pub fn profondeur_mesuree(m: &[u8], max: u32) -> Result<Vec<u8>, Refus> {
+    profondeur_et_mesure(m, max, Variante::Mesure)
+}
+
+fn profondeur_et_mesure(m: &[u8], max: u32, variante: Variante) -> Result<Vec<u8>, Refus> {
     let a = analyser(m)?;
     let globale = prochaine_globale(&a, 0)?;
-    let ajouts = Ajouts {
-        globales: vec![GlobaleAjoutee {
-            nom: String::from(PROFONDEUR),
+    let mut globales = vec![GlobaleAjoutee {
+        nom: String::from(PROFONDEUR),
+        ty: ValType::I32,
+        initiale: ConstExpr::i32_const(0),
+    }];
+    let atteinte = if variante == Variante::Mesure {
+        globales.push(GlobaleAjoutee {
+            nom: String::from(PROFONDEUR_ATTEINTE),
             ty: ValType::I32,
             initiale: ConstExpr::i32_const(0),
-        }],
+        });
+        Some(prochaine_globale(&a, 1)?)
+    } else {
+        None
+    };
+    let ajouts = Ajouts {
+        globales,
         exports: Vec::new(),
     };
     let etages: BTreeMap<u32, u32> = v::cadres(m)?
@@ -362,6 +411,7 @@ pub fn profondeur(m: &[u8], max: u32) -> Result<Vec<u8>, Refus> {
         &ajouts,
         &mut Profondeur {
             globale,
+            atteinte,
             max,
             etages,
             indirect,

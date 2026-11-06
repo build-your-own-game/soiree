@@ -416,10 +416,149 @@ Ce que Firefox 158.0.1 lève pour chaque piège de `web/moteur-navigateur/essais
 
 Six messages désignent un seul piège de wasmtime et y sont ramenés ; `index out of bounds` en désigne deux (la mémoire et la table, `AMBIGUS`). `Memory.prototype.grow` au-delà du maximum : `RangeError : failed to grow memory`. Le reste de la suite (globales `i64` par `BigInt`, détachement du tampon) se comporte comme dans Chrome. Commande : `target/release/soiree-banc machine --navigateur firefox` (10 s, construction comprise, 0,64 Go de mémoire résidente au plus pour `soiree-banc` et ses sous-processus attendus).
 
+## Lot 3c : M9, la mesure 1 refaite par le banc, M10 dans les navigateurs
+
+Mesuré le 2026-11-05, de 22 h 58 à 23 h 36 (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 26.6.2, rustc 1.99.0), dans Chrome 156.0.8078.80 (`--headless=new`) et Firefox 158.0.1 (`--headless`), profils neufs, pages isolées (COOP et COEP ; granularité de `performance.now()` mesurée à 5 µs dans Chrome, 20 µs dans Firefox), tout dans un Worker sauf la seconde moitié de M9b. **Safari 27.2 : pas exécuté**, à chaque scénario, avec ce message de `safaridriver` (session refusée au bout de 30 s) : « Could not create a session: The session timed out while connecting to a Safari instance. The following asynchronous operation timed out: Finding or launching a compatible local Safari and waiting for its RWIApplication to appear and become ready. » *Le message dépend du moment* : le 2026-11-06 à 01 h 03 (vérification) et à 01 h 44 (correction), `safaridriver` a refusé tout de suite, avec « Could not create a session: You must enable 'Allow remote automation' in the Developer section of Safari Settings to control Safari via WebDriver. », comme au premier essai du harnais. Le banc relaie le message tel quel ; l'issue, « pas exécuté », ne change pas. L'automatisation à distance n'est pas autorisée sur cette machine ; le banc n'y touche pas (PHASE-3, question 8). La charge est notée à chaque ligne (`vm.loadavg` sur une minute) : de 5 à 10 par d'autres programmes pendant M9 et M1 ; des services de macOS (`fairplaydeviceidentityd`, `mobileassetd`, `duetexpertd`…) l'ont ensuite portée jusqu'à 160 pendant la mesure « sous charge » de M10, et encore 35 pendant sa reprise : les durées de M10 en dépendent. Une seule exécution par mesure, sauf mention.
+
+### M9, première moitié : la profondeur qu'atteignent les jeux
+
+La variante de mesure de la passe de profondeur (`reecriture::reecrire_en_mesurant_la_profondeur`) garde la plus grande valeur de `soiree_profondeur` dans une seconde globale ; le protocole du commun la lit après chaque appel. Chaque module est éprouvé entier, plan standard (deux soirées de trois minutes, soirée longue de six heures, pires cas, sondes, propriétés, gels), sans copie native, sous `ReglagesMoteur::PHASE_1` (4 096 étages permis : rien ne pique). En étages de `soiree_profondeur`, l'appel du moteur exclu. La profondeur ne dépend ni de la machine ni du moteur.
+
+| Module | Profondeur atteinte, épreuve entière | dont au chargement (`Bonjour`, `Decrire`) | Code des contrôles (pour mémoire, sans copie native) |
+| --- | --- | --- | --- |
+| `devine` | 10 | 7 | 0 |
+| `ardoise` | 9 | 7 | 0 |
+| Punchline | 15 | 7 | 0 |
+| Sidequest | 13 | 7 | 0 |
+| Tier list | **18** | 7 | 0 |
+
+De 22 h 58 à 23 h 17, charge de 7,2 à 10,6 ; 1 149 s pour les cinq ; 2,60 Go de mémoire résidente au plus. Commande (depuis `soiree/`, les modules construits au profil `module`, voir `mesures/navigateur/README.md`) :
+
+```sh
+CARGO_BUILD_JOBS=4 cargo build --release -p epreuve --example profondeur
+target/release/examples/profondeur target/wasm32-unknown-unknown/module/devine_module.wasm target/wasm32-unknown-unknown/module/ardoise_module.wasm ../games/punchline/target/wasm32-unknown-unknown/module/punchline_module.wasm ../games/sidequest/target/wasm32-unknown-unknown/module/sidequest_module.wasm ../games/tier-list/target/wasm32-unknown-unknown/module/tier_list_module.wasm
+```
+
+### M9, seconde moitié : la profondeur que tient chaque navigateur
+
+Une récursion sans fin, réécrite sans plafond utile (`profondeur_max` 0x7fff0000), dont chaque étage lit en mémoire et garde vivantes à travers son appel `n` valeurs `i64` : la pile native cède d'abord (`RangeError` dans Chrome, `InternalError: too much recursion` dans Firefox : `Piege::PileNative` à chaque essai), et `soiree_profondeur` dit combien d'étages elle a tenus. Trois essais par cadre sur la même instance ; le plus petit est donné. Jusqu'à 250 valeurs, un appel compte un étage (`reecriture::passes::etages`) : c'est à 250 que la pile tient le moins d'étages. Au-delà, un appel compte plusieurs étages, et le compte de la réécriture suit la pile.
+
+| Valeurs par étage | Chrome, Worker | Chrome, page | Firefox, Worker | Firefox, page |
+| --- | --- | --- | --- | --- |
+| 0 | 7 936 | 15 475 | 9 235 | 16 792 |
+| 16 | 2 646 | 5 159 | 4 313 | 7 840 |
+| 64 | 882 | 1 720 | 1 659 | 3 016 |
+| 128 | 467 | 911 | 910 | 1 655 |
+| **250** | **247** | 480 | **492** | 893 |
+| 500 (2 étages par appel) | 250 | 488 | 506 | 918 |
+| 1 000 (4) | 252 | 492 | 512 | 932 |
+| 4 000 (16 ou 17) | 256 | 496 | 528 | 944 |
+
+Vers 23 h 20, charge 7,7 à 8,6 ; 9 s par navigateur. La pile d'un Worker de Chrome tient environ moitié moins que celle de sa page, et moitié moins que celle d'un Worker de Firefox. **Le Worker le plus court tient 247 étages** ; les 4 096 étages de `PHASE_1` l'auraient laissé épuiser sa pile native avant la faute `Profondeur` du jeu, une panne de l'outil au lieu d'une faute. Le fil principal d'un vrai téléphone (Safari iOS, Chrome Android) n'est pas mesuré : il va sur la fiche humaine (PHASE-3, § 8.5).
+
+Commande : `target/release/soiree-banc etalonner --mesures m9 --navigateurs chrome,firefox,safari`.
+
+**`ReglagesMoteur::PHASE_3`, d'après ces deux moitiés : 64 étages** (`reecriture::Reglages::PHASE_3`) : un facteur 3,5 au-dessus du jeu le plus profond (18), un facteur 3,9 sous le Worker le plus court (247). Il y avait de la place ; ce n'est pas une question au mainteneur.
+
+### La mesure 1, refaite par `soiree-banc etalonner`
+
+La trace de la capture (`capture-navigateur`, refaite sous `PHASE_3` à 23 h 24, 49 s : 116 807 appels pour les cinq modules ; dans wasmtime, aucun écart sur les deux rejeux) rejouée dans un Worker de chaque navigateur, sur `moteur_navigateur::charger` et le protocole du commun, et non plus sur la copie JavaScript du harnais. De 23 h 25 à 23 h 29 (le banc entier : 245 s, les essais de Safari compris), charge de 5,0 à 10,0, de 44 à 66 % de mémoire libre ; un navigateur neuf par module, deux rejeux, le second retenu (comme le harnais) ; **un seul tour**, là où le harnais en avait quatre.
+
+**Le carburant est le même partout** : sur les 116 807 appels, dans les deux rejeux de chaque navigateur, aucun écart de carburant, d'issue ni de retour avec wasmtime ; le module réécrit dans le navigateur a l'empreinte de celui de la capture.
+
+Les cinq modules ensemble, appels d'au moins un million d'unités (395, comme au harnais), « médiane ; 99ᵉ centile ; maximum » :
+
+| | Harnais, quatre tours (2026-11-05, 06 h 55 à 07 h 21, page) | Banc, un tour (23 h 25, Worker) |
+| --- | --- | --- |
+| wasmtime : ps par unité | 43 ; 82 ; 105 | 40 ; 234 ; 271 |
+| Chrome : facteur sur wasmtime | 0,90 à 0,94 ; 1,23 à 1,69 ; 1,71 à 2,97 | 1,07 ; 1,82 ; 3,26 |
+| Chrome : ps par unité | 34 à 36 ; 52 à 74 ; 70 à 137 | 39 ; 138 ; 504 |
+| Firefox : facteur sur wasmtime | 1,14 à 1,18 ; 3,99 à 4,98 ; 4,42 à 12,63 | 1,49 ; 3,87 ; 13,08 |
+| Firefox : ps par unité | 63 à 66 ; 124 à 285 ; 336 à 678 | 73 ; 244 ; 3 600 |
+
+Par module (second rejeu ; « coût fixe » : médiane des deux mille `Bonjour` un par un ; « bloc » : deux mille `Bonjour` d'un bloc, durée moyenne, médiane de trois blocs ; « remise à zéro » : les quatre zones remises à zéro par `Machine::remplir_de_zeros`, dans la mémoire d'une instance, médiane de quinze, sur le Kio) :
+
+| Module | Coût fixe, wasmtime / Chrome / Firefox (µs) | Bloc, Chrome / Firefox (µs) | Remise à zéro, Chrome / Firefox (ns par Kio) | ps par unité ≥ 10⁶, Chrome / Firefox (médiane ; max) | Facteur ≥ 10⁶, Chrome / Firefox (médiane ; max) |
+| --- | --- | --- | --- | --- | --- |
+| `devine` | 18,9 / 15 / 20 | 15,83 / 19,58 | 7,09 / 9,45 | — | — |
+| `ardoise` | 19,1 / 15 / 20 | 16,28 / 17,19 | 7,09 / 9,45 | — | — |
+| Punchline | 18,6 / 15 / 20 | 15,02 / 17,29 | 7,09 / 9,45 | 33 ; 36 / 73 ; 86 | 1,18 ; 1,24 / 2,47 ; 2,57 |
+| Sidequest | 25,2 / 25 / 20 | 23,20 / 22,65 | 7,96 / 6,37 | 38 ; 48 / 71 ; 103 | 0,94 ; 1,32 / 1,59 ; 3,93 |
+| Tier list | 183,2 / 220 / 220 | 184,21 / 175,93 | 7,21 / 6,23 | 40 ; 504 / 74 ; 3 600 | 1,09 ; 3,26 / 1,45 ; 13,08 |
+
+Ce que la mesure 1 du harnais ne disait pas, et que le banc dit : une instance neuve coûte de 20 à 270 µs en médiane (au plus 4,5 ms : une des premières, la compilation paresseuse de Chrome comprise) ; un instantané de 15 à 40 µs (au plus 140 µs, Tier list, 0,7 Mo) ; une restauration de 20 à 250 µs (Tier list, qui remet aussi ses 25 Mio de zones à zéro). La réécriture, dans le navigateur (le commun compilé pour `wasm32`), prend de 52 à 131 ms dans Chrome et de 58 à 164 ms dans Firefox (médiane de cinq) ; la compilation du module réécrit, de 0,4 à 4,8 ms ; la mise en route entière de l'autorité (réécrire, compiler, `Bonjour`, `Decrire`), de 55 à 162 ms, presque tout dans la réécriture. Le harnais compilait un module déjà réécrit : sa « mise en route » (de 2 à 6 ms) ne la comptait pas.
+
+**Retrouve-t-on la mesure 1 ?** *Revu après la vérification* : le paragraphe qui suit jugeait sur un seul tour, et ne retenait du critère que ce qui s'était retrouvé ; la mesure 1 est rejouée en quatre tours, à côté du harnais retiré, dans la section suivante, qui fait foi. Ce qu'on avait écrit : oui pour ce que la mesure 1 a servi à décider :
+
+- le carburant est égal appel par appel (la vérification de D32), comme au harnais ;
+- le coût fixe d'un appel est la remise à zéro des zones, et presque rien d'autre : le bloc vaut la remise à zéro à la granularité de l'horloge près (15 à 25 µs pour 2 à 3 Mio, 160 à 185 µs pour les 25 Mio de Tier list) ; la remise à zéro d'un Kio, de 6,2 à 9,5 ns, comme au harnais (6,2 à 9,45) ;
+- la durée médiane d'une unité sur les appels lourds : 39 ps dans Chrome (34 à 36 au harnais), 73 dans Firefox (63 à 66), 40 dans wasmtime (43) ; Chrome à la vitesse de wasmtime, Firefox plus lent et surtout irrégulier.
+
+Les queues sont plus hautes qu'au harnais : 99ᵉ centile de Chrome à 138 ps (au plus 74 au harnais), maximum de Firefox à 3 600 ps (678). Elles tombent sur la soirée de Tier list (appels de quelques millions d'unités, dans lesquels une pause du navigateur pèse) et sur ses pires cas ; le second rejeu de wasmtime lui-même y a une queue plus haute que celle du harnais (234 ps au 99ᵉ centile, 82 au harnais), sur la même machine, sous une charge de 5 à 10 au lieu de 2 à 7. Un seul tour ne dit pas ce qui revient d'un lancement à l'autre ; la proposition de budgets de E19 (plus bas) se juge toujours sur les maxima des quatre tours du harnais, que ce tour ne contredit pas en médiane et dépasse en queue dans Firefox.
+
+Commandes : la capture et `soiree-banc etalonner`, dans `mesures/navigateur/README.md` (« Relancer ») ; le détail de chaque page est dans `target/mesures-navigateur/etalonnage/<navigateur>/`.
+
+### La mesure 1 en quatre tours, et le harnais rejoué à côté (correction après la vérification)
+
+La vérification du lot a relevé que les durées d'un seul tour ne se retrouvent pas d'un lancement à l'autre (son tour, à 01 h 0x : médiane de Firefox à 147 ps, de wasmtime à 76 ps), et que le critère avait été lu après coup sur ce qui s'était retrouvé. Le banc joue donc maintenant plusieurs tours (`--tours <n>` : chaque tour rejoue chaque module dans un navigateur neuf, les tours s'enchaînant d'un navigateur à l'autre, comme au harnais). Et pour séparer l'outil de l'état de la machine, **le harnais retiré** (`mesurer.mjs`, `page/banc.js`, `banc-coeur.js`, `trace.js`, `analyser.mjs`, tels que dans le dernier commit, copiés hors du dépôt) **a été rejoué juste après, sur la même capture** : il lit le même `trace.bin` et le même `reecrit.wasm`.
+
+Le 2026-11-06, sur la machine de l'hôte (la même ; Chrome 156.0.8078.80, Firefox 158.0.1, sans interface, profils neufs, pages isolées) : la capture refaite à 01 h 32 (55 s, 0,15 Go ; 116 807 appels, aucun écart dans les deux rejeux de wasmtime) ; le banc de 01 h 33 à 01 h 37 (`soiree-banc etalonner --mesures m9,m1 --tours 4 --navigateurs chrome,firefox`, 197 s, 0,74 Go au plus, navigateurs non comptés), charge de 7,2 à 12,0, de 40 à 64 % de mémoire libre ; le harnais de 01 h 37 à 01 h 41 (`node mesurer.mjs --navigateurs chrome,firefox --tour <n>`, quatre tours, puis `node analyser.mjs --tour <n>`), charge de 7,5 à 9,2 aux deux premiers tours, **16,5 et 27,9** aux deux derniers (d'autres programmes), 45 à 57 % de mémoire libre. Les modules livrés et leurs empreintes réécrites sont ceux du lot (`PHASE_3`).
+
+Les cinq modules ensemble, appels d'au moins un million d'unités (395 par tour), étendue sur les quatre tours de « médiane ; 99ᵉ centile ; maximum », en ps par unité :
+
+| | Harnais, le matin (2026-11-05, 06 h 55 à 07 h 21, page) | Harnais rejoué le soir (01 h 37 à 01 h 41, page) | Banc, quatre tours (01 h 33 à 01 h 37, Worker) |
+| --- | --- | --- | --- |
+| wasmtime (la capture du moment) | 43 ; 82 ; 105 | 82 ; 179 ; 248 | 82 ; 179 ; 248 (la même capture) |
+| Chrome | 34 à 36 ; 52 à 74 ; 70 à 137 | 37 à 48 ; 113 à 142 ; 123 à 527 | 39 à 44 ; 78 à 129 ; **389 à 1 181** |
+| Firefox | 63 à 66 ; 124 à 285 ; 336 à 678 | 94 à 143 ; 299 à 402 ; 431 à 900 | 68 à 100 ; 135 à 299 ; **194 à 3 096** |
+| Chrome : facteur sur wasmtime | 0,90 à 0,94 ; 1,23 à 1,69 ; 1,71 à 2,97 | 0,82 à 0,95 ; 1,42 à 2,12 ; 1,71 à 3,64 | 0,66 à 0,85 ; 1,15 à 2,25 ; 2,47 à 6,29 |
+| Firefox : facteur sur wasmtime | 1,14 à 1,18 ; 3,99 à 4,98 ; 4,42 à 12,63 | 1,32 à 1,66 ; 5,66 à 6,86 ; 7,79 à 10,15 | 0,93 à 1,41 ; 3,54 à 6,92 ; 3,61 à 13,83 |
+
+Ce qui se retrouve, par les deux outils, le même soir :
+
+- **le carburant, l'issue et le retour**, appel par appel : aucun écart sur les 116 807 appels, dans les deux rejeux de chaque tour, dans les deux navigateurs, par le banc comme par le harnais (quarante pages du banc, quarante du harnais), et dans les deux rejeux de wasmtime ;
+- **le coût fixe et la remise à zéro** : `Bonjour` un par un de 15 à 25 µs (Tier list, de 170 à 205 µs), le bloc à la remise à zéro près ; la remise à zéro d'un Kio, de 6,4 à 9,5 ns dans Chrome et de 6,4 à 12,7 dans Firefox par le banc, de 6,4 à 10,4 et de 6,4 à 18,7 par le harnais (à la granularité près : un tic de 20 µs de Firefox vaut 9,45 ns par Kio sur 2 Mio de zones) ;
+- **la médiane et le 99ᵉ centile d'une unité** : dans Chrome, 39 à 44 ps et 78 à 129 ps par le banc, 37 à 48 et 113 à 142 par le harnais ; dans Firefox, le banc mesure moins que le harnais (68 à 100 contre 94 à 143 ; 135 à 299 contre 299 à 402) : son Worker et ses appels de Rust ne coûtent pas plus que la page du harnais.
+
+Ce qui ne se retrouve pas :
+
+- **les chiffres du matin**, par aucun des deux outils : le harnais rejoué ne retrouve ni ses médianes de Firefox (94 à 143 ps contre 63 à 66), ni ses 99ᵉ centiles de Chrome (113 à 142 contre 52 à 74), ni ses maxima ; wasmtime lui-même, dans la capture du soir, a une médiane de 82 ps (43 le matin ; 40 à 23 h 24, 76 pour la vérification à 01 h 0x). Une durée d'unité, même en médiane, dépend de l'état de la machine d'un facteur deux ; sur ce M5, où quatre cœurs de performance côtoient six cœurs d'efficacité, c'est attendu sous une charge de 8 à 12, mais ce n'est pas mesuré ici ;
+- **les maxima** : ceux du banc dépassent ceux du harnais rejoué à côté dans Chrome, à chaque tour (389, 437, 785 et 1 181 ps contre 123, 183, 237 et 527) ; dans Firefox, ils s'étalent davantage (194 à 3 096 contre 431 à 900). Chaque maximum du banc dans Chrome, et trois sur quatre dans Firefox, tombe sur un appel de la soirée de Tier list (de 1 à 3 millions d'unités, environ 100 µs de calcul pour 170 à 240 µs de remise à zéro de 25 Mio) : une pause ou une remise à zéro lente d'une milliseconde y pèse 400 à 800 ps par unité (le quatrième de Firefox, 356 ps au troisième tour, sur les pires cas de Sidequest, dont la médiane monte ce tour-là à 163 ps : un tour lent en entier). Que le Worker du banc en subisse davantage que la page du harnais n'est ni expliqué ni exclu ; sur les pires cas de Tier list (calcul seul, plusieurs millions d'unités), le banc mesure dans Chrome de 33 à 76 ps par unité, au plus 117.
+
+**Le critère du § 7, « `etalonner` retrouve la mesure 1 du harnais », n'est donc tenu qu'en partie** : tenu pour le carburant, le coût fixe, la remise à zéro, la médiane et le 99ᵉ centile ; non tenu pour les maxima. Les décisions que la mesure 1 a prises sur les médianes (Chrome à la vitesse de wasmtime, Firefox plus lent et irrégulier, la remise à zéro comme coût fixe) restent vraies ; celles qui reposent sur un maximum (la proposition de budgets de E19, plus bas) ne tiennent pas sur une seule soirée.
+
+Commandes (depuis `soiree/`, après la capture) : `target/release/soiree-banc etalonner --mesures m1 --tours 4 --navigateurs chrome,firefox`. Le harnais n'est plus dans l'arbre : `git show <commit>:mesures/navigateur/<fichier>` pour les six fichiers ci-dessus, dans un dossier dont `target/mesures-navigateur` (et, pour `analyser.mjs`, `target/wasm32-unknown-unknown` et `../games`) mènent à ceux du commun ; il a été pris au commit `44160f9`. Le texte entier des deux analyses est dans le dossier de travail de la session, non conservé : les chiffres ci-dessus en sont tirés ; les rapports bruts du banc sont dans `target/mesures-navigateur/etalonnage/<navigateur>/tour-<n>/`, ceux du harnais dans `target/mesures-navigateur/resultats/`.
+
+**M9 refait le même soir**, avec les récursions maintenant aussi chargées sous `PHASE_3` (01 h 33, puis 01 h 42 après le contrôle négatif) : les mêmes étages tenus qu'au lot (Worker de Chrome 247, page 480 ; Worker de Firefox 492, page 893), et **chaque récursion, de 0 à 4 000 valeurs par étage, chargée sous `PHASE_3` par `moteur_navigateur::charger`, est la faute `Profondeur`**, dans le Worker comme sur la page, dans les deux navigateurs. Contrôle négatif : chargées sous `PHASE_1` (4 096 étages), elles épuisent la pile native du Worker de Chrome dès 16 valeurs par étage, et celle de sa page dès 64 (`panne de l'outil (Interne) : pile native épuisée avant soiree_profondeur`) : treize défauts, code 1. Les résultats bruts sont dans `target/mesures-navigateur/etalonnage/<navigateur>/m9.json` (ceux du lot n'y étaient pas : ni la vérification ni cette correction ne les ont retrouvés, et les chiffres refaits sont les mêmes).
+
+### M10 dans les navigateurs : une unité sur une boucle vide
+
+Le module de `Bonjour` qui boucle chargé par `moteur_navigateur::charger` jusqu'à sa faute `Budget` (`BUDGET_DE_CHARGEMENT` unités), moins un témoin qui piège dès l'entrée : quinze chargements, « médiane ; minimum ; maximum » en ps par unité. Puis la même boucle par la machine seule, sous un plus grand budget, sur une seule instance (le premier appel y est le plus lent : le code de base du moteur, avant son compilateur optimisant).
+
+| Navigateur (heure, charge) | Chargement, 2²⁶ unités | Chargement, 2²⁴ unités | Machine seule |
+| --- | --- | --- | --- |
+| Chrome (23 h 29, 9,1) | 415 ; 410 ; 1 880 (boucle au plus 126,5 ms) | — | 2³⁰ : 444 ; 426 ; 454 |
+| Firefox (23 h 29, 7,6) | 1 699 ; 1 029 ; 2 031 (au plus 136,9 ms) | — | 2³⁰ : 575 ; 557 ; 1 808 |
+| Chrome sous charge (23 h 31, 46 puis 106) | 416 ; 412 ; 1 886 (au plus 126,7 ms) | — | 2²⁸ : 419 ; 416 ; 427 |
+| Firefox sous charge (23 h 32, 106 puis 161) | **4 578 ; 3 357 ; 6 092 (au plus 409,9 ms)** | — | 2²⁸ : 2 023 ; 1 725 ; 3 546 |
+| Chrome, `BUDGET_DE_CHARGEMENT` baissé (23 h 36, 38) | — | 418 ; 409 ; 1 787 (au plus 30,2 ms) | 2²⁸ : 409 ; 407 ; 413 |
+| Firefox, `BUDGET_DE_CHARGEMENT` baissé (23 h 36, 38 puis 35) | — | 1 765 ; 558 ; 2 116 (au plus 35,8 ms) | 2²⁸ : 509 ; 505 ; 1 726 |
+
+« Sous charge » : quatorze `yes > /dev/null` lancés 5 s avant, comme au lot 2 ; mais des services de macOS tournaient en même temps (voir l'en-tête), et la charge sur une minute est montée jusqu'à 161 : ce n'est pas la charge de quatorze `yes` seuls, et elle n'est pas reproductible telle quelle.
+
+Ce qui se lit :
+
+- **Dans Chrome, une unité de boucle vide coûte ce qu'elle coûte dans wasmtime peu chargé** (environ 415 ps en médiane), même sous charge ; un chargement sur quinze, le premier, monte à 1 900 ps.
+- **Dans Firefox, un chargement tourne dans le code de base de SpiderMonkey** : 1 700 ps en médiane, quatre fois l'unité de Chrome et trois fois celle de la même boucle une fois optimisée (575) ; et jusqu'à **6 092 ps sous charge**. 2²⁶ unités y ont pris 410 ms : deux fois et demie sous un garde-fou d'une seconde, et non dix, la marge que le lot 2 avait retenue pour wasmtime.
+- **Le garde-fou de chargement, revu** : `BUDGET_DE_CHARGEMENT` baisse de 2²⁶ à **2²⁴** (P5, la voie préférée). Au pire mesuré (6 092 ps), 2²⁴ unités prennent 102 ms (calculé) : dix fois sous la seconde ; mesuré après la baisse, sous une charge de 35 à 38, au plus 30 ms dans Chrome et 36 ms dans Firefox. `Decrire` en brûle au plus 9 322 : il lui reste un facteur 1 800. Le garde-fou mural lui-même (une seconde dans wasmtime ; à écrire dans le Worker au lot 10a) ne change pas.
+- **`Creer` ne passe pas par ce budget** : il se joue sous `BUDGETS_DE_SOIREE.creation`, 2²⁸ unités. Une boucle dans `Creer` y prendrait au plus 400 ms dans wasmtime chargé (lot 2), et, au pire mesuré dans Firefox (6 092 ps, code de base), 1,64 s (calculé) : sous le garde-fou de partie de 2 s que la page du Worker tiendra (`GARDE_FOU_PARTIE_MS`, choisi), avec un facteur 1,2 seulement. Ce lot ne change pas ce budget (`Creer` de Sidequest en brûle 343 002, 780 fois moins) : il est à revoir avec le garde-fou de partie, au lot 10a, ou par le mainteneur (PHASE-3, question 4).
+
+Commandes : `target/release/soiree-banc etalonner --mesures m10 --navigateurs chrome,firefox` ; sous charge, lancer d'abord quatorze `yes > /dev/null &`, puis `--etiquette <navigateur>-sous-charge --budget 268435456`, et les arrêter après.
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).
-- **Safari et les téléphones** : non mesurés (voir plus haut).
+- **Safari et les téléphones** : non mesurés (voir plus haut ; au lot 3c, le banc pilote Safari, mais `safaridriver` refuse la session).
 - **Le rendu, le relais, le décodage** : la page du banc n'a que le module. Ce que le commun prendra sur l'autre moitié de l'image n'est pas mesuré.
 - **Un appel isolé de ses pauses** : les maxima par appel comptent les pauses du navigateur.
 - **La charge** : d'autres agents tournaient (charge de 2,3 à 6,6) ; les tours 1 à 4 donnent une idée de ce qui bouge, pas une machine au repos.
@@ -447,4 +586,4 @@ Le coût fixe d'un appel, en unités, suit l'unité comptée : chez Tier list (2
 
 Une lecture directe, sans passer par l'unité : les vues de l'écran des pires cas de Tier list (jusqu'à 7 289 169 unités) durent au plus 1,16 ms dans Chrome et 4,96 ms dans Firefox sur cette machine, pour une part de 8,25 ms. Dans Firefox, il ne reste donc qu'un facteur 1,66 pour une machine plus lente que ce M5 ; dans Chrome, un facteur 7.
 
-**Ma proposition** : décider d'abord **quels navigateurs l'ordinateur de la soirée doit tenir** (une question du CONTRAT, « Le matériel »). Si c'est Chrome, passer à 150 ps × `MARGE_MACHINE` 2 : les budgets de E19 grandissent de 2,67, ce qui rendrait à Tier list de la place pour ses tuiles (`TUILES_MAX`, revue de la phase 2, constat 10). Si Firefox doit tenir aussi, garder les budgets d'aujourd'hui (800 ps) : ils couvrent le maximum mesuré dans Firefox (678 ps), mais ne laissent alors qu'un facteur 1,2 pour une machine plus lente que ce M5 ; ou passer à 1 400 ps si cette marge paraît trop mince. Dans tous les cas, mesurer Safari (une case à cocher) avant de trancher, et relancer le banc sur l'ordinateur de la soirée pour remplacer `MARGE_MACHINE`.
+**Ma proposition** : décider d'abord **quels navigateurs l'ordinateur de la soirée doit tenir** (une question du CONTRAT, « Le matériel »). Si c'est Chrome, passer à 150 ps × `MARGE_MACHINE` 2 : les budgets de E19 grandissent de 2,67, ce qui rendrait à Tier list de la place pour ses tuiles (`TUILES_MAX`, revue de la phase 2, constat 10). Si Firefox doit tenir aussi, garder les budgets d'aujourd'hui (800 ps) : ils couvrent le maximum des quatre tours du harnais du matin dans Firefox (678 ps), mais ne laissent alors qu'un facteur 1,2 pour une machine plus lente que ce M5 ; ou passer à 1 400 ps si cette marge paraît trop mince. *Contredit depuis par le lot 3c* : le même soir, sur la même machine, le maximum dans Firefox est monté à 900 ps par le harnais rejoué, et de 194 à 3 096 ps selon le tour par le banc (1 103 ps au tour de la vérification) ; dans Chrome, jusqu'à 527 ps par le harnais et 1 181 par le banc. Ces maxima tombent sur des appels de la soirée de Tier list où une pause pèse plus que le carburant (« La mesure 1 en quatre tours »), et changent d'un facteur trois d'une soirée à l'autre : **aucun maximum d'une seule soirée ne peut servir d'unité** ; cette proposition n'est pas refaite ici, et la question 4 reste au mainteneur, à trancher sur plusieurs soirées ou sur un centile. Dans tous les cas, mesurer Safari (une case à cocher) avant de trancher, et relancer le banc sur l'ordinateur de la soirée pour remplacer `MARGE_MACHINE`.

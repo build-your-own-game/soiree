@@ -9,8 +9,9 @@ use partie::Faute;
 /// la soirée prennent : la faute `Budget` du jeu, jamais une panne de l'outil (HIS-06).
 /// [`BUDGET_DE_CHARGEMENT`] est réglé pour que cela tienne même sur une machine
 /// chargée : vérifié sous quatorze `yes` qui occupent les dix cœurs de la machine de
-/// l'hôte (`MESURES-PHASE-3.md`, « Lot 2 »). Avant le lot 2, à 2³² unités, ce test
-/// échouait sans charge : épuiser le budget prenait environ 2 s.
+/// l'hôte (`MESURES-PHASE-3.md`, « Lot 2 »), et dix fois sous la seconde dans Chrome et
+/// Firefox chargés depuis le lot 3c (2²⁴ unités, « Lot 3c »). Avant le lot 2, à 2³²
+/// unités, ce test échouait sans charge : épuiser le budget prenait environ 2 s.
 #[test]
 fn bonjour_qui_boucle_est_une_faute_avec_le_garde_fou_de_chargement() {
     let octets = wat::parse_str(moteur_commun::essais::BONJOUR_QUI_BOUCLE).unwrap();
@@ -24,5 +25,5 @@ fn bonjour_qui_boucle_est_une_faute_avec_le_garde_fou_de_chargement() {
             faute: Faute::Budget
         })
     );
-    assert_eq!(BUDGET_DE_CHARGEMENT, 1 << 26);
+    assert_eq!(BUDGET_DE_CHARGEMENT, 1 << 24);
 }

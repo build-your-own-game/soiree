@@ -520,7 +520,8 @@ pub enum Navigateur {
     Chrome,
     /// Firefox, par `WebDriver` `BiDi`.
     Firefox,
-    /// Safari, par `safaridriver` (lot 3c : d'ici là, « pas exécuté »).
+    /// Safari, par `safaridriver` : « pas exécuté », avec son message, tant que l'hôte
+    /// n'a pas autorisé l'automatisation à distance (PHASE-3, question 8).
     Safari,
 }
 

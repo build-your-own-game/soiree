@@ -83,13 +83,13 @@ fn dossier() -> &'static PathBuf {
     })
 }
 
-/// Le moteur de la phase 1 et les octets du module de ce jeu, tels que rustc et
-/// `wasm-ld` les livrent.
+/// Le moteur de la partie (`ReglagesMoteur::PHASE_3`) et les octets du module de ce
+/// jeu, tels que rustc et `wasm-ld` les livrent.
 pub fn module(nom: &str) -> (Moteur, Vec<u8>) {
     assert!(JEUX.contains(&nom), "jeu inconnu : {nom}");
     let fichier = dossier().join(format!("{}.wasm", crate_de(nom).replace('-', "_")));
     let octets =
         std::fs::read(&fichier).unwrap_or_else(|e| panic!("lire {} : {e}", fichier.display()));
-    let moteur = Moteur::new(ReglagesMoteur::PHASE_1).expect("le moteur démarre");
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
     (moteur, octets)
 }

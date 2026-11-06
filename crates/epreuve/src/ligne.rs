@@ -250,7 +250,7 @@ fn eprouver_le_module(
             return 66;
         }
     };
-    let moteur = match Moteur::new(ReglagesMoteur::PHASE_1) {
+    let moteur = match Moteur::new(ReglagesMoteur::PHASE_3) {
         Ok(m) => m,
         Err(p) => {
             eprintln!("le moteur ne démarre pas : {p}");

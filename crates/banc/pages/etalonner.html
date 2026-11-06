@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Banc : étalonner</title>
+<!--
+  La page de `soiree-banc etalonner` (PHASE-3, lot 3c). Son Worker
+  (`etalonner-worker.js`) charge l'exemple `etalonnage-navigateur` de
+  `web/moteur-navigateur` par sa colle `wasm-bindgen`, et joue ce que `?quoi=` demande :
+
+  - `etalonner` (M1) : le module livré et la trace de la capture, servis sous
+    `/donnees/<module>/`, rejoués `?passes=` fois ;
+  - `boucle` (M10) : le module de `Bonjour` qui boucle, `?fois=` chargements, puis la
+    boucle sous `?budget=` unités ;
+  - `profondeur` (M9) : la profondeur que tient le Worker, puis celle que tient le fil
+    de la page, ici même (une page de téléphone y fait tourner le module).
+
+  Le travail tourne dans un Worker, comme l'autorité. Ce qui ne tourne pas rapporte
+  `{ erreur }`, jamais un succès.
+-->
+<script type="module">
+const p = new URLSearchParams(location.search);
+const quoi = p.get("quoi") ?? "";
+function travailler(message) {
+  const travail = new Worker("/banc/etalonner-worker.js", { type: "module" });
+  return new Promise((rendre) => {
+    travail.onmessage = (m) => { travail.terminate(); rendre(m.data); };
+    travail.onerror = (e) => { travail.terminate(); rendre({ erreur: `Worker : ${e.message} (${e.filename}:${e.lineno})` }); };
+    travail.onmessageerror = () => { travail.terminate(); rendre({ erreur: "Worker : message illisible" }); };
+    travail.postMessage(message);
+  });
+}
+let rapport;
+try {
+  if (quoi === "profondeur") {
+    const worker = await travailler({ quoi });
+    const colle = await import("/paquet/etalonnage_navigateur.js");
+    await colle.default();
+    rapport = { worker, page: colle.profondeur_tenue() };
+  } else {
+    rapport = await travailler({
+      quoi,
+      module: p.get("module") ?? "",
+      passes: Number(p.get("passes") ?? 2),
+      fois: Number(p.get("fois") ?? 15),
+      budget: Number(p.get("budget") ?? 2 ** 30),
+    });
+  }
+} catch (e) {
+  rapport = { erreur: String(e && e.stack ? e.stack : e) };
+}
+rapport.suite = "etalonner";
+rapport.quoi = quoi;
+rapport.agent = navigator.userAgent;
+rapport.isole = globalThis.crossOriginIsolated === true;
+rapport.coeurs = navigator.hardwareConcurrency;
+await fetch("/banc/rapport?suite=etalonner", { method: "POST", body: JSON.stringify(rapport) });
+document.body.textContent = "rapport envoyé";
+</script>

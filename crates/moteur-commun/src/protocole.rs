@@ -7,11 +7,13 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use core::sync::atomic::{AtomicU32, Ordering};
 use jeu_abi::SorteAppel;
 use partie::{CausePanne, Echec, Faute, Instance, PanneOutil};
+
 use reecriture::{
-    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, MEMOIRE_MAX, PROFONDEUR, Reecrit,
-    nom_de_globale,
+    CARBURANT, CROISSANCE_BORNEE, CROISSANCE_REFUSEE, MEMOIRE_MAX, PROFONDEUR, PROFONDEUR_ATTEINTE,
+    Reecrit, nom_de_globale,
 };
 
 use crate::instantane::Instantane;
@@ -50,6 +52,10 @@ pub struct Plan {
     profondeur_max: u32,
     memoire_min: u32,
     memoire_max_permise: u32,
+    /// Le module vient de la variante de mesure de la réécriture
+    /// (`reecriture::reecrire_en_mesurant_la_profondeur`, M9) : sa profondeur atteinte se
+    /// lit après chaque appel ([`profondeur_atteinte`]).
+    mesurer_la_profondeur: bool,
 }
 
 impl Plan {
@@ -65,7 +71,18 @@ impl Plan {
             profondeur_max: reglages.profondeur_max,
             memoire_min: min,
             memoire_max_permise: max.unwrap_or(u32::MAX).min(reglages.memoire_plafond_pages),
+            mesurer_la_profondeur: false,
         }
+    }
+
+    /// Le plan d'un module réécrit par la variante de mesure
+    /// (`reecriture::reecrire_en_mesurant_la_profondeur`) : après chaque appel, le
+    /// protocole lit `soiree_profondeur_atteinte` et en garde le maximum
+    /// ([`profondeur_atteinte`]). **Réservé au banc et aux mesures** (M9).
+    #[must_use]
+    pub fn en_mesurant_la_profondeur(mut self) -> Plan {
+        self.mesurer_la_profondeur = true;
+        self
     }
 
     /// L'empreinte du module réécrit.
@@ -210,6 +227,25 @@ fn preparer<M: Machine>(
     Ok(())
 }
 
+/// La plus grande profondeur atteinte par un module de la variante de mesure, dans ce
+/// processus (M9) : une seule valeur pour tous les modules et toutes les instances, que
+/// seul un programme de mesure lit, un module à la fois.
+static PROFONDEUR_ATTEINTE_MAX: AtomicU32 = AtomicU32::new(0);
+
+/// La plus grande valeur de `soiree_profondeur_atteinte` lue après un appel, depuis le
+/// début du processus ou la dernière [`oublier_la_profondeur_atteinte`], sur tous les
+/// modules chargés par la variante de mesure ([`Plan::en_mesurant_la_profondeur`]) ; 0
+/// si aucun ne l'a été. En étages de `soiree_profondeur`, l'appel du moteur exclu (M9,
+/// PHASE-3, § 2.3). **Réservé au banc et aux mesures.**
+pub fn profondeur_atteinte() -> u32 {
+    PROFONDEUR_ATTEINTE_MAX.load(Ordering::Relaxed)
+}
+
+/// Remet [`profondeur_atteinte`] à zéro, avant de mesurer un autre module.
+pub fn oublier_la_profondeur_atteinte() {
+    PROFONDEUR_ATTEINTE_MAX.store(0, Ordering::Relaxed);
+}
+
 /// Un appel, selon § 3.4, sur une instance de la machine ; rend aussi le carburant
 /// consommé, faute comprise.
 pub(crate) fn appeler<M: Machine>(
@@ -222,6 +258,14 @@ pub(crate) fn appeler<M: Machine>(
 ) -> Rendu {
     let budget = i64::try_from(budget).unwrap_or(i64::MAX);
     let issue = derouler(m, plan, zones, sorte, appel, budget);
+    if plan.mesurer_la_profondeur {
+        // Une mesure : la lire ne change rien à l'appel, et une globale absente ne
+        // s'invente pas (la mesure reste à ce qu'elle était).
+        if let Ok(a) = entier(m, PROFONDEUR_ATTEINTE) {
+            let a = u32::try_from(a.max(0)).unwrap_or(u32::MAX);
+            let _: u32 = PROFONDEUR_ATTEINTE_MAX.fetch_max(a, Ordering::Relaxed);
+        }
+    }
     match entier(m, CARBURANT) {
         Ok(reste) => {
             let consomme = i128::from(budget).saturating_sub(i128::from(reste));

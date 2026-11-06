@@ -406,7 +406,7 @@ fn main() -> ExitCode {
         eprintln!("usage : etalonner <module.wasm>…");
         return ExitCode::from(64);
     }
-    let moteur = match Moteur::new(ReglagesMoteur::PHASE_1) {
+    let moteur = match Moteur::new(ReglagesMoteur::PHASE_3) {
         Ok(m) => m,
         Err(p) => {
             eprintln!("moteur : {p}");

@@ -1,18 +1,26 @@
 //! `soiree-banc` : le banc des navigateurs (PHASE-3, § 8.2).
 //!
 //! ```text
-//! soiree-banc machine [--sans-construire] [--navigateur chrome|firefox] [--executable <chemin>]
-//! soiree-banc rejouer <dossier> [--navigateurs chrome,firefox] [--fautif fausser-apres:<n>]
+//! soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]
+//! soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>]
 //!                     [--sortie <fichier.json>] [--delai <s>] [--sans-construire]
+//! soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9]
+//!                       [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>]
+//!                       [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]
 //! soiree-banc regles-web
 //! ```
 //!
 //! `machine` : les essais de `Machine` (lot 3a). `rejouer` : E20, que `soiree-epreuve
 //! --navigateurs` lance sur le dossier qu'il écrit (lot 3b, `banc::rejouer`).
+//! `etalonner` : M1, M10 et M9 dans chaque navigateur (lot 3c, `banc::etalonner`), sur
+//! la capture du harnais (`mesures/navigateur/README.md`).
 //!
-//! Code de sortie : 0 réussi ; 1 échec (dont la règle « mêmes lints » qui refuse
+//! Code de sortie : 0 réussi (pour `etalonner` : tout a été mesuré, sans défaut) ; 1 échec (dont la règle « mêmes lints » qui refuse
 //! `web/`, une page qui ne rapporte rien ou rapporte une erreur pour `machine`, un
-//! écart pour `rejouer`) ; 2 pas exécuté ou panne de l'outil (un navigateur absent, une
+//! écart pour `rejouer` ; pour `etalonner`, un défaut : un écart de carburant, d'issue
+//! ou de retour avec wasmtime, un module réécrit autrement que dans la capture, une
+//! récursion de M9 sous `PHASE_3` qui n'est pas la faute `Profondeur`, qui l'emporte
+//! sur « pas exécuté ») ; 2 pas exécuté ou panne de l'outil (un navigateur absent, une
 //! construction ratée, une commande illisible, un rejeu qui n'a pas tourné). Un
 //! scénario à la fois, jamais à côté d'une compilation (OUT-89, OUT-115).
 
@@ -23,6 +31,7 @@ use std::process::ExitCode;
 
 use std::time::Duration;
 
+use banc::etalonner;
 use banc::machine::{self, Arret, Options};
 use banc::navigateur::Navigateur;
 use banc::rapport::Attendu;
@@ -30,7 +39,7 @@ use banc::rejouer;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc regles-web"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]\n        soiree-banc regles-web"
     );
     ExitCode::from(2)
 }
@@ -209,11 +218,80 @@ fn rejouer_e20(args: &[String]) -> ExitCode {
     ExitCode::from(code)
 }
 
+fn etalonner_(args: &[String]) -> ExitCode {
+    let mut o = etalonner::Options::default();
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        let valeur = match a.as_str() {
+            "--sans-construire" => {
+                o.construire = false;
+                continue;
+            }
+            _ => i.next(),
+        };
+        let Some(v) = valeur else { return usage() };
+        let lu = match a.as_str() {
+            "--navigateurs" => Navigateur::liste(v).map(|n| o.navigateurs = n),
+            "--mesures" => etalonner::Mesure::liste(v).map(|m| o.mesures = m),
+            "--donnees" => {
+                o.donnees = PathBuf::from(v);
+                Ok(())
+            }
+            "--modules" => {
+                o.modules = v.split(',').map(String::from).collect();
+                Ok(())
+            }
+            "--passes" => v.parse().map(|n| o.passes = n).map_err(|e| e.to_string()),
+            "--tours" => v.parse().map(|n| o.tours = n).map_err(|e| e.to_string()),
+            "--fois" => v.parse().map(|n| o.fois = n).map_err(|e| e.to_string()),
+            "--budget" => v.parse().map(|n| o.budget = n).map_err(|e| e.to_string()),
+            "--etiquette" => {
+                o.etiquette = Some(v.clone());
+                Ok(())
+            }
+            _ => Err(format!("option inconnue : {a}")),
+        };
+        if let Err(e) = lu {
+            eprintln!("{e}");
+            return usage();
+        }
+    }
+    let passages = match etalonner::jouer(&o) {
+        Ok(p) => p,
+        Err(Arret::Echec(e)) => {
+            println!("etalonner : échec\n{e}");
+            return ExitCode::from(1);
+        }
+        Err(Arret::PasExecute(e)) => {
+            println!("etalonner : pas exécuté\n{e}");
+            return ExitCode::from(2);
+        }
+    };
+    let (texte, resume) = etalonner::analyser(&o, &passages);
+    println!("{texte}");
+    // Une mesure n'est pas un jugement : le code dit si tout a été mesuré. Mais un
+    // défaut (un écart avec wasmtime, D32 ; `PHASE_3` qui laisse la pile native céder
+    // d'abord, § 8.7) en est un, et l'emporte, comme un échec de `rejouer`.
+    let defauts = resume
+        .get("defauts")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if defauts > 0 {
+        println!("etalonner : {defauts} défauts (voir « DÉFAUTS » plus haut)");
+        ExitCode::from(1)
+    } else if passages.iter().all(|p| p.rapport.is_ok()) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
         Some((c, reste)) if c == "machine" => machine(reste),
         Some((c, reste)) if c == "rejouer" => rejouer_e20(reste),
+        Some((c, reste)) if c == "etalonner" => etalonner_(reste),
         Some((c, reste)) if c == "regles-web" && reste.is_empty() => regles_web(),
         _ => usage(),
     }

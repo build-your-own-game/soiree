@@ -34,5 +34,14 @@ name = "rejeu-navigateur"
 path = "examples/rejeu_navigateur.rs"
 crate-type = ["cdylib"]
 
+# L'étalonnage dans un vrai navigateur (PHASE-3, lot 3c) : M1 (la trace de la capture
+# rejouée sur le protocole du commun), M10 (la boucle vide) et M9 (la profondeur que
+# tient le fil qui appelle), une bibliothèque WebAssembly que `wasm-bindgen` relie au
+# Worker de `soiree-banc etalonner`.
+[[example]]
+name = "etalonnage-navigateur"
+path = "examples/etalonnage_navigateur.rs"
+crate-type = ["cdylib"]
+
 [lints]
 workspace = true

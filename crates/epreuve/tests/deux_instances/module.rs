@@ -43,10 +43,11 @@ pub fn octets() -> &'static [u8] {
     })
 }
 
-/// Le moteur de la phase 1 et le module de `devine` qu'il a chargé. Le moteur vit
-/// aussi longtemps que le module : son garde-fou mural sert chaque instance.
+/// Le moteur de la partie (`ReglagesMoteur::PHASE_3`) et le module de `devine` qu'il a
+/// chargé. Le moteur vit aussi longtemps que le module : son garde-fou mural sert
+/// chaque instance.
 pub fn charger() -> (Moteur, ModuleCharge) {
-    let moteur = Moteur::new(ReglagesMoteur::PHASE_1).expect("le moteur démarre");
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
     let charge = moteur
         .charger(octets())
         .unwrap_or_else(|r| panic!("le moteur refuse le module de devine : {r}"));

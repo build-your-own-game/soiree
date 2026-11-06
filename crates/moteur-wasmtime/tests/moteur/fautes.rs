@@ -138,7 +138,13 @@ fn cadres_epais(locaux: u32, appels: u32) -> Colle {
 /// autre moteur.
 #[test]
 fn cadres_epais_jamais_la_pile_native() {
-    let moteur = Moteur::new(ReglagesMoteur::PHASE_1).unwrap();
+    for r in [ReglagesMoteur::PHASE_1, ReglagesMoteur::PHASE_3] {
+        cadres_epais_sous(r);
+    }
+}
+
+fn cadres_epais_sous(r: ReglagesMoteur) {
+    let moteur = Moteur::new(r).unwrap();
     for (locaux, appels) in [
         (40, 4000),
         (450, 4000),
@@ -339,4 +345,40 @@ fn apres_une_faute_restaurer_et_continuer() {
     j.appeler(ECRITURE, &entree(1), 1_000_000).unwrap();
     j.appeler(ECRITURE, &entree(2), 1_000_000).unwrap();
     assert_eq!(i.empreinte().unwrap(), j.empreinte().unwrap());
+}
+
+/// La variante de mesure de la réécriture (M9, PHASE-3, § 2.3) : le protocole lit la
+/// plus grande profondeur atteinte après chaque appel, et le module rend la même chose,
+/// au même carburant, que celui de la partie. Seul ce test charge un module ainsi : la
+/// mesure est une valeur du processus.
+#[test]
+fn la_variante_de_mesure_dit_la_profondeur_atteinte() {
+    let c = Colle::new("(drop (call $g (i32.const 30))) (call $fait)").extra(
+        "(func $g (param i32) (result i32)
+           (if (result i32) (i32.eqz (local.get 0))
+             (then (i32.const 0))
+             (else (i32.add (i32.const 1) (call $g (i32.sub (local.get 0) (i32.const 1)))))))",
+    );
+    let moteur = Moteur::new(REGLAGES).unwrap();
+    moteur_commun::oublier_la_profondeur_atteinte();
+    let mesure = moteur
+        .charger_en_mesurant_la_profondeur(&c.octets())
+        .unwrap();
+    // Au chargement, `Bonjour` et `Decrire` n'appellent que `$repondre`.
+    assert_eq!(moteur_commun::profondeur_atteinte(), 1);
+    let partie = moteur.charger(&c.octets()).unwrap();
+    assert_ne!(mesure.reecrit().empreinte, partie.reecrit().empreinte);
+    let mut a = mesure.fabrique().neuve().unwrap();
+    let mut b = partie.fabrique().neuve().unwrap();
+    assert_eq!(
+        a.appeler(ECRITURE, &entree(1), 1_000_000),
+        b.appeler(ECRITURE, &entree(1), 1_000_000)
+    );
+    assert_eq!(a.carburant(), b.carburant());
+    // `$jouer`, puis `$g` sur trente et un étages.
+    assert_eq!(moteur_commun::profondeur_atteinte(), 32);
+    // Le module de la partie ne la change pas.
+    moteur_commun::oublier_la_profondeur_atteinte();
+    let _: Result<Vec<u8>, Echec> = b.appeler(ECRITURE, &entree(2), 1_000_000);
+    assert_eq!(moteur_commun::profondeur_atteinte(), 0);
 }
