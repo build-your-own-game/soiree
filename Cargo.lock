@@ -720,6 +720,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-diagnostic-f8-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-etat-hors-enveloppe-module"
 version = "0.1.0"
 dependencies = [
@@ -833,6 +841,14 @@ dependencies = [
 
 [[package]]
 name = "fautif-page-qui-panique-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-page-vide-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",

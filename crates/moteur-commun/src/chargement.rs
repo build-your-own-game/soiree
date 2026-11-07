@@ -7,8 +7,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use jeu_abi::{
-    ABI, Appel, ApplicableFil, Bonjour, DeclarationFil, PANIQUE_ENTETE, PauseFil, Retour,
-    SorteAppel, decoder, encoder, raison_suffisante,
+    ABI, Appel, ApplicableFil, Bonjour, CodeTouche, DeclarationFil, PANIQUE_ENTETE, PauseFil,
+    Retour, SorteAppel, decoder, encoder, raison_suffisante,
 };
 use partie::{CausePanne, Echec, Faute, PanneOutil};
 use reecriture::Refus;
@@ -345,6 +345,15 @@ fn accord(
         return refus(format!(
             "limites.brouillon vaut {}, la zone de brouillon {}",
             d.limites.brouillon, b.brouillon.1
+        ));
+    }
+    // PHASE-3, P33 (REPONSES-PROVISOIRES 14 ; SAL-162) : F8 pose la marque au journal,
+    // et n'est qu'au commun. Un jeu qui la déclare pour son diagnostic ferait de la même
+    // touche deux choses, ou perdrait la marque. `CodeTouche` se relit par son texte :
+    // la comparaison du texte est celle de la touche.
+    if d.diagnostic.as_str() == CodeTouche::F8.as_str() {
+        return refus(String::from(
+            "diagnostic : F8 est la touche du commun, qui pose la marque au journal ; le jeu en déclare une autre",
         ));
     }
     if d.limites.memoire < pages_min {

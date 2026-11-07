@@ -779,9 +779,14 @@ impl<D: Defaut> Jeu for Socle<D> {
     }
 
     /// La page du téléphone (PHASE-3, § 2.10, lot 6) : le prénom, « Prêt », les tapes
-    /// et le choix d'un chiffre, le résultat. Deux défauts la touchent : le chiffre
-    /// choisi (`PageQuiPanique`) et un bouton de plus (`PageQuiEnvoieUnGesteInvalide`).
+    /// et le choix d'un chiffre, le résultat. Trois défauts la touchent : le chiffre
+    /// choisi (`PageQuiPanique`), un bouton de plus (`PageQuiEnvoieUnGesteInvalide`) et
+    /// la page par défaut, vide (`PageVide`, lot 7).
     fn page(vue: &Recue<VueTel>, l: &Locaux<'_>, p: &mut Page<Self>) {
+        if D::page_par_defaut() == Oui::Oui {
+            // Ce que fait la méthode par défaut de `Jeu::page` : rien.
+            return;
+        }
         p.colonne(page::COLONNE, |p| {
             match &vue.montre.vue {
                 VueTel::Prenom => {

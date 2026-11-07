@@ -95,4 +95,8 @@ pub mod jeux {
     pub type PageQuiPanique = Socle<defauts::PageQuiPanique>;
     /// E21 : une page dont un bouton porte un geste trop gros (lot 6).
     pub type PageQuiEnvoieUnGesteInvalide = Socle<defauts::PageQuiEnvoieUnGesteInvalide>;
+    /// E1 : la touche du diagnostic est F8, réservée au commun (lot 7).
+    pub type DiagnosticF8 = Socle<defauts::DiagnosticF8>;
+    /// E21 : un jeu à téléphones qui garde la page par défaut, vide (lot 7).
+    pub type PageVide = Socle<defauts::PageVide>;
 }

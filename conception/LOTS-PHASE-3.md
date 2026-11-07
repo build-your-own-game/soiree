@@ -1460,3 +1460,293 @@ Le plan court des trois jeux rend la référence du § 7 de PHASE-3 (« Le plan 
 - E21 n'est pas dans `DES_SOIREES` : une panne déclarée non constatée ne le rend pas « pas exécuté ». Pour armer le refus de la page vide (lot 7), il suffit de regarder, dans `pages::eprouver`, si chaque page valide est vide alors que le jeu a des téléphones.
 - `partie::VERSION_GARDE` vaut 3 ; une garde de la version 2 ne se relit plus.
 - `moteur_commun::TAILLE_MODULE_MAX` est la borne que le Worker de l'écran appliquera au chargement (lot 10a) : la relire, ne pas la recopier.
+
+## Lot 7 — Les jeux passent à l'ABI 4
+
+Les jeux passent l'un après l'autre, chacun par son agent et dans son dépôt ; la règle F8 de E1 et le refus de la page vide (E21), avec leurs fautifs, viennent après les trois jeux, dans le commun. Chaque part s'ajoute ci-dessous.
+
+### Punchline
+
+Fait le 2026-11-07, de 00 h 15 à 01 h 00 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo lourde et l'épreuve sont passées par le portillon (`target/hote/lourd`). Aucun navigateur, aucun serveur. Rien n'est commité. **Seul le dépôt de Punchline est modifié** (et ce journal) : le commun ne l'est pas, ni Sidequest, ni Tier list.
+
+#### Ce qui est fait
+
+**La page du téléphone** (`games/punchline/crates/punchline/src/page.rs`, `Jeu::page`) : la barre (le personnage et le prénom, ou le logo ; le compte à rebours), puis une colonne par écran du cahier (§ 6) — le prénom (champ au clavier `Prenom`, « C'est moi ! » et l'Entrée portent le prénom tapé, nettoyé ; « Ta place a été libérée… »), le salon (une grille de deux colonnes : un bouton par personnage libre, le sien en évidence, les pris grisés avec le prénom de leur joueur ; « Tout le monde est là ! » chez l'organisateur, « Il manque encore n joueurs. » ou « Le premier arrivé lance la partie. »), le départ (l'énorme compte à rebours, « Attends, on annule ! » chez l'organisateur), l'annonce, l'écriture (« Consigne 1 sur 2 », la consigne, un champ par case, « Réponse 1 » en finale, « n/80 », « Envoyer », « Je sèche (½ points) » ; le brouillon en tenu), « C'est envoyé ! », le vote (deux boutons, chacun avec sa réponse, ses cases une par ligne, « … » pour une case vide de la finale), les écrans d'attente, le podium (« 1er sur 6 », le personnage, « N points », « On rejoue ! » chez l'organisateur). Les polices du jeu (Rubik, Rokkitt, Schoolbell), les couleurs de la pâte du cahier (§ 8).
+
+Trois choix, écrits en tête de `page.rs` :
+- **Les champs d'une réponse ont une clé qui porte la consigne** (`page::cle_case`, PUN-04) : le commun garde un champ par sa clé, et une clé constante ferait passer ce qui est tapé (et le brouillon) d'une consigne à la suivante.
+- **Le brouillon ne part que d'un champ touché** : la page ne déclare de tenu que si l'un des champs de la consigne est dans les locaux. Sinon une page rechargée, champ vide, effacerait le brouillon que la partie garde (CAHIER, § 6) ; un champ vidé, lui, est dans les locaux, et son tenu vide retire le brouillon (§ 4.4). Cela suppose une sémantique des locaux que le commun n'a pas encore écrite (demande 2 ci-dessous).
+- **Ce qui est trop lourd est recoupé, jamais refusé** : une case de 80 capitales peut peser des milliers d'octets de marques combinantes. Chaque texte montré est coupé sous `jeu_abi::TEXTE_PAGE_MAX` (1 024 octets), chaque case tapée sous `(limites.geste − 32) / 3` octets puis renettoyée, pour que « Envoyer » et le tenu tiennent sous `limites.geste` (4 096) ; la page reste valide quoi que porte la vue ou que tape le joueur (REM-57).
+
+**Les polices en TTF** (P22) : `ressources/polices/{rubik,rokkitt,schoolbell}.ttf`, déclarées comme assets à la place des `.woff2` (gardés à côté, non compilés, comme source de la conversion). Faute d'outil sur la machine (ni `woff2_decompress`, ni fontTools), un décodeur WOFF2 est écrit pour l'occasion dans le dépôt du jeu, **hors de son workspace** : `outils/woff2-vers-ttf/` (son propre `[workspace]`, la recommandation du W3C « WOFF File Format 2.0 » : répertoire, flux Brotli, reconstruction de `glyf`, `loca` et `hmtx`, sommes de contrôle). Sa seule dépendance tierce, `brotli-decompressor` 5.0.3, est la version du registre déjà en cache (la dernière publiée, 6.3.0, vue par `cargo search`, n'y est pas ; l'outil se construit `--offline`). Les TTF ont exactement la taille que l'en-tête de chaque `.woff2` annonce (`totalSfntSize` : 81 216, 66 316 et 45 060 octets). **Vérifiés par un décodeur indépendant** : Core Text lit le `.woff2` lui-même, et `outils/woff2-vers-ttf/verifier.swift` compare, glyphe par glyphe, chaque élément de contour, chaque chasse et chaque boîte, et les octets de chaque table hors `glyf` et `loca` (`head` sans `checkSumAdjustment`) : aucun écart sur 293, 245 et 215 glyphes (10 415, 6 510 et 11 600 éléments de contour). Son contrôle négatif : un octet de `glyf` changé dans le TTF de Rubik, « glyphe 144 : contours différents ». Rubik et Rokkitt sont des polices variables (`fvar`, `gvar`, `avar`).
+
+Le reste du dépôt : `ecran.rs` partage ses couleurs de pâte avec la page (`pub(crate)`) ; `.gitignore` ignore `outils/*/target` ; `AGENTS.md`, `README.md`, `BESOINS-COMMUN.md` (§ 11 nouveau, et « Ce que dit l'épreuve » refait).
+
+#### Les écarts
+
+1. **Le champ de trois lignes** du cahier (§ 6, écriture des manches 1 et 2) est un champ d'une ligne : l'ABI 4 n'en a pas d'autre (PHASE-3, § 6, le multiligne différé). La réponse ne change pas (80 capitales). Demande 3 de `BESOINS-COMMUN.md`, § 11.
+2. **Le motif du dernier refus** sous le prénom, et le bandeau d'un refus, ne sont pas sur la page : l'avis part vers le téléphone en octets du jeu, que ni `Recue` ni `Locaux` ne donnent à la page, et le commun ne sait pas l'écrire. Demande 1 : un changement d'ABI (le dernier avis dans `Recue`) ou une façon pour le commun de demander au module le texte d'un avis.
+3. **Les personnages** sont des plaques de leur couleur à leur nom (aucune image déclarée) ; la grille du départ, « masquée et inactive » dans le cahier, est retirée (aucun nœud masqué) ; le compte à rebours « pressé » n'a pas de vocabulaire. Le focus, la touche « suivant », Entrée qui passe à la case suivante et les retours à la ligne d'un bouton (`\n`, qu'il faudra rendre en `pre-line`) attendent le commun (demandes 4 à 6).
+4. PHASE-3 n'a pas été trouvé faux sur la part de Punchline ; il n'est pas modifié.
+
+#### Les tests qui le tiennent
+
+- `tests/page.rs` (nouveau ; `Page` sur une instance de téléphone qui n'a rien créé, chaque page passée par `valider_page`, chaque geste et le tenu par `Valider`, `Pilote::page`) : `une_partie_entiere_se_joue_par_les_pages` (cinq téléphones, de l'arrivée au podium puis « On rejoue ! », tout geste venu d'un bouton ou d'un tenu de la page ; l'organisateur seul a ses boutons ; PUN-76, PUN-85) ; `le_brouillon_tape_sur_la_page_compte_a_l_echeance` (PUN-01, PUN-03) ; `un_champ_jamais_touche_ne_declare_aucun_brouillon` (CAHIER, § 6 et § 4.4) ; `les_champs_d_une_consigne_portent_sa_cle` (PUN-04) ; `chaque_ecran_reste_une_page_valide_dans_ses_pires_cas` (REM-57 : un prénom et des cases de 4 001 octets pour une capitale, trois cases tapées trop lourdes) ; `la_borne_d_un_texte_est_celle_du_commun` ; `une_vue_illisible_ne_donne_pas_de_page`.
+- `tests/contenu.rs`, `les_polices_sont_des_fichiers_sfnt` (P22 : saveur TrueType, répertoire trié, tables alignées et dans le fichier, somme de chaque table et du fichier, tables d'une police TrueType, `head` et `loca` d'accord avec `maxp`) ; ses contrôles négatifs sont dans le test : le `.woff2` de Rubik et le TTF à un octet changé y échouent.
+- `tests/commun/mod.rs` gagne `Pilote::page`, `page_de`, `valider_page`, `appuyer`, `tenir_la_page`.
+
+**Les contrôles négatifs** (`target/travail/lot-7/controles.py`, sept mutations de `page.rs`, chacune rouge sur son test et pour la raison attendue, le fichier remis tel quel ensuite) : la clé de case sans la consigne (`les_champs_d_une_consigne_portent_sa_cle` : deux clés égales) ; un tenu même sans champ touché (`un_champ_jamais_touche…`) ; aucun tenu (`le_brouillon_tape…` : `None`) ; les textes montrés non bornés (`chaque_ecran…` : `TexteTropLong`) ; les cases tapées non recoupées (`chaque_ecran…` : `GesteHorsBornes`) ; « Lancer » chez tout le monde et « Envoyer » sans les cases (`une_partie_entiere…`).
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7/` (hors dépôt), chaque dossier avec `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée) et l'empreinte au départ et à la fin (`empreinte.txt`, `empreinte-fin.txt` : pour le commun et chaque jeu, `HEAD`, sha256 de `git diff HEAD`, de `git diff HEAD` hors des `.md`, et des fichiers non suivis). Toutes les preuves finales, lancées à la suite par `target/travail/lot-7/final.sh` de 00 h 49 à 00 h 52, ont la même empreinte du code au départ et à la fin : Punchline à `dd6d4f0`, `diff HEAD` hors `.md` `c7588ab241388f21`, non suivis (9) `b10f0d5c3d93dfc4` ; le commun (`c371707`), Sidequest (`6e7219c`) et Tier list (`32f3759`) propres. Seuls des `.md` ont changé après (`BESOINS-COMMUN.md`, `AGENTS.md` du jeu, ce journal). Le module éprouvé : `target/preuves/lot-7/modules.txt` (sha256 `82669f7744d63c7b…`, 941 989 octets).
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `outil-clippy` | `lourd bash -c "cd …/outils/woff2-vers-ttf && cargo fmt --check && cargo clippy --offline --release … -- -D warnings"` | code 0 |
+| `outil-conversion` | l'outil refait les trois TTF depuis les `.woff2`, `cmp` avec ceux du dépôt | code 0 : identiques |
+| `outil-coretext` | `swiftc -O verifier.swift`, puis le vérificateur sur chaque police | code 0 : aucun écart (macOS 27.2, 26B123) |
+| `jeu-fmt` | dans Punchline : `cargo fmt --all --check` | code 0 |
+| `jeu-clippy` | `lourd … cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `jeu-clippy-wasm32` | `lourd … cargo clippy -p punchline -p punchline-module --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `jeu-tests` | `lourd /usr/bin/time -l … cargo test --workspace --no-fail-fast` | **code 0 : 85 réussis**, 0 échec, 0 ignoré ; 13 s ; 0,30 Go résidents |
+| `jeu-module` | `lourd … cargo build -p punchline-module --target wasm32-unknown-unknown --profile module` | code 0 ; 941 989 octets, sha256 `82669f77…` |
+| `controles` | `python3 -I target/travail/lot-7/controles.py` | code 0 : les sept mutations rouges |
+| `construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0 (rien à refaire) |
+| `standard-punchline` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/punchline --json …/standard-punchline.json` (plan standard, depuis les sources) | **code 0** ; E21 réussi (2 446 évaluations : 256 vues sur 74 158 distinctes, pages jusqu'à 17 nœuds, gestes et tenus passés par `Valider`) ; 109 s ; 1,60 Go résidents ; charge 2,39 au départ, 4,08 à la fin |
+| `court-punchline` (avant les preuves finales, même module) | `lourd /usr/bin/time -l cargo run --release -p epreuve --bin soiree-epreuve -- ../games/punchline --court --json …` | code 1, **E2 seul** (« une fin, mais aucune autre après la nouvelle partie »), la référence du § 7 ; E21 réussi (2 198) ; 31 s |
+
+Le plan standard est exigé par la ligne du lot 7 (« chaque jeu au code 0 depuis ses sources, plan standard ») : il est vert pour Punchline. Le `cargo test --workspace` du commun n'est pas relancé : le commun n'a pas changé.
+
+#### Les mesures
+
+- **Le coût d'une page** (carburant, E19, déterministe ; pas une mesure de temps) : plan standard, 1 024 pages, médiane 70 317 unités, 99ᵉ centile 704 676, maximum 846 390 (plan court : médiane 45 748, maximum 740 229) ; avec le coût fixe de 155 800, 77 % du budget provisoire d'une page (1 302 083). La page vide du lot 6 coûtait déjà jusqu'à 722 971 : presque tout est le décodage de la vue (chaque `Texte` renettoyé). Le jeu garde la forme de sa vue tant que le budget tient (`BESOINS-COMMUN.md`, § 11).
+- Le module passe de 810 384 octets (lot 6, `.woff2`) à 941 989 (TTF) ; mémoire de 39 à 128 pages.
+- Les durées ci-dessus sont celles de commandes sous une charge de 1,5 à 4,1 : pas des mesures.
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **La page n'a été vue dans aucun navigateur** : le commun n'a pas encore de page de téléphone qui dessine une `PageFil` (lot 12) ; le lot 7b la fera voir à l'agent du jeu.
+- **Les six demandes** de `BESOINS-COMMUN.md`, § 11 (le motif d'un refus, la sémantique des champs dans les locaux, le champ de trois lignes, les retours à la ligne d'un bouton, le clavier et le focus, les personnages et la pâte) : au commun.
+- La règle F8 de E1 et le refus de la page vide (E21), avec `diagnostic-f8` et `page-vide` : au commun, après les trois jeux. Punchline a une page non vide pour chaque vue (au moins la barre), et sa touche de diagnostic est `KeyD`.
+
+#### Ce que le jeu suivant et le commun doivent savoir
+
+- Le pilote des tests de Punchline (`tests/commun/mod.rs`, `Pilote::page`, `appuyer`, `tenir_la_page`) joue une partie entière par les pages ; il peut servir de modèle aux deux autres jeux.
+- `outils/woff2-vers-ttf` est réutilisable par Tier list s'il part d'un `.woff2` (« une police libre en TTF ») ; il refuse une collection (`ttcf`).
+- Pour armer le refus de la page vide : la page de Punchline n'est jamais vide (barre et colonne d'écran). Pour le contrôle par `Valider` de E21, le pilote fait déjà la même chose dans les tests du jeu.
+- Le décodage de la vue domine le coût de `Page` chez Punchline : si le budget d'une page baisse après la mesure sur de vrais téléphones (§ 8.5), Punchline devra porter ses textes de vue autrement que par `Texte`, ou le commun ne plus renettoyer un `Texte` à son décodage dans une lecture.
+
+### Sidequest
+
+Fait le 2026-11-07, de 01 h 00 à 01 h 40 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo lourde, chaque épreuve et les contrôles négatifs sont passés par le portillon (`target/hote/lourd`) ; seul un `cargo check -p sidequest` de 8 s s'en est passé. Aucun navigateur, aucun serveur. Rien n'est commité. **Seul le dépôt de Sidequest est modifié** (et ce journal) : le commun ne l'est pas, ni Punchline (dont l'arbre porte encore la part non commitée de son agent), ni Tier list.
+
+#### Ce qui est fait
+
+**La page du téléphone** (`games/sidequest/crates/sidequest/src/page.rs`, `Jeu::page`) :
+- **le sélecteur** (CAHIER, § 6.1) : « 1P », « TON PERSONNAGE » ; le héros entre ses deux voisins, chacun dans sa couleur par défaut ; le carrousel des cinq personnages, un `choix` balayable ; la vue du héros (face, droite, dos, gauche), un `choix` ; les six couleurs, un `choix` **dont la clé porte le personnage** (changer de personnage montre un choix neuf, et le héros prend sa couleur par défaut, 0, 2, 4, 1, 3) ; deux accessoires, deux `choix` ; le résumé (« Personnage 3 sur 5, Violet, Casquette, Lunettes. ») ; le champ du prénom ; « C'EST MOI ! », ou, si le prénom serait refusé, le même texte grisé et le refus du jeu dessous (« Ces caractères ne s'affichent pas sur la TV… »).
+- **la manette** (§ 6.2) : le prénom et « En ligne · SALLE » ; ce que fait la partie quand les commandes sont désactivées (« Pause », « Résultats : regarde la TV », « Partie finie ») ; **la croix en huit directions**, toujours là (SQ-95), dont la direction est le tenu de la page (droite − gauche, bas − haut, § 7.1), le stop quand les commandes sont désactivées ; le bouton de saut **au contact** (SQ-07), posé dans une `pile` sur l'avatar du joueur (SQ-102) ; le message : un champ dont la clé porte le pas du dernier message accepté (il se vide à l'acceptation), le compteur « n/80 » ou l'aperçu exact de ce que la télé en dessinera, ou le refus ; « Envoyer » ou « Message envoyé ✓ » pendant 2,5 s.
+- **Une seule règle pour la page et l'étape** (invariant 11 du cahier, SQ-40) : `regles::juger_prenom` et `regles::juger_texte_du_message`, écrites pour la page et lues aussi par `juger_rejoindre` et `juger_message` ; le saut et la croix suivent `Pad::commandes`, que l'étape tient déjà. La vue du téléphone gagne `Pad::message_libre`, tiré de l'état, pour que la vue change quand les 2,5 s finissent.
+- **Le personnage retenu** (§ 6.4) : la manette retient `page::Retenu` (une version, les rangs du look, le prénom ; 77 octets au plus) ; le sélecteur part du prénom de l'app, sinon de celui retenu, et du look retenu ; des octets qui ne sont pas exactement un retenu sont ignorés. **Ce que l'ITP de Safari en fait** : sans rien de retenu, le sélecteur part de zéro, comme un téléphone neuf, et la perte est acceptée, comme le propose la question 23 (`BESOINS-COMMUN.md` du jeu, « Ce que l'ITP de Safari en fait »).
+
+**Les avatars** (`src/avatar.rs`, `build/avatars.rs`, `ressources/art/accessoires.json`) : 55 calques SVG de 32 × 32 cases (`shape-rendering="crispEdges"`), déclarés comme images, écrits par `build.rs` depuis les grilles de l'original (`avatar-pixels.json`, tel quel) et `accessoires.json`, extrait de l'ancien `avatar.rs` par un script (`target/travail/lot-7/sidequest/extraire_accessoires.py`) : les trois tons des vêtements de chaque couleur, les couleurs et les grilles des accessoires, leurs places par vue. La règle des têtes de dos et de profil (l'ancien `head`) est réécrite dans `build/avatars.rs` ; la vue de gauche est le miroir de la droite. Un personnage est une pile : sa base (5 personnages × 4 vues), **trois masques blancs des vêtements teints** des trois tons de sa couleur (`image_teintee`), ses accessoires. Aucune dépendance nouvelle (`serde_json` était déjà la dépendance de construction du jeu). Le module passe de 639 798 à 738 744 octets.
+
+**`pile` et `teinte` sont confirmés** (PHASE-3, § 2.10, écart 4 du lot 6), avec ce que le jeu suppose du rendu : la teinte multiplie chaque canal (blanc × teinte = teinte, alpha gardé) ; les enfants d'une pile partagent sa boîte, le premier dessous ; un bouton dans une pile prend la boîte de la pile, transparent sans `fond` ; les cases restent carrées. Les trois tons d'une couleur ne sont pas multiples l'un de l'autre (le reflet est plus clair que le ton franc) : d'où trois masques, pas un.
+
+Documents du jeu : `BESOINS-COMMUN.md` (le tableau, « Adapté à l'ABI 4 », B11 à B18, « Ce que l'ITP de Safari en fait », « Vérifié le 2026-11-07 »), `README.md` (où en est le jeu, trois écarts au cahier), `AGENTS.md` (la page, les avatars), `ressources/README.md` (ce qui est compilé).
+
+#### Les écarts
+
+1. **Le vocabulaire de l'ABI 4 ne suffit pas à tout le § 6 du cahier** ; chaque manque est demandé au commun dans `BESOINS-COMMUN.md` du jeu, avec ce que la page fait en attendant : l'option d'un `choix` que le joueur n'a pas touché (B12 : le carrousel montre le personnage retenu, mais le `choix` ne peut pas dire qu'il est choisi) ; un choix de deux accessoires où le troisième chasse le plus ancien (B13 : deux `choix`) ; la valeur de départ d'un champ (B14 : le prénom proposé est l'exemple du champ et le geste le porte) ; rejoindre seul avec le personnage retenu (B15 : un appui) ; l'avis d'un refus venu du jeu (B16, comme la demande 1 de Punchline : la page refuse d'avance ce qu'elle peut) ; la croix au clavier et le saut au centre de la croix (B17) ; les animations (B18). Le héros tourne par un `choix` de quatre vues, pas par un bouton.
+2. **PHASE-3, § 2.10, dit qu'« aucun jeu n'a besoin d'un état de page à lui »** : c'est vrai du carrousel, pas tout à fait du sélecteur (B12, B13, B14). PHASE-3 n'est pas corrigé ici (la mission de ce lot ne touche pas `soiree/`) : le commun le tranchera avec ces demandes.
+3. **E21 n'éprouve pas forcément le sélecteur** : ses 256 vues sont les plus petites empreintes ; le plan standard en voit 43 793 distinctes, et ses pages vont « jusqu'à 17 nœuds » avec des locaux vides, quand le sélecteur en a davantage. Le sélecteur est tenu par les tests du jeu (`page::aucune_page_n_est_vide`, `chaque_page_reste_valide_quels_que_soient_les_locaux`) ; c'est au commun de dire si l'échantillon de E21 doit garder chaque forme de vue.
+
+#### Les tests qui le tiennent
+
+- `tests/page.rs` (nouveau ; `Page` sur une instance qui n'a rien créé, `commun::Telephone`, chaque page passée par `valider_page` et chaque geste, le tenu et sa valeur relâchée par `Valider`) : `une_partie_se_joue_par_les_pages` (le sélecteur, « C'EST MOI ! », la croix qui fait marcher, le saut au contact SQ-07, la pause) ; `un_message_vide_son_champ_et_attend_2_5_s` ; `changer_de_personnage_prend_sa_couleur_par_defaut` ; `le_heros_est_une_pile_de_calques_teints` ; `le_personnage_retenu_revient_au_selecteur` (§ 6.4, le prénom de l'app d'abord) ; `sans_rien_de_retenu_le_selecteur_part_de_zero` (l'ITP, et des octets abîmés) ; `le_retenu_se_relit` ; `la_croix_tient_la_direction_du_cahier` ; `les_commandes_se_desactivent_aux_resultats_et_a_la_fin` ; `le_message_dit_ce_que_la_tele_en_dessinera` (SQ-38, SQ-39) ; `ce_que_la_page_propose_le_jeu_l_accepte` (propriété, 64 cas : invariant 11, SQ-40) ; `chaque_page_reste_valide_quels_que_soient_les_locaux` (propriété, 48 cas, REM-57 : choix hors bornes, clés étrangères, textes de plusieurs kilo-octets, octets retenus quelconques, sur huit vues d'une soirée) ; `une_vue_illisible_ne_donne_pas_de_page` ; `aucune_page_n_est_vide`.
+- `tests/avatars.rs` (nouveau) : `les_calques_refont_les_avatars_de_l_original_sq52` (les 440 avatars immobiles de `ressources/art/reference.json` refaits au pixel près par les calques que la page cite, relus depuis les SVG déclarés, teints par multiplication ; et les 44 échantillons RGBA octet par octet ; sans la teinte, aucune empreinte ne tombe juste, contrôle négatif dans le test) ; `les_tons_francs_sont_les_couleurs_de_la_tele` ; `les_tons_des_vetements_sont_ceux_de_l_original` (relus dans l'ancien `avatar.rs`) ; `chaque_calque_declare_sert`.
+- `tests/commun/mod.rs` gagne `Telephone`, `Pilote::montre`, `appuyer`, `geste_brut`, `tenir_la_page` et des lecteurs de page ; `tests/regles.rs` écrit `#[expect(dead_code)]` sur le pilote, qu'il n'emploie plus entier.
+
+**Les contrôles négatifs** (`target/travail/lot-7/sidequest/controles.py`, seize mutations de `page.rs`, `avatar.rs` et `build/avatars.rs`, chacune rouge sur le test visé, la source remise telle quelle ensuite) : la clé de la couleur sans le personnage ; la direction tenue et le saut proposé commandes désactivées ; « C'EST MOI ! » sans la règle du prénom ; « Envoyer » pendant les 2,5 s ; une clé de message qui ne change pas d'un message à l'autre ; un retenu d'une autre version relu ; la manette qui ne retient rien ; le prénom de l'app oublié ; les vêtements sans teinte ; le saut au relâchement ; une diagonale de travers ; une couleur par défaut fausse ; les accessoires dans l'autre ordre ; la gauche sans miroir ; une joue de dos oubliée. Le premier passage en a laissé deux vertes (« Envoyer » pendant les 2,5 s, la clé du message figée) : `un_message_vide_son_champ_et_attend_2_5_s` vérifie depuis l'Entrée du champ pendant le délai et le changement de clé au second message, et les seize sont rouges.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7/sidequest-*/` (hors dépôt), avec `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (le `empreinte.sh` du lot 7). Les preuves finales, lancées à la suite par `target/travail/lot-7/sidequest/final.sh` de 01 h 19 à 01 h 29, ont la même empreinte au départ et à la fin : Sidequest à `6e7219c`, `diff HEAD` hors `.md` `2f424998484a2a11`, non suivis (6) `b6f52aed45f257ae` ; le commun à `c371707` sans changement de code ; Punchline à `dd6d4f0` avec la part non commitée de son agent (hors `.md` `c7588ab241388f21`, non suivis `b10f0d5c3d93dfc4`) ; Tier list à `32f3759`, propre. Seuls des `.md` ont changé après (`BESOINS-COMMUN.md` du jeu, ce journal). Les modules : `target/preuves/lot-7/sidequest-modules.txt`.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `sidequest-fmt` | dans Sidequest : `cargo fmt --all --check` | code 0 |
+| `sidequest-clippy` | `lourd … cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `sidequest-clippy-wasm32` | `lourd … cargo clippy -p sidequest -p sidequest-module --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `sidequest-tests` | `lourd /usr/bin/time -l … cargo test --workspace --no-fail-fast` | **code 0 : 84 réussis**, 0 échec, 0 ignoré ; 11 s ; 0,28 Go résidents |
+| `sidequest-module` | `lourd … cargo build -p sidequest-module --target wasm32-unknown-unknown --profile module` | code 0 ; 738 744 octets, sha256 `620435263ed92a99…` |
+| `sidequest-controles` | `lourd python3 -I target/travail/lot-7/sidequest/controles.py` | code 0 : les seize mutations rouges |
+| `sidequest-construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0 (rien à refaire) |
+| `sidequest-standard` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/sidequest --json …/sidequest-standard.json` (plan standard, depuis les sources) | **code 0** ; E1 à E19 et E21 réussis, E20 pas exécuté (hors du plan par défaut) ; E21 : 4 394 évaluations, 256 vues sur 43 793 distinctes ; 557 s ; 2,09 Go résidents ; charge 4,15 au départ, 2,96 à la fin |
+| `sidequest-court` (avant les preuves finales, même module : même empreinte de module dans les deux rapports) | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/sidequest --court --json …` | **code 0**, la référence du § 7 ; E21 réussi (4 450 évaluations, 256 vues sur 9 530) ; 138 s ; 0,72 Go |
+
+Le plan standard est celui qu'exige la ligne du lot 7 : il est vert pour Sidequest. Le `cargo test --workspace` du commun n'est pas relancé : le commun n'a pas changé.
+
+#### Les mesures
+
+- **Le coût d'une page** (carburant, E19, déterministe ; pas une mesure de temps) : plan standard, 1 024 pages, médiane 72 102 unités, 99ᵉ centile 418 716, maximum 420 164 ; avec le coût fixe de 207 000, 48 % du budget provisoire d'une page (1 302 083). La page vide du lot 6 coûtait au plus 26 749.
+- Le module : 738 744 octets (639 798 avant) ; mémoire de 53 à 256 pages.
+- Les durées ci-dessus sont celles de commandes sous une charge de 3 à 4,5 : pas des mesures.
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **La page n'a été vue dans aucun navigateur** : le commun ne dessine pas encore une `PageFil` (lot 12). Que la teinte multiplie, qu'une pile superpose et qu'un bouton en pile prenne sa boîte est ce que le jeu suppose (B11), pas ce qui est constaté.
+- **Les demandes B12 à B18** : au commun. La police pixel des titres reste avec celles de la télé (B9).
+- La règle F8 de E1 et le refus de la page vide (E21), avec leurs fautifs : au commun, après Tier list. Aucune page de Sidequest n'est vide, et sa touche de diagnostic est `KeyD`.
+
+#### Ce que le jeu suivant et le commun doivent savoir
+
+- `games/sidequest/crates/sidequest/tests/commun/mod.rs`, `Telephone`, appelle `Page` comme le téléphone et valide chaque geste et chaque tenu : il se recopie dans un jeu sans instance de téléphone.
+- Une clé qui porte ce qui doit vider un champ ou un choix (le personnage pour la couleur, le dernier message pour le champ du message) remplace, chez Sidequest comme chez Punchline (PUN-04), un état de page : le commun doit dire ce que devient la valeur d'une clé qui disparaît puis revient (Punchline, demande 2).
+- Pour armer le refus de la page vide : la page de Sidequest n'est jamais vide, sélecteur compris. L'échantillon de E21 (les 256 plus petites empreintes) peut ne prendre aucune vue de sélecteur (écart 3).
+- Le rendu de la page (lot 12) devra tenir B11 : teinte par multiplication, pile qui superpose, cases carrées. Les 55 calques sont de petits SVG ; `Ressources` les rend par clé.
+
+### Tier list
+
+Fait le 2026-11-07, de 01 h 05 à 02 h 10 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo, chaque épreuve et les contrôles négatifs sont passés par le portillon (`target/hote/lourd`) ; seuls un `cargo check -p tier-list` de quelques secondes et des `cargo fmt` s'en sont passés. Aucun navigateur, aucun serveur. Rien n'est commité. **Seul le dépôt de Tier list est modifié** (et ce journal) : le commun ne l'est pas, ni Punchline ni Sidequest (dont les arbres portent encore la part non commitée de leurs agents).
+
+#### Ce qui est fait
+
+Les quatre points de la ligne du lot, et les deux que le lot 6 avait laissés au jeu (le lien nommé, les images non dessinées) :
+- **Les boîtes de composants** (`vue.rs`) : chaque composant qui se dessine a sa boîte (`Scene::composant_dans`) — le titre et chaque étiquette à la hauteur de leurs lignes estimées, les deux sélecteurs sur leur bouton, le champ de nom et la zone des réglages sur leur fond, le lien sur son fond, la modale sur le voile. Les six groupes décalés qui les plaçaient sont retirés. Les objets déplaçables restent sans boîte : leurs zones et leurs objets sont des nœuds, chacun avec la sienne. **Le panneau de la modale est la fenêtre** (768 × 330 ; 1 000 px de large pour l'export), plus le voile entier comme au lot 6 : un clic sur le voile la ferme (CAHIER, § 7).
+- **Le sélecteur nommé** (`lib.rs`, `sorte`) : de « Restore Backup », un fichier est une restauration quel que soit son type ; de « Add Images », seules les images comptent, un JSON compris ; d'un sélecteur inconnu, rien ; **d'un dépôt (`None`), un seul JSON reste une restauration** (voir les écarts).
+- **Une police libre en TTF** : Liberation Sans 2.1.5, romain et gras, sous SIL OFL 1.1 (`contenu/polices/`, avec la licence), déclarée sous `tier-list/liberation-sans` et `tier-list/liberation-sans-grasse` et employée par la page et l'export, en gras là où la feuille de style de l'ancien jeu le met. Choisie parce que ses chasses sont celles d'Arial (le cahier) : `mesure.rs`, qui estime les largeurs avec les chasses d'Helvetica, tombe juste au millième de cadratin sur chaque caractère ASCII, dans les deux graisses. `mesure::LARGE` (ce qui se compte pour tout autre graphème, « pour ne jamais sous-estimer ») monte de 1 250 à 1 338 millièmes, le glyphe le plus large de la police (`hhea.advanceWidthMax`, 2 740 sur 2 048) : « DŽ » (U+01C4), qui se coupe par caractère, en fait 1 333. **Provenance** (sans réseau) : la copie du LibreOfficeDev installé sur la machine (signature de code valide, `codesign -v --deep`) ; texte de la licence repris de pdf.js. La copie de Liberation Sans de pdf.js elle-même est la 1.07.4, sous une autre licence (GPL avec exception) : elle n'est pas prise, et un test refuse toute autre version que la 2.1.5 sous OFL.
+- **Une autre touche de diagnostic** : `TOUCHE_DE_DIAGNOSTIC` = **F2** (`lib.rs`). Pas `KeyD` comme les deux autres jeux : Tier list a quatre champs de texte, et le commun ne dit pas encore s'il cède sa touche de diagnostic au champ qui a le focus.
+- **« Download Image (PNG) » est un lien** (`ComposantVu::Lien`, `fichier: "tierlist.png"`, la ressource de l'image exportée) ; l'action `TelechargerImage` et le téléchargement de l'image par `Demande::Telecharger` sont retirés, le bot ne les joue plus.
+- **Les images non dessinées** (TL-56) : un rendu dont `non_dessinees` n'est pas nul montre l'image et l'annonce (`AvisJeu::ImagesNonDessinees`).
+
+Documents du jeu : `BESOINS-COMMUN.md` (le tableau, § 7, § 8, « Mesures », § 17 et § 18 nouveaux), `AGENTS.md` (le dépôt, les règles, les commandes), `README.md` (le contenu gardé). Le `Cargo.lock` du jeu ne change pas ; aucune dépendance n'est ajoutée.
+
+#### Les écarts
+
+1. **Un JSON lâché sur la page restaure encore** : le cahier (4.5) ignore un fichier déposé qui n'est pas une image, mais le bot de l'épreuve ne sait pas nommer de sélecteur (`ComposantBot::Fichiers`, `ComposantBotFil::Fichiers`) : sans cette règle, aucune restauration ne passerait plus par les soirées de l'épreuve. Demandé au commun (`BESOINS-COMMUN.md` du jeu, § 8) ; le jeu retirera la règle quand le bot dira son sélecteur.
+2. **La police n'est pas Arial** (le cahier, § 5 et § 8 : « Le plateau ne charge aucune police ») : aucune licence ne laisse livrer Arial, et le commun refuse une police du système. Liberation Sans en a les chasses ; la forme des glyphes diffère. Pas de CJK dans la police.
+3. **Chaque point de reprise grossit de 786 432 octets** (les 825 Kio de polices du segment de données) : plateau neuf 323 584 → 1 110 016 octets hors des zones, pire cas (M3) 17 625 088 → 18 411 520. Demandé au commun : un instantané qui ne garde pas ce que le module n'a jamais écrit (§ 17 du jeu).
+4. **La référence du plan court change pour Tier list : code 0, et non plus 1 par E15 seul.** E15 voit 284 244 octets vivants au plus au début de la soirée longue et 273 091 à la fin (référence : de 201 670 à 213 975, en montée). La cause n'est pas isolée : le bot ne joue plus « Download Image » (un tirage de moins, un téléchargement de moins à chaque export prêt), et toute la trajectoire des soirées en change ; E15 au plan court juge une seule soirée longue sans allées et venues, sensible à cette trajectoire (PHASE-3, § 7). Ce code 0 ne prouve donc pas que la mémoire du jeu va mieux. Le plan standard, celui qu'exige la ligne du lot, rend 0 comme avant. **PHASE-3, § 7 (« Le plan court ou le plan standard ») n'est pas corrigé ici** (la mission ne touche pas `soiree/` hors de ce journal) : à relever par le commun, avec Tier list à 0.
+5. PHASE-3 n'a pas été trouvé faux sur la part de Tier list ; il n'est pas modifié.
+
+#### Les tests qui le tiennent
+
+98 tests (90 au lot 6), tous verts.
+- `tests/partie.rs` : `chaque_composant_qui_se_dessine_a_sa_boite` (les boîtes, et qu'il ne reste de groupes que les rangs, la réserve et la fenêtre) ; `la_modale_a_pour_panneau_la_fenetre` ; `les_fichiers_suivent_leur_selecteur` ; `un_rendu_annonce_les_images_qu_il_n_a_pas_dessinees_tl56` ; `la_touche_de_diagnostic_n_est_pas_f8` (P33) ; `l_export_se_demande_et_s_annule` (le lien, sa boîte, son fichier, sa ressource servie par `Appel::Ressources`) ; `la_scene_est_valide` (avec les polices déclarées, et invalide sans elles).
+- `tests/polices.rs` (nouveau) : `les_polices_sont_liberation_sans_sous_ofl` (P22 : sfnt TrueType, répertoire trié, sommes, tables, `loca` et `maxp` ; famille, version 2.1.5, licence OFL 1.1 dans la table `name` ; une police à un octet changé refusée) ; `la_police_a_les_chasses_que_mesure_estime` (chaque caractère ASCII, deux graisses, au millième ; `LARGE` au-dessus de chaque chasse de `hmtx` ; contrôles négatifs dans le test : les chasses de l'autre graisse ne collent pas, 1 250 ne suffisait pas) ; `la_page_et_l_export_ecrivent_dans_leurs_polices`.
+- `tests/soiree_fichiers.rs` : son monde nomme le sélecteur comme la page (« Restore Backup » pour une sauvegarde, « Add Images » pour des images, parfois un JSON dans « Add Images », un dépôt une fois sur trois) et un rendu sur quatre manque une à trois images ; quatre chemins de plus doivent être atteints (couverture des six graines : 25 restaurations par « Restore Backup », 22 imports par « Add Images », 13 JSON ignorés dans « Add Images », 7 annonces d'images non dessinées, chacune égale au nombre dit par le rendu).
+
+**Les contrôles négatifs** (`target/travail/lot-7/tier-list/controles.py`, dix-sept mutations de `vue.rs`, `lib.rs`, `mesure.rs` et `export.rs`, chacune rouge sur son test et pour la raison attendue, la source remise telle quelle ensuite) : le panneau de la modale égal au voile ; le titre sans boîte ; une étiquette vide sans hauteur ; « Add Images » lu comme un dépôt ; « Restore Backup » qui ne restaure qu'un JSON ; un sélecteur inconnu lu comme un dépôt ; le sélecteur d'images sous une autre clé dans la scène ; les images non dessinées passées sous silence (dans `partie.rs` et dans les soirées de fichiers) ; la touche de diagnostic F8, puis `KeyD` ; `LARGE` à 1 250 ; une chasse fausse dans la table romaine ; le gras déclaré avec le fichier romain ; la marque en romain ; le titre de l'export en romain ; le lien qui nomme un autre fichier. Au premier passage, deux mutations n'étaient pas justes : « un titre vide sans zone cliquable » restait verte parce que `mesure::nombre_de_lignes` compte déjà au moins une ligne (le `.max(1)` de la vue était redondant ; il est retiré, et la mutation portée sur l'étiquette) ; deux autres rougissaient sur une autre assertion que celle prévue, dont le motif attendu est corrigé.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7/tier-list-*/` (hors dépôt), avec `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (le `empreinte.sh` du lot 7). Les preuves finales, lancées à la suite par `target/travail/lot-7/tier-list/final.sh` de 01 h 54 à 01 h 59 (les contrôles relancés seuls à 02 h 00, leur motif attendu corrigé), ont toutes la même empreinte au départ et à la fin : Tier list à `32f3759`, `diff HEAD` hors `.md` `65e1ef73b2881392`, non suivis (4 : les deux polices, la licence, `tests/polices.rs`) `ea0eb7ccd3027e53` ; le commun à `c371707` sans changement de code ; Punchline (`dd6d4f0`, hors `.md` `c7588ab241388f21`) et Sidequest (`6e7219c`, hors `.md` `2f424998484a2a11`) avec la part non commitée de leurs agents. Seuls des `.md` ont changé après (`BESOINS-COMMUN.md` et `AGENTS.md` du jeu, ce journal). Les modules et les rapports : `target/preuves/lot-7/tier-list-modules.txt` (module livré 1 615 033 octets, sha256 `84315a1ba93d67fe…` ; empreinte que donnent les deux rapports d'épreuve `44594a80bef6fa17…`).
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `tier-list-fmt` | `lourd bash -c "cd …/tier-list && cargo fmt --all --check"` | code 0 |
+| `tier-list-clippy` | `lourd … cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `tier-list-clippy-wasm32` | `lourd … cargo clippy -p tier-list -p tier-list-module --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `tier-list-tests` | `lourd /usr/bin/time -l … cargo test --workspace --no-fail-fast -- --nocapture` | **code 0 : 98 réussis**, 0 échec, 0 ignoré ; 18 s ; 0,42 Go résidents |
+| `tier-list-module` | `lourd … cargo build -p tier-list-module --target wasm32-unknown-unknown --profile module` | code 0 ; 1 615 033 octets, sha256 `84315a1b…` |
+| `tier-list-controles` | `lourd python3 -I target/travail/lot-7/tier-list/controles.py` | code 0 : les dix-sept mutations rouges (le passage de `final.sh`, code 1, avait une raison attendue mal écrite, corrigée ; voir plus haut) |
+| `tier-list-construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0 (rien à refaire) |
+| `tier-list-standard` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/tier-list --json …/tier-list-standard.json` (plan standard, depuis les sources) | **code 0** ; E1 et E3 à E19 réussis, E2, E10, E11 sans objet, E20 pas exécuté (hors du plan par défaut), E21 sans objet (pas de téléphone) ; 200 s ; 1,07 Go résidents ; charge 3,37 au départ, 1,85 à la fin |
+| `tier-list-court` | même commande, `--court` | **code 0** (référence : 1 par E15 seul ; écart 4) ; 41 s ; charge 1,85 au départ, 1,74 à la fin |
+
+Le plan standard est celui qu'exige la ligne du lot 7 : il est vert pour Tier list. Le `cargo test --workspace` du commun n'est pas relancé : le commun n'a pas changé.
+
+#### Les mesures
+
+Des octets et du carburant, déterministes ; pas des mesures de temps.
+- **Le module** : 791 068 → 1 615 033 octets (`TAILLE_MODULE_MAX` : 4 Mio).
+- **Le point de reprise** (`cargo test --test sauvegarde_lourde le_point -- --nocapture`, depuis `games/tier-list/`) : plateau neuf 323 584 → 1 110 016 octets hors des zones (mémoire 406 → 418 pages) ; pire cas 17 625 088 → 18 411 520 (670 → 682 pages).
+- **La vue de l'écran des pires cas** (`cargo test --test budgets -- --nocapture`) : de 8 427 185 à 8 633 962 avant, de 8 553 988 à 8 759 698 après, fixe compris, pour 10 312 500 (+1,5 %). Cause probable, non mesurée à part : chaque texte porte une clé de police de 64 bits au lieu de celle du commun ; `LARGE` n'y est pour rien (mesuré : la même vue avec 1 250).
+- **Dans les soirées du plan standard** : une entrée 1 637 437 au plus, une image 4 212 839 fixes compris, `Regarder` 825 149, `Decrire` 10 284, la vue la plus lourde 818 783 ; E15 336 222 → 190 900 octets vivants.
+- Les durées du tableau sont celles de commandes sous une charge de 1,7 à 3,8 : pas des mesures.
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **La page n'a été vue dans aucun navigateur** : l'écran du commun ne dessine pas encore la scène (lots 9 et 11). Les boîtes, le panneau de la modale et le lien sont ce que le jeu demande, pas ce qui est constaté.
+- **Les polices ne sont pas comparées à la publication de Liberation** (pas de réseau) ; leur intégrité tient à la signature du LibreOfficeDev d'où elles viennent, et leurs tables à `tests/polices.rs`.
+- **La règle du JSON lâché** reste, faute d'un sélecteur dans le coup du bot (écart 1) ; **le monde de l'épreuve ne dit jamais d'image non dessinée** (`epreuve/src/fichiers.rs` affirme `non_dessinees == 0`) : l'avis n'est éprouvé que par les tests du jeu.
+- **La référence du plan court** dans PHASE-3, § 7, n'est pas relevée (écart 4).
+- La règle F8 de E1 et le refus de la page vide (E21), avec `diagnostic-f8` et `page-vide` : au commun, maintenant que les trois jeux sont passés.
+
+#### Ce que le commun doit savoir
+
+- **Pour armer la règle F8 de E1** : Tier list déclare `F2`, Punchline et Sidequest `KeyD` ; aucun jeu ne déclare plus F8. Tier list n'a pas de téléphone : E21 y reste sans objet, et la page par défaut (vide) n'y est pas une faute.
+- **Pour le lot 11** : `partie::regles::images_citees` ne compte pas la ressource d'un `Lien` ; l'écran devra la demander lui-même. Les fenêtres de Tier list sont posées en haut de la page (y = 50), et la scène ne sait pas dire « fixe » : dans une page qui défile, une fenêtre ouverte en bas de page serait hors de vue (`BESOINS-COMMUN.md` du jeu, § 7).
+- **Pour le bot de l'écran** : un sélecteur dans `ComposantBot::Fichiers`, et un rendu simulé qui manque parfois des images, donneraient à l'épreuve les chemins que seuls les tests du jeu parcourent (§ 8 du jeu).
+- **Pour le point de reprise** (R2, M3 au lot 11) : les assets des trois jeux sont dans le segment de données et dans chaque instantané ; chez Tier list, 768 Kio de plus par point (§ 17 du jeu).
+- **Pour la mesure des textes** (lot 8) : la police de Tier list a les chasses d'Arial ; `mise-en-page` mesurera la vraie, et les estimations de `mesure.rs` devraient tomber juste en ASCII.
+
+### Le commun
+
+Fait le 2026-11-07, de 02 h 00 à 02 h 45 environ (GMT), après les trois jeux, sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo, chaque épreuve et les contrôles négatifs sont passés par le portillon (`target/hote/lourd`) ; seuls un `cargo check -p epreuve -p fautifs -p moteur-commun` de 11 s et des `cargo fmt` s'en sont passés. Aucun navigateur, aucun serveur. Rien n'est commité. **Seul le commun est modifié** ; les trois jeux portent la part non commitée de leurs agents, que cette part ne touche pas.
+
+#### Ce qui est fait
+
+- **F8 est au commun** (P33 ; REPONSES-PROVISOIRES 14 ; SAL-162) : `moteur_commun::chargement::accord` refuse une déclaration dont `diagnostic` est F8 (« déclaration refusée : diagnostic : F8 est la touche du commun, qui pose la marque au journal ; le jeu en déclare une autre »). Le chargement est partagé par wasmtime et le navigateur (`verifier_chargement`) : les deux refusent pareil, et l'épreuve rend E1 en échec, rien d'autre ne tournant (`eprouver_octets`, comme `declaration-incoherente`). La comparaison se fait sur le texte (`CodeTouche::as_str`) : un `CodeTouche` relu du fil est toujours reconstruit par `essayer`.
+- **E21 refuse la page vide** (`epreuve/src/pages.rs`) : toute page valide sans aucun nœud, sous des locaux vides comme tirés au hasard, chez un jeu qui a des téléphones. Une seule évaluation pour la règle, sur toutes les pages valides (`juger_les_vides`) : si chacune est vide, « la page est celle par défaut de Jeu::page, vide : aucun nœud sur chacune des N pages… » ; sinon, le nombre de pages vides et la vue de la première. La note de E21 dit « n page(s) vide(s) sur m valide(s) ».
+- **Deux fautifs** : `diagnostic-f8` (`Defaut::DECLARATION` avec `diagnostic: CodeTouche::F8`) et `page-vide` (`Defaut::page_par_defaut`, une méthode de plus du socle : la page du socle ne fait alors rien, comme la méthode par défaut de `Jeu::page`). Chacun a sa crate de module (`exemples/fautifs/modules/<nom>/`), son entrée dans l'exemple `natif`, dans `tests/epreuve/modules.rs` (40 jeux) et dans `plan_standard.rs`, et son test.
+- Documents : PHASE-3 (ligne du lot 7, § 7 « Le plan court ou le plan standard » : la référence relevée à nouveau, § 8.3 : E21 et le tableau des contrôles négatifs), CHANGELOG (« Phase 3, lot 7 »), `crates/README.md`, `AGENTS.md` (40 jeux au plan standard des fautifs).
+
+#### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **E21 refuse toute page sans nœud**, pas seulement la page par défaut : une vue oubliée laisse le téléphone vide comme la page par défaut (REM-38). Les pages de Punchline et de Sidequest ne sont jamais vides (leurs tests `aucune_page_n_est_vide` et les rapports : 0 page vide sur 1 024).
+2. **La règle F8 est au chargement, pas dans `jeu::module!`** : une vérification en `const` empêcherait le fautif de compiler, et un module écrit sans `jeu` doit être refusé de même.
+3. **La référence du plan court change pour Tier list : 0, et non plus 1 par E15 seul** (écart 4 de la part de Tier list), relevée dans PHASE-3, § 7, sur le commun final (`commun-court-tier-list`). Sidequest 0 et Punchline 1 par E2 seul ne changent pas.
+
+#### Les tests qui le tiennent
+
+- `epreuve`, `tests/epreuve` : `diagnostic_f8_echoue_e1` (E1 seul, le détail nomme « diagnostic » et « F8 ») ; `page_vide_echoue_e21` (E21 seul, le détail nomme la page par défaut) ; chaque fautif d'avant, `devine_passe_tout` et `le_socle_sain_passe_tout` restent verts.
+- `epreuve`, `pages::tests::la_page_vide_se_dit_par_defaut_ou_par_vue` : aucune page vide, toutes, une parmi douze.
+- **Les contrôles négatifs** (`target/travail/lot-7/commun/controles.py`, trois mutations, chacune rouge pour la raison attendue, la source remise telle quelle ensuite) : F8 plus refusé au chargement (`diagnostic_f8_echoue_e1` : aucun échec au lieu de E1) ; la page par défaut plus refusée (`page_vide_echoue_e21` : aucun échec au lieu de E21) ; une page vide parmi d'autres acceptée (le test de `pages`). Les deux fautifs sont eux-mêmes les contrôles négatifs des deux règles.
+- Au premier passage, `page_vide_echoue_e21` cherchait « page par défaut » dans un détail qui dit « celle par défaut de Jeu::page » : E21 échouait bien, et lui seul ; le texte attendu est corrigé (« la page est celle par défaut de Jeu::page »), rien n'est affaibli.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7/commun-*/` (hors dépôt), avec `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (le `empreinte.sh` du lot 7). Les preuves finales, lancées à la suite par `target/travail/lot-7/commun/final.sh` de 02 h 13 à 02 h 42 (les contrôles juste avant, 02 h 12), ont la même empreinte du code au départ et à la fin : le commun à `c371707`, `diff HEAD` hors `.md` `172d3fe24ad94d51`, non suivis (4 : les deux crates de module) `5f2ddfdcb35a3dbe` ; Punchline (`dd6d4f0`, hors `.md` `c7588ab241388f21`, non suivis `b10f0d5c3d93dfc4`), Sidequest (`6e7219c`, `2f424998484a2a11`, `b6f52aed45f257ae`) et Tier list (`32f3759`, `65e1ef73b2881392`, `ea0eb7ccd3027e53`), les empreintes mêmes que leurs agents ont rendues. Seuls des `.md` du commun ont changé pendant et après (PHASE-3, ce journal). Les modules et les rapports : `target/preuves/lot-7/commun-modules.txt`.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `commun-controles` | `lourd python3 -I target/travail/lot-7/commun/controles.py` | code 0 : les trois mutations rouges pour la raison attendue |
+| `commun-fmt` | `cargo fmt --all --check` | code 0 |
+| `commun-clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `commun-clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie -p jeu -p jeu-abi -p moteur-commun --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `commun-clippy-web` | dans `web/` : `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, puis pour `wasm32-unknown-unknown` | code 0 (`moteur-navigateur` recompilé sur le nouveau `moteur-commun`) |
+| `commun-construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0 |
+| `commun-standard-diagnostic-f8` | `lourd /usr/bin/time -l target/release/soiree-epreuve crates/exemples/fautifs/modules/diagnostic-f8 --json …` (plan standard, depuis ses sources) | **code 1, E1 seul** (« le moteur refuse le module : déclaration refusée : diagnostic : F8… ») ; étape 1 faite ; 20 s ; module `bc47ad7e…` |
+| `commun-standard-page-vide` | même commande, `…/page-vide` | **code 1, E21 seul** (« la page est celle par défaut de Jeu::page, vide : aucun nœud sur chacune des 1024 pages… » ; 2 799 vues distinctes) ; étape 1 faite ; 58 s ; module `3f35f2ac…` |
+| `commun-standard-punchline` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/punchline --json …` (plan standard, depuis les sources) | **code 0** ; E21 réussi (2 447 évaluations, 0 page vide sur 1 024) ; 105 s ; 1,62 Go résidents ; module `82669f77…` (rapport `46ebf4b5…`, celui de son agent) |
+| `commun-standard-sidequest` | même commande, `../games/sidequest` | **code 0** ; E21 réussi (4 395 évaluations, 0 page vide sur 1 024) ; 550 s ; 2,14 Go ; module `62043526…` (rapport `5d86f589…`) |
+| `commun-standard-tier-list` | même commande, `../games/tier-list` | **code 0** ; E21 sans objet ; 205 s ; 1,13 Go ; module `84315a1b…` (rapport `44594a80…`) ; le rapport JSON a le sha256 même de celui de son agent (`1fc69160…`) |
+| `commun-court-punchline` | même commande, `--court` | code 1, **E2 seul** (« une fin, mais aucune autre après la nouvelle partie »), la référence ; 24 s |
+| `commun-court-sidequest` | même commande, `--court` | **code 0**, la référence ; 129 s |
+| `commun-court-tier-list` | même commande, `--court` | **code 0**, la référence relevée au lot 7 (E15 : 284 244 au début, 273 091 à la fin) ; 41 s ; rapport JSON au sha256 de celui de son agent (`cb84457e…`) |
+| `commun-tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 646 réussis**, 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 541 s ; 1,63 Go résidents ; charge 1,66 au départ, 2,32 à la fin |
+
+Charge au départ et à la fin de chaque épreuve, écrite par le portillon : de 1,36 à 2,72 sur 10 cœurs, mémoire libre de 40 à 48 %. Le plan standard des 40 fautifs (`--ignored plan_standard`) n'est pas relancé : la ligne du lot ne le demande pas, et les deux fautifs nouveaux sont joués au plan standard depuis leurs sources ci-dessus. E20 n'est pas relancé : ni le relevé ni le banc ne changent, et un module refusé au chargement l'est par le même code dans le navigateur.
+
+#### Les mesures
+
+- Aucune mesure de temps : les durées ci-dessus sont celles de commandes sous une charge de 1,4 à 2,7, pas des mesures.
+- Le carburant d'une page (E19, déterministe) ne change pas : Punchline médiane 70 317, maximum 846 390 ; Sidequest médiane 72 102, maximum 420 164 — les nombres mêmes que leurs agents ont relevés, le même module et les mêmes soirées.
+- Mémoire : de 0,31 Go (Tier list, plan court) à 2,14 Go résidents (Sidequest, plan standard) par épreuve ; 1,63 Go pour `cargo test --workspace`. Le § 7 attendait « 2 à 3 Go » (estimé).
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **Les demandes des jeux au commun** (Punchline, `BESOINS-COMMUN.md` § 11 ; Sidequest, B12 à B18 ; Tier list, § 7, § 8, § 17, § 18) ne sont pas reportées dans `BESOINS-DES-JEUX.md` ni tranchées : ce n'est pas la ligne de ce lot. Elles sont écrites dans les dépôts des jeux.
+- **PHASE-3, § 2.10, « aucun jeu n'a besoin d'un état de page à lui »** (écart 2 de Sidequest) et la sémantique des champs dans les locaux (demande 2 de Punchline) ne sont pas tranchés ici.
+- **L'échantillon de E21** (les 256 plus petites empreintes) peut ne prendre aucune vue de sélecteur de Sidequest (écart 3 de Sidequest) : non changé, pour ne pas changer ce que E21 éprouve dans ce lot ; ses pages vont jusqu'à 17 nœuds dans les trois rapports.
+- **Le bot de l'écran ne nomme pas de sélecteur** de fichiers, et le monde ne simule pas d'image non dessinée (Tier list, écart 1 et TL-56) : non fait.
+- Aucun navigateur : la page d'aucun jeu n'est encore dessinée (lot 12).
+
+#### Ce que le lot suivant doit savoir
+
+- Un jeu qui déclare F8 est refusé au chargement, dans wasmtime comme dans le navigateur ; un jeu à téléphones dont une page est vide échoue E21. Les trois jeux passent les deux règles (Punchline et Sidequest `KeyD`, Tier list `F2`).
+- Le socle des fautifs a `Defaut::page_par_defaut` ; les fautifs sont 40 dans `tests/epreuve/modules.rs`.
+- La référence du plan court est maintenant : Sidequest 0, Punchline 1 par E2 seul, Tier list 0 (PHASE-3, § 7). Le lot 7b et les suivants la comparent à celle-ci.
+- Les rapports d'épreuve de Tier list ont le même sha256 d'une exécution à l'autre sur le même module et le même commun : une épreuve refaite se compare octet pour octet.

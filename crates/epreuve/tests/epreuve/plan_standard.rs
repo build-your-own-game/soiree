@@ -79,6 +79,8 @@ fn jeu(nom: &str) -> (Box<dyn FabriqueDynamique>, Option<IdControle>) {
             n!(jeux::PageQuiEnvoieUnGesteInvalide),
             Some(IdControle::E21),
         ),
+        "diagnostic-f8" => (n!(jeux::DiagnosticF8), Some(IdControle::E1)),
+        "page-vide" => (n!(jeux::PageVide), Some(IdControle::E21)),
         autre => panic!("jeu sans attendu : {autre}"),
     }
 }

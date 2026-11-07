@@ -160,6 +160,9 @@ impl Epreuve<'_, '_> {
     /// E1 : la réécriture a accepté le module ; aucun import ; exactement les exports
     /// du contrat ; un maximum de mémoire ; la déclaration lue ; le module livré sous
     /// `TAILLE_MODULE_MAX` (PHASE-3, § 2.8, lot 6) ; le carburant des appels mesuré.
+    /// Une déclaration que le moteur refuse au chargement (la mémoire, les raisons, F8
+    /// pris pour le diagnostic : PHASE-3, P33, lot 7) n'arrive pas ici : elle échoue E1
+    /// dans [`eprouver_octets`].
     fn constat(&mut self) {
         let c = self.module.constat().clone();
         let d = self.module.declaration().clone();

@@ -64,6 +64,8 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         "page-qui-envoie-un-geste-invalide" => {
             Box::new(FabriqueNative::<jeux::PageQuiEnvoieUnGesteInvalide>::new())
         }
+        "diagnostic-f8" => Box::new(FabriqueNative::<jeux::DiagnosticF8>::new()),
+        "page-vide" => Box::new(FabriqueNative::<jeux::PageVide>::new()),
         _ => return None,
     })
 }

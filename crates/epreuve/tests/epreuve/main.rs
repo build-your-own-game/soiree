@@ -482,6 +482,46 @@ fautif!(
     IdControle::E21
 );
 
+/// PHASE-3, P33, lot 7 (REPONSES-PROVISOIRES 14 ; SAL-162) : F8 pose la marque au
+/// journal, et n'est qu'au commun. Une déclaration qui la prend pour son diagnostic est
+/// refusée au chargement, par le moteur que partagent wasmtime et le navigateur : E1
+/// échoue, et lui seul, en le disant.
+#[test]
+fn diagnostic_f8_echoue_e1() {
+    let r = eprouver(
+        "diagnostic-f8",
+        &mut FabriqueNative::<jeux::DiagnosticF8>::new(),
+        &Plan::court(GRAINE),
+    );
+    echoue_exactement(&r, IdControle::E1);
+    let e1 = r.resultat(IdControle::E1).expect("au rapport");
+    assert!(
+        e1.detail.contains("diagnostic") && e1.detail.contains("F8"),
+        "{}",
+        e1.detail
+    );
+}
+
+/// PHASE-3, § 2.10 et § 8.3, lot 7 : un jeu à téléphones qui garde la page par défaut
+/// de `Jeu::page`, vide, laisse chaque téléphone sans rien à montrer ni à toucher, sans
+/// un mot (REM-38). E21 échoue, et lui seul, en nommant la page par défaut.
+#[test]
+fn page_vide_echoue_e21() {
+    let r = eprouver(
+        "page-vide",
+        &mut FabriqueNative::<jeux::PageVide>::new(),
+        &Plan::court(GRAINE),
+    );
+    echoue_exactement(&r, IdControle::E21);
+    let e21 = r.resultat(IdControle::E21).expect("au rapport");
+    assert!(
+        e21.detail
+            .contains("la page est celle par défaut de Jeu::page"),
+        "{}",
+        e21.detail
+    );
+}
+
 /// La reprise (§ 4.6 ; INTERFACE, § 8.8, `panique_au_temps` ; RESTE-PHASE-1, point 9) :
 /// trois `Temps` qui paniquent mettent la partie en panne ; l'épreuve la fait repartir
 /// (`Partie::repartir`), et la soirée continue jusqu'au bout. Seul E2 échoue, avec la

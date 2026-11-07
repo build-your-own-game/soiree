@@ -21,6 +21,18 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 7 : les jeux passent à l'ABI 4
+
+Les trois jeux passent à l'ABI 4 dans leurs dépôts (Punchline et Sidequest écrivent leur page, Tier list ses boîtes de composants, son sélecteur nommé, sa police libre et une autre touche de diagnostic) ; le commun arme ensuite les deux règles que le lot 6 laissait en attente (`conception/PHASE-3.md`, P33, § 2.10, § 8.3 et lot 7 ; `conception/LOTS-PHASE-3.md`, « Lot 7 »). L'ABI ne change pas (`jeu_abi::ABI` vaut 4), ni l'API d'un jeu.
+
+- **F8 est au commun** (P33) : une déclaration dont la touche du diagnostic est F8 est refusée au chargement (`moteur_commun::chargement`, que partagent wasmtime et le navigateur : « déclaration refusée : diagnostic : F8 est la touche du commun… »). E1 échoue, et rien d'autre ne tourne. Fautif `diagnostic-f8`.
+- **E21 refuse la page vide** d'un jeu qui a des téléphones : une page valide sans aucun nœud est un échec, sous des locaux vides comme tirés au hasard ; quand chaque page est vide, le rapport nomme la page par défaut de `Jeu::page`. La note de E21 dit combien de pages vides sur combien de valides. Fautif `page-vide`. Le socle des fautifs gagne `Defaut::page_par_defaut`.
+
+#### Passer à cette version
+
+1. Si ton jeu déclare `diagnostic: CodeTouche::F8`, prends une autre touche (Punchline et Sidequest ont `KeyD`, Tier list `F2`) : sinon le module est refusé au chargement.
+2. Si ton jeu a des téléphones, écris `Jeu::page` (voir `crates/exemples/devine`) et assure-toi qu'aucune vue ne donne une page sans nœud : E21 échoue sinon. Un jeu sans téléphone n'a rien à faire.
+
 ### Phase 3, lot 6 : l'ABI 4
 
 **L'ABI change** : `jeu_abi::ABI` vaut 4, et un module de l'ABI 3 est refusé au chargement ; chaque jeu se recompile contre ce commun (`conception/PHASE-3.md`, § 2.10, § 6, § 8.3 et lot 6 ; `conception/LOTS-PHASE-3.md`, « Lot 6 »). Les empreintes des modules et de leur forme changent avec.

@@ -34,6 +34,8 @@
 //! | [`ModuleTropGros`] | une table de 4,15 Mio dans le module, au-delà de `TAILLE_MODULE_MAX` | E1 (taille du module) |
 //! | [`PageQuiPanique`] | la page indexe un tableau de dix par l'option choisie, sans la borner | E21 |
 //! | [`PageQuiEnvoieUnGesteInvalide`] | la page porte un bouton dont le geste dépasse `limites.geste` | E21 |
+//! | [`DiagnosticF8`] | la touche du diagnostic est F8, celle du commun | E1 (F8 réservé) |
+//! | [`PageVide`] | la page est celle par défaut de `Jeu::page` : vide | E21 (page vide) |
 //!
 //! `JugeSurLeFait` et `FichierQuiPanique` passent dans le monde trop sage de la phase 1 (`Monde::PHASE_1`
 //! de l'épreuve) : seul le monde réel les fait échouer.
@@ -284,6 +286,12 @@ pub trait Defaut: Etat {
     /// Un bouton de plus sur la page, et son geste : aucun, dans le jeu sain.
     fn geste_de_la_page() -> Option<GesteTel> {
         None
+    }
+
+    /// Le jeu garde-t-il la page par défaut de `Jeu::page`, vide ? Non, dans le jeu
+    /// sain.
+    fn page_par_defaut() -> Oui {
+        Oui::Non
     }
 }
 
@@ -1054,5 +1062,39 @@ impl Defaut for PageQuiEnvoieUnGesteInvalide {
     }
     fn geste_de_la_page() -> Option<GesteTel> {
         Some(GesteTel::Octets(alloc::vec![0; 300]))
+    }
+}
+
+marqueur!(
+    /// E1, F8 réservé au commun (PHASE-3, P33 ; REPONSES-PROVISOIRES 14 ; lot 7) : la
+    /// touche du diagnostic est F8, qui pose la marque au journal (SAL-162). Le moteur
+    /// refuse la déclaration au chargement ; le reste est le jeu sain.
+    DiagnosticF8
+);
+impl Defaut for DiagnosticF8 {
+    type Cas = Etape;
+    const DECLARATION: Declaration = Declaration {
+        diagnostic: CodeTouche::F8,
+        ..socle::DECLARATION
+    };
+    fn neuf() -> Self {
+        DiagnosticF8
+    }
+}
+
+marqueur!(
+    /// E21, la page vide (PHASE-3, § 2.10 et § 8.3 ; lot 7) : un jeu à téléphones qui
+    /// n'écrit pas sa page et garde celle par défaut de `Jeu::page`, vide. Chaque vue
+    /// laisserait le téléphone sans rien à montrer ni à toucher. Le reste est le jeu
+    /// sain : seul E21 échoue.
+    PageVide
+);
+impl Defaut for PageVide {
+    type Cas = Etape;
+    fn neuf() -> Self {
+        PageVide
+    }
+    fn page_par_defaut() -> Oui {
+        Oui::Oui
     }
 }

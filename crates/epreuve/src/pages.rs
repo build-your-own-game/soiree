@@ -11,9 +11,12 @@
 //!   retenus au hasard, capacités), et des clés que la page n'a pas.
 //! - **Les gestes et les tenus d'une page passent `Valider`** : chaque bouton, chaque
 //!   geste d'un champ sur Entrée, le tenu et sa valeur relâchée.
-//! - **La page vide d'un jeu qui a des téléphones** échouera au lot 7 (PHASE-3, § 7) :
-//!   pas encore armé ici, pour que les jeux qui n'ont pas encore écrit leur page
-//!   gardent leur code.
+//! - **Aucune page n'est vide** chez un jeu qui a des téléphones (PHASE-3, § 2.10 et
+//!   § 8.3 ; armé au lot 7) : une page sans aucun nœud laisserait le téléphone sans
+//!   rien à montrer ni à toucher, sans un mot (REM-38). C'est d'abord la page par défaut
+//!   de `Jeu::page`, celle d'un jeu qui n'a pas écrit la sienne : le rapport la nomme
+//!   quand chaque page est vide. Une page vide pour quelques vues seulement (un écran
+//!   oublié) échoue de même.
 //!
 //! E19 juge en plus le coût de chaque `Page` appelée ici, sur un budget à part : celui
 //! d'une lecture, divisé par la marge du téléphone (`budgets.rs`).
@@ -272,6 +275,10 @@ struct Juge<'m> {
     declaration: &'m DeclarationFil,
     instance: Option<InstanceWasm>,
     constat: Constat,
+    /// Les pages valides, et les vides parmi elles : le nombre, et le pas de la vue de
+    /// la première (lot 7).
+    valides: u64,
+    vides: (u64, Option<u64>),
 }
 
 impl Juge<'_> {
@@ -395,10 +402,27 @@ impl Juge<'_> {
         }
     }
 
+    /// Aucune page vide (lot 7) : une seule évaluation, sur toutes les pages valides,
+    /// pour que la page par défaut se dise en une ligne et non une fois par vue.
+    fn page_vide(&mut self) {
+        if self.valides == 0 {
+            return;
+        }
+        self.constat.compte.evaluer();
+        if let Some(e) = juger_les_vides(self.valides, self.vides) {
+            self.constat.compte.echouer(e);
+        }
+    }
+
     fn juger(&mut self, issue: Issue, pas: u64) -> Option<PageFil> {
         self.constat.compte.evaluer();
         match issue {
             Issue::Page(p) => {
+                self.valides = self.valides.saturating_add(1);
+                if p.noeuds.is_empty() {
+                    self.vides.0 = self.vides.0.saturating_add(1);
+                    let _: &mut u64 = self.vides.1.get_or_insert(pas);
+                }
                 self.valider(pas, &p);
                 Some(p)
             }
@@ -411,6 +435,25 @@ impl Juge<'_> {
                 None
             }
         }
+    }
+}
+
+/// La règle de la page vide (lot 7), sur `valides` pages valides dont `vides.0` sans
+/// aucun nœud, la première à la vue du pas `vides.1` : rien si aucune n'est vide ; la
+/// page par défaut de `Jeu::page` si toutes le sont ; sinon, les vues oubliées.
+fn juger_les_vides(valides: u64, vides: (u64, Option<u64>)) -> Option<String> {
+    let (n, premiere) = vides;
+    if n == 0 {
+        None
+    } else if n >= valides {
+        Some(format!(
+            "la page est celle par défaut de Jeu::page, vide : aucun nœud sur chacune des {n} pages, pour un jeu qui a des téléphones ; le téléphone n'aurait rien à montrer ni à toucher (PHASE-3, § 2.10)"
+        ))
+    } else {
+        Some(format!(
+            "{n} page(s) vide(s) sur {valides} valides, la première à la vue du pas {} : le téléphone n'y aurait rien à montrer ni à toucher",
+            premiere.unwrap_or(0)
+        ))
     }
 }
 
@@ -428,6 +471,8 @@ pub(crate) fn eprouver(module: &ModuleCharge, vues: &VuesVues, graine: &[u8; 32]
         declaration,
         instance: None,
         constat: Constat::default(),
+        valides: 0,
+        vides: (0, None),
     };
     let mut t = Tirage::new(graine, "E21, des locaux au hasard");
     let retenu = t.octets(RETENU_MAX);
@@ -446,10 +491,13 @@ pub(crate) fn eprouver(module: &ModuleCharge, vues: &VuesVues, graine: &[u8; 32]
             let _: Option<PageFil> = juge.juger(issue, *pas);
         }
     }
+    juge.page_vide();
     let gardees = vues.gardees.len();
     juge.constat.notes.push(format!(
-        "{} vue(s) de téléphone distincte(s) dans les soirées, {gardees} éprouvée(s) (au plus {VUES_MAX}, les plus petites empreintes), chacune avec des locaux vides puis {LOCAUX_PAR_VUE} tirés au hasard ; {pages} page(s) valide(s) avec des locaux vides, jusqu'à {noeuds_max} nœuds ; la page vide d'un jeu à téléphones n'est pas encore refusée (lot 7)",
-        vues.distinctes()
+        "{} vue(s) de téléphone distincte(s) dans les soirées, {gardees} éprouvée(s) (au plus {VUES_MAX}, les plus petites empreintes), chacune avec des locaux vides puis {LOCAUX_PAR_VUE} tirés au hasard ; {pages} page(s) valide(s) avec des locaux vides, jusqu'à {noeuds_max} nœuds ; {} page(s) vide(s) sur {} valide(s)",
+        vues.distinctes(),
+        juge.vides.0,
+        juge.valides
     ));
     if gardees == 0 {
         juge.constat.pannes.push(String::from(
@@ -462,6 +510,23 @@ pub(crate) fn eprouver(module: &ModuleCharge, vues: &VuesVues, graine: &[u8; 32]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La page vide (lot 7) : aucune, rien ; toutes, la page par défaut nommée ; une
+    /// partie, les vues oubliées, avec la première.
+    #[test]
+    fn la_page_vide_se_dit_par_defaut_ou_par_vue() {
+        assert_eq!(juger_les_vides(12, (0, None)), None);
+        let toutes = juger_les_vides(12, (12, Some(3))).unwrap_or_default();
+        assert!(
+            toutes.starts_with("la page est celle par défaut de Jeu::page"),
+            "{toutes}"
+        );
+        let une = juger_les_vides(12, (1, Some(7))).unwrap_or_default();
+        assert!(
+            une.starts_with("1 page(s) vide(s) sur 12 valides, la première à la vue du pas 7"),
+            "{une}"
+        );
+    }
 
     /// L'échantillon garde les plus petites empreintes, chaque vue distincte une fois, et
     /// compte toutes les vues distinctes vues.
