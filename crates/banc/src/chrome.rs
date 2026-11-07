@@ -16,6 +16,19 @@ use crate::navigateur::{arreter_processus, attendre_l_adresse, effacer, profil_n
 /// Le Chrome de la machine de l'hôte (macOS).
 pub const CHROME: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
+/// Un geste de la souris du banc, en pixels de la fenêtre (lot 11).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GesteSouris {
+    /// Le bouton principal enfoncé là.
+    Appui(f64, f64),
+    /// Le pointeur amené là.
+    Deplace(f64, f64),
+    /// Le bouton relâché là.
+    Relache(f64, f64),
+    /// Une attente, en millisecondes.
+    Pause(u64),
+}
+
 /// Le délai d'une requête CDP.
 const DELAI: Duration = Duration::from_secs(20);
 
@@ -92,6 +105,16 @@ impl Chrome {
         let v = chrome
             .cdp
             .envoyer("Browser.getVersion", &json!({}), None, DELAI)?;
+        // Les téléchargements vont dans le profil, sous leur nom, sans question (lot 11) :
+        // le banc les y lit avant la fermeture, qui efface le profil.
+        let dossier = chrome.telechargements();
+        std::fs::create_dir_all(&dossier).map_err(|e| format!("{} : {e}", dossier.display()))?;
+        chrome.cdp.envoyer(
+            "Browser.setDownloadBehavior",
+            &json!({ "behavior": "allow", "downloadPath": dossier, "eventsEnabled": true }),
+            None,
+            DELAI,
+        )?;
         v.get("product")
             .and_then(Json::as_str)
             .unwrap_or("?")
@@ -136,6 +159,134 @@ impl Chrome {
             return Err(format!("{expression} : {e}"));
         }
         Ok(r.pointer("/result/value").cloned().unwrap_or(Json::Null))
+    }
+
+    /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS, au rapport de
+    /// pixels `dpr` (`Emulation.setDeviceMetricsOverride`, lot 11 ; `dpr` depuis la
+    /// remontée du lot 10b).
+    pub fn fenetre(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+        dpr: f64,
+    ) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        self.cdp
+            .envoyer(
+                "Emulation.setDeviceMetricsOverride",
+                &json!({ "width": largeur, "height": hauteur, "deviceScaleFactor": dpr, "mobile": false }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Le dossier où vont les téléchargements de ce Chrome (lot 11).
+    pub fn telechargements(&self) -> PathBuf {
+        self.profil.join("telechargements")
+    }
+
+    /// Donne des fichiers à l'`<input type=file>` que `selecteur` (CSS) désigne, par
+    /// `DOM.setFileInputFiles` : la page reçoit `change` comme d'un vrai choix (lot 11).
+    pub fn fichiers(
+        &mut self,
+        onglet: usize,
+        selecteur: &str,
+        fichiers: &[PathBuf],
+    ) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        let r = self.cdp.envoyer(
+            "Runtime.evaluate",
+            &json!({ "expression": format!("document.querySelector({})", json!(selecteur)) }),
+            Some(&s),
+            DELAI,
+        )?;
+        let objet = r
+            .pointer("/result/objectId")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("aucun élément {selecteur}"))?
+            .to_owned();
+        self.cdp
+            .envoyer(
+                "DOM.setFileInputFiles",
+                &json!({ "files": fichiers, "objectId": objet }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Joue des gestes de la souris, en pixels de la fenêtre, par la chaîne d'entrées du
+    /// navigateur (`Input.dispatchMouseEvent`, lot 11) : la page reçoit des événements
+    /// de pointeur vrais (`isTrusted`).
+    pub fn souris(&mut self, onglet: usize, gestes: &[GesteSouris]) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        let mut enfonce = false;
+        for g in gestes {
+            let (sorte, x, y) = match *g {
+                GesteSouris::Appui(x, y) => {
+                    enfonce = true;
+                    ("mousePressed", x, y)
+                }
+                GesteSouris::Deplace(x, y) => ("mouseMoved", x, y),
+                GesteSouris::Relache(x, y) => {
+                    enfonce = false;
+                    ("mouseReleased", x, y)
+                }
+                GesteSouris::Pause(ms) => {
+                    std::thread::sleep(Duration::from_millis(ms));
+                    continue;
+                }
+            };
+            let bouton = if sorte == "mouseMoved" && !enfonce {
+                "none"
+            } else {
+                "left"
+            };
+            self.cdp.envoyer(
+                "Input.dispatchMouseEvent",
+                &json!({ "type": sorte, "x": x, "y": y, "button": bouton,
+                          "buttons": u8::from(enfonce),
+                          "clickCount": u8::from(sorte != "mouseMoved") }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Tape un texte dans l'élément qui a le focus (`Input.insertText`, lot 11).
+    pub fn texte(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        self.cdp
+            .envoyer(
+                "Input.insertText",
+                &json!({ "text": texte }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Appuie sur une touche (`Enter`, `Escape`), enfoncée puis relâchée (lot 11).
+    pub fn touche(&mut self, onglet: usize, code: &str) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        let (cle, vk) = match code {
+            "Enter" => ("Enter", 13),
+            "Escape" => ("Escape", 27),
+            "Tab" => ("Tab", 9),
+            autre => return Err(format!("touche inconnue du banc : {autre}")),
+        };
+        for sorte in ["rawKeyDown", "keyUp"] {
+            self.cdp.envoyer(
+                "Input.dispatchKeyEvent",
+                &json!({ "type": sorte, "key": cle, "code": code, "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
     }
 
     /// Recharge l'onglet.

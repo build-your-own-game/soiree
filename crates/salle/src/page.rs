@@ -627,6 +627,22 @@ impl<P: Pager> PageDuTelephone<P> {
         })
     }
 
+    /// Les croix de la page, et leurs directions.
+    fn les_croix(&self) -> Vec<(Cle, Directions)> {
+        self.page.as_ref().map_or_else(Vec::new, |p| {
+            p.noeuds
+                .iter()
+                .filter_map(|x| {
+                    if let SorteNoeudPage::Croix { directions } = x.sorte {
+                        Some((x.cle, directions))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+    }
+
     /// Le bouton ou le champ de cette page dont le geste est `octets`.
     fn porteur(page: &PageFil, octets: &[u8]) -> Option<(Cle, Option<Declencheur>)> {
         page.noeuds.iter().find_map(|n| {
@@ -956,21 +972,19 @@ impl<P: Pager> PageDuTelephone<P> {
                 })
                 .collect()
         });
-        let croix_de_la_page: Vec<(Cle, Directions)> =
-            self.page.as_ref().map_or_else(Vec::new, |p| {
-                p.noeuds
-                    .iter()
-                    .filter_map(|x| {
-                        if let SorteNoeudPage::Croix { directions } = x.sorte {
-                            Some((x.cle, directions))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            });
+        let croix_de_la_page = self.les_croix();
         let maintenus = self.noeuds_de(|s| matches!(s, SorteNoeudPage::Maintenu { .. }));
-        match alea % 5 {
+        let sorte = sorte_du_singe(
+            [
+                !boutons.is_empty(),
+                !champs.is_empty(),
+                !les_choix.is_empty(),
+                !croix_de_la_page.is_empty(),
+                !maintenus.is_empty(),
+            ],
+            alea,
+        );
+        match sorte {
             0 if !boutons.is_empty() => {
                 let c = boutons.get(tirer(boutons.len(), alea >> 8)).copied();
                 let g = c.and_then(|c| {
@@ -1033,6 +1047,24 @@ impl<P: Pager> PageDuTelephone<P> {
             _ => (Recalcul::default(), None),
         }
     }
+}
+
+/// La sorte de geste du singe (0 un bouton, 1 un champ, 2 un choix, 3 une croix, 4 un
+/// maintenu), tirée par `alea` parmi celles que la page offre ; `u64::MAX` si elle n'en
+/// offre aucune. Fusion du lot 11 : un tirage parmi les cinq perdait son tour sur une page
+/// qui n'en offre que deux (le champ et le bouton de devine), et le singe d'une soirée de
+/// devine ne jouait qu'une fois, ou jamais, selon la graine.
+fn sorte_du_singe(offertes: [bool; 5], alea: u64) -> u64 {
+    let sortes: Vec<u64> = offertes
+        .iter()
+        .zip(0u64..)
+        .filter_map(|(&oui, sorte)| oui.then_some(sorte))
+        .collect();
+    let n = u64::try_from(sortes.len()).unwrap_or(1).max(1);
+    sortes
+        .get(usize::try_from(alea.checked_rem(n).unwrap_or(0)).unwrap_or(0))
+        .copied()
+        .unwrap_or(u64::MAX)
 }
 
 /// Ce qu'un joueur de page a fait des coups du bot.
@@ -1711,6 +1743,27 @@ mod tests {
         assert_eq!(a.comptes().files_pleines, 5);
         assert_eq!(a.en_file(), limite);
         assert_eq!(a.comptes().gestes, u64::try_from(limite).unwrap());
+    }
+
+    /// Fusion du lot 11 : le singe tire sa sorte de geste parmi celles que la page offre,
+    /// jamais une qu'elle n'a pas ; sur une page qui n'offre rien, aucune.
+    #[test]
+    fn le_singe_tire_parmi_ce_que_la_page_offre() {
+        // Le champ et le bouton de devine : chaque tirage tombe sur l'un ou l'autre.
+        let devine = [true, true, false, false, false];
+        for alea in 0..64 {
+            assert!(super::sorte_du_singe(devine, alea) <= 1, "{alea}");
+        }
+        assert_eq!(super::sorte_du_singe(devine, 0), 0);
+        assert_eq!(super::sorte_du_singe(devine, 1), 1);
+        // Une croix seule.
+        for alea in 0..8 {
+            assert_eq!(
+                super::sorte_du_singe([false, false, false, true, false], alea),
+                3
+            );
+        }
+        assert_eq!(super::sorte_du_singe([false; 5], 7), u64::MAX);
     }
 
     #[test]

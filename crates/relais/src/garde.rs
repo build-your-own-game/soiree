@@ -36,6 +36,16 @@ use crate::coeur::{Fait, OpGarde, Preuves};
 /// list au pire mesuré font 33,6 Mio (M3).
 pub const GARDE_MAX: u64 = 256 * 1024 * 1024;
 
+/// Ce qu'un flux de résultats tient au plus sur disque : 16 Mio (choisi, lot 11). Au-delà,
+/// une ligne est ignorée (`Fait::LigneIgnoree`) : la garde n'est pas coupée, la partie
+/// continue, et le jeu, à qui l'autorité a déjà dit la ligne faite, ne le sait pas.
+pub const FLUX_MAX: u64 = 16 * 1024 * 1024;
+
+/// Les flux de résultats d'une salle, au plus : 16 (choisi, lot 11). Une ligne d'un flux de
+/// plus est ignorée comme au-delà de [`FLUX_MAX`]. Les flux d'une salle tiennent donc au
+/// plus 256 Mio sur disque, à côté de ses cases ([`GARDE_MAX`]).
+pub const FLUX_PAR_SALLE: usize = 16;
+
 /// Écrit `octets` dans `dossier/nom`, durablement : fichier temporaire synchronisé,
 /// renommé, dossier synchronisé (SAL-26, SAL-27).
 pub fn ecrire_durable(dossier: &Path, nom: &str, octets: &[u8]) -> io::Result<()> {
@@ -155,6 +165,42 @@ impl Dossier {
         fs::remove_dir_all(&s)?;
         File::open(&self.racine)?.sync_all()?;
         Ok(true)
+    }
+
+    /// Le fichier d'un flux de résultats : `<salle>/flux/<nom>`.
+    pub fn fichier_du_flux(&self, code: CodeSalle, flux: &str) -> PathBuf {
+        self.salle_dir(code).join("flux").join(flux)
+    }
+
+    /// Le nombre de flux d'une salle sur disque (0 sans dossier `flux`).
+    fn flux_de(&self, code: CodeSalle) -> usize {
+        fs::read_dir(self.salle_dir(code).join("flux")).map_or(0, |d| {
+            d.filter_map(Result::ok)
+                .filter(|e| e.file_name().to_str().is_some_and(liaison::flux_valide))
+                .count()
+        })
+    }
+
+    /// Ajoute une ligne à la fin d'un flux, suivie d'un saut de ligne, et la synchronise
+    /// (la demande `Ligne`, lot 11). Le nom doit être valide (`liaison::flux_valide`).
+    pub fn ajouter_ligne(&self, code: CodeSalle, flux: &str, ligne: &[u8]) -> io::Result<()> {
+        if !liaison::flux_valide(flux) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "nom de flux"));
+        }
+        let d = self.salle_dir(code).join("flux");
+        let neuf = !d.exists();
+        fs::create_dir_all(&d)?;
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(d.join(flux))?;
+        f.write_all(ligne)?;
+        f.write_all(b"\n")?;
+        f.sync_all()?;
+        if neuf {
+            File::open(&d)?.sync_all()?;
+        }
+        Ok(())
     }
 
     fn fichier(&self, code: CodeSalle, n: u64) -> PathBuf {
@@ -301,6 +347,24 @@ impl Dossier {
                 Ok(()) => Fait::Efface,
                 Err(_) => Fait::Refus(RefusRelais::GardePleine),
             },
+            OpGarde::AjouterLigne { flux, ligne } => {
+                let fichier = self.fichier_du_flux(code, flux);
+                let deja = fs::metadata(&fichier).map(|m| m.len());
+                if deja.is_err() && self.flux_de(code) >= FLUX_PAR_SALLE {
+                    return Fait::LigneIgnoree;
+                }
+                let apres = deja
+                    .unwrap_or(0)
+                    .saturating_add(ligne.len() as u64)
+                    .saturating_add(1);
+                if apres > FLUX_MAX {
+                    return Fait::LigneIgnoree;
+                }
+                match self.ajouter_ligne(code, flux, ligne) {
+                    Ok(()) => Fait::LigneAjoutee,
+                    Err(_) => Fait::LigneIgnoree,
+                }
+            }
         }
     }
 }

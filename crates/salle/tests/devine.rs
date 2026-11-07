@@ -144,6 +144,12 @@ fn une_soiree_de_devine_par_la_page_survit_a_ses_pannes() {
     assert_eq!(s.accuses_non_ecrits(&h), Vec::<String>::new());
     s.comparer_a_la_garde()
         .expect("la garde reprend la même partie");
+    // Fusion du lot 11 : une page rechargée repart de zéro, mais ce que le téléphone a
+    // fait reste compté (les comptes partaient avec la page).
+    let avant = s.joueurs.get(&0).map(|j| j.comptes);
+    assert!(avant.is_some_and(|c| c.gestes_du_singe > 0), "{avant:?}");
+    s.recharger(0, 1_000_000);
+    assert_eq!(s.joueurs.get(&0).map(|j| j.comptes), avant);
 }
 
 /// P18 et § 2.5 (lot 12) : un téléphone qui revient sans avoir rechargé dit le module
@@ -501,4 +507,110 @@ fn un_point_se_scelle_par_tranches_sur_plusieurs_reveils() {
     let a = s.autorite.as_ref().unwrap();
     assert!(!a.secours_presse(s.t_us, 0));
     assert!(a.secours_presse(s.t_us, 2 * 16_667 + 1));
+}
+
+/// Lot 11 : la demande `Ligne` ne va pas à la page ; l'autorité la donne elle-même à sa
+/// garde (`VersRelais::AjouterLigne`), qui l'ajoute à son flux, dans l'ordre, et le jeu
+/// reçoit `Fait` (devine retire alors la ligne de ce qu'il demande).
+#[test]
+fn une_ligne_de_resultats_va_au_flux_de_la_garde_et_non_a_la_page() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 31, Oui::Oui, Pannes::AUCUNE);
+    let lignes_a_la_page = Rc::new(Cell::new(0u32));
+    let vues = Rc::clone(&lignes_a_la_page);
+    s.observer_la_page(move |o| {
+        if let Ok(VersPage::Demande {
+            quoi: jeu_abi::DemandeFil::Ligne { .. },
+            ..
+        }) = VersPage::decoder(o)
+        {
+            vues.set(vues.get() + 1);
+        }
+    });
+    for _ in 0..2 {
+        let _: usize = s.ajouter_telephone();
+    }
+    s.avancer_jusqua(s.t_us + 90_000_000);
+    let flux = s.relais.flux("resultats");
+    assert!(!flux.is_empty(), "aucune ligne de résultats écrite");
+    assert!(flux.iter().all(|l| !l.is_empty()));
+    assert_eq!(lignes_a_la_page.get(), 0, "une ligne est allée à la page");
+    // Sans panne, chaque ligne s'écrit une fois : la demande est lancée une fois, et le
+    // `Fait` que l'autorité rend la retire du jeu.
+    let distinctes: std::collections::BTreeSet<&Vec<u8>> = flux.iter().collect();
+    assert_eq!(distinctes.len(), flux.len(), "une ligne écrite deux fois");
+}
+
+/// Correction du lot 11 : l'autorité ne dit `Fait(Ok)` qu'à une ligne que le relais
+/// écrira. Un nom de flux qui ne ferait pas un nom de fichier, une ligne qui contient un
+/// saut de ligne (elle couperait le fichier du flux en deux lignes), sont refusés
+/// (`Refuse`), une ligne au-delà de `LIGNE_MAX` aussi (`TropGros`) ; aucune ne part au
+/// relais. Avant, le jeu croyait écrite une ligne que le relais ignorait en silence.
+#[test]
+fn l_autorite_refuse_au_jeu_une_ligne_que_le_relais_ignorerait() {
+    use jeu_abi::EchecDemande;
+    use salle::autorite::reponse_a_la_ligne;
+    assert_eq!(
+        reponse_a_la_ligne("resultats", b"manche 1 : 3 points"),
+        Ok(())
+    );
+    assert_eq!(reponse_a_la_ligne("resultats", b""), Ok(()));
+    let pile = vec![b'x'; liaison::LIGNE_MAX];
+    assert_eq!(reponse_a_la_ligne("resultats", &pile), Ok(()));
+    let trop = vec![b'x'; liaison::LIGNE_MAX + 1];
+    assert_eq!(
+        reponse_a_la_ligne("resultats", &trop),
+        Err(EchecDemande::TropGros)
+    );
+    for flux in ["Resultats", "", "../resultats", "a/b", "résultats"] {
+        assert_eq!(
+            reponse_a_la_ligne(flux, b"une ligne"),
+            Err(EchecDemande::Refuse),
+            "{flux:?}"
+        );
+    }
+    assert_eq!(
+        reponse_a_la_ligne(&"x".repeat(65), b"une ligne"),
+        Err(EchecDemande::Refuse)
+    );
+    assert_eq!(
+        reponse_a_la_ligne("resultats", b"deux\nlignes"),
+        Err(EchecDemande::Refuse)
+    );
+}
+
+/// Lot 11 : en mode banc, `CommandeEcran::Bots(Non)` arrête les coups des bots (le
+/// scénario `ecran` du banc joue lui-même par les entrées du navigateur) ; `Bots(Oui)`
+/// les rend.
+#[test]
+fn la_commande_bots_arrete_les_coups_du_banc() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 32, Oui::Oui, Pannes::AUCUNE);
+    for _ in 0..2 {
+        let _: usize = s.ajouter_telephone();
+    }
+    s.avancer_jusqua(s.t_us + 20_000_000);
+    let coups = |s: &Soiree<_, _>| {
+        let c = s.autorite.as_ref().unwrap().comptes();
+        c.coups_banc + c.coups_ecran
+    };
+    let avant = coups(&s);
+    assert!(avant > 0, "le banc ne joue aucun coup");
+    s.depuis_la_page(
+        &DeLaPage::Commande(CommandeEcran::Bots(Oui::Non))
+            .encoder()
+            .unwrap(),
+    );
+    s.avancer_jusqua(s.t_us + 20_000_000);
+    let arretes = coups(&s);
+    assert_eq!(arretes, avant, "des coups du banc après Bots(Non)");
+    s.depuis_la_page(
+        &DeLaPage::Commande(CommandeEcran::Bots(Oui::Oui))
+            .encoder()
+            .unwrap(),
+    );
+    s.avancer_jusqua(s.t_us + 20_000_000);
+    assert!(coups(&s) > arretes);
 }

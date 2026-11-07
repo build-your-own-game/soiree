@@ -111,6 +111,8 @@ pub struct RelaisEnMemoire {
     historique: BTreeMap<u64, (Case, Vec<u8>)>,
     sorties: Vec<(Lien, Vec<u8>)>,
     fermes: Vec<Lien>,
+    /// Les lignes des flux de résultats, par nom de flux, dans l'ordre (lot 11).
+    flux: BTreeMap<String, Vec<Vec<u8>>>,
 }
 
 impl RelaisEnMemoire {
@@ -140,6 +142,11 @@ impl RelaisEnMemoire {
     /// La garde, telle qu'elle est maintenant.
     pub fn cases(&self) -> Vec<(Case, Vec<u8>)> {
         self.cases.values().cloned().collect()
+    }
+
+    /// Les lignes d'un flux de résultats, dans l'ordre où la garde les a données.
+    pub fn flux(&self, nom: &str) -> &[Vec<u8>] {
+        self.flux.get(nom).map_or(&[], Vec::as_slice)
     }
 
     /// Toutes les cases écrites dans la soirée, effacées comprises, par numéro.
@@ -320,6 +327,18 @@ impl RelaisEnMemoire {
             }
             (VersRelais::Effacer { avant }, RoleRelais::Garde) => {
                 self.cases.retain(|&n, _| n >= avant);
+            }
+            // Une ligne d'un flux, de la garde courante seulement (SAL-20), comme le vrai
+            // relais : un nom qui ne fait pas un nom de fichier, une ligne trop longue ou
+            // qui contient un saut de ligne, sont ignorés (lot 11). Les bornes du disque
+            // (`relais::garde::FLUX_MAX`, `FLUX_PAR_SALLE`) ne sont pas simulées.
+            (VersRelais::AjouterLigne { flux, ligne }, RoleRelais::Garde) => {
+                if liaison::flux_valide(flux) && liaison::ligne_valide(ligne) {
+                    self.flux
+                        .entry(String::from(flux))
+                        .or_default()
+                        .push(ligne.to_vec());
+                }
             }
             // Une garde passée n'écrit plus (SAL-20) ; le reste ne vient pas de ce rôle.
             (
@@ -883,8 +902,19 @@ where
         if let Some(t) = self.telephones.get_mut(k) {
             t.appareil.recharger();
         }
-        // La page rechargée repart de zéro : le module revient par la connexion.
-        let _: Option<crate::page::JoueurDePage<F>> = self.joueurs.remove(&k);
+        // La page rechargée repart de zéro : le module revient par la connexion. Ce que le
+        // téléphone a fait reste compté (fusion du lot 11 : les comptes partaient avec la
+        // page, et le singe d'une soirée de devine rechargé six fois finissait à zéro geste,
+        // quoi qu'il ait joué).
+        if let Some(ancien) = self.joueurs.remove(&k) {
+            let mut neuf = if self.par_la_page.is_some_and(|singes| k < singes) {
+                crate::page::JoueurDePage::singe(SINGE_US)
+            } else {
+                crate::page::JoueurDePage::default()
+            };
+            neuf.comptes = ancien.comptes;
+            let _: Option<crate::page::JoueurDePage<F>> = self.joueurs.insert(k, neuf);
+        }
         self.bilan.rechargements = self.bilan.rechargements.saturating_add(1);
     }
 

@@ -759,6 +759,39 @@ Mesuré le 2026-11-07 de 08 h 10 min 39 s à 08 h 16 min 20 s (GMT, `target/preu
 - **Firefox donne encore, de loin en loin, une image à un onglet caché** : de 0 à 3 en 360 s, `document.visibilityState` valant `hidden`.
 
 
+## Lot 11 : M3, le point de reprise de Tier list au pire dans le Worker, et M8, le travail long
+
+Mesuré le 2026-11-07, de 15 h 35 à 15 h 37 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), dans **Chrome 156.0.8078.80** (sans interface, WebGPU, puis WebGL2 forcé) et **Firefox 158.0.1** (sans interface, WebGL2) ; Safari « pas exécuté » (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché). **Sur machine calme** : `target/hote/lourd --calme`, charge 2,12 au départ, 2,32 à la fin, **2,92 au plus pendant** (sous 3 : la mesure vaut ; règle posée avant le tour). Un seul tour par navigateur (le scénario entier, 102 s) ; le module de Tier list figé (`target/modules-figes/tier-list.wasm`, sha256 `84315a1b…`, commit `9827f39`).
+
+Pour refaire : `cargo build -p banc --bin soiree-banc`, puis `target/hote/lourd --calme target/debug/soiree-banc ecran tier-list <tier-list.wasm> --navigateurs chrome,firefox --plein 64 [--sans-construire]`. La preuve : `target/preuves/lot-11/ecran-mesure/` (la sortie, et `ecran-mesure-travail/*/lignes.txt`, toutes les lignes que la page et le Worker ont écrites). Les durées sont celles que le Worker rapporte en mode banc (`performance.now()` du Worker ; `MesurePoint` de `salle::autorite`, la ligne `point`) et celles de la page (la ligne `demande` du rendu) ; les images perdues, celles de la trace de CDP (Chrome seulement).
+
+**Le pire cas joué** (`soiree-banc ecran tier-list`, après les étapes ordinaires) : des images de bruit de 400 × 300 (qui ne se compressent pas), données au sélecteur par lots de 8, jusqu'à ce que le jeu en refuse un (`IMAGES_MAX_OCTETS`, 1 Mio) ou que les 64 de `--plein 64` soient données : **dans Chrome, les 64 acceptées, aucun lot refusé** (c'est `--plein 64` qui arrête l'import ; la sortie ne porte pas « le dernier lot refusé ») ; **dans Firefox, 56 acceptées, le huitième lot refusé** (son WebP du bruit est plus lourd ; les deux encodent en WebP, constaté dans les sauvegardes). Recompté dans les sauvegardes captées (correction du lot 11, `target/preuves/lot-11/ecran-mesure-travail/profils/captes/`) : le plateau plein de Chrome porte 939 282 octets d'images (69 images, 0,896 Mio), celui de Firefox 919 586 (61 images, 0,877 Mio) ; Chrome est donc à moins d'un lot de la borne (un lot de plus, environ 117 Ko, la passerait), et son plateau est plus lourd que celui de Firefox : le pire cas est atteint en pratique, sans que Chrome ait refusé un lot ; la sauvegarde du plateau plein écrite (1 256 424 et 1 229 728 octets) puis relue ; ses tuiles rangées dans les rangs (69 et 61) ; son export (un PNG de 2 400 × 1 678 et 2 400 × 1 294, 6,7 et 6,1 Mo, que le jeu garde comme image reçue). Les points mesurés sont les deux pris ensuite (aux pas 1 200 et 1 800).
+
+### M3 : le point de reprise
+
+| Navigateur | **Case scellée** | Instantané (tour du point) | **Encodage** (même tour) | Scellement : tranches de 128 Kio, en tout (la plus longue) | Mise en file de l'envoi |
+|---|---|---|---|---|---|
+| Chrome, WebGPU | **20 177 488 octets** (19,2 Mio) | 3,35 ; 1,48 ms | **59,6 ; 41,0 ms** | 154 tranches : 116 ; 193 ms (2,08 ; 2,09 ms) | 1,70 ; 2,84 ms |
+| Chrome, WebGL2 forcé | **20 177 488 octets** | 3,38 ; 2,69 ms | **63,4 ; 47,8 ms** | 154 : 225 ; 233 ms (2,17 ; 2,11 ms) | 2,65 ; 2,43 ms |
+| Firefox | **18 866 772 octets** (18,0 Mio) | 3,74 ; 2,20 ms | **112,4 ; 82,2 ms** | 144 : 146 ; 138 ms (2,34 ; 2,32 ms) | 1,22 ; 1,12 ms |
+
+- **La taille** : 18 à 19,2 Mio, plus que les 16,8 Mio de wasmtime au lot 2 (qui ne gardait pas d'image exportée de 6 Mo) ; sous `relais::coeur::CASE_MAX` (64 Mio) et `GARDE_MAX` (256 Mio). Un plateau presque vide (six images rayées, au début du scénario) donne déjà un point de 2,2 Mio (constaté dans les essais du lot, Chrome).
+- **Le chiffrement** se fait déjà hors du tour qui prend le point, une tranche par réveil (lot 10a, correction) : **au plus 2,34 ms par tranche**, autour de la frontière des 2 ms de R2.
+- **Ce qui reste dans un seul tour, et dépasse de loin les 2 ms de R2** : l'encodage de l'instantané (`jeu_abi::encoder`, octet par octet : 41 à 63 ms dans Chrome, 82 à 112 ms dans Firefox) ; **le tour qui finit le point** (`finir_point` et le message `Ecrire` de 19 Mio : 38 à 86 ms ; lignes `tour` aux pas 1 271, 1 337 et 1 880, `sceller` sans `point`) ; et **la case de journal qui porte une grande entrée** (la réponse `Lire` de la sauvegarde relue, 1,2 Mo, scellée d'un coup : 73 à 134 ms, pas 844 à 852). Pendant ces tours, la partie prend du retard (deux à huit pas) : Tier list n'en souffre pas (rien n'y dépend du temps hors du glisser), mais le contrôle de `arriere-plan` (aucun saut) échouerait sur ce plateau. La décision revient au mainteneur (PHASE-3, question 31) ; rien n'est changé ici.
+- **L'envoi** (la mise en file des trames sur la WebSocket de la garde, `WebSocket.send`) : 1,1 à 2,8 ms ; le navigateur envoie ensuite sans le fil du Worker.
+
+### M8 : le travail long de Tier list
+
+| Navigateur | Export ordinaire (2 400 × 1 294, 5 tuiles) | **Export du plateau plein** | Images de la page pendant l'export plein : la plus longue, au-delà de 33 ms | Images perdues (trace de CDP) | Tours du Worker de plus de 33 ms |
+|---|---|---|---|---|---|
+| Chrome, WebGPU | 71,8 ms, 4 images | **115,1 ms**, 6 images, 69 tuiles | 18,4 ms, aucune | **0** (210 `PipelineReporter`) | 6 (38,8 à 73,0 ms) |
+| Chrome, WebGL2 forcé | 64,7 ms, 4 images | **110,9 ms**, 6 images | 18,4 ms, aucune | **1** (216) | 5 (39,4 à 77,1 ms) |
+| Firefox | 55,8 ms, 6 images | **122,7 ms**, 14 images, 61 tuiles | 10,1 ms, aucune | non mesurable (Firefox ne donne pas la trace) | 7 (33,8 à 134,2 ms) |
+
+- **Le rendu hors écran ne fait pas sauter d'image à la page** (TL-57) : par bandes de 1 024 pixels, une image présentée entre deux, aucune image de la page au-delà de 33 ms pendant l'export, dans les trois passages ; Chrome WebGL2 a perdu une image (`DroppedFrame`) pendant cet export, Chrome WebGPU aucune. Non jugé par le banc (la ligne du lot demande la mesure) ; le nombre d'images perdues varie d'un tour à l'autre (de 1 à 12 dans les essais du lot, sous une charge de 3 à 5 : pas des mesures).
+- **Le travail long est dans le Worker**, comme le veut le § 2.11 : la restauration de la sauvegarde pleine (`avancer` 21 à 33 ms, et la vue du plateau plein qui suit, `vues` 17 à 56 ms, au même tour), la case de journal qui la porte (73 à 134 ms), et les tours des points (M3). Le garde-fou de 2 s (`GARDE_FOU_PARTIE_MS`) en est loin : le plus long tour mesuré fait 134 ms.
+- **Ce que la mesure ne dit pas** : Safari ; un plateau de 300 tuiles de texte (la borne `TUILES_MAX`, que les images bornent avant elle) ; le coût d'un nœud dessiné, mesuré au lot 9.
+
 ## Lot 12 : M4 (le module sur la page du téléphone) et M7 (la redite du tenu par la vraie page)
 
 Mesuré le 2026-11-07 de 17 h 24 min 49 s à 17 h 28 min 01 s (GMT, `target/preuves/lot-12/soiree-sidequest/code.txt`), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), par `target/hote/lourd --calme` : charge 2,63 au départ, 1,87 à la fin, **2,84 au plus pendant** (le portillon ne dit aucun dépassement de 3 : le tour vaut mesure sur machine calme). Chrome 156.0.8078.80 et Firefox 158.0.1, sans interface ; Safari « pas exécuté » (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché). La commande : `target/hote/lourd --calme /usr/bin/time -l target/debug/soiree-banc soiree <sidequest_module.wasm> --navigateurs chrome,firefox --pages chrome,firefox,safari --sans-construire`, le paquet construit avant par `soiree-relais preparer`. Le scénario fait tourner en même temps l'écran (un navigateur), deux navigateurs de pages et six téléphones natifs : la charge qu'il relève est aussi la sienne.
@@ -803,3 +836,50 @@ Relevé le 2026-11-07 de 20 h 06 à 20 h 43 (GMT, `target/preuves/lot-12-corr/*/
 - **M7, relevé** sur Sidequest cinq minutes (23 croix tenues par passage) : médiane 197 à 198 ms dans Chrome, 168 à 169 ms dans Firefox, pour 150 ms de P27 ; les écarts de 1,75 et 3,5 s sont des moments où la page disait un tenu relâché (`tenu_relache`), qui ne se redit pas.
 - **M4, relevé** : Sidequest, 126 à 130 ms dans Chrome, 144 à 200 ms dans Firefox.
 - Pour refaire : `target/travail/lot-12-corr/final.sh` (les commandes, une par preuve) ; les enregistrements du relais dans `target/travail/lot-12-corr/final-*/<navigateur>/enregistrement.bin`.
+
+## Fusion du lot 11 dans refonte : M3 et M8 refaits sur le code fusionné
+
+Mesuré le 2026-11-07, de 21 h 47 min 18 s à 21 h 49 min 33 s (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), dans **Chrome 156.0.8078.80** (sans interface, WebGPU, puis WebGL2 forcé) et **Firefox 158.0.1** (sans interface, WebGL2) ; Safari « pas exécuté » (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché). **Sur machine calme** : `target/hote/lourd --calme`, charge 1,58 au départ, 2,04 à la fin, **2,26 au plus pendant** (sous 3 : la mesure vaut ; règle posée avant le tour). Un seul tour par navigateur (le scénario entier, 135 s de bout en bout) ; le code fusionné (le lot 11 et le lot 12, `LOTS-PHASE-3.md`, « Fusion du lot 11 ») ; le module de Tier list construit depuis ses sources (`9827f39`, sha256 `84315a1b…`, le même qu'aux lots 7 à 12) ; le paquet `web/` `bd7e6599…`.
+
+Pour refaire : `target/travail/fusion-11/final.sh` (la ligne `ecran`), soit `target/hote/lourd --calme target/debug/soiree-banc ecran tier-list <tier-list.wasm> --navigateurs chrome,firefox,safari --plein 64 --sans-construire`. La preuve : `target/preuves/fusion-11/ecran/` ; les lignes de la page et du Worker dans `target/travail/fusion-11/ecran/*/lignes.txt`. Mêmes définitions qu'au lot 11.
+
+Le pire cas joué est le même : Chrome accepte les 64 images (aucun lot refusé), Firefox 56 (le huitième lot refusé).
+
+### M3 : le point de reprise
+
+| Navigateur | **Case scellée** | Instantané (tour du point) | **Encodage** (même tour) | Scellement : tranches, en tout (la plus longue) | Mise en file de l'envoi |
+|---|---|---|---|---|---|
+| Chrome, WebGPU | **20 177 488 octets** (19,2 Mio) | 5,42 ; 3,02 ms | **27,8 ; 19,4 ms** | 154 tranches : 243 ; 243 ms (2,18 ; 2,10 ms) | 2,13 ; 2,68 ms |
+| Chrome, WebGL2 forcé | **20 177 488 octets** | 3,63 ; 2,75 ms | **29,8 ; 22,0 ms** | 154 : 247 ; 249 ms (2,19 ; 2,12 ms) | 3,24 ; 2,67 ms |
+| Firefox | **18 866 772 octets** (18,0 Mio) | 3,82 ; 2,46 ms | **30,6 ; 24,8 ms** | 144 : 161 ; 154 ms (2,36 ; 2,76 ms) | 1,24 ; 1,32 ms |
+
+- **L'encodage dans le tour du point a fondu** : 19 à 31 ms, contre 41 à 112 ms au lot 11. C'est le point écrit d'un bloc (`partie::persistance::octets`, correction du lot 12), entré avec la fusion : les mêmes octets (la case a la même taille au même pas), sans un appel de sérialiseur par octet. Il reste au-delà des 2 ms de R2 (question 31).
+- **Les tranches** : au plus 2,19 ms dans Chrome, **2,76 ms dans Firefox** (2,34 au lot 11) : un seul tour, la différence n'est pas expliquée ; toujours autour de la frontière des 2 ms de R2.
+- **Ce qui reste dans un seul tour** : le tour qui finit le point (`sceller` sans `point`) : 37,7 à 39,8 ms dans Chrome, 80,8 et 84,2 ms dans Firefox ; et la case de journal qui porte la sauvegarde relue (`garde` seule, `via: minuterie`) : 82,1 et 82,2 ms dans Chrome, 127,2 ms dans Firefox. Mêmes ordres qu'au lot 11 (38 à 86 ms, 73 à 134 ms) : la fusion n'y change rien.
+
+### M8 : le travail long de Tier list
+
+| Navigateur | Export ordinaire (2 400 × 1 294) | **Export du plateau plein** | Images de la page pendant l'export plein : la plus longue, au-delà de 33 ms | Images perdues (trace de CDP) | Tours du Worker de plus de 33 ms |
+|---|---|---|---|---|---|
+| Chrome, WebGPU | 65,6 ms, 4 images | **113,0 ms**, 6 images (2 400 × 1 678) | 16,7 ms, aucune | **1** (222 `PipelineReporter`) | 5 (39,9 à 82,4 ms) |
+| Chrome, WebGL2 forcé | 74,0 ms, 4 images | **111,1 ms**, 6 images | 16,7 ms, aucune | **1** (208) | 5 (39,1 à 82,6 ms) |
+| Firefox | 64,4 ms, 6 images | **132,2 ms**, 16 images (2 400 × 1 294) | 9,8 ms, aucune | non mesurable | 6 (39,8 à 127,8 ms) |
+
+- Le rendu hors écran ne fait toujours pas sauter d'image à la page (TL-57) ; une image perdue dans chaque passage de Chrome pendant l'export plein (au lot 11 : 0 et 1).
+- Le plus long tour mesuré, 127,8 ms (la case de journal de la restauration, Firefox), reste loin du garde-fou de 2 s.
+- **Ce que la mesure ne dit pas** : Safari ; un second tour (une seule mesure par navigateur, comme au lot 11).
+
+## Fusion du lot 11, correction : M12 de Tier list sur le code fusionné
+
+Mesuré le 2026-11-07, de 23 h 11 min 30 s à 23 h 12 min 27 s (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), dans **Chrome 156.0.8078.80** (sans interface, WebGPU) et **Firefox 158.0.1** (sans interface, WebGL2) ; Safari non mesuré. Le code fusionné (`HEAD` `e719045`, `MERGE_HEAD` `2d95152`, `git diff HEAD` hors `.md` `50fae729fc909c24`), le module de Tier list `84315a1b…` (`9827f39`, dépôt propre), le paquet `web/` `bd7e6599…`, `soiree-banc` `441b64b0…`. **La règle de validité, posée avant les tours** : un passage dont la charge atteint 3 ne vaut pas mesure, il est écarté et refait. Deux passages l'ont atteinte et sont **écartés** : à 23 h 04 (2,93 au départ, **3,75** au plus) et à 23 h 08 (2,25 au départ, **3,77** au plus) (`target/preuves/fusion-11-corr/m12-tier-list-ecarte-1/`, `-2/`) ; le troisième, lancé quand la charge est passée sous 1,6 (`target/travail/fusion-11-corr/m12.sh`), vaut : **charge 1,52 au départ, 2,13 à la fin, 2,07 au plus pendant** (relevés du portillon), 51 à 54 % de mémoire libre, rien d'autre des nôtres pendant.
+
+Pour refaire : `target/hote/lourd --calme target/debug/soiree-banc soiree <tier_list_module.wasm> --navigateurs chrome,firefox --m12 3 --sans-construire`. La preuve : `target/preuves/fusion-11-corr/m12-tier-list/`. Mêmes définitions qu'au lot 10a (du Worker neuf à la partie reprise, au pire moment).
+
+| Navigateur | Pas depuis le point | IndexedDB lue | Module téléchargé | Réécrit, compilé, chargé | **Partie reprise** (trois tours) |
+|---|---|---|---|---|---|
+| Chrome | 580, 598, 580 | 7 à 19 ms | 11 à 26 ms | 156 à 184 ms | **254, 226, 289 ms** |
+| Firefox | 580, 578, 580 | 29 à 41 ms | 34 à 47 ms | 202 à 212 ms | **397, 555, 701 ms** |
+
+- Chaque reprise a la même forme que celle de wasmtime (six sur six, le banc le juge).
+- **Au plus 701 ms** dans Firefox (au lot 10a, corrigé : 536 ; avant : 601), **289 ms** dans Chrome (285 et 318) : toujours sous la seconde ; le troisième tour de Firefox est le plus long relevé pour Tier list, sur un seul tour au calme, et la différence n'est pas expliquée (le module se charge en autant de temps ; c'est la reprise du journal qui s'allonge).
+- **Ce que la mesure ne dit pas** : Tier list sur un plateau plein (les bots jouent un plateau presque vide, comme au lot 10a) ; Safari ; une autre machine.

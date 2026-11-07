@@ -79,6 +79,14 @@ pub(super) enum Fautif {
     Aucun,
     /// L'aide se tait (le contrôle négatif du scénario `aide`, § 8.2).
     TaireLAide,
+    /// Le clic du geste (« Jouer », le voile) n'est pas arrêté : il va aussi au jeu, une
+    /// fois l'écran du commun tombé (un contrôle négatif du scénario `ecran`, remontée du
+    /// lot 10b).
+    GesteAuJeu,
+    /// L'écran du commun ne couvre pas le jeu : clics, glisser et fichiers lui vont
+    /// dessous (`page::le_commun_couvre` toujours faux ; un contrôle négatif du scénario
+    /// `ecran`, remontée du lot 10b).
+    NeCouvrePas,
 }
 
 /// L'état de l'écran du commun.
@@ -95,8 +103,8 @@ pub(super) struct Commun {
     /// Le verrou d'écran tenu (`WakeLockSentinel`).
     reveil: Option<JsValue>,
     /// Le banc seulement : le contrôle négatif du scénario `aide` (« une option qui tait
-    /// l'aide »).
-    fautif: Fautif,
+    /// l'aide »), ou de `ecran` (le geste au jeu, le jeu pas couvert).
+    pub(super) fautif: Fautif,
     voile: Element,
     insigne: Element,
     scene: Option<SceneFil>,
@@ -127,6 +135,9 @@ pub(super) fn creer(
             ("font-size", "48px"),
             ("cursor", "pointer"),
             ("text-align", "center"),
+            // Au-dessus de la page du jeu et de ses composants (`interaction`, lot 11 :
+            // l'espaceur à 1, le bandeau à 2, les boutons du commun à 3).
+            ("z-index", "4"),
         ],
     );
     corps.append_child(&voile).map_err(|e| texte_d_erreur(&e))?;
@@ -147,6 +158,7 @@ pub(super) fn creer(
             ("font-weight", "bold"),
             ("display", "none"),
             ("pointer-events", "none"),
+            ("z-index", "4"),
         ],
     );
     corps
@@ -564,17 +576,27 @@ fn demander_le_reveil(fenetre: &Window) -> Result<Promise, String> {
         .map_err(|_| String::from("wakeLock.request ne rend pas de promesse"))
 }
 
-/// Le clic : sur le bouton « Jouer » de l'écran de démarrage, ou sur le voile.
-pub(super) fn ecouter(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result<(), String> {
+/// Le clic sur « Jouer », écouté sur le document, à la capture (voir [`ecouter`]).
+fn ecouter_jouer(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result<(), String> {
     let pour_le_clic = Rc::clone(etat);
     let la_toile = toile.clone();
     let clic = Closure::<dyn FnMut(MouseEvent)>::new(move |souris: MouseEvent| {
-        let jouer = {
-            let page = pour_le_clic.borrow();
-            page.commun.montre == Montre::Demarrage
+        if !souris.is_trusted() {
+            return;
+        }
+        let (jouer, arreter) = {
+            let Ok(page) = pour_le_clic.try_borrow() else {
+                return;
+            };
+            let arreter = page.commun.fautif != Fautif::GesteAuJeu;
+            let jouer = page.commun.montre == Montre::Demarrage
                 && page.commun.scene.as_ref().is_some_and(|s| {
                     let a = Cadre::new(la_toile.width(), la_toile.height(), FORME).transformation();
-                    let (x, y) = (f64::from(souris.client_x()), f64::from(souris.client_y()));
+                    let dpr = page.jeu.dpr;
+                    let (x, y) = (
+                        f64::from(souris.client_x()) * dpr,
+                        f64::from(souris.client_y()) * dpr,
+                    );
                     let echelle = f64::from(a.echelle);
                     echelle > 0.0
                         && bouton_sous(
@@ -582,23 +604,53 @@ pub(super) fn ecouter(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result
                             (x - f64::from(a.x)) / echelle,
                             (y - f64::from(a.y)) / echelle,
                         ) == Some(ACTION_JOUER)
-                })
+                });
+            (jouer, arreter)
         };
         if jouer {
+            if arreter {
+                souris.stop_propagation();
+            }
             geste(&pour_le_clic);
         }
     });
-    toile
-        .add_event_listener_with_callback("click", clic.as_ref().unchecked_ref())
+    etat.borrow()
+        .document
+        .add_event_listener_with_callback_and_bool("click", clic.as_ref().unchecked_ref(), true)
         .map_err(|e| texte_d_erreur(&e))?;
     clic.forget();
+    Ok(())
+}
+
+/// Le clic : sur le bouton « Jouer » de l'écran de démarrage, ou sur le voile.
+///
+/// Le clic sur « Jouer » s'écoute sur le document : depuis le lot 11, l'espaceur de la
+/// page du jeu couvre la toile, qui ne reçoit plus de clic. La toile est en pixels de
+/// l'appareil (`interaction::regler_la_taille`), le clic en pixels CSS. Un clic que la
+/// page provoque (le lien d'un téléchargement, pendant qu'elle tient son état) n'est pas
+/// un geste. Le clic du geste (« Jouer », le voile) s'arrête là : il ne va pas, après,
+/// aux écouteurs du jeu (`interaction`), qui le prendraient pour un clic sur sa scène
+/// une fois le voile tombé ; « Jouer » s'écoute donc à la capture. Le scénario
+/// `ecran tier-list` le constate (aucune ligne `au-jeu` au clic du geste) ;
+/// `?fautif=geste-au-jeu` est son contrôle négatif.
+pub(super) fn ecouter(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result<(), String> {
+    ecouter_jouer(etat, toile)?;
     let e = Rc::clone(etat);
-    let sur_le_voile = Closure::<dyn FnMut()>::new(move || {
-        let voile = matches!(
-            e.borrow().commun.montre,
-            Montre::Reprendre | Montre::PleinEcranQuitte
-        );
+    let sur_le_voile = Closure::<dyn FnMut(MouseEvent)>::new(move |souris: MouseEvent| {
+        let (voile, arreter) = {
+            let p = e.borrow();
+            (
+                matches!(
+                    p.commun.montre,
+                    Montre::Reprendre | Montre::PleinEcranQuitte
+                ),
+                p.commun.fautif != Fautif::GesteAuJeu,
+            )
+        };
         if voile {
+            if arreter {
+                souris.stop_propagation();
+            }
             geste(&e);
         }
     });
@@ -676,7 +728,12 @@ pub(super) fn centre_pour_le_banc(
             let cx = boite.x.en_unites() + boite.l.en_unites() / 2.0;
             let cy = boite.y.en_unites() + boite.h.en_unites() / 2.0;
             let e = f64::from(a.echelle);
-            Some((cx * e + f64::from(a.x), cy * e + f64::from(a.y)))
+            // La toile est en pixels de l'appareil (lot 11), la fenêtre en pixels CSS.
+            let dpr = p.jeu.dpr;
+            Some((
+                (cx * e + f64::from(a.x)) / dpr,
+                (cy * e + f64::from(a.y)) / dpr,
+            ))
         }
         Montre::Reprendre | Montre::PleinEcranQuitte => {
             let w = p.fenetre.inner_width().ok()?.as_f64()?;

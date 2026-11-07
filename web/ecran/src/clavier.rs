@@ -15,9 +15,13 @@
 //!   arrive au jeu, et un appui long sort du plein écran.
 //!
 //! Les composants (un champ qui a le focus, une composition en cours : TL-32, TL-34)
-//! viennent avec eux, au lot 11.
+//! écartent la touche avant (la file des événements de la page, lot 11) ; un raccourci se
+//! cherche par `cibles::raccourci` (lot 11), où Cmd ou Ctrl s'ajoute aux autres
+//! modificateurs.
 
 use jeu_abi::{ClavierBrut, CodeTouche, Mods, Oui, PhaseTouche, SceneFil, Touche};
+
+use crate::cibles::raccourci;
 
 /// Où en est le plein écran, pour Échap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,22 +58,6 @@ pub enum PourLeJeu {
     Brute(Touche),
 }
 
-/// Les modificateurs d'un raccourci sont-ils ceux tenus ? Sur Mac, Cmd tient lieu de Ctrl
-/// pour `Mods::CMD_OU_CTRL`.
-fn memes_mods(attendus: Mods, tenus: Mods, systeme: Systeme) -> bool {
-    if attendus == Mods::CMD_OU_CTRL {
-        let (cmd, autre) = match systeme {
-            Systeme::Mac => (tenus.meta, tenus.ctrl),
-            Systeme::Autre => (tenus.ctrl, tenus.meta),
-        };
-        return cmd == Oui::Oui
-            && autre == Oui::Non
-            && tenus.maj == Oui::Non
-            && tenus.alt == Oui::Non;
-    }
-    attendus == tenus
-}
-
 /// Ce que devient la touche `code` (le `code` du DOM, la touche physique), dans `phase`,
 /// une répétition automatique ou non, sur la dernière `scene` reçue.
 pub fn pour_le_jeu(
@@ -90,14 +78,16 @@ pub fn pour_le_jeu(
     let Some(scene) = scene else {
         return PourLeJeu::Rien;
     };
+    // Le raccourci se cherche comme au lot 11 (`cibles::raccourci`) : Cmd ou Ctrl s'ajoute
+    // aux autres modificateurs du raccourci (Cmd+Maj+Z, « Rétablir » de Tier list).
+    let mac = match systeme {
+        Systeme::Mac => Oui::Oui,
+        Systeme::Autre => Oui::Non,
+    };
     if phase == PhaseTouche::Enfoncee
-        && let Some(r) = scene.raccourcis.iter().find(|r| {
-            r.touche.as_str() == code
-                && memes_mods(r.mods, mods, systeme)
-                && (repetition == Oui::Non || r.repetition == Oui::Oui)
-        })
+        && let Some(action) = raccourci(&scene.raccourcis, code, mods, repetition, mac)
     {
-        return PourLeJeu::Action(r.action.clone());
+        return PourLeJeu::Action(action.to_vec());
     }
     match scene.clavier_brut {
         ClavierBrut::Oui { repetition: r } if repetition == Oui::Non || r == Oui::Oui => {
@@ -231,6 +221,53 @@ mod tests {
             ),
             PourLeJeu::Rien
         );
+    }
+
+    /// Un raccourci `CMD_OU_CTRL` avec Maj (« Rétablir », Cmd+Maj+Z, de Tier list) arrive
+    /// au jeu, Cmd sur Mac et Ctrl ailleurs, et un raccourci prime sur le clavier brut :
+    /// rien d'autre ne part (la fusion des lots 10b et 11).
+    #[test]
+    fn cmd_maj_et_le_raccourci_avant_le_clavier_brut() {
+        let mut s = scene();
+        s.raccourcis.push(RaccourciFil {
+            touche: CodeTouche::new("KeyZ"),
+            mods: Mods {
+                maj: Oui::Oui,
+                ..Mods::CMD_OU_CTRL
+            },
+            repetition: Oui::Non,
+            action: vec![9],
+        });
+        s.clavier_brut = ClavierBrut::Oui {
+            repetition: Oui::Oui,
+        };
+        let t = |mods, systeme| {
+            pour_le_jeu(
+                Some(&s),
+                "KeyZ",
+                mods,
+                PhaseTouche::Enfoncee,
+                Oui::Non,
+                PleinEcran::Non,
+                systeme,
+            )
+        };
+        let cmd_maj = Mods {
+            maj: Oui::Oui,
+            ..cmd()
+        };
+        let ctrl_maj = Mods {
+            maj: Oui::Oui,
+            ctrl: Oui::Oui,
+            ..Mods::AUCUN
+        };
+        assert_eq!(t(cmd_maj, Systeme::Mac), PourLeJeu::Action(vec![9]));
+        assert_eq!(t(ctrl_maj, Systeme::Autre), PourLeJeu::Action(vec![9]));
+        assert_eq!(t(cmd(), Systeme::Mac), PourLeJeu::Action(vec![8]));
+        assert!(matches!(
+            t(ctrl_maj, Systeme::Mac),
+            PourLeJeu::Brute(k) if k.code.as_str() == "KeyZ"
+        ));
     }
 
     /// Le clavier brut, si la scène le demande : enfoncée et relâchée, la répétition

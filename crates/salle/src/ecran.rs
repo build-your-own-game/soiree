@@ -12,9 +12,11 @@
 //! microsecondes, celle de chaque contexte : que la page et le Worker la partagent à la
 //! granularité près est à constater (M14).
 
+use std::collections::BTreeSet;
+
 use jeu_abi::{
-    Appareil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage, FichierRecu, FormeEcran,
-    IdDemande, IdGeste, Oui, Pas, ReponseFil,
+    Appareil, ComposantVuFil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage, FichierRecu,
+    FormeEcran, IdDemande, IdGeste, Oui, Pas, ReponseFil, SceneFil, SorteNoeud,
 };
 use liaison::{AdresseAnnoncee, CodeSalle, Lien, RefusRelais};
 use serde::{Deserialize, Serialize};
@@ -22,8 +24,8 @@ use serde::{Deserialize, Serialize};
 /// La version des messages entre la page et le Worker. Monte quand la forme d'un type
 /// de ce module change ; `tests/ecran.rs` la fige. *2 au lot 10a* : `VersPage::Chargement`,
 /// `Jeu`, `Accueil`, `Cle` et `Banc`, `DeLaPage::Demarrer`, et les commandes
-/// `ExporterLaCle`, `Figer` et `Retarder`.
-pub const PROTOCOLE: u32 = 2;
+/// `ExporterLaCle`, `Figer` et `Retarder`. *3 au lot 11* : la commande `Bots`.
+pub const PROTOCOLE: u32 = 3;
 
 /// Ce que le Worker envoie à la page de l'écran.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,6 +178,11 @@ pub enum CommandeEcran {
         /// Combien de réveils de suite.
         fois: u32,
     },
+    /// Le banc seulement : les coups des bots (de l'écran et des téléphones) joués, ou
+    /// non. Le scénario `ecran` du banc les arrête : il joue lui-même, par les entrées du
+    /// navigateur, et un coup de bot défairait ce qu'il vérifie (lot 11). Ignorée hors du
+    /// banc.
+    Bots(Oui),
 }
 
 /// L'état de la salle, tel que l'écran le montre.
@@ -266,6 +273,34 @@ pub struct Trace {
     pub gpu_fini_us: u64,
     /// L'incertitude : un demi-aller-retour pour un téléphone, plus M14.
     pub incertitude_us: u32,
+}
+
+/// Les ressources qu'une scène cite, par leur clé sur le fil : l'image de chaque nœud
+/// `Image`, et la ressource de chaque `Lien` (lot 11). L'autorité envoie à la page celles
+/// qu'elle n'a pas encore : une image reçue en partie (TL-14), une image exportée, n'est
+/// pas un asset déclaré.
+pub fn images_citees(scene: &SceneFil) -> BTreeSet<u64> {
+    scene
+        .noeuds
+        .iter()
+        .filter_map(|n| match &n.sorte {
+            SorteNoeud::Image { image, .. } => Some(image.fil()),
+            SorteNoeud::Composant {
+                composant: ComposantVuFil::Lien { ressource, .. },
+                ..
+            } => Some(ressource.fil()),
+            SorteNoeud::Rect { .. }
+            | SorteNoeud::Texte { .. }
+            | SorteNoeud::Groupe { .. }
+            | SorteNoeud::Bouton { .. }
+            | SorteNoeud::CompteARebours { .. }
+            | SorteNoeud::Qr { .. }
+            | SorteNoeud::Composant { .. }
+            | SorteNoeud::Avertissements { .. }
+            | SorteNoeud::Surface { .. }
+            | SorteNoeud::Definitif => None,
+        })
+        .collect()
 }
 
 impl<'a> VersPage<'a> {

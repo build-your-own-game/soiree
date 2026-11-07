@@ -18,6 +18,7 @@ use std::time::Duration;
 use serde_json::{Value as Json, json};
 
 use crate::bidi::{Bidi, ligne_d_evenement};
+use crate::chrome::GesteSouris;
 use crate::navigateur::{Interface, arreter_processus, attendre_l_adresse, effacer, profil_neuf};
 
 /// Le Firefox de la machine de l'hôte (macOS).
@@ -95,6 +96,31 @@ impl Firefox {
             // Firefox dans sa fenêtre tient. Échap est jugé par la page, qui ne voit pas la
             // différence (`fullscreenchange`, `document.fullscreenElement`).
             prefs.push_str("user_pref(\"full-screen-api.macos-native-full-screen\", false);\n");
+        }
+        // Les téléchargements vont dans le profil, sous leur nom, sans question (lot 11) :
+        // le banc les y lit avant la fermeture, qui efface le profil.
+        let telechargements = profil.join("telechargements");
+        std::fs::create_dir_all(&telechargements)
+            .map_err(|e| format!("{} : {e}", telechargements.display()))?;
+        let dossier = serde_json::to_string(&telechargements.display().to_string())
+            .map_err(|e| format!("{e}"))?;
+        for (k, v) in [
+            ("browser.download.folderList", "2"),
+            ("browser.download.dir", dossier.as_str()),
+            ("browser.download.useDownloadDir", "true"),
+            (
+                "browser.download.always_ask_before_handling_new_types",
+                "false",
+            ),
+            ("browser.download.manager.showWhenStarting", "false"),
+            ("browser.download.alwaysOpenPanel", "false"),
+            ("browser.download.start_downloads_in_tmp_dir", "false"),
+            (
+                "browser.helperApps.neverAsk.saveToDisk",
+                "\"application/json,image/png,image/webp,application/octet-stream\"",
+            ),
+        ] {
+            let _: std::fmt::Result = writeln!(prefs, "user_pref(\"{k}\", {v});");
         }
         std::fs::write(profil.join("user.js"), prefs)
             .map_err(|e| format!("{} : {e}", profil.display()))?;
@@ -216,6 +242,142 @@ impl Firefox {
             ));
         }
         Ok(r.pointer("/result/value").cloned().unwrap_or(Json::Null))
+    }
+
+    /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS, au rapport de
+    /// pixels `dpr` (`browsingContext.setViewport`, lot 11 ; `dpr` depuis la remontée du
+    /// lot 10b).
+    pub fn fenetre(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+        dpr: f64,
+    ) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "browsingContext.setViewport",
+                &json!({ "context": contexte, "viewport": { "width": largeur, "height": hauteur }, "devicePixelRatio": dpr }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Le dossier où vont les téléchargements de ce Firefox (lot 11).
+    pub fn telechargements(&self) -> PathBuf {
+        self.profil.join("telechargements")
+    }
+
+    /// Donne des fichiers à l'`<input type=file>` que `selecteur` (CSS) désigne, par
+    /// `input.setFiles` : la page reçoit `change` comme d'un vrai choix (lot 11).
+    pub fn fichiers(
+        &mut self,
+        onglet: usize,
+        selecteur: &str,
+        fichiers: &[PathBuf],
+    ) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let r = self.bidi.envoyer(
+            "script.evaluate",
+            &json!({ "expression": format!("document.querySelector({})", json!(selecteur)),
+                     "target": { "context": contexte }, "awaitPromise": false, "resultOwnership": "none" }),
+            DELAI,
+        )?;
+        let noeud = r
+            .pointer("/result/sharedId")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("aucun élément {selecteur} : {r}"))?
+            .to_owned();
+        self.bidi
+            .envoyer(
+                "input.setFiles",
+                &json!({ "context": contexte, "element": { "sharedId": noeud }, "files": fichiers }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Joue des gestes de la souris, en pixels de la fenêtre, par la chaîne d'entrées du
+    /// navigateur (`input.performActions`, lot 11) : la page reçoit des événements de
+    /// pointeur vrais (`isTrusted`).
+    pub fn souris(&mut self, onglet: usize, gestes: &[GesteSouris]) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let point = |x: f64, y: f64| (x.round(), y.round());
+        let actions: Vec<Json> = gestes
+            .iter()
+            .flat_map(|g| match *g {
+                GesteSouris::Appui(x, y) => {
+                    let (x, y) = point(x, y);
+                    vec![
+                        json!({ "type": "pointerMove", "x": x, "y": y, "origin": "viewport", "duration": 0 }),
+                        json!({ "type": "pointerDown", "button": 0 }),
+                    ]
+                }
+                GesteSouris::Deplace(x, y) => {
+                    let (x, y) = point(x, y);
+                    vec![json!({ "type": "pointerMove", "x": x, "y": y, "origin": "viewport", "duration": 0 })]
+                }
+                GesteSouris::Relache(x, y) => {
+                    let (x, y) = point(x, y);
+                    vec![
+                        json!({ "type": "pointerMove", "x": x, "y": y, "origin": "viewport", "duration": 0 }),
+                        json!({ "type": "pointerUp", "button": 0 }),
+                    ]
+                }
+                GesteSouris::Pause(ms) => vec![json!({ "type": "pause", "duration": ms })],
+            })
+            .collect();
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "pointer", "id": "souris",
+                         "parameters": { "pointerType": "mouse" }, "actions": actions }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Tape un texte dans l'élément qui a le focus, caractère après caractère (lot 11).
+    pub fn texte(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let actions: Vec<Json> = texte
+            .chars()
+            .flat_map(|c| {
+                let v = c.to_string();
+                [
+                    json!({ "type": "keyDown", "value": v }),
+                    json!({ "type": "keyUp", "value": v }),
+                ]
+            })
+            .collect();
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": actions }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Appuie sur une touche (`Enter`, `Escape`), enfoncée puis relâchée (lot 11).
+    pub fn touche(&mut self, onglet: usize, code: &str) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let valeur = match code {
+            "Enter" => "\u{E007}",
+            "Escape" => "\u{E00C}",
+            "Tab" => "\u{E004}",
+            autre => return Err(format!("touche inconnue du banc : {autre}")),
+        };
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": [
+                    { "type": "keyDown", "value": valeur }, { "type": "keyUp", "value": valeur }
+                ] }] }),
+                DELAI,
+            )
+            .map(|_| ())
     }
 
     /// Recharge l'onglet.

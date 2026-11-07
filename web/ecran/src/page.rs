@@ -9,7 +9,13 @@
 //! le plein écran et Échap, le verrou d'écran, « Cliquer pour reprendre », « NON
 //! ÉPROUVÉ »), le son ([`audio`]), le clavier du jeu (raccourcis et clavier brut,
 //! [`crate::clavier`]), le QR des jeux (l'adresse de l'accueil). Le bandeau de texte reste
-//! pour les pannes. Les composants et le pointeur du jeu viennent aux lots 11 à 13.
+//! pour les pannes.
+//!
+//! *Au lot 11* : les entrées du jeu (le clic d'un bouton, le glisser, les champs, les
+//! fichiers ; le clavier y passe aussi, par sa file, puis par [`touche`]), les composants
+//! posés sur la toile, la page qui défile et les demandes du jeu sont dans `interaction`.
+//! Tant que l'écran du commun couvre le jeu (l'écran de démarrage, un voile), aucun clic
+//! ni aucune touche ne lui va.
 
 #![expect(
     clippy::cast_possible_truncation,
@@ -20,13 +26,12 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::Write as _;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use jeu_abi::{EcranFil, IdGeste, Mods, Oui, Pas, PhaseTouche};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
 use salle::chien::{Chien, Decision, TIC_MS};
 use salle::ecran::{CommandeEcran, DeLaPage, PanneSalle, VersPage};
-use salle::simulation::reponse_par_defaut;
 use wasm_bindgen::prelude::{Closure, wasm_bindgen};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -36,7 +41,8 @@ use web_sys::{
 };
 
 use crate::clavier::{PleinEcran, PourLeJeu, Systeme, pour_le_jeu};
-use crate::toile::{ChoixMoteur, Ecran, maintenant_ms, texte_d_erreur};
+use crate::interaction::{self, Interaction};
+use crate::toile::{ChoixMoteur, Ecran, decoder_image, maintenant_ms, texte_d_erreur};
 
 mod audio;
 mod commun;
@@ -45,11 +51,11 @@ mod commun;
 const REDESSIN_MS: f64 = 250.0;
 
 /// L'état de la page.
-struct Page {
+pub(crate) struct Page {
     /// Le nom de cet onglet, pour le banc.
     onglet: String,
-    fenetre: Window,
-    document: Document,
+    pub(crate) fenetre: Window,
+    pub(crate) document: Document,
     banc: bool,
     module: Option<[u8; 32]>,
     script: String,
@@ -59,14 +65,16 @@ struct Page {
     pret: bool,
     ecarter: Option<IdGeste>,
     chien: Chien,
-    ecran: Option<Ecran>,
-    dessin: Dessin,
+    pub(crate) ecran: Option<Ecran>,
+    pub(crate) dessin: Dessin,
     bandeau: Element,
     /// Le bandeau propose-t-il de reprendre ?
     proposition: Proposition,
     relances: u64,
     /// La toile de la télé.
-    toile: HtmlCanvasElement,
+    pub(crate) toile: HtmlCanvasElement,
+    /// Les entrées de l'écran et les demandes du jeu (lot 11).
+    pub(crate) jeu: Interaction,
     /// L'écran du commun (lot 10b).
     commun: commun::Commun,
     /// Le son (lot 10b).
@@ -75,7 +83,7 @@ struct Page {
     systeme: Systeme,
 }
 
-type Etat = Rc<RefCell<Page>>;
+pub(crate) type Etat = Rc<RefCell<Page>>;
 
 /// Ce que le bandeau propose.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -86,13 +94,13 @@ enum Proposition {
 }
 
 /// Ce qui attend d'être dessiné.
-struct Dessin {
+pub(crate) struct Dessin {
     /// Les scènes et les ressources, à passer à l'écran une à une.
     file: VecDeque<Vec<u8>>,
     /// La file est-elle en train de passer ?
     occupe: bool,
     /// Une scène neuve attend son dessin.
-    sale: bool,
+    pub(crate) sale: bool,
     dernier_ms: f64,
 }
 
@@ -101,7 +109,7 @@ type ChaqueImage = Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>;
 
 /// Une ligne pour le banc, sur la console : `banc <onglet> <json>`. L'onglet est un nom
 /// tiré à l'ouverture de la page : le banc distingue ainsi deux onglets de l'écran.
-fn banc(p: &Page, json: &str) {
+pub(crate) fn banc(p: &Page, json: &str) {
     if p.banc {
         web_sys::console::log_1(&JsValue::from_str(&format!("banc {} {json}", p.onglet)));
     }
@@ -127,7 +135,7 @@ fn lire_hexa(t: &str) -> Option<[u8; 32]> {
 }
 
 /// Une chaîne JSON.
-fn chaine(s: &str) -> String {
+pub(crate) fn chaine(s: &str) -> String {
     let mut o = String::from("\"");
     for c in s.chars() {
         match c {
@@ -144,7 +152,7 @@ fn chaine(s: &str) -> String {
 }
 
 /// L'heure absolue de la page, `performance.timeOrigin + performance.now()`, en µs.
-fn heure_us(f: &Window) -> u64 {
+pub(crate) fn heure_us(f: &Window) -> u64 {
     let t = f
         .performance()
         .map_or(0.0, |p| (p.time_origin() + p.now()) * 1000.0);
@@ -169,7 +177,7 @@ fn dire(p: &Page, texte: Option<&str>) {
     );
 }
 
-fn poster(p: &Page, m: &DeLaPage<'_>) {
+pub(crate) fn poster(p: &Page, m: &DeLaPage<'_>) {
     let (Some(w), Ok(o)) = (p.worker.as_ref(), m.encoder()) else {
         return;
     };
@@ -188,6 +196,10 @@ pub fn demarrer_la_page(script: String) {
     });
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "la page se monte ici d'un bloc, dans l'ordre où ses parties dépendent l'une de l'autre"
+)]
 async fn demarrer(script: String) -> Result<(), String> {
     let fenetre = web_sys::window().ok_or("pas de fenêtre")?;
     let document = fenetre.document().ok_or("pas de document")?;
@@ -210,7 +222,28 @@ async fn demarrer(script: String) -> Result<(), String> {
         .is_some_and(|c| c == "oui");
     let (module, choix, fautif, systeme) =
         lire_l_adresse(&fenetre, if au_banc { Oui::Oui } else { Oui::Non });
+    // Le banc seulement (la page les ignore hors du banc) : les bots arrêtés, et l'option
+    // de test du contrôle négatif du scénario `ecran` (lot 11).
+    let sans_bots = au_banc && parametre(&fenetre, "bots").as_deref() == Some("non");
+    let activation_perdue =
+        au_banc && parametre(&fenetre, "fautif").as_deref() == Some("activation-perdue");
     let (toile, bandeau) = la_toile_et_le_bandeau(&fenetre, &document, &corps)?;
+    // Ce que les écouteurs appellent : la page, dès qu'elle existe.
+    let soi: Rc<RefCell<Weak<RefCell<Page>>>> = Rc::new(RefCell::new(Weak::new()));
+    let s2 = Rc::clone(&soi);
+    let traiter: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(e) = s2.borrow().upgrade() {
+            interaction::traiter(&e);
+        }
+    });
+    let jeu = Interaction::new(
+        &fenetre,
+        &document,
+        &corps,
+        &traiter,
+        (sans_bots, activation_perdue),
+    )?;
+    // Après l'espaceur des composants : le voile et l'insigne du commun le couvrent.
     let commun = commun::creer(&fenetre, &document, &corps, fautif)?;
     let mut ecran = Ecran::creer(toile.clone(), choix).await?;
     let ceder = ceder(&fenetre);
@@ -240,10 +273,13 @@ async fn demarrer(script: String) -> Result<(), String> {
         proposition: Proposition::Rien,
         relances: 0,
         toile: toile.clone(),
+        jeu,
         commun,
         son: audio::HautParleur::new(),
         systeme,
     }));
+    *soi.borrow_mut() = Rc::downgrade(&etat);
+    interaction::regler_la_taille(&mut etat.borrow_mut());
     if Reflect::get(&document, &JsValue::from_str("wasDiscarded"))
         .ok()
         .and_then(|v| v.as_bool())
@@ -253,7 +289,6 @@ async fn demarrer(script: String) -> Result<(), String> {
         banc(&etat.borrow(), "{\"quoi\":\"abandonne\"}");
     }
     lancer_le_worker(&etat);
-    ecouter_le_clavier(&etat)?;
     ecouter_le_bandeau(&etat)?;
     commun::ecouter(&etat, &toile)?;
     commun::sonder(&etat)?;
@@ -276,23 +311,20 @@ async fn demarrer(script: String) -> Result<(), String> {
 }
 
 /// Ce que l'adresse de la page dit : `?jeu=` (le module d'une salle neuve), `?moteur=webgl2`,
-/// et, au banc seulement, `?fautif=taire-l-aide` (lot 10b) ; et le système de la machine.
+/// et, au banc seulement, `?fautif=taire-l-aide` (lot 10b), `?fautif=geste-au-jeu` et
+/// `?fautif=ne-couvre-pas` (la remontée du lot 10b) ; et le système de la machine.
 fn lire_l_adresse(
     fenetre: &Window,
     au_banc: Oui,
 ) -> (Option<[u8; 32]>, ChoixMoteur, commun::Fautif, Systeme) {
-    let recherche = fenetre.location().search().unwrap_or_default();
-    let parametre = |nom: &str| {
-        recherche
-            .trim_start_matches('?')
-            .split('&')
-            .find_map(|kv| kv.strip_prefix(nom)?.strip_prefix('=').map(str::to_owned))
-    };
+    let parametre = |nom: &str| parametre(fenetre, nom);
     let module = parametre("jeu").and_then(|h| lire_hexa(&h));
-    let fautif = if au_banc == Oui::Oui && parametre("fautif").as_deref() == Some("taire-l-aide") {
-        commun::Fautif::TaireLAide
-    } else {
-        commun::Fautif::Aucun
+    let fautif = match parametre("fautif").as_deref() {
+        _ if au_banc == Oui::Non => commun::Fautif::Aucun,
+        Some("taire-l-aide") => commun::Fautif::TaireLAide,
+        Some("geste-au-jeu") => commun::Fautif::GesteAuJeu,
+        Some("ne-couvre-pas") => commun::Fautif::NeCouvrePas,
+        _ => commun::Fautif::Aucun,
     };
     let systeme = if fenetre
         .navigator()
@@ -309,6 +341,17 @@ fn lire_l_adresse(
         ChoixMoteur::Auto
     };
     (module, choix, fautif, systeme)
+}
+
+/// Un paramètre de l'adresse de la page (`?nom=valeur`).
+fn parametre(fenetre: &Window, nom: &str) -> Option<String> {
+    fenetre
+        .location()
+        .search()
+        .unwrap_or_default()
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(nom)?.strip_prefix('=').map(str::to_owned))
 }
 
 /// La toile, à la taille de la fenêtre, et le bandeau du commun par-dessus.
@@ -334,7 +377,18 @@ fn la_toile_et_le_bandeau(
         .unwrap_or(720.0) as u32;
     toile.set_width(largeur.max(1));
     toile.set_height(hauteur.max(1));
-    style(&toile, &[("display", "block")]);
+    // Fixe, sous la page qui défile (`FormeEcran::Page`, lot 11) : le rendu dessine le
+    // défilement.
+    style(
+        &toile,
+        &[
+            ("display", "block"),
+            ("position", "fixed"),
+            ("left", "0"),
+            ("top", "0"),
+            ("z-index", "0"),
+        ],
+    );
     corps.append_child(&toile).map_err(|e| texte_d_erreur(&e))?;
     let bandeau = document
         .create_element("div")
@@ -350,6 +404,7 @@ fn la_toile_et_le_bandeau(
             ("background", "rgba(0,0,0,0.8)"),
             ("font-size", "24px"),
             ("display", "none"),
+            ("z-index", "2"),
         ],
     );
     corps
@@ -455,6 +510,9 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
                 &DeLaPage::Commande(CommandeEcran::Reprendre { ecarter: Some(e) }),
             );
         }
+        if p.jeu.sans_bots {
+            poster(&p, &DeLaPage::Commande(CommandeEcran::Bots(Oui::Non)));
+        }
     }
     match m {
         VersPage::Scene { .. } | VersPage::Ressource { .. } => {
@@ -475,12 +533,7 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
             drop(p);
             traiter_la_file(etat);
         }
-        VersPage::Demande { id, quoi } => {
-            // Les demandes du jeu (rendu, image, lecture, téléchargement) viennent avec
-            // l'écran (lot 11) : la page répond comme la soirée en mémoire.
-            let quoi = reponse_par_defaut(&quoi);
-            poster(&p, &DeLaPage::Reponse { id, quoi });
-        }
+        VersPage::Demande { id, quoi } => interaction::demande(etat, &mut p, id, &quoi),
         VersPage::Panne(r) => sur_panne(&mut p, &r),
         VersPage::Accueil {
             salle,
@@ -573,7 +626,8 @@ fn exporter_la_cle(p: &Page, g: &[u8; 32]) {
 }
 
 /// Les scènes et les ressources passent à l'écran une à une, dans l'ordre : décoder une
-/// image est asynchrone.
+/// image est asynchrone, et se fait sans tenir l'écran (le dessin continue pendant ce
+/// temps, lot 11).
 fn traiter_la_file(etat: &Etat) {
     let mut p = etat.borrow_mut();
     if p.dessin.occupe || p.dessin.file.is_empty() {
@@ -584,37 +638,64 @@ fn traiter_la_file(etat: &Etat) {
     let e = Rc::clone(etat);
     spawn_local(async move {
         loop {
-            let (suivant, ecran) = {
+            let suivant = {
                 let mut p = e.borrow_mut();
                 let Some(o) = p.dessin.file.pop_front() else {
                     p.dessin.occupe = false;
                     return;
                 };
-                (o, p.ecran.take())
+                o
             };
-            let Some(mut ecran) = ecran else {
-                e.borrow_mut().dessin.occupe = false;
-                return;
-            };
-            if let Ok(VersPage::Jeu { forme, .. }) = VersPage::decoder(&suivant) {
-                ecran.nouveau_jeu(forme);
-                e.borrow_mut().ecran = Some(ecran);
-                continue;
-            }
-            let r = ecran.recevoir(&suivant).await;
-            let mut p = e.borrow_mut();
-            p.ecran = Some(ecran);
-            match r {
-                Ok(crate::messages::Recu::Scene { pas, scene }) => {
-                    p.dessin.sale = true;
-                    if !scene.effets.is_empty() {
-                        p.son.effets_de_la_scene(&scene.effets, pas);
-                        rapporter_le_son(&p);
+            let image = {
+                let mut p = e.borrow_mut();
+                let Some(ecran) = p.ecran.as_mut() else {
+                    p.dessin.occupe = false;
+                    return;
+                };
+                if let Ok(VersPage::Jeu { forme, .. }) = VersPage::decoder(&suivant) {
+                    ecran.nouveau_jeu(forme);
+                    p.jeu.ressources.clear();
+                    continue;
+                }
+                match ecran.recevoir_sans_attendre(&suivant) {
+                    Ok(crate::messages::Recu::Scene { pas, scene }) => {
+                        interaction::geometrie(&mut p);
+                        p.dessin.sale = true;
+                        if !scene.effets.is_empty() {
+                            p.son.effets_de_la_scene(&scene.effets, pas);
+                            rapporter_le_son(&p);
+                        }
+                        None
+                    }
+                    Ok(crate::messages::Recu::Police(cle)) => {
+                        if let Ok(VersPage::Ressource { octets, .. }) = VersPage::decoder(&suivant)
+                        {
+                            interaction::police_recue(&mut p, cle.fil(), octets);
+                        }
+                        None
+                    }
+                    Ok(crate::messages::Recu::Image { cle, octets }) => {
+                        interaction::image_recue(&mut p, cle.fil(), &octets);
+                        Some((cle, octets))
+                    }
+                    Ok(crate::messages::Recu::Son { cle, octets }) => {
+                        p.son.garder(cle.fil(), octets);
+                        None
+                    }
+                    Ok(crate::messages::Recu::Laisse(_)) => None,
+                    Err(x) => {
+                        web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}")));
+                        None
                     }
                 }
-                Ok(crate::messages::Recu::Son { cle, octets }) => p.son.garder(cle.fil(), octets),
-                Ok(_) => {}
-                Err(x) => web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}"))),
+            };
+            if let Some((cle, octets)) = image {
+                let decodee = decoder_image(&octets).await;
+                let mut p = e.borrow_mut();
+                if let Some(ecran) = p.ecran.as_mut() {
+                    ecran.poser_image(cle, decodee);
+                }
+                p.dessin.sale = true;
             }
         }
     });
@@ -626,7 +707,11 @@ fn image(etat: &Etat) {
     let s = Rc::clone(&suivante);
     let e = Rc::clone(etat);
     *suivante.borrow_mut() = Some(Closure::new(move |_: f64| {
+        // Les événements restés dans la file (venus pendant que la page tenait son état).
+        interaction::traiter(&e);
         let mut p = e.borrow_mut();
+        interaction::compter_l_image(&mut p);
+        interaction::defiler_au_bord(&mut p);
         let t_us = heure_us(&p.fenetre);
         poster(
             &p,
@@ -637,7 +722,17 @@ fn image(etat: &Etat) {
         );
         let maintenant = maintenant_ms();
         let du = p.dessin.sale || maintenant - p.dessin.dernier_ms >= REDESSIN_MS;
+        if du {
+            interaction::avant_de_dessiner(&mut p);
+        }
         let du_commun = commun::scene_a_dessiner(&mut p);
+        // L'écran de démarrage couvre le jeu : ses composants ne se montrent pas dessus.
+        let couvert = if du_commun.is_some() {
+            Oui::Oui
+        } else {
+            Oui::Non
+        };
+        interaction::couvrir(&mut p, couvert);
         if du && let Some(ecran) = p.ecran.as_mut() {
             let r = match du_commun {
                 // L'écran de démarrage, une scène du commun, à la place de celle du jeu.
@@ -715,32 +810,20 @@ fn battre(etat: &Etat) -> Result<(), String> {
     Ok(())
 }
 
-/// Le clavier, par la vraie chaîne du navigateur : F8, une marque au journal (SAL-162) ;
-/// le reste au jeu, selon les raccourcis de sa dernière scène ou son clavier brut, quand
-/// aucun écran du commun ne le couvre ; Échap en plein écran selon P38 (lot 10b).
-fn ecouter_le_clavier(etat: &Etat) -> Result<(), String> {
-    for (evenement, phase) in [
-        ("keydown", PhaseTouche::Enfoncee),
-        ("keyup", PhaseTouche::Relachee),
-    ] {
-        let e = Rc::clone(etat);
-        let touche = Closure::<dyn FnMut(KeyboardEvent)>::new(move |k: KeyboardEvent| {
-            touche(&e, &k, phase);
-        });
-        etat.borrow()
-            .document
-            .add_event_listener_with_callback(evenement, touche.as_ref().unchecked_ref())
-            .map_err(|e| texte_d_erreur(&e))?;
-        touche.forget();
-    }
-    Ok(())
-}
-
-/// Une touche : au commun (F8), au navigateur (Échap sans verrou en plein écran), ou au
-/// jeu (`DeLaPage::Ecran`).
-fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
-    let p = etat.borrow();
-    let oui = |b: bool| if b { Oui::Oui } else { Oui::Non };
+/// Une touche, par la vraie chaîne du clavier du navigateur (lot 10b) : au commun (F8,
+/// une marque au journal, SAL-162), au navigateur (Échap sans verrou en plein écran,
+/// P38), ou au jeu (`DeLaPage::Ecran`), selon les raccourcis de sa dernière scène ou son
+/// clavier brut, quand aucun écran du commun ne le couvre. Les touches arrivent par la
+/// file des événements de la page (`interaction`, lot 11), qui a déjà écarté une
+/// composition en cours et un champ qui a le focus (TL-32, TL-34), sauf pour F8, et
+/// annulé un glisser par Échap.
+pub(crate) fn touche(
+    p: &Page,
+    k: &KeyboardEvent,
+    (code, mods): (&str, Mods),
+    phase: PhaseTouche,
+    repetition: Oui,
+) {
     let plein = if p.document.fullscreen_element().is_none() {
         PleinEcran::Non
     } else if p.commun.verrou {
@@ -748,33 +831,26 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
     } else {
         PleinEcran::SansVerrou
     };
-    let mods = Mods {
-        maj: oui(k.shift_key()),
-        ctrl: oui(k.ctrl_key()),
-        alt: oui(k.alt_key()),
-        meta: oui(k.meta_key()),
-    };
-    let code = k.code();
     let scene = p.ecran.as_ref().and_then(Ecran::scene);
-    let decision = pour_le_jeu(scene, &code, mods, phase, oui(k.repeat()), plein, p.systeme);
+    let decision = pour_le_jeu(scene, code, mods, phase, repetition, plein, p.systeme);
     match decision {
         PourLeJeu::Commun => {
-            if phase == PhaseTouche::Enfoncee && !k.repeat() {
+            if phase == PhaseTouche::Enfoncee && repetition == Oui::Non {
                 k.prevent_default();
-                poster(&p, &DeLaPage::Commande(CommandeEcran::Marque));
-                banc(&p, "{\"quoi\":\"marque\"}");
+                poster(p, &DeLaPage::Commande(CommandeEcran::Marque));
+                banc(p, "{\"quoi\":\"marque\"}");
             }
         }
         PourLeJeu::Navigateur => {
             banc(
-                &p,
+                p,
                 "{\"quoi\":\"touche\",\"code\":\"Escape\",\"au\":\"navigateur\"}",
             );
         }
         PourLeJeu::Rien => {
             if code == "Escape" && phase == PhaseTouche::Enfoncee {
                 banc(
-                    &p,
+                    p,
                     "{\"quoi\":\"touche\",\"code\":\"Escape\",\"au\":\"personne\"}",
                 );
             }
@@ -790,7 +866,7 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
             // touches, et le second Échap lui arrive (P38).
             if code == "Escape" && phase == PhaseTouche::Enfoncee {
                 banc(
-                    &p,
+                    p,
                     "{\"quoi\":\"touche\",\"code\":\"Escape\",\"au\":\"commun\"}",
                 );
             }
@@ -800,7 +876,7 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
             let vu = p.ecran.as_ref().map_or(Pas::ZERO, Ecran::pas);
             let t_us = heure_us(&p.fenetre);
             poster(
-                &p,
+                p,
                 &DeLaPage::Ecran {
                     quoi: EcranFil::Action(&action),
                     vu,
@@ -808,10 +884,10 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
                 },
             );
             banc(
-                &p,
+                p,
                 &format!(
                     "{{\"quoi\":\"touche\",\"code\":{},\"au\":\"jeu\",\"plein_ecran\":{}}}",
-                    chaine(&code),
+                    chaine(code),
                     plein != PleinEcran::Non
                 ),
             );
@@ -820,7 +896,7 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
             let vu = p.ecran.as_ref().map_or(Pas::ZERO, Ecran::pas);
             let t_us = heure_us(&p.fenetre);
             poster(
-                &p,
+                p,
                 &DeLaPage::Ecran {
                     quoi: EcranFil::Touche(t),
                     vu,
@@ -829,6 +905,15 @@ fn touche(etat: &Etat, k: &KeyboardEvent, phase: PhaseTouche) {
             );
         }
     }
+}
+
+/// L'écran du commun couvre-t-il le jeu (l'écran de démarrage, « Cliquer pour
+/// reprendre », « Plein écran quitté ») ? Aucun clic ne va alors au jeu, aucun glisser
+/// n'y commence, aucun fichier ne lui est donné (lot 11, avec le lot 10b). Le banc le
+/// constate par les lignes `au-jeu` (`interaction`) ; `?fautif=ne-couvre-pas` est son
+/// contrôle négatif.
+pub(crate) fn le_commun_couvre(p: &Page) -> bool {
+    p.commun.montre != commun::Montre::Rien && p.commun.fautif != commun::Fautif::NeCouvrePas
 }
 
 /// Les comptes du son, pour le banc.
@@ -938,6 +1023,13 @@ fn crochets(etat: &Etat) -> Result<(), String> {
     });
     poser("pas", pas.as_ref())?;
     pas.forget();
+    // Le lot 11 : ce que la page montre et où (les boutons, les composants, les zones et
+    // les objets du glisser, la modale), en pixels du document, en JSON.
+    let e = Rc::clone(etat);
+    let composants =
+        Closure::<dyn FnMut() -> String>::new(move || interaction::composants_au_banc(&e.borrow()));
+    poser("composants", composants.as_ref())?;
+    composants.forget();
     // Lot 10b : où cliquer (le bouton « Jouer », le voile), en pixels de la fenêtre, pour
     // que le banc clique par la vraie chaîne d'entrées ; et ce que l'écran du commun montre.
     let e = Rc::clone(etat);

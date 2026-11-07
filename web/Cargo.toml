@@ -47,6 +47,10 @@ moteur-navigateur = { path = "moteur-navigateur", version = "0.1.0" }
 
 # Les dépendances tierces, chacune avec sa raison.
 
+# Couper la saisie d'un champ de la télé entre deux graphèmes (TL-28, lot 11) : la version
+# du commun (`Cargo.toml` de la racine), déjà dans ce workspace par `partie`.
+unicode-segmentation = { version = "1.13.3", default-features = false }
+
 # La colle générée que le CONTRAT permet, entre Rust et le navigateur. Épinglée à la
 # version de l'outil `wasm-bindgen` installé (0.2.129) : la crate et l'outil doivent
 # être exactement de la même version (REM-156 ; PHASE-3, P32).

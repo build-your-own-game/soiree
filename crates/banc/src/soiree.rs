@@ -506,14 +506,15 @@ fn http(port: u16, chemin: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&o).into_owned())
 }
 
-/// Ouvre une session : le relais avec le paquet et le module, le navigateur sur l'écran.
-fn ouvrir(
+/// Ouvre une session : le relais avec le paquet et le module, le navigateur sur l'écran ;
+/// `requete` s'ajoute à l'adresse de la page (`&bots=non`, `&moteur=webgl2`, lot 11).
+pub(crate) fn ouvrir(
     o: &Options,
     n: Navigateur,
     paquet: &Path,
     module: &[u8],
     dossier: &Path,
-    redite_us: Option<u64>,
+    (redite_us, requete): (Option<u64>, &str),
 ) -> Result<Session, String> {
     let _: std::io::Result<()> = std::fs::remove_dir_all(dossier);
     let jeux = dossier.join("jeux");
@@ -552,7 +553,7 @@ fn ouvrir(
             return Err(format!("pas exécuté : {e}"));
         }
     };
-    let url = format!("http://localhost:{port}/?jeu={empreinte}");
+    let url = format!("http://localhost:{port}/?jeu={empreinte}{requete}");
     if let Err(e) = navigateur.ouvrir(&url) {
         navigateur.fermer();
         relais.arreter();
@@ -584,7 +585,11 @@ fn ouvrir(
 }
 
 /// La partie neuve s'ouvre : la page, l'accueil, la partie en jeu ; puis les téléphones.
-fn debuter(s: &mut Session, p: &mut Passage, telephones: usize) -> Result<String, String> {
+pub(crate) fn debuter(
+    s: &mut Session,
+    p: &mut Passage,
+    telephones: usize,
+) -> Result<String, String> {
     let page = s.attendre(0, Duration::from_secs(60), "la page", |l| {
         l.quoi() == "page"
     })?;
@@ -778,7 +783,7 @@ fn controler_les_lignes(s: &Session, p: &mut Passage, attendues: &[&str]) {
     }
 }
 
-fn charger_le_module(module: &[u8]) -> Result<ModuleCharge, String> {
+pub(crate) fn charger_le_module(module: &[u8]) -> Result<ModuleCharge, String> {
     let moteur = Moteur::new(ReglagesMoteur::PHASE_3).map_err(|e| format!("le moteur : {e}"))?;
     moteur
         .charger(module)
@@ -876,7 +881,7 @@ fn soiree(
 ) -> Result<Passage, String> {
     let (telephones, redite) = telephones_et_redite(o, charge);
     let dossier = o.travail.join(n.nom());
-    let mut s = ouvrir(o, n, paquet, module, &dossier, redite)?;
+    let mut s = ouvrir(o, n, paquet, module, &dossier, (redite, ""))?;
     let mut p = Passage {
         navigateur: s.navigateur.version().to_owned(),
         port: s.port,
@@ -1083,9 +1088,9 @@ fn soiree(
     };
     if let Some(g) = g.as_ref() {
         match juger(&s, &mut p, charge, g, fige.as_ref()) {
-            // Chaque saut de la soirée, onglet visible, doit venir d'une reprise : le
-            // premier pas joué après la partie reprise. Un autre (un tour trop long, une
-            // image trop tardive) est une faute.
+            // Chaque saut de la soirée, onglet visible, doit venir d'une reprise : les
+            // premiers pas joués après la partie reprise, autant que le jeu en rattrape.
+            // Un autre (un tour trop long, une image trop tardive) est une faute.
             Ok(chaine) => match s.salle.map(|salle| sauts(&chaine, g, salle)) {
                 Some(Ok(v)) => {
                     let (rattaches, seuls) =
@@ -2216,7 +2221,7 @@ fn m12(
 ) -> Result<Passage, String> {
     let (telephones, redite) = telephones_et_redite(o, charge);
     let dossier = o.travail.join(format!("m12-{}", n.nom()));
-    let mut s = ouvrir(o, n, paquet, module, &dossier, redite)?;
+    let mut s = ouvrir(o, n, paquet, module, &dossier, (redite, ""))?;
     let mut p = Passage {
         navigateur: s.navigateur.version().to_owned(),
         port: s.port,
@@ -2298,7 +2303,7 @@ fn arriere_plan(
     } else {
         o.travail.join(format!("arriere-plan-{}", n.nom()))
     };
-    let mut s = ouvrir(o, n, paquet, module, &dossier, redite)?;
+    let mut s = ouvrir(o, n, paquet, module, &dossier, (redite, ""))?;
     let mut p = Passage {
         navigateur: if o.fois > 1 {
             format!(
@@ -2337,7 +2342,8 @@ fn arriere_plan(
         Ok(g) => match juger(&s, &mut p, charge, &g, fige.as_ref()) {
             Ok(chaine) => match (fenetre, s.salle) {
                 (Some(f), Some(salle)) => {
-                    juger_les_sauts_caches(&s, &mut p, (&chaine, &g, salle), f);
+                    let r = charge.declaration().rattrapage;
+                    juger_les_sauts_caches(&s, &mut p, (&chaine, &g, salle, r), f);
                 }
                 _ => p.fautes.push(String::from("pas de fenêtre cachée à juger")),
             },
@@ -2429,15 +2435,14 @@ fn plus_grand(a: f64, b: f64) -> f64 {
 fn juger_les_sauts_caches(
     s: &Session,
     p: &mut Passage,
-    (chaine, g, salle): (&Chaine, &CleDeGarde, CodeSalle),
+    (chaine, g, salle, rattrapage): (&Chaine, &CleDeGarde, CodeSalle, u8),
     (de, a): (u64, u64),
 ) {
     let v = match sauts(chaine, g, salle) {
         Ok(v) => v,
         Err(e) => return p.fautes.push(e),
     };
-    // La règle du lot 10a, inchangée ici (le lot 12 ne rejoue pas `arriere-plan`).
-    let (rattaches, seuls) = rattacher_les_sauts(&v, &s.lignes, 1);
+    let (rattaches, seuls) = rattacher_les_sauts(&v, &s.lignes, rattrapage);
     p.notes.push(format!(
         "sauts rattachés : {}",
         rattaches
@@ -2557,10 +2562,12 @@ fn sauts(chaine: &Chaine, g: &CleDeGarde, salle: CodeSalle) -> Result<Vec<(u64, 
 
 /// Rattache chaque saut du journal à ce qui l'explique, chaque explication une fois : une
 /// **reprise** (une ligne « en-jeu » relue d'une case : la partie reprise à son pas `p`
-/// rattrape l'horloge d'un saut au premier tour, `de` valant `p` ou `p + 1`), ou un
-/// **retard injecté** par le banc (une ligne « retarde » au pas `p` : le Worker gelé
-/// 150 ms saute dans les deux pas qui suivent, `de` de `p` à `p + 2`). Rend les sauts
-/// rattachés, avec leur raison, et ceux que rien n'explique.
+/// rattrape l'horloge d'un saut au premier tour, après avoir joué au plus `rattrapage` pas,
+/// celui du jeu ; `de` va de `p` à `p + rattrapage`), ou un **retard injecté** par le banc
+/// (une ligne « retarde » au pas `p` : le Worker gelé 150 ms saute dans les pas qui
+/// suivent, `de` de `p` à `p + rattrapage + 1`). Le cœur joue `rattrapage` pas (au moins
+/// un) avant de sauter (`partie::regles::cible`) : Punchline et Tier list en rattrapent 1,
+/// Sidequest 3. Rend les sauts rattachés, avec leur raison, et ceux que rien n'explique.
 fn rattacher_les_sauts(
     sauts: &[SautDuJournal],
     lignes: &[Ligne],
@@ -2568,8 +2575,9 @@ fn rattacher_les_sauts(
 ) -> (Vec<(SautDuJournal, String)>, Vec<SautDuJournal>) {
     // Après une reprise, le jeu rattrape `rattrapage` pas par tour avant de sauter le reste
     // (sa déclaration) : le saut tombe au plus `rattrapage` pas après la partie reprise
-    // (corrigé au lot 12 : la règle du lot 10a supposait le rattrapage de Punchline, 1 ;
-    // Sidequest en déclare 3, et ses sauts tombent trois pas après chaque reprise).
+    // (corrigé au lot 11 et au lot 12 : la règle du lot 10a supposait le rattrapage de
+    // Punchline, 1 ; Sidequest en déclare 3, et ses sauts tombent trois pas après chaque
+    // reprise). Un retard injecté se rattrape de même, un pas plus loin (lot 11, § 8.3).
     let apres = u64::from(rattrapage.max(1));
     let mut raisons: Vec<(u64, u64, String)> = lignes
         .iter()
@@ -2583,7 +2591,7 @@ fn rattacher_les_sauts(
                 )),
                 "retarde" => Some((
                     pas,
-                    pas.saturating_add(2),
+                    pas.saturating_add(apres).saturating_add(1),
                     format!("retard injecté au pas {pas}"),
                 )),
                 _ => None,
@@ -2727,7 +2735,9 @@ mod tests {
     /// Correction du lot 12 (vérification, constat 8) : le saut d'une reprise se rattache
     /// à la fenêtre du rattrapage que le jeu déclare, `de` de `p` à `p + rattrapage`, et pas
     /// plus loin ; chaque reprise n'explique qu'un saut ; un retard injecté au pas `p`
-    /// explique un saut de `p` à `p + 2`, quel que soit le rattrapage.
+    /// explique un saut de `p` à `p + rattrapage + 1` (fusion du lot 11 : sa règle, § 8.3 ;
+    /// le lot 12 gardait `p + 2` quel que soit le rattrapage, sans l'avoir éprouvé ailleurs
+    /// qu'à `rattrapage: 1`, où les deux règles donnent la même fenêtre).
     #[test]
     fn un_saut_se_rattache_au_rattrapage_du_jeu_une_fois() {
         let lignes = [
@@ -2758,10 +2768,54 @@ mod tests {
         // Une ligne « en-jeu » sans case relue n'est pas une reprise.
         let (_, seuls) = rattacher_les_sauts(&[(500, 510)], &lignes, 3);
         assert_eq!(seuls, [(500, 510)]);
-        // Le retard injecté : de `p` à `p + 2`, le rattrapage n'y change rien.
-        let (_, seuls) = rattacher_les_sauts(&[(902, 905)], &lignes, 3);
+        // Le retard injecté : de `p` à `p + rattrapage + 1`, et pas un pas plus loin.
+        let (_, seuls) = rattacher_les_sauts(&[(904, 906)], &lignes, 3);
         assert_eq!(seuls, Vec::<SautDuJournal>::new());
-        let (_, seuls) = rattacher_les_sauts(&[(903, 905)], &lignes, 3);
+        let (_, seuls) = rattacher_les_sauts(&[(905, 906)], &lignes, 3);
+        assert_eq!(seuls, [(905, 906)]);
+        let (_, seuls) = rattacher_les_sauts(&[(902, 905)], &lignes, 1);
+        assert_eq!(seuls, Vec::<SautDuJournal>::new());
+        let (_, seuls) = rattacher_les_sauts(&[(903, 905)], &lignes, 1);
         assert_eq!(seuls, [(903, 905)]);
+    }
+
+    /// Correction du lot 11 : la partie reprise joue jusqu'à `rattrapage` pas avant de
+    /// sauter (`partie::regles::cible`, SQ-62). Sidequest (`rattrapage: 3`) saute trois pas après
+    /// sa reprise (pas 1 253, saut de 1 256, constaté dans Chrome et Firefox) : ce saut est
+    /// celui de la reprise ; un saut plus loin n'en est pas un. À `rattrapage: 1`
+    /// (Punchline, Tier list), la règle reste celle du lot 10a : `p` ou `p + 1`.
+    #[test]
+    fn un_saut_se_rattache_a_sa_reprise_selon_le_rattrapage_du_jeu() {
+        let lignes = [
+            ligne(r#"{"quoi":"en-jeu","pas":1253,"relue":4}"#),
+            ligne(r#"{"quoi":"en-jeu","pas":1312,"relue":6}"#),
+            ligne(r#"{"quoi":"retarde","pas":3000}"#),
+        ];
+        let sauts = [(1256, 1267), (1316, 1331), (3004, 3010)];
+        let (rattaches, seuls) = rattacher_les_sauts(&sauts, &lignes, 3);
+        assert_eq!(
+            rattaches,
+            vec![
+                ((1256, 1267), String::from("reprise au pas 1253")),
+                ((3004, 3010), String::from("retard injecté au pas 3000")),
+            ]
+        );
+        assert_eq!(seuls, vec![(1316, 1331)]);
+        // Le même journal, d'un jeu qui ne rattrape qu'un pas : aucun ne se rattache.
+        let (rattaches, seuls) = rattacher_les_sauts(&sauts, &lignes, 1);
+        assert!(rattaches.is_empty(), "{rattaches:?}");
+        assert_eq!(seuls.len(), 3);
+        let (rattaches, seuls) =
+            rattacher_les_sauts(&[(1253, 1260), (1313, 1320), (3002, 3009)], &lignes, 1);
+        assert_eq!(rattaches.len(), 3, "{rattaches:?}");
+        assert_eq!(seuls, Vec::<(u64, u64)>::new());
+        // Chaque reprise n'explique qu'un saut.
+        let (rattaches, seuls) =
+            rattacher_les_sauts(&[(1254, 1258), (1255, 1290)], &lignes[..1], 3);
+        assert_eq!(rattaches.len(), 1);
+        assert_eq!(seuls, vec![(1255, 1290)]);
+        // Un rattrapage déclaré à 0 vaut 1 : un pas avance toujours.
+        let (rattaches, _) = rattacher_les_sauts(&[(1254, 1258)], &lignes[..1], 0);
+        assert_eq!(rattaches.len(), 1);
     }
 }
