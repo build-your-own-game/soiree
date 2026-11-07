@@ -21,6 +21,23 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 10a : l'autorité dans le navigateur, et la reprise
+
+La partie qui fait foi tourne enfin dans le navigateur de l'ordinateur de la soirée (`conception/PHASE-3.md`, § 2.3, § 2.4 et lot 10a ; `conception/LOTS-PHASE-3.md`, « Lot 10a »). Une crate nouvelle dans `web/` : `autorite`, le Worker ; `ecran` devient la page qui le lance et le garde ; `web/demarrage.js`, le seul JavaScript écrit à la main, charge l'un ou l'autre. Le relais sert le paquet de la page et les modules livrés. L'ABI ne change pas, ni rien de ce que l'épreuve joue ou juge : les modules gardent leur empreinte.
+
+- **La reprise, par un seul chemin** : G, la clé de l'autorité, le secret d'entrée, le code de salle, le module joué et le dernier numéro de case écrit vivent dans IndexedDB de `http://localhost:7878`, jamais dans l'adresse ; un écran rechargé, un Worker tué, un second onglet relisent la garde et reprennent la partie. Dans Chrome et Firefox, chaque reprise a la forme canonique que wasmtime reprend des mêmes cases, et la soirée entière, rejouée dans wasmtime depuis sa première case, retrouve chaque empreinte (`soiree-banc soiree`).
+- **Une seule autorité** : un second onglet de l'écran prend la salle ; le premier dit « Cette salle est maintenant ouverte dans un autre onglet — Reprendre ici ».
+- **Deux garde-fous muraux et l'entrée qui bloque** : la page tue le Worker muet 2 s (1 s pendant `Bonjour` et `Decrire`), si elle a elle-même tourné ; au second arrêt pendant le même geste, le Worker neuf l'écarte, le téléphone le retire de sa file, et la page le dit en panne de l'outil. Au-delà de trois relances en une minute : « Le commun est en panne ».
+- **F8** pose une marque, gardée dans le registre de chaque case de garde ; `soiree-banc rejouer-garde` rejoue la garde jusqu'à chaque marque.
+- **La forme de la garde change** (`salle::garde::VERSION_CASES` 2 : le registre porte les marques et les gestes écartés) : une garde écrite avant ce lot ne se relit plus. Les messages entre la page et le Worker passent à `salle::ecran::PROTOCOLE` 2.
+- **La politique de contenu du relais** gagne `img-src 'self' blob:` : la télé décode une image SVG par un `<img>` sur un `blob:`.
+- Le banc gagne `soiree`, `arriere-plan` et `rejouer-garde`, et M12 (`soiree --m12`), la durée d'une reprise au pire moment (`MESURES-PHASE-3.md`, « Lot 10a »).
+- **Après la vérification du lot 10a** (`LOTS-PHASE-3.md`, « Lot 10a, correction ») : un point de reprise se scelle par tranches de 128 Kio, une par réveil du Worker (`salle::chiffre::ScellementDeCase`, les mêmes octets qu'un scellement d'un coup), et non plus d'un coup dans le tour qui le prend ; la minuterie de secours du Worker bat toutes les 4 ms (et non 8), et joue le pas, images ou pas, dès qu'attendre son réveil suivant ferait manquer deux pas (`Autorite::secours_presse`). Ce sont les deux causes des sauts d'un pas de Punchline, onglet caché (au tour d'un point, et au moment où l'onglet se cache). Le banc juge chaque saut de la soirée (une reprise ou un retard injecté l'explique, sinon c'est une faute), constate que l'onglet d'`arriere-plan` est vraiment caché, y injecte le retard pendant qu'il l'est, et joue `--fois` passages. `salle` appelle `chacha20` et `poly1305` directement (les versions que `chacha20poly1305` tirait déjà).
+
+#### Passer à cette version
+
+Rien à faire pour un jeu : son API ne change pas. Une garde de relais écrite avant ce lot ne se relit plus (`soiree-relais oublier <SALLE>` la remet à neuf).
+
 ### Phase 3, lot 9 : le rendu
 
 La télé dessine enfin la scène (`conception/PHASE-3.md`, § 2.9 et lot 9 ; `conception/LOTS-PHASE-3.md`, « Lot 9 »). Deux crates nouvelles dans `web/` : `rendu` (le dessin sur `wgpu` 30, Metal en natif pour ses tests, WebGPU ou WebGL2 dans le navigateur, les textes par `glyphon` 0.12) et `ecran` (la page de la télé, qui reçoit la scène du Worker et la dessine). Le banc gagne le scénario `dessin`. L'ABI ne change pas, ni rien de ce que l'épreuve joue ou juge : les modules gardent leur empreinte.

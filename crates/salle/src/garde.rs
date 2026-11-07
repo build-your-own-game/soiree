@@ -39,13 +39,19 @@ use partie::{Journal, Ligne, Ouverture, PointDeReprise};
 use serde::{Deserialize, Serialize};
 
 use crate::chiffre::{
-    AVANT_LA_PREMIERE_CASE, CleDeGarde, EnteteCase, ErreurChiffre, Hasard, empreinte_case,
-    ouvrir_case, sceller_case,
+    AVANT_LA_PREMIERE_CASE, CleDeGarde, EnteteCase, ErreurChiffre, Hasard, ScellementDeCase,
+    empreinte_case, ouvrir_case, sceller_case,
 };
 
 /// La version de la forme de ce que portent les cases. Elle monte quand [`Registre`],
 /// [`ContenuPoint`] ou [`ContenuJournal`] changent de forme : `tests/garde.rs` la fige.
-pub const VERSION_CASES: u32 = 1;
+/// *2 au lot 10a* : le registre porte les marques F8 ([`Marque`]) et les gestes écartés.
+pub const VERSION_CASES: u32 = 2;
+
+/// Les marques F8 qu'une salle garde au plus : les plus anciennes s'oublient au-delà
+/// (choisi : l'hôte en pose quelques-unes dans une soirée ; une case porte le registre
+/// entier, marques comprises).
+pub const MARQUES_MAX: usize = 64;
 
 /// Les onglets d'un appareil dont la salle garde le dernier geste : les huit derniers qui
 /// ont livré quelque chose (SAL-37). Un onglet absent plus longtemps renvoie ce qu'il
@@ -64,6 +70,24 @@ pub fn empreinte_jeton(jeton: &[u8; 32]) -> [u8; 32] {
 pub struct Registre {
     /// Les appareils inscrits, dans l'ordre de leur inscription.
     pub appareils: Vec<Inscrit>,
+    /// Les marques F8 de la soirée, de la plus ancienne à la plus récente, au plus
+    /// [`MARQUES_MAX`] (SAL-162) : `soiree-banc rejouer-garde` rejoue la partie jusqu'à
+    /// chacune (§ 2.4, lot 10a).
+    pub marques: Vec<Marque>,
+    /// Les gestes écartés à la demande de la page, par leur identité (`IdGeste`), au plus
+    /// [`MARQUES_MAX`] : ils ont bloqué deux Workers (P39) ; accusés, ils ne sont pas
+    /// écrits, et le rapport les nomme.
+    pub ecartes: Vec<u64>,
+}
+
+/// Une marque F8 : l'hôte a vu quelque chose d'étrange, et la soirée se rejouera jusque-là.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Marque {
+    /// L'indice absolu du journal où elle tombe : la fin du dernier pas joué quand l'hôte
+    /// l'a posée (un bord de pas, où une reprise peut s'arrêter).
+    pub indice: u64,
+    /// Le dernier pas définitif d'alors.
+    pub pas: Pas,
 }
 
 /// Un appareil inscrit au registre.
@@ -221,6 +245,27 @@ impl Suite {
     }
 }
 
+/// Une case de point en train de se sceller ([`Ecrivain::commencer_point`]).
+#[derive(Debug)]
+pub struct PointEnScellement {
+    case: Case,
+    precedente: [u8; 32],
+    scellement: ScellementDeCase,
+}
+
+impl PointEnScellement {
+    /// La case qu'il prendra.
+    pub const fn case(&self) -> Case {
+        self.case
+    }
+
+    /// Chiffre la tranche suivante, d'au plus `octets_max` octets. Rend vrai quand tout
+    /// est chiffré (il reste à le finir).
+    pub fn avancer(&mut self, octets_max: usize) -> bool {
+        self.scellement.avancer(octets_max)
+    }
+}
+
 /// Ce qui écrit la chaîne : il scelle chaque case à la suite de la précédente, et suit
 /// les accusés du relais (`DuRelais::Ecrit`).
 #[derive(Debug, Clone)]
@@ -275,7 +320,8 @@ impl Ecrivain {
     }
 
     /// Scelle une case de point : rend la case et ses octets, à envoyer par
-    /// `VersRelais::Ecrire`.
+    /// `VersRelais::Ecrire`. D'un coup : [`Ecrivain::commencer_point`], puis
+    /// [`Ecrivain::finir_point`].
     pub fn point<S: InstantaneGarde + PartialEq>(
         &mut self,
         g: &CleDeGarde,
@@ -284,16 +330,53 @@ impl Ecrivain {
         registre: &Registre,
         h: &mut (impl Hasard + ?Sized),
     ) -> Result<(Case, Vec<u8>), ErreurChiffre> {
+        let p = self.commencer_point(g, ouverture, point, registre, h)?;
+        self.finir_point(p)
+    }
+
+    /// Commence à sceller une case de point, qui prendra le numéro suivant de la chaîne
+    /// (lot 10a, correction après la vérification) : le clair est encodé et le nonce
+    /// tiré ; le chiffrement se fait par tranches ([`PointEnScellement::avancer`]), sur
+    /// plusieurs réveils du Worker. **Aucune autre case ne se scelle avant
+    /// [`Ecrivain::finir_point`]** : elle suit celle-ci dans la chaîne.
+    pub fn commencer_point<S: InstantaneGarde + PartialEq>(
+        &self,
+        g: &CleDeGarde,
+        ouverture: &Ouverture,
+        point: &PointDeReprise<S>,
+        registre: &Registre,
+        h: &mut (impl Hasard + ?Sized),
+    ) -> Result<PointEnScellement, ErreurChiffre> {
         let case = Case::Point(self.suite.prochain);
         let clair = encoder_contenu_point(&ContenuPoint {
             ouverture: persistance::encoder_ouverture(ouverture),
             point: persistance::encoder_point(point),
             registre: registre.clone(),
         });
-        let scellee = self.sceller(g, case, &clair, h)?;
-        self.suite.points.push(numero(case));
-        self.point_en_vol = Some(numero(case));
-        Ok((case, scellee))
+        let entete = EnteteCase {
+            salle: self.salle,
+            case,
+            precedente: self.suite.precedente,
+        };
+        Ok(PointEnScellement {
+            case,
+            precedente: self.suite.precedente,
+            scellement: ScellementDeCase::commencer(g, &entete, &clair, h)?,
+        })
+    }
+
+    /// Finit le scellement d'un point commencé, et le met dans la chaîne : rend la case
+    /// et ses octets. Refusé (`Interne`) si une autre case s'est scellée entre-temps.
+    pub fn finir_point(&mut self, p: PointEnScellement) -> Result<(Case, Vec<u8>), ErreurChiffre> {
+        if numero(p.case) != self.suite.prochain || p.precedente != self.suite.precedente {
+            return Err(ErreurChiffre::Interne);
+        }
+        let (scellee, empreinte) = p.scellement.finir();
+        self.suite.precedente = empreinte;
+        self.suite.prochain = self.suite.prochain.saturating_add(1);
+        self.suite.points.push(numero(p.case));
+        self.point_en_vol = Some(numero(p.case));
+        Ok((p.case, scellee))
     }
 
     /// Scelle une case de journal : les lignes d'indice absolu `base` et suivants, avec
@@ -501,4 +584,75 @@ pub fn relire<S: InstantaneGarde + Clone>(
         points,
     };
     Ok(l)
+}
+
+/// Relit la chaîne **entière** d'une soirée, depuis sa première case (l'historique que le
+/// banc relève dans l'enregistrement du relais) : le premier point, puis tout le journal
+/// qui le suit, raccordé morceau après morceau, chaque point suivant vérifié à sa place
+/// (au bord du journal écrit) sans le relire. De quoi rejouer toute la soirée par
+/// `Partie::reprendre`, chaque empreinte notée comprise (`soiree-banc soiree`, lot 10a).
+/// Le registre rendu est celui de la dernière case.
+pub fn relire_l_historique<S: InstantaneGarde + Clone>(
+    g: &CleDeGarde,
+    salle: CodeSalle,
+    historique: &[(Case, Vec<u8>)],
+) -> Result<GardeLue<S>, RefusDeGarde> {
+    let mut precedente = AVANT_LA_PREMIERE_CASE;
+    let mut lue: Option<GardeLue<S>> = None;
+    let mut points = Vec::new();
+    for (rang, (case, octets)) in historique.iter().enumerate() {
+        let case = *case;
+        if numero(case) != u64::try_from(rang).unwrap_or(u64::MAX) {
+            return Err(RefusDeGarde::Trouee {
+                manque: u64::try_from(rang).unwrap_or(u64::MAX),
+            });
+        }
+        let entete = EnteteCase {
+            salle,
+            case,
+            precedente,
+        };
+        let clair = ouvrir_case(g, &entete, octets).map_err(|_| RefusDeGarde::Scellee(case))?;
+        precedente = empreinte_case(octets);
+        match (case, lue.as_mut()) {
+            (Case::Point(numero_du_point), None) => {
+                points.push(numero_du_point);
+                lue = Some(lire_le_point(case, &clair)?);
+            }
+            (Case::Point(numero_du_point), Some(deja)) => {
+                points.push(numero_du_point);
+                let c =
+                    decoder_contenu_point(&clair).map_err(|r| RefusDeGarde::Contenu(case, r))?;
+                let p = decoder_point::<S>(&c.point).map_err(|r| RefusDeGarde::Partie(case, r))?;
+                if p.indice() != deja.journal.fin() {
+                    return Err(RefusDeGarde::Scellee(case));
+                }
+                deja.registre = c.registre;
+            }
+            (Case::Journal(_), Some(deja)) => {
+                let c =
+                    decoder_contenu_journal(&clair).map_err(|r| RefusDeGarde::Contenu(case, r))?;
+                let morceau =
+                    decoder_journal(&c.lignes).map_err(|r| RefusDeGarde::Partie(case, r))?;
+                raccorder(&mut deja.journal, morceau).map_err(|r| RefusDeGarde::Partie(case, r))?;
+                deja.registre = c.registre;
+            }
+            (Case::Journal(_), None) => return Err(RefusDeGarde::SansPoint),
+        }
+    }
+    let mut l = lue.ok_or(RefusDeGarde::SansPoint)?;
+    l.suite = Suite {
+        prochain: u64::try_from(historique.len()).unwrap_or(u64::MAX),
+        precedente,
+        points,
+    };
+    Ok(l)
+}
+
+/// Le journal coupé à l'indice absolu `fin` (une marque, au bord d'un pas), écrit quand le
+/// dernier pas définitif était `pas` ; `None` si `fin` n'est pas dans le journal.
+pub fn journal_jusqu_a(journal: &Journal, fin: usize, pas: Pas) -> Option<Journal> {
+    let base = journal.base();
+    let lignes = journal.lignes().get(..fin.checked_sub(base)?)?;
+    decoder_journal(&encoder_lignes(base, pas, lignes)).ok()
 }

@@ -5,7 +5,7 @@
 //! page lui envoie (`POST /banc/rapport`). Il ne retente jamais une mesure (OUT-91), et
 //! ne joue qu'un scénario à la fois, jamais à côté d'une compilation (OUT-89, OUT-115).
 //!
-//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b, 3c, 5 et 9)
+//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b, 3c, 5, 9 et 10a)
 //!
 //! - [`web`] : la règle « mêmes lints » du second workspace, `web/` (P31) ;
 //! - [`serveur`] : un petit serveur HTTP sur la boucle locale, qui sert des fichiers et
@@ -29,7 +29,12 @@
 //! - [`rapport`] : le jugement de ce qu'une page rapporte ;
 //! - [`soiree_native`] : le scénario `soiree-banc soiree-native` (lot 5), une soirée par
 //!   le vrai relais, l'autorité et des téléphones natifs, sous les pannes du
-//!   [`mandataire`], sur des WebSocket non bloquantes ([`ws`]).
+//!   [`mandataire`], sur des WebSocket non bloquantes ([`ws`]) ;
+//! - [`soiree`] : les scénarios `soiree-banc soiree` et `soiree-banc arriere-plan`
+//!   (lot 10a), la vraie autorité dans le Worker d'un navigateur, ses reprises jugées
+//!   contre wasmtime, et M12 ;
+//! - [`rejouer_garde`] : `soiree-banc rejouer-garde` (lot 10a), la garde d'une soirée
+//!   rejouée jusqu'à chaque marque F8.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -46,8 +51,10 @@ pub mod mandataire;
 pub mod navigateur;
 pub mod rapport;
 pub mod rejouer;
+pub mod rejouer_garde;
 pub mod safari;
 pub mod serveur;
+pub mod soiree;
 pub mod soiree_native;
 pub mod web;
 pub mod ws;

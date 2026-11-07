@@ -85,7 +85,7 @@ fn sans_reseau_le_relais_demarre_en_boucle_locale_sal76() {
         &format!("GET / HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"),
     );
     assert_eq!(statut, 200, "{texte}");
-    assert!(texte.contains("Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'"));
+    assert!(texte.contains("Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' blob:; connect-src 'self'"));
     assert!(texte.contains("Cross-Origin-Opener-Policy: same-origin"));
     assert!(texte.contains("Cache-Control: no-store"));
     let mut a = client(port);

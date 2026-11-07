@@ -124,6 +124,73 @@ impl Lance {
         }
     }
 
+    /// Ouvre un onglet de plus à `url` (lot 10a) ; rend son rang.
+    pub fn nouvel_onglet(&mut self, url: &str) -> Result<usize, String> {
+        match self {
+            Lance::Chrome(c) => c.nouvel_onglet(url),
+            Lance::Firefox(f) => f.nouvel_onglet(url),
+            Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
+    /// Évalue `expression` dans l'onglet, sa promesse attendue ; rend sa valeur.
+    pub fn evaluer(
+        &mut self,
+        onglet: usize,
+        expression: &str,
+    ) -> Result<serde_json::Value, String> {
+        match self {
+            Lance::Chrome(c) => c.evaluer(onglet, expression),
+            Lance::Firefox(f) => f.evaluer(onglet, expression),
+            Lance::Safari(_) => Err(String::from("Safari : pas d'évaluation par le banc")),
+        }
+    }
+
+    /// Recharge l'onglet.
+    pub fn recharger(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.recharger(onglet),
+            Lance::Firefox(f) => f.recharger(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : pas de rechargement par le banc")),
+        }
+    }
+
+    /// Ferme l'onglet.
+    pub fn fermer_onglet(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.fermer_onglet(onglet),
+            Lance::Firefox(f) => f.fermer_onglet(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
+    /// Passe un onglet vierge devant : les autres sont cachés.
+    pub fn cacher(&mut self) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.cacher(),
+            Lance::Firefox(f) => f.cacher(),
+            Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
+    /// Remet l'onglet devant.
+    pub fn montrer(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.montrer(onglet),
+            Lance::Firefox(f) => f.montrer(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
+    /// Appuie sur F8 dans l'onglet, par la chaîne d'entrées du navigateur.
+    pub fn touche_f8(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.touche_f8(onglet),
+            Lance::Firefox(f) => f.touche_f8(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
     /// Chrome, s'il l'est : ce que CDP seul permet (la trace).
     pub fn chrome(&mut self) -> Option<&mut Chrome> {
         match self {

@@ -568,7 +568,15 @@ pub struct Soiree<F: Fabrique, M: FnMut() -> F> {
     relances: u64,
     /// Ce que la soirée a fait et constaté.
     pub bilan: Bilan,
+    /// Qui voit chaque message de l'autorité à la page, s'il y en a un (le chien de garde
+    /// d'un test, lot 10a).
+    observateur: Option<Observateur>,
+    /// Ce que la page dit à l'autorité suivante, dès sa relance (`Reprendre { ecarter }`).
+    a_la_relance: Vec<Vec<u8>>,
 }
+
+/// Ce qui voit les messages de l'autorité à la page.
+type Observateur = Box<dyn FnMut(&[u8])>;
 
 /// L'heure de l'ordinateur au début d'une soirée simulée : le 2023-11-14, comme
 /// l'ouverture de l'épreuve.
@@ -630,6 +638,8 @@ where
             graine,
             relances: 0,
             bilan: Bilan::default(),
+            observateur: None,
+            a_la_relance: Vec::new(),
         };
         s.lancer_l_autorite(None);
         s
@@ -638,6 +648,13 @@ where
     /// La période de redite des tenus des téléphones à venir (P27).
     pub const fn avec_redite(&mut self, redite_us: Option<u64>) {
         self.redite_us = redite_us;
+    }
+
+    /// Ce qu'un réveil chiffre au plus d'un point, pour les autorités lancées ensuite
+    /// (`ReglagesSalle::tranche_du_point` ; un test le baisse pour voir un point se sceller
+    /// sur beaucoup de réveils).
+    pub const fn regler_la_tranche_du_point(&mut self, octets: usize) {
+        self.reglages.tranche_du_point = octets;
     }
 
     /// Le code de salle.
@@ -669,9 +686,32 @@ where
         self.bouts.insert(tr, Bout::TempsReel);
         self.bouts.insert(garde, Bout::Garde);
         self.liens_autorite = Some((tr, garde));
-        let a = Autorite::demarrer((self.fabriquer)(), cles, self.reglages, hasard, dernier_n);
+        let mut a = Autorite::demarrer((self.fabriquer)(), cles, self.reglages, hasard, dernier_n);
+        for m in core::mem::take(&mut self.a_la_relance) {
+            a.page(self.t_us, &m);
+        }
         self.autorite = Some(a);
         self.vider_l_autorite();
+    }
+
+    /// Chaque message de l'autorité à la page passe désormais aussi par `f` (le chien de
+    /// garde d'un test, lot 10a), dans l'ordre où l'autorité les émet.
+    pub fn observer_la_page(&mut self, f: impl FnMut(&[u8]) + 'static) {
+        self.observateur = Some(Box::new(f));
+    }
+
+    /// Un message de la page à l'autorité vivante, tout de suite.
+    pub fn depuis_la_page(&mut self, octets: &[u8]) {
+        if let Some(a) = self.autorite.as_mut() {
+            a.page(self.t_us, octets);
+        }
+        self.vider_l_autorite();
+    }
+
+    /// Un message de la page à l'autorité qui se relancera, dès son démarrage : la page
+    /// d'un Worker neuf (`Reprendre { ecarter }`, P39).
+    pub fn a_la_relance(&mut self, octets: Vec<u8>) {
+        self.a_la_relance.push(octets);
     }
 
     /// Tue l'autorité, sans rien lui laisser finir : ce qu'elle n'a pas envoyé est perdu.
@@ -1020,6 +1060,9 @@ where
     /// La page de l'écran : elle répond à chaque demande, faute de quoi la servir (les
     /// fichiers, le rendu et les images viennent avec l'écran, lots 9 à 11).
     fn page(&mut self, octets: &[u8]) {
+        if let Some(f) = self.observateur.as_mut() {
+            f(octets);
+        }
         let Ok(VersPage::Demande { id, quoi }) = VersPage::decoder(octets) else {
             return;
         };
@@ -1363,6 +1406,28 @@ where
     forme_et_empreinte(&mut r)
 }
 
+/// Une partie neuve, reprise de la chaîne **entière** d'une soirée (`garde::relire_l_historique`,
+/// puis `Partie::reprendre` depuis son premier point, qui vérifie chaque empreinte notée
+/// dans le journal) : sa forme canonique hachée et son empreinte. Le banc s'en sert sur
+/// l'historique que le vrai relais a écrit, toutes autorités et reprises comprises
+/// (lot 10a : « le journal final rejoué dans wasmtime »).
+pub fn reprendre_de_l_historique<F: Fabrique>(
+    fabrique: F,
+    g: &CleDeGarde,
+    salle: CodeSalle,
+    historique: &[(Case, Vec<u8>)],
+) -> Result<([u8; 32], [u8; 32]), String>
+where
+    <F::I as Instance>::Instantane: InstantaneGarde + PartialEq + Clone,
+{
+    let lue =
+        crate::garde::relire_l_historique::<<F::I as Instance>::Instantane>(g, salle, historique)
+            .map_err(|e| format!("l'historique ne se relit pas : {e:?}"))?;
+    let mut r = Partie::reprendre(fabrique, lue.ouverture, &lue.point, &lue.journal)
+        .map_err(|e| format!("la reprise de toute la soirée échoue : {e:?}"))?;
+    forme_et_empreinte(&mut r)
+}
+
 /// Ce qu'un téléphone dit de ses accusés, pour [`accuses_hors_de_l_historique`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TelephoneAccuse {
@@ -1398,11 +1463,12 @@ pub fn accuses_hors_de_l_historique(
             ));
             continue;
         };
+        // Un geste écarté à la demande de la page (P39) est accusé sans être écrit : le
+        // registre le dit.
+        let ecartes = registre.map_or(&[][..], |r| r.ecartes.as_slice());
         let absents = (1..=t.accuse)
-            .filter(|&n| {
-                !h.gestes
-                    .contains(&crate::autorite::id_geste(appareil, t.onglet, n).fil())
-            })
+            .map(|n| crate::autorite::id_geste(appareil, t.onglet, n).fil())
+            .filter(|id| !h.gestes.contains(id) && !ecartes.contains(id))
             .count();
         if absents > 0 {
             fautes.push(format!(

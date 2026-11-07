@@ -58,20 +58,30 @@ use partie::{
 };
 
 use crate::chiffre::{
-    CleDeGarde, Hasard, PaireAutorite, SecretDEntree, Session, TAILLE_POIGNEE, repondre,
+    CleDeGarde, Fragment, Hasard, PaireAutorite, SecretDEntree, Session, TAILLE_POIGNEE, repondre,
 };
-use crate::ecran::{AppareilVu, DeLaPage, EtatSalle, PanneSalle, RapportPanne, VersPage};
+use crate::ecran::{
+    AppareilVu, CommandeEcran, DeLaPage, EtatSalle, PanneSalle, RapportPanne, VersPage,
+};
 use crate::fil::{
     LimitesSalle, PROTOCOLE, RefusSalle, VersAppareil, VersAutorite, protocole_d_un_bonjour,
 };
 use crate::garde::{
-    Ecrivain, GardeLue, Inscrit, ONGLETS_RETENUS, OngletInscrit, RefusDeGarde, Registre, Suite,
-    empreinte_jeton, relire,
+    Ecrivain, GardeLue, Inscrit, MARQUES_MAX, Marque, ONGLETS_RETENUS, OngletInscrit,
+    PointEnScellement, RefusDeGarde, Registre, Suite, empreinte_jeton, relire,
 };
 use crate::horloge::{AllerRetour, Horloge};
 
 /// Une case de journal toutes les 100 ms qui ont écrit (choisi, PHASE-3, § 2.4 ; M11).
 pub const JOURNAL_TOUS_LES_US: u64 = 100_000;
+
+/// Ce qu'un réveil chiffre au plus d'un point de reprise en train de se sceller (lot 10a,
+/// correction après la vérification) : 128 Kio. Scellé d'un coup, un point de Punchline
+/// (de 0,9 à 1,4 Mo) tenait le Worker de Firefox 158, onglet caché, de 9 à 24 ms
+/// (`soiree-banc arriere-plan`, constaté le 2026-11-07), assez pour que le réveil suivant
+/// manque deux pas et qu'un jeu qui ne rattrape qu'un pas saute ; une tranche en coûte
+/// donc au plus environ 2 ms à ce rythme (calculé). Choisi.
+pub const TRANCHE_DU_POINT: usize = 128 * 1024;
 
 /// Une poignée de main inachevée, ou aucun bonjour, en 10 s : le lien est coupé (choisi,
 /// § 2.5, § 2.6).
@@ -112,6 +122,8 @@ pub struct ReglagesSalle {
     pub journal_tous_les_us: u64,
     /// Les pas entre deux points écrits à la garde (`POINT_TOUS_LES`, 600, M12).
     pub point_tous_les: u64,
+    /// Ce qu'un réveil chiffre au plus d'un point ([`TRANCHE_DU_POINT`]).
+    pub tranche_du_point: usize,
     /// La poignée de main la plus longue.
     pub poignee_max_us: u64,
 }
@@ -124,6 +136,7 @@ impl ReglagesSalle {
             banc: Oui::Non,
             journal_tous_les_us: JOURNAL_TOUS_LES_US,
             point_tous_les: 600,
+            tranche_du_point: TRANCHE_DU_POINT,
             poignee_max_us: POIGNEE_MAX_US,
         }
     }
@@ -154,6 +167,18 @@ pub enum Arret {
     Reprise(RefusReprise),
     /// Le commun a lâché pendant la partie.
     Panne(PanneOutil),
+}
+
+/// D'où vient la partie d'une autorité.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Venue {
+    /// Ouverte neuve : la garde était vide.
+    Neuve,
+    /// Reprise de la garde, relue jusqu'à cette case.
+    DeLaGarde {
+        /// Le numéro de la dernière case relue.
+        derniere_case: u64,
+    },
 }
 
 /// Ce que l'autorité a compté : pour les tests, le banc et le diagnostic.
@@ -189,6 +214,11 @@ pub struct Comptes {
     pub coups_ecran: u64,
     /// Les messages qu'on n'a pas pu sceller (trop longs).
     pub trop_longs: u64,
+    /// Les gestes écartés à la demande de la page, après deux arrêts muraux pendant eux
+    /// (P39, lot 10a).
+    pub gestes_ecartes: u64,
+    /// Les marques F8 posées (SAL-162, lot 10a).
+    pub marques: u64,
 }
 
 /// Une partie de la salle : ce qui ne change pas de forme entre ouvrir et reprendre.
@@ -205,6 +235,9 @@ struct EnJeu<F: Fabrique> {
     dernier_point_pas: u64,
     /// L'indice du point le plus récent écrit, pour tronquer le journal (P10).
     indice_du_point: usize,
+    /// Le point en train de se sceller, une tranche par réveil, et son indice : aucune
+    /// case de journal ne s'écrit avant lui, qui la précède dans la chaîne.
+    point_en_cours: Option<(PointEnScellement, usize)>,
     /// La dernière scène de l'écran envoyée, par son empreinte, et depuis quand.
     scene: Option<[u8; 32]>,
     scene_pas: Pas,
@@ -212,6 +245,15 @@ struct EnJeu<F: Fabrique> {
     prochain_bot_ecran: u64,
     session_suivante: u32,
     dernier_etat: Option<EtatSalle>,
+    /// Les marques F8 de la soirée, au plus `MARQUES_MAX` (lot 10a).
+    marques: Vec<Marque>,
+    /// Les gestes écartés à la demande de la page, au plus `MARQUES_MAX` (P39).
+    ecartes: Vec<u64>,
+    /// Le registre a changé sans ligne nouvelle (une marque, un geste écarté) : la
+    /// prochaine case de journal s'écrit même vide, pour qu'il soit gardé.
+    a_ecrire: bool,
+    /// D'où la partie vient.
+    venue: Venue,
 }
 
 /// Où en est un lien d'appareil.
@@ -312,6 +354,36 @@ pub struct Autorite<F: Fabrique, H: Hasard> {
     phase: Phase<F>,
     sorties: Sorties,
     comptes: Comptes,
+    /// Le geste que la page demande d'écarter : il a bloqué deux fois un Worker (P39).
+    a_ecarter: Option<IdGeste>,
+    /// Le retard du dernier réveil, que la coque mesure, dit au prochain battement.
+    retard_ms: u32,
+    /// L'horloge que la coque donne pour chronométrer les tours (le banc ; jamais une
+    /// décision : rien de ce qu'elle rend ne va à la partie ni à la garde).
+    chrono: Option<fn() -> f64>,
+    /// Les durées du dernier tour, si `chrono` est donnée.
+    durees: DureesDuTour,
+}
+
+/// Les durées du dernier réveil, en millisecondes, quand la coque a donné une horloge
+/// ([`Autorite::chronometrer`]) : ce que le banc rapporte d'un tour long (lot 10a,
+/// `arriere-plan` ; la mesure du point dans le Worker, M3, vient au lot 11).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct DureesDuTour {
+    /// `avancer_borne` et ce qui en découle.
+    pub avancer: f64,
+    /// Les vues de l'écran et des téléphones.
+    pub vues: f64,
+    /// La garde : le journal, et le point s'il est dû.
+    pub garde: f64,
+    /// Dans `garde`, l'instantané du point (`Partie::point`).
+    pub instantane: f64,
+    /// Dans `garde`, le point encodé et scellé.
+    pub sceller: f64,
+    /// Le tour entier.
+    pub total: f64,
+    /// Un point s'est écrit pendant ce tour.
+    pub point: bool,
 }
 
 /// L'identité d'un geste (PHASE-3, § 2.7) : `blake3(appareil ‖ onglet ‖ numéro)`, tronqué
@@ -365,6 +437,10 @@ where
             },
             sorties: Sorties::default(),
             comptes: Comptes::default(),
+            a_ecarter: None,
+            retard_ms: 0,
+            chrono: None,
+            durees: DureesDuTour::default(),
         };
         let preuve = a.cles.garde.preuve();
         a.vers_relais(&VersRelais::Bonjour {
@@ -378,6 +454,21 @@ where
     /// Ce qu'il faut envoyer, depuis le dernier appel.
     pub fn sorties(&mut self) -> Sorties {
         core::mem::take(&mut self.sorties)
+    }
+
+    /// Donne une horloge (en millisecondes) pour chronométrer chaque réveil : le banc
+    /// seulement. Rien de ce qu'elle rend ne décide de quoi que ce soit.
+    pub const fn chronometrer(&mut self, chrono: fn() -> f64) {
+        self.chrono = Some(chrono);
+    }
+
+    /// Les durées du dernier réveil (zéro sans horloge).
+    pub const fn durees_du_tour(&self) -> DureesDuTour {
+        self.durees
+    }
+
+    fn heure_du_chrono(&self) -> f64 {
+        self.chrono.map_or(0.0, |c| c())
     }
 
     /// Ce que l'autorité a compté.
@@ -418,10 +509,65 @@ where
         }
     }
 
+    /// D'où vient la partie, une fois en jeu : neuve, ou reprise de la garde relue
+    /// jusqu'à une case (`soiree-banc soiree` compare sa forme canonique à celle que
+    /// wasmtime reprend des mêmes cases).
+    pub fn venue(&self) -> Option<Venue> {
+        match &self.phase {
+            Phase::EnJeu(j) => Some(j.venue),
+            Phase::Demarrage { .. } | Phase::Arretee(_) => None,
+        }
+    }
+
+    /// La minuterie de secours doit-elle jouer le pas tout de suite, sans attendre
+    /// l'image (P6, lot 10a) ? Oui si, à `t_us + avance_us` (le prochain réveil de la
+    /// minuterie, sa marge comprise), l'horloge aura atteint le second pas après la
+    /// définitive : attendre ferait manquer deux pas d'un coup, et un jeu qui ne rattrape
+    /// qu'un pas (`rattrapage: 1`) sauterait. Hors partie, non.
+    pub fn secours_presse(&self, t_us: u64, avance_us: u64) -> bool {
+        match &self.phase {
+            Phase::EnJeu(j) => {
+                let atteint = j.horloge.pas(t_us.saturating_add(avance_us)).numero();
+                atteint >= j.partie.definitif().numero().saturating_add(2)
+            }
+            Phase::Demarrage { .. } | Phase::Arretee(_) => false,
+        }
+    }
+
+    /// Les pas définitifs joués depuis le dernier point écrit : le pire moment d'une
+    /// reprise est juste avant le suivant (M12).
+    pub fn depuis_le_point(&self) -> Option<u64> {
+        match &self.phase {
+            Phase::EnJeu(j) => Some(
+                j.partie
+                    .definitif()
+                    .numero()
+                    .saturating_sub(j.dernier_point_pas),
+            ),
+            Phase::Demarrage { .. } | Phase::Arretee(_) => None,
+        }
+    }
+
+    /// Chaque case envoyée à la garde est-elle écrite (`Ecrit`) ?
+    pub fn garde_a_jour(&self) -> bool {
+        match &self.phase {
+            Phase::EnJeu(j) => {
+                j.point_en_cours.is_none()
+                    && j.ecrivain.dernier_ecrit().map(|n| n.saturating_add(1))
+                        == Some(j.ecrivain.suite().prochain)
+            }
+            Phase::Demarrage { .. } | Phase::Arretee(_) => false,
+        }
+    }
+
     /// Le registre, tel qu'une case l'écrirait maintenant : pour les tests.
     pub fn registre(&self) -> Option<Registre> {
         match &self.phase {
-            Phase::EnJeu(j) => Some(registre_de(&j.fiches, j.ecrivain.dernier_ecrit())),
+            Phase::EnJeu(j) => Some(registre_de(
+                &j.fiches,
+                (&j.marques, &j.ecartes),
+                j.ecrivain.dernier_ecrit(),
+            )),
             Phase::Demarrage { .. } | Phase::Arretee(_) => None,
         }
     }
@@ -469,9 +615,20 @@ where
             return;
         };
         match m {
-            DuRelais::Accueil { lien, .. } => {
+            DuRelais::Accueil { lien, adresses, .. } => {
                 if self.lien.is_none() {
                     self.lien = Some(lien);
+                    // De quoi écrire le QR (§ 2.6) : le fragment ne part qu'à la page.
+                    let fragment = Fragment {
+                        secret: SecretDEntree::depuis_octets(*self.cles.secret.octets()),
+                        autorite: self.cles.paire.publique(),
+                    }
+                    .ecrire();
+                    self.vers_page(&VersPage::Accueil {
+                        salle: self.reglages.salle,
+                        fragment: &fragment,
+                        adresses,
+                    });
                     let preuve = self.cles.garde.preuve();
                     self.vers_garde(&VersRelais::Bonjour {
                         protocole: PROTOCOLE_RELAIS,
@@ -666,6 +823,7 @@ where
             })
             .collect();
         let journal_ecrit = l.journal.fin();
+        let derniere_case = l.suite.prochain.saturating_sub(1);
         let mut j = EnJeu::new(
             partie,
             l.ouverture,
@@ -675,6 +833,9 @@ where
         );
         j.indice_du_point = l.point.indice();
         j.dernier_point_pas = l.point.pas().numero();
+        j.venue = Venue::DeLaGarde { derniere_case };
+        j.marques.clone_from(&l.registre.marques);
+        j.ecartes.clone_from(&l.registre.ecartes);
         self.entrer_en_jeu(t_us, j, tampon);
     }
 
@@ -1274,6 +1435,9 @@ where
         }
         ov.place = numero;
         let id = id_geste(appareil, onglet, numero);
+        if self.a_ecarter == Some(id) {
+            return self.ecarter(appareil, numero, id);
+        }
         let place = self.arriver(
             t_us,
             Arrivee::Geste {
@@ -1312,6 +1476,34 @@ where
         }
     }
 
+    /// Écarte un geste qui a bloqué deux Workers (P39) : il n'entre pas dans la partie,
+    /// son appareil le retire de sa file (`Ecarte`), le registre le compte comme placé
+    /// (la prochaine case l'écrit, même vide), et la page le dit comme une panne de
+    /// l'outil, l'entrée nommée : le carburant aurait dû l'arrêter (HIS-06).
+    fn ecarter(&mut self, appareil: Appareil, numero: u64, id: IdGeste) {
+        self.a_ecarter = None;
+        self.comptes.gestes_ecartes = self.comptes.gestes_ecartes.saturating_add(1);
+        if let Some(j) = self.jeu() {
+            j.a_ecrire = true;
+            if j.ecartes.len() >= MARQUES_MAX {
+                let _: u64 = j.ecartes.remove(0);
+            }
+            j.ecartes.push(id.fil());
+        }
+        if let Some(lien) = self.fiche(appareil).and_then(|f| f.lien) {
+            self.envoyer(lien, Classe::Fiable, &VersAppareil::Ecarte { numero });
+        }
+        let detail = format!(
+            "entrée écartée après deux arrêts muraux : le geste {:016x} (appareil {}, numéro {numero}) ; le carburant aurait dû l'arrêter",
+            id.fil(),
+            appareil.fil()
+        );
+        self.vers_page(&VersPage::Panne(RapportPanne {
+            quoi: PanneSalle::Outil,
+            detail: &detail,
+        }));
+    }
+
     // -----------------------------------------------------------------------
     // La page
     // -----------------------------------------------------------------------
@@ -1331,22 +1523,58 @@ where
                 let reponse = reponse_possedee(&quoi);
                 let _: Option<Placement> = self.arriver(t_us, Arrivee::Reponse { id, reponse });
             }
-            DeLaPage::Commande(crate::ecran::CommandeEcran::Reprendre { .. }) => {
+            DeLaPage::Commande(CommandeEcran::Reprendre { ecarter }) => {
+                // Un Worker neuf, après deux arrêts muraux pendant le même geste : ce
+                // geste sera écarté quand son appareil le renverra (P39). Pendant le
+                // démarrage, il n'y a rien à reprendre.
+                if ecarter.is_some() {
+                    self.a_ecarter = ecarter;
+                }
                 if let Some(j) = self.jeu()
+                    && ecarter.is_none()
                     && let Err(p) = j.partie.repartir()
                 {
                     self.arreter(Arret::Panne(p));
                 }
             }
-            // Les fichiers, changer de jeu, une soirée neuve et la marque viennent avec
-            // l'écran (lots 10a, 10b et 11).
+            DeLaPage::Commande(CommandeEcran::Marque) => self.marquer(),
+            DeLaPage::Commande(CommandeEcran::ExporterLaCle) => {
+                let g = *self.cles.garde.octets();
+                self.vers_page(&VersPage::Cle(g));
+            }
+            // Les fichiers, changer de jeu et une soirée neuve viennent avec l'écran (lots
+            // 10b et 11) ; `Demarrer`, `Figer` et `Retarder` sont l'affaire de la coque.
             DeLaPage::Fichiers(_)
+            | DeLaPage::Demarrer { .. }
             | DeLaPage::Commande(
-                crate::ecran::CommandeEcran::ChangerDeJeu { .. }
-                | crate::ecran::CommandeEcran::NouvelleSoiree
-                | crate::ecran::CommandeEcran::Marque,
+                CommandeEcran::ChangerDeJeu { .. }
+                | CommandeEcran::NouvelleSoiree
+                | CommandeEcran::Figer
+                | CommandeEcran::Retarder { .. },
             ) => {}
         }
+    }
+
+    /// F8 : une marque au journal, à la fin du dernier pas joué (SAL-162). Elle part à
+    /// la garde avec la prochaine case, même sans ligne nouvelle.
+    fn marquer(&mut self) {
+        let Some(j) = self.jeu() else {
+            return;
+        };
+        let indice = u64::try_from(j.partie.fin_du_dernier_pas()).unwrap_or(u64::MAX);
+        let pas = j.partie.definitif();
+        if j.marques.len() >= MARQUES_MAX {
+            let _: Marque = j.marques.remove(0);
+        }
+        j.marques.push(Marque { indice, pas });
+        j.a_ecrire = true;
+        self.comptes.marques = self.comptes.marques.saturating_add(1);
+    }
+
+    /// Le retard du réveil qui vient, mesuré par la coque, en millisecondes : il part au
+    /// battement de la page (§ 2.3, M6).
+    pub const fn noter_retard(&mut self, retard_ms: u32) {
+        self.retard_ms = retard_ms;
     }
 
     // -----------------------------------------------------------------------
@@ -1357,6 +1585,8 @@ where
     /// que l'horloge a atteint, d'un tour borné (P7) ; puis les vues, les coups du banc,
     /// les échos, les silences, la garde.
     pub fn reveiller(&mut self, t_us: u64) {
+        let debut = self.heure_du_chrono();
+        self.durees = DureesDuTour::default();
         let Some(j) = self.jeu() else {
             return;
         };
@@ -1367,16 +1597,27 @@ where
             Err(p) => return self.arreter(Arret::Panne(p)),
         };
         self.traiter(&avancee);
+        let avance = self.heure_du_chrono();
         self.vues(t_us, avant);
+        let vu = self.heure_du_chrono();
         if self.reglages.banc == Oui::Oui {
             self.banc(t_us);
         }
         self.echos_et_silences(t_us);
+        let avant_la_garde = self.heure_du_chrono();
         self.garder(t_us);
+        let garde = self.heure_du_chrono();
         self.etat_salle();
+        if self.chrono.is_some() {
+            self.durees.avancer = avance - debut;
+            self.durees.vues = vu - avance;
+            self.durees.garde = garde - avant_la_garde;
+            self.durees.total = self.heure_du_chrono() - debut;
+        }
+        let retard_ms = core::mem::take(&mut self.retard_ms);
         if let Some(j) = self.jeu() {
             let pas = j.partie.definitif();
-            self.vers_page(&VersPage::Battement { pas, retard_ms: 0 });
+            self.vers_page(&VersPage::Battement { pas, retard_ms });
         }
     }
 
@@ -1629,6 +1870,22 @@ where
     // -----------------------------------------------------------------------
 
     fn garder(&mut self, t_us: u64) {
+        let tranche = self.reglages.tranche_du_point;
+        let debut = self.heure_du_chrono();
+        let Some(j) = self.jeu() else {
+            return;
+        };
+        // Un point se scelle : une tranche par réveil, et rien d'autre ne s'écrit avant
+        // qu'il soit fini et envoyé.
+        if let Some((p, _)) = j.point_en_cours.as_mut() {
+            if p.avancer(tranche) {
+                self.finir_le_point();
+            }
+            if self.chrono.is_some() {
+                self.durees.sceller = self.heure_du_chrono() - debut;
+            }
+            return;
+        }
         let Some(j) = self.jeu() else {
             return;
         };
@@ -1644,7 +1901,7 @@ where
         let Some(j) = self.jeu() else {
             return;
         };
-        if fin > j.journal_ecrit
+        if (fin > j.journal_ecrit || j.a_ecrire)
             && t_us.saturating_sub(j.dernier_journal_us) >= self.reglages.journal_tous_les_us
         {
             self.ecrire_le_journal(t_us);
@@ -1667,13 +1924,17 @@ where
 
     /// Écrit les lignes du journal jusqu'à la fin du dernier pas, s'il y en a.
     fn ecrire_le_journal(&mut self, t_us: u64) {
+        // Un point en train de se sceller précède dans la chaîne toute case de journal :
+        // il se finit d'abord, d'un coup.
+        self.finir_le_point();
         let Phase::EnJeu(j) = &mut self.phase else {
             return;
         };
         let fin = j.partie.fin_du_dernier_pas();
-        if fin <= j.journal_ecrit {
+        if fin <= j.journal_ecrit && !j.a_ecrire {
             return;
         }
+        j.a_ecrire = false;
         let base = j.partie.journal().base();
         let lignes = j.partie.journal().lignes();
         let debut = j.journal_ecrit.saturating_sub(base);
@@ -1699,7 +1960,7 @@ where
                 }
             }
         }
-        let registre = registre_de(&j.fiches, Some(n));
+        let registre = registre_de(&j.fiches, (&j.marques, &j.ecartes), Some(n));
         let pas = j.partie.journal().pas();
         let ecrite = j.ecrivain.journal(
             &self.cles.garde,
@@ -1731,10 +1992,15 @@ where
         if toujours == Oui::Non && j.partie.pas_en_cours().is_some() {
             return;
         }
+        let debut = self.chrono.map_or(0.0, |c| c());
+        let Phase::EnJeu(j) = &mut self.phase else {
+            return;
+        };
         let point = match j.partie.point() {
             Ok(p) => p,
             Err(p) => return self.arreter(Arret::Panne(p)),
         };
+        let pris = self.heure_du_chrono();
         let Phase::EnJeu(j) = &mut self.phase else {
             return;
         };
@@ -1747,8 +2013,8 @@ where
             return;
         }
         let n = j.ecrivain.suite().prochain;
-        let registre = registre_de(&j.fiches, Some(n));
-        let ecrite = j.ecrivain.point(
+        let registre = registre_de(&j.fiches, (&j.marques, &j.ecartes), Some(n));
+        let commence = j.ecrivain.commencer_point(
             &self.cles.garde,
             &j.ouverture,
             &point,
@@ -1756,16 +2022,42 @@ where
             &mut self.hasard,
         );
         j.dernier_point_pas = point.pas().numero();
-        j.indice_du_point = point.indice();
-        match ecrite {
+        match commence {
+            Ok(p) => j.point_en_cours = Some((p, point.indice())),
+            Err(_) => return self.arreter(Arret::Garde(RefusDeGarde::Scellee(Case::Point(n)))),
+        }
+        if self.chrono.is_some() {
+            self.durees.instantane = pris - debut;
+            self.durees.sceller = self.heure_du_chrono() - pris;
+            self.durees.point = true;
+        }
+        // À l'ouverture, le point s'écrit tout de suite ; en partie, il se scelle une
+        // tranche par réveil, à partir du suivant (`garder`), pour que ce tour, qui a déjà
+        // joué un pas, reste court.
+        if toujours == Oui::Oui {
+            self.finir_le_point();
+        }
+    }
+
+    /// Finit d'un coup le point en train de se sceller, s'il y en a un, et l'envoie.
+    fn finir_le_point(&mut self) {
+        let Phase::EnJeu(j) = &mut self.phase else {
+            return;
+        };
+        let Some((p, indice)) = j.point_en_cours.take() else {
+            return;
+        };
+        let case = p.case();
+        match j.ecrivain.finir_point(p) {
             Ok((case, octets)) => {
+                j.indice_du_point = indice;
                 self.comptes.points = self.comptes.points.saturating_add(1);
                 self.vers_garde(&VersRelais::Ecrire {
                     case,
                     octets: &octets,
                 });
             }
-            Err(_) => self.arreter(Arret::Garde(RefusDeGarde::Scellee(Case::Point(n)))),
+            Err(_) => self.arreter(Arret::Garde(RefusDeGarde::Scellee(case))),
         }
     }
 
@@ -1818,19 +2110,30 @@ impl<F: Fabrique> EnJeu<F> {
             dernier_journal_us: 0,
             dernier_point_pas: definitif.numero(),
             indice_du_point: 0,
+            point_en_cours: None,
             scene: None,
             scene_pas: definitif,
             scene_depuis: definitif,
             prochain_bot_ecran: 0,
             session_suivante: 1,
             dernier_etat: None,
+            marques: Vec::new(),
+            ecartes: Vec::new(),
+            a_ecrire: false,
+            venue: Venue::Neuve,
         }
     }
 }
 
 /// Le registre tel qu'une case l'écrit si les cases jusqu'à `n` le sont.
-fn registre_de(fiches: &[Fiche], n: Option<u64>) -> Registre {
+fn registre_de(
+    fiches: &[Fiche],
+    (marques, ecartes): (&[Marque], &[u64]),
+    n: Option<u64>,
+) -> Registre {
     Registre {
+        marques: marques.to_vec(),
+        ecartes: ecartes.to_vec(),
         appareils: fiches
             .iter()
             .map(|f| Inscrit {

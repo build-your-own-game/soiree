@@ -155,7 +155,7 @@ impl ClesBrutes {
 }
 
 /// Un port libre à la fois sur `127.0.0.1` et `[::1]`.
-fn port_libre() -> Result<u16, String> {
+pub(crate) fn port_libre() -> Result<u16, String> {
     for _ in 0..32 {
         let a = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("{e}"))?;
         let p = a.local_addr().map_err(|e| format!("{e}"))?.port();
@@ -229,6 +229,8 @@ fn lancer_le_relais(
                 enregistrer: Some(enregistrement),
                 interfaces: Some(Vec::new()),
                 page: None,
+                paquet: None,
+                jeux: relais::paquet::Jeux::default(),
             })
             .map_err(|e| format!("le relais : {e}"))?;
             RelaisLance::Interne(r)
@@ -276,7 +278,7 @@ struct Invite {
 }
 
 /// La taille lue au plus par un client : une case de garde et son enveloppe.
-const LECTURE_MAX: usize = relais::coeur::CASE_MAX + 64 * 1024;
+pub(crate) const LECTURE_MAX: usize = relais::coeur::CASE_MAX + 64 * 1024;
 
 /// Les vues, et les messages en clair de geste et de vue, gardés au plus pour la fouille
 /// des secrets (chaque sorte à part).
@@ -1005,7 +1007,7 @@ fn lire_l_enregistrement(
 /// successifs du relais : une case est écrite quand le relais l'accuse (`Ecrit`), ou quand
 /// il la lit sur son disque (`Lu`, après une relance) ; la garde finale sur disque a le
 /// dernier mot.
-fn chaine_ecrite(
+pub(crate) fn chaine_ecrite(
     enregistrements: &[PathBuf],
     disque: &[(Case, Vec<u8>)],
 ) -> Result<(Chaine, u32), String> {
@@ -1060,7 +1062,7 @@ fn chaine_ecrite(
 }
 
 /// Des cases et leurs octets.
-type Chaine = Vec<(Case, Vec<u8>)>;
+pub(crate) type Chaine = Vec<(Case, Vec<u8>)>;
 
 const fn numero(c: Case) -> u64 {
     match c {

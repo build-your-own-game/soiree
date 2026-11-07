@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! soiree-relais [--port 7878] [--adresse <ip> | --sans-reseau] [--garde <dossier>] [--banc] [--enregistrer <fichier>]
+//!               [--paquet <dossier>] [--jeux <dossier>]
 //! soiree-relais oublier <SALLE> [--garde <dossier>]
 //! ```
 //!
@@ -9,7 +10,9 @@
 //! du banc, sans `Origin`, prennent tous les rôles depuis la boucle locale ; jamais en
 //! soirée. `--sans-reseau` : la boucle locale seulement, comme une machine sans Wi-Fi
 //! (le banc s'en sert pour ne rien ouvrir sur le réseau). `--enregistrer` : tout ce que le relais voit, dans ce fichier (le banc y
-//! cherche ce qu'il ne doit pas voir). `oublier` efface la preuve et la garde d'une
+//! cherche ce qu'il ne doit pas voir). `--paquet` : le paquet de la page, un dossier nommé
+//! par son empreinte (lot 10a). `--jeux` : les modules livrés, `<empreinte>.wasm`, que
+//! l'écran charge par `GET /jeux/…` (lot 10a). Les deux se lisent au lancement, une fois. `oublier` efface la preuve et la garde d'une
 //! salle : l'autorité suivante enregistre la sienne sous le même code (P41).
 //!
 //! Code de sortie : 0 arrêté proprement, ou `oublier` fait ; 1 le relais ne démarre pas
@@ -31,8 +34,9 @@ use liaison::CodeSalle;
 use relais::coque::{self, PORT, Reglages};
 use relais::garde::Dossier;
 use relais::http::{Banc, hote};
+use relais::paquet::{Jeux, Paquet};
 
-const USAGE: &str = "usage : soiree-relais [--port 7878] [--adresse <ip> | --sans-reseau] [--garde <dossier>] [--banc] [--enregistrer <fichier>]\n        soiree-relais oublier <SALLE> [--garde <dossier>]";
+const USAGE: &str = "usage : soiree-relais [--port 7878] [--adresse <ip> | --sans-reseau] [--garde <dossier>] [--banc] [--enregistrer <fichier>] [--paquet <dossier>] [--jeux <dossier>]\n        soiree-relais oublier <SALLE> [--garde <dossier>]";
 
 fn garde_par_defaut() -> PathBuf {
     std::env::var_os("HOME").map_or_else(
@@ -116,6 +120,22 @@ fn main() -> ExitCode {
             },
             "--banc" => r.banc = Banc::Oui,
             "--sans-reseau" => r.interfaces = Some(Vec::new()),
+            "--paquet" => match i.next().map(|d| Paquet::lire(std::path::Path::new(d))) {
+                Some(Ok(p)) => r.paquet = Some(p),
+                Some(Err(e)) => {
+                    eprintln!("soiree-relais : le paquet : {e}");
+                    return ExitCode::from(1);
+                }
+                None => return usage(),
+            },
+            "--jeux" => match i.next().map(|d| Jeux::lire(std::path::Path::new(d))) {
+                Some(Ok(j)) => r.jeux = j,
+                Some(Err(e)) => {
+                    eprintln!("soiree-relais : les jeux : {e}");
+                    return ExitCode::from(1);
+                }
+                None => return usage(),
+            },
             _ => return usage(),
         }
     }

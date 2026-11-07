@@ -1,0 +1,50 @@
+[package]
+name = "autorite"
+description = "Le Worker de l'autorité : la partie qui fait foi dans le navigateur de l'ordinateur de la soirée, ses deux liens au relais, la garde, la reprise."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+# Une bibliothèque WebAssembly que `wasm-bindgen` relie au Worker (`web/demarrage.js`), et
+# une bibliothèque Rust pour ses tests natifs (ce qui ne touche pas au navigateur).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# L'autorité sans entrées-sorties, son chiffrement, le geste en cours, les messages
+# avec la page (PHASE-3, § 2.3).
+salle.workspace = true
+# Le trait `Fabrique`, que le geste en cours enveloppe.
+partie.workspace = true
+# Les types du fil que portent les messages (`Oui`, `FormeEcran`).
+jeu-abi.workspace = true
+# Le code de salle.
+liaison.workspace = true
+# La borne de taille d'un module livré (`TAILLE_MODULE_MAX`), une seule définition.
+moteur-commun.workspace = true
+# Le réglage de la réécriture des modules (`Reglages::PHASE_3`).
+reecriture.workspace = true
+# Vérifier l'empreinte du module livré avant de le compiler (§ 2.8) ; la version du
+# commun, déjà dans ce workspace par `moteur-commun`.
+blake3.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Le module réécrit dans le navigateur : la fabrique de la partie.
+moteur-navigateur.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+wasm-bindgen-futures.workspace = true
+# Ce que le Worker touche du navigateur : les deux WebSocket, IndexedDB, `fetch`,
+# `crypto.getRandomValues` (le hasard des clés et des nonces, SAL-93 : sans `getrandom`,
+# qui n'apporterait ici qu'un détour vers la même API), l'horloge, `postMessage`.
+web-sys = { workspace = true, features = [
+    "DedicatedWorkerGlobalScope", "WorkerGlobalScope", "WorkerLocation", "MessageEvent",
+    "WebSocket", "BinaryType", "CloseEvent", "Event", "Crypto", "IdbFactory", "IdbDatabase",
+    "IdbOpenDbRequest", "IdbRequest", "IdbTransaction", "IdbTransactionMode",
+    "IdbObjectStore", "IdbVersionChangeEvent", "DomException",
+] }
+
+[lints]
+workspace = true

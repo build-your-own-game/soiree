@@ -19,8 +19,8 @@ use proptest::prelude::*;
 use salle::chiffre::{
     AVANT_LA_PREMIERE_CASE, CLAIR_MAX, CleDeGarde, ClePublique, EnteteCase, ErreurChiffre,
     FENETRE_DE_REJEU, Fragment, FragmentIllisible, Hasard, Initiateur, PROLOGUE, PaireAutorite,
-    SURCOUT_TRAME, SecretDEntree, Session, TAILLE_POIGNEE, empreinte_case, ouvrir_case, repondre,
-    sceller_case,
+    SURCOUT_TRAME, ScellementDeCase, SecretDEntree, Session, TAILLE_POIGNEE, empreinte_case,
+    ouvrir_case, repondre, sceller_case,
 };
 
 // ---------------------------------------------------------------------------
@@ -540,6 +540,25 @@ fn une_case_se_scelle_et_se_rouvre_octets_figes() {
     assert_eq!(hexa(&empreinte_case(&c)), hexa(blake3::hash(&c).as_bytes()));
 }
 
+/// Lot 10a, correction après la vérification : une case scellée par tranches (le point
+/// de reprise, sur plusieurs réveils du Worker) a les octets figés de la case scellée
+/// d'un coup, et son empreinte.
+#[test]
+fn une_case_scellee_par_tranches_a_les_octets_figes() {
+    let mut hasard = Graine::new(11);
+    let cle = CleDeGarde::depuis_octets([0x42; 32]);
+    let en_tete = entete(Case::Point(1), AVANT_LA_PREMIERE_CASE);
+    let mut scellement =
+        ScellementDeCase::commencer(&cle, &en_tete, b"un point", &mut hasard).unwrap();
+    assert!(scellement.avancer(1));
+    let (case, empreinte) = scellement.finir();
+    assert_eq!(
+        hexa(&case),
+        "e0a9e979c4b8fe01b7e910b8606bb552823eba8f639b92d158bd07a6099f3b6b42248c3a170b3116db2abe6407de2cda"
+    );
+    assert_eq!(empreinte, empreinte_case(&case));
+}
+
 /// PHASE-3, § 2.4 : le relais ne peut ni modifier, ni intervertir, ni rejouer une case.
 /// Une case lue sous un autre en-tête (une autre sorte, un autre numéro, une autre
 /// salle, une autre case précédente) ou avec une autre clé de garde est refusée.
@@ -700,6 +719,31 @@ proptest! {
         prop_assert!(ouvrir_case(&g, &e, &octets).is_err());
         let _: Result<Fragment, FragmentIllisible> =
             Fragment::lire(&String::from_utf8_lossy(&octets));
+    }
+
+    /// Lot 10a : sceller par tranches, de n'importe quelle taille et en n'importe quel
+    /// nombre, rend les octets de `sceller_case` (le même nonce) et leur empreinte ; et
+    /// `finir` chiffre ce qui reste.
+    #[test]
+    fn sceller_par_tranches_rend_les_octets_d_un_coup(
+        graine in any::<u64>(),
+        longueur in 0usize..5_000,
+        tranches in proptest::collection::vec(0usize..700, 0..12),
+    ) {
+        let g = CleDeGarde::depuis_octets([7; 32]);
+        let e = entete(Case::Point(3), [9; 32]);
+        let clair: Vec<u8> = (0..longueur).map(|i| u8::try_from(i % 251).unwrap()).collect();
+        let d_un_coup = sceller_case(&g, &e, &clair, &mut Graine::new(graine)).unwrap();
+        let mut s = ScellementDeCase::commencer(&g, &e, &clair, &mut Graine::new(graine)).unwrap();
+        for t in tranches {
+            if s.avancer(t) {
+                break;
+            }
+        }
+        let (par_tranches, empreinte) = s.finir();
+        prop_assert_eq!(&par_tranches, &d_un_coup);
+        prop_assert_eq!(empreinte, empreinte_case(&d_un_coup));
+        prop_assert_eq!(ouvrir_case(&g, &e, &par_tranches).unwrap(), clair);
     }
 
     /// REM-64 : une vraie trame, ou une vraie case, abîmée d'un octet, est refusée sans

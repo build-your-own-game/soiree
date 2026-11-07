@@ -272,6 +272,9 @@ pub enum Route {
     Ws,
     /// `GET /salle` : le code de salle que le relais garde (boucle locale, P41).
     Salle,
+    /// `GET /jeux/<reste>` : le catalogue (`catalogue`) ou un module livré
+    /// (`<empreinte>.wasm`), pour l'écran (boucle locale, P16).
+    Jeux(String),
     /// Rien de connu : `404`.
     Introuvable,
     /// Une autre méthode que `GET` : `405`.
@@ -301,14 +304,19 @@ pub fn router(r: &Requete) -> Route {
             if let Some(reste) = chemin.strip_prefix("/web/") {
                 return Route::Web(reste.to_owned());
             }
+            if let Some(reste) = chemin.strip_prefix("/jeux/") {
+                return Route::Jeux(reste.to_owned());
+            }
             Route::Introuvable
         }
     }
 }
 
-/// La politique de contenu de chaque page (PHASE-3, § 2.5).
-pub const POLITIQUE: &str =
-    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'";
+/// La politique de contenu de chaque page (PHASE-3, § 2.5). *Au lot 10a* : `img-src 'self'
+/// blob:` de plus : la télé décode une image SVG par un élément `<img>` sur un `blob:` de
+/// ses octets (P23), que `default-src 'self'` refusait (constaté dans Chrome et Firefox,
+/// les SVG de Tier list).
+pub const POLITIQUE: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' blob:; connect-src 'self'";
 
 /// Une réponse HTTP entière, qui ferme la connexion.
 pub fn reponse(statut: &str, type_: &str, corps: &[u8], entetes: &[(&str, &str)]) -> Vec<u8> {
@@ -345,6 +353,23 @@ pub enum Isolement {
     Oui,
     /// La page d'un téléphone.
     Non,
+}
+
+/// Un fichier du paquet : son chemin porte l'empreinte du paquet, il ne change jamais
+/// (`immutable`). L'écran est isolé (COOP, COEP) : chaque fichier le dit aussi, et dit
+/// qu'il se charge de la même origine seulement (CORP).
+pub fn fichier_du_paquet(type_: &str, corps: &[u8]) -> Vec<u8> {
+    reponse(
+        "200 OK",
+        type_,
+        corps,
+        &[
+            ("Cache-Control", "public, max-age=31536000, immutable"),
+            ("Cross-Origin-Resource-Policy", "same-origin"),
+            ("Cross-Origin-Opener-Policy", "same-origin"),
+            ("Cross-Origin-Embedder-Policy", "require-corp"),
+        ],
+    )
 }
 
 /// Une erreur, en texte.

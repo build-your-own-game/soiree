@@ -28,6 +28,10 @@ pub struct Chrome {
     pub version: String,
     /// La page ouverte, s'il y en a une : son `sessionId`.
     session: Option<String>,
+    /// Les onglets ouverts, dans l'ordre : leur `targetId` et leur `sessionId` (lot 10a).
+    onglets: Vec<(String, String)>,
+    /// L'onglet vierge passé devant pour cacher les autres, s'il y en a un.
+    devant: Option<String>,
     /// Les événements de la trace (`Tracing.dataCollected`), gardés à part de la console.
     trace: Vec<Json>,
     /// La trace est-elle finie (`Tracing.tracingComplete`) ?
@@ -80,6 +84,8 @@ impl Chrome {
             cdp: Cdp::ouvrir(&adresse)?,
             version: String::new(),
             session: None,
+            onglets: Vec::new(),
+            devant: None,
             trace: Vec::new(),
             trace_finie: false,
         };
@@ -96,6 +102,127 @@ impl Chrome {
     /// Ouvre un onglet vierge, s'y attache, écoute sa console et ses exceptions, puis le
     /// mène à `url`.
     pub fn ouvrir(&mut self, url: &str) -> Result<(), String> {
+        let (id, session) = self.onglet(url)?;
+        self.onglets.push((id, session.clone()));
+        self.session = Some(session);
+        Ok(())
+    }
+
+    /// Ouvre un onglet de plus à `url` (le second onglet de l'écran, lot 10a) ; rend son
+    /// rang parmi les onglets ouverts.
+    pub fn nouvel_onglet(&mut self, url: &str) -> Result<usize, String> {
+        let o = self.onglet(url)?;
+        self.onglets.push(o);
+        Ok(self.onglets.len().saturating_sub(1))
+    }
+
+    fn session_de(&self, onglet: usize) -> Result<String, String> {
+        self.onglets
+            .get(onglet)
+            .map(|(_, s)| s.clone())
+            .ok_or_else(|| format!("pas d'onglet {onglet}"))
+    }
+
+    /// Évalue `expression` dans l'onglet, sa promesse attendue ; rend sa valeur.
+    pub fn evaluer(&mut self, onglet: usize, expression: &str) -> Result<Json, String> {
+        let s = self.session_de(onglet)?;
+        let r = self.cdp.envoyer(
+            "Runtime.evaluate",
+            &json!({ "expression": expression, "returnByValue": true, "awaitPromise": true }),
+            Some(&s),
+            DELAI,
+        )?;
+        if let Some(e) = r.get("exceptionDetails") {
+            return Err(format!("{expression} : {e}"));
+        }
+        Ok(r.pointer("/result/value").cloned().unwrap_or(Json::Null))
+    }
+
+    /// Recharge l'onglet.
+    pub fn recharger(&mut self, onglet: usize) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        self.cdp
+            .envoyer("Page.reload", &json!({}), Some(&s), DELAI)
+            .map(|_| ())
+    }
+
+    /// Ferme l'onglet ; son rang reste pris.
+    pub fn fermer_onglet(&mut self, onglet: usize) -> Result<(), String> {
+        let id = self
+            .onglets
+            .get(onglet)
+            .map(|(t, _)| t.clone())
+            .ok_or_else(|| format!("pas d'onglet {onglet}"))?;
+        self.cdp
+            .envoyer(
+                "Target.closeTarget",
+                &json!({ "targetId": id }),
+                None,
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Passe un onglet vierge devant les autres : ils sont cachés (comme la mesure 6).
+    pub fn cacher(&mut self) -> Result<(), String> {
+        let cible = self.cdp.envoyer(
+            "Target.createTarget",
+            &json!({ "url": "about:blank" }),
+            None,
+            DELAI,
+        )?;
+        let id = cible
+            .get("targetId")
+            .and_then(Json::as_str)
+            .ok_or_else(|| String::from("Target.createTarget sans targetId"))?
+            .to_owned();
+        self.cdp.envoyer(
+            "Target.activateTarget",
+            &json!({ "targetId": id }),
+            None,
+            DELAI,
+        )?;
+        self.devant = Some(id);
+        Ok(())
+    }
+
+    /// Remet l'onglet devant.
+    pub fn montrer(&mut self, onglet: usize) -> Result<(), String> {
+        let id = self
+            .onglets
+            .get(onglet)
+            .map(|(t, _)| t.clone())
+            .ok_or_else(|| format!("pas d'onglet {onglet}"))?;
+        self.cdp.envoyer(
+            "Target.activateTarget",
+            &json!({ "targetId": id }),
+            None,
+            DELAI,
+        )?;
+        if let Some(d) = self.devant.take() {
+            let _: Result<Json, String> =
+                self.cdp
+                    .envoyer("Target.closeTarget", &json!({ "targetId": d }), None, DELAI);
+        }
+        Ok(())
+    }
+
+    /// Appuie sur F8, par la chaîne d'entrées du navigateur (`Input.dispatchKeyEvent`).
+    pub fn touche_f8(&mut self, onglet: usize) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        for sorte in ["rawKeyDown", "keyUp"] {
+            self.cdp.envoyer(
+                "Input.dispatchKeyEvent",
+                &json!({ "type": sorte, "key": "F8", "code": "F8", "windowsVirtualKeyCode": 119, "nativeVirtualKeyCode": 119 }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Un onglet neuf, attaché, sa console et ses exceptions écoutées, mené à `url`.
+    fn onglet(&mut self, url: &str) -> Result<(String, String), String> {
         let cible = self.cdp.envoyer(
             "Target.createTarget",
             &json!({ "url": "about:blank" }),
@@ -127,8 +254,7 @@ impl Chrome {
             Some(&session),
             DELAI,
         )?;
-        self.session = Some(session);
-        Ok(())
+        Ok((id, session))
     }
 
     /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont dit.

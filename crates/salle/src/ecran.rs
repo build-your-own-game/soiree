@@ -13,15 +13,17 @@
 //! granularité près est à constater (M14).
 
 use jeu_abi::{
-    Appareil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage, FichierRecu, IdDemande,
-    IdGeste, Oui, Pas, ReponseFil,
+    Appareil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage, FichierRecu, FormeEcran,
+    IdDemande, IdGeste, Oui, Pas, ReponseFil,
 };
-use liaison::{CodeSalle, Lien, RefusRelais};
+use liaison::{AdresseAnnoncee, CodeSalle, Lien, RefusRelais};
 use serde::{Deserialize, Serialize};
 
 /// La version des messages entre la page et le Worker. Monte quand la forme d'un type
-/// de ce module change ; `tests/ecran.rs` la fige.
-pub const PROTOCOLE: u32 = 1;
+/// de ce module change ; `tests/ecran.rs` la fige. *2 au lot 10a* : `VersPage::Chargement`,
+/// `Jeu`, `Accueil`, `Cle` et `Banc`, `DeLaPage::Demarrer`, et les commandes
+/// `ExporterLaCle`, `Figer` et `Retarder`.
+pub const PROTOCOLE: u32 = 2;
 
 /// Ce que le Worker envoie à la page de l'écran.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +70,34 @@ pub enum VersPage<'a> {
     /// Posté avant chaque appel `Entree` : le geste en cours, pour l'écarter s'il bloque
     /// deux fois (P39).
     EnCours(Option<IdGeste>),
+    /// Le Worker entre dans un appel du chargement (`Bonjour`, `Decrire`), ou en sort :
+    /// le chien de garde de la page applique le garde-fou du chargement, puis celui de
+    /// la partie (P5, lot 10a).
+    Chargement(Oui),
+    /// Le jeu que le Worker a chargé : son empreinte livrée, et la forme de son écran.
+    Jeu {
+        /// Le BLAKE3 du module livré.
+        module: [u8; 32],
+        /// La forme de l'écran que le jeu déclare.
+        forme: FormeEcran,
+    },
+    /// Le relais a accueilli l'autorité : de quoi écrire le QR (§ 2.6, § 2.8). Le
+    /// fragment ne quitte jamais l'ordinateur de la soirée que dans le QR.
+    Accueil {
+        /// Le code de salle.
+        salle: CodeSalle,
+        /// Le fragment du QR, sans le `#` (`chiffre::Fragment::ecrire`).
+        #[serde(borrow)]
+        fragment: &'a str,
+        /// Les adresses que le relais annonce.
+        adresses: Vec<AdresseAnnoncee>,
+    },
+    /// La clé de garde G, sur la commande `ExporterLaCle` du diagnostic, jamais d'elle-même
+    /// (§ 2.4) : la page la donne à l'hôte dans un fichier.
+    Cle([u8; 32]),
+    /// Un rapport pour le banc, en JSON, que la page écrit sur sa console ; seulement en
+    /// mode banc (§ 8.2).
+    Banc(#[serde(borrow)] &'a str),
 }
 
 /// Ce que la page de l'écran envoie au Worker.
@@ -103,6 +133,14 @@ pub enum DeLaPage<'a> {
     },
     /// Une commande du commun.
     Commande(CommandeEcran),
+    /// Le premier message au Worker : le mode banc, et le jeu d'une salle neuve (une salle
+    /// déjà ouverte reprend le sien, gardé avec G).
+    Demarrer {
+        /// Le mode banc (§ 8.1) : le relais lancé avec `--banc` le dit à la page.
+        banc: Oui,
+        /// L'empreinte livrée du module, pour une salle neuve.
+        module: Option<[u8; 32]>,
+    },
 }
 
 /// Une commande de l'écran du commun, jamais du jeu.
@@ -123,6 +161,21 @@ pub enum CommandeEcran {
     },
     /// F8 : une marque au journal (SAL-162).
     Marque,
+    /// Le Worker rend la clé de garde G (`VersPage::Cle`), pour `soiree-banc rejouer-garde`
+    /// (§ 2.4).
+    ExporterLaCle,
+    /// Le banc seulement : la partie ne joue plus, le journal s'écrit en entier à la garde,
+    /// puis le Worker dit sa forme canonique (`VersPage::Banc`). Ignorée hors du banc.
+    Figer,
+    /// Le banc seulement : `fois` réveils de suite, le Worker attend `ms` millisecondes
+    /// sans rien faire, comme un fil gelé ; la page doit signaler le retard (§ 8.3,
+    /// `arriere-plan`). Ignorée hors du banc.
+    Retarder {
+        /// L'attente, en millisecondes.
+        ms: u32,
+        /// Combien de réveils de suite.
+        fois: u32,
+    },
 }
 
 /// L'état de la salle, tel que l'écran le montre.

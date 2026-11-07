@@ -25,10 +25,10 @@
 use std::collections::BTreeSet;
 
 use jeu_abi::{
-    Appareil, DemandeFil, EchecDemande, EcranFil, IdDemande, IdFichier, IdGeste, Oui, Pas,
-    ReponseFil,
+    Appareil, DemandeFil, EchecDemande, EcranFil, FormeEcran, IdDemande, IdFichier, IdGeste, Oui,
+    Pas, ReponseFil,
 };
-use liaison::{CodeSalle, Lien, RefusRelais};
+use liaison::{AdresseAnnoncee, AdresseIp, CodeSalle, Lien, RefusRelais};
 use proptest::prelude::*;
 use salle::ecran::{
     AppareilVu, CommandeEcran, DeLaPage, EtatSalle, IdTrace, PROTOCOLE, PanneSalle, RapportPanne,
@@ -45,6 +45,11 @@ fn nom_vers_page(m: &VersPage) -> &'static str {
         VersPage::Panne(_) => "VersPage::Panne",
         VersPage::Traces(_) => "VersPage::Traces",
         VersPage::EnCours(_) => "VersPage::EnCours",
+        VersPage::Chargement(_) => "VersPage::Chargement",
+        VersPage::Jeu { .. } => "VersPage::Jeu",
+        VersPage::Accueil { .. } => "VersPage::Accueil",
+        VersPage::Cle(_) => "VersPage::Cle",
+        VersPage::Banc(_) => "VersPage::Banc",
     }
 }
 
@@ -55,6 +60,7 @@ fn nom_de_la_page(m: &DeLaPage) -> &'static str {
         DeLaPage::Fichiers(_) => "DeLaPage::Fichiers",
         DeLaPage::Reponse { .. } => "DeLaPage::Reponse",
         DeLaPage::Commande(_) => "DeLaPage::Commande",
+        DeLaPage::Demarrer { .. } => "DeLaPage::Demarrer",
     }
 }
 
@@ -64,6 +70,9 @@ fn nom_commande(c: CommandeEcran) -> &'static str {
         CommandeEcran::NouvelleSoiree => "CommandeEcran::NouvelleSoiree",
         CommandeEcran::Reprendre { .. } => "CommandeEcran::Reprendre",
         CommandeEcran::Marque => "CommandeEcran::Marque",
+        CommandeEcran::ExporterLaCle => "CommandeEcran::ExporterLaCle",
+        CommandeEcran::Figer => "CommandeEcran::Figer",
+        CommandeEcran::Retarder { .. } => "CommandeEcran::Retarder",
     }
 }
 
@@ -91,15 +100,24 @@ const TOUS_LES_VARIANTS: &[&str] = &[
     "VersPage::Panne",
     "VersPage::Traces",
     "VersPage::EnCours",
+    "VersPage::Chargement",
+    "VersPage::Jeu",
+    "VersPage::Accueil",
+    "VersPage::Cle",
+    "VersPage::Banc",
     "DeLaPage::Ecran",
     "DeLaPage::Image",
     "DeLaPage::Fichiers",
     "DeLaPage::Reponse",
     "DeLaPage::Commande",
+    "DeLaPage::Demarrer",
     "CommandeEcran::ChangerDeJeu",
     "CommandeEcran::NouvelleSoiree",
     "CommandeEcran::Reprendre",
     "CommandeEcran::Marque",
+    "CommandeEcran::ExporterLaCle",
+    "CommandeEcran::Figer",
+    "CommandeEcran::Retarder",
     "PanneSalle::Outil",
     "PanneSalle::Garde",
     "PanneSalle::Relais",
@@ -232,6 +250,49 @@ fn vers_page_figes() -> Vec<(VersPage<'static>, &'static str)> {
         ),
         (VersPage::EnCours(None), "0700"),
         (VersPage::EnCours(Some(IdGeste::du_fil(77))), "07014d"),
+        (VersPage::Chargement(Oui::Oui), "0800"),
+        (VersPage::Chargement(Oui::Non), "0801"),
+        (
+            VersPage::Jeu {
+                module: [0xcd; 32],
+                forme: FormeEcran::Scene {
+                    largeur: 1920,
+                    hauteur: 1080,
+                    zone_sure_pour_cent: 90,
+                    echelle_entiere: Oui::Non,
+                },
+            },
+            "09cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00800fb8085a01",
+        ),
+        (
+            VersPage::Jeu {
+                module: [0; 32],
+                forme: FormeEcran::Page { largeur_max: 1100 },
+            },
+            "09000000000000000000000000000000000000000000000000000000000000000001cc08",
+        ),
+        (
+            VersPage::Accueil {
+                salle: CodeSalle([1, 2, 3, 4]),
+                fragment: "ab.c",
+                adresses: vec![
+                    AdresseAnnoncee {
+                        ip: AdresseIp::V4([192, 168, 1, 20]),
+                        port: 7878,
+                    },
+                    AdresseAnnoncee {
+                        ip: AdresseIp::V6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+                        port: 7878,
+                    },
+                ],
+            },
+            "0a010203040461622e630200c0a80114c63d0100000000000000000000000000000001c63d",
+        ),
+        (
+            VersPage::Cle([0xee; 32]),
+            "0beeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        ),
+        (VersPage::Banc("{}"), "0c027b7d"),
     ]
 }
 
@@ -283,6 +344,26 @@ fn de_la_page_figes() -> Vec<(DeLaPage<'static>, &'static str)> {
             "040200",
         ),
         (DeLaPage::Commande(CommandeEcran::Marque), "0403"),
+        (DeLaPage::Commande(CommandeEcran::ExporterLaCle), "0404"),
+        (DeLaPage::Commande(CommandeEcran::Figer), "0405"),
+        (
+            DeLaPage::Commande(CommandeEcran::Retarder { ms: 150, fois: 3 }),
+            "0406960103",
+        ),
+        (
+            DeLaPage::Demarrer {
+                banc: Oui::Oui,
+                module: Some([0x11; 32]),
+            },
+            "0500011111111111111111111111111111111111111111111111111111111111111111",
+        ),
+        (
+            DeLaPage::Demarrer {
+                banc: Oui::Non,
+                module: None,
+            },
+            "050100",
+        ),
     ]
 }
 
@@ -338,7 +419,12 @@ fn les_octets_figes_couvrent_chaque_variant() {
             | VersPage::Demande { .. }
             | VersPage::EtatSalle(_)
             | VersPage::Battement { .. }
-            | VersPage::EnCours(_) => {}
+            | VersPage::EnCours(_)
+            | VersPage::Chargement(_)
+            | VersPage::Jeu { .. }
+            | VersPage::Accueil { .. }
+            | VersPage::Cle(_)
+            | VersPage::Banc(_) => {}
         }
     }
     for (m, _) in de_la_page_figes() {
@@ -353,7 +439,7 @@ fn les_octets_figes_couvrent_chaque_variant() {
 
 #[test]
 fn le_protocole_de_l_ecran_est_fige() {
-    assert_eq!(PROTOCOLE, 1);
+    assert_eq!(PROTOCOLE, 2);
 }
 
 /// SAL-118 : un octet de trop, ou un de moins, est un refus.
@@ -556,6 +642,44 @@ impl<'a> Lecteur<'a> {
                 VersPage::Traces((0..n).map(|_| self.trace()).collect())
             }
             7 => VersPage::EnCours(self.option(|l| IdGeste::du_fil(l.varint()))),
+            8 => VersPage::Chargement(self.oui()),
+            9 => VersPage::Jeu {
+                module: self.brut::<32>(),
+                forme: match self.octet() {
+                    0 => FormeEcran::Scene {
+                        largeur: u16::try_from(self.varint()).unwrap(),
+                        hauteur: u16::try_from(self.varint()).unwrap(),
+                        zone_sure_pour_cent: self.octet(),
+                        echelle_entiere: self.oui(),
+                    },
+                    1 => FormeEcran::Page {
+                        largeur_max: u16::try_from(self.varint()).unwrap(),
+                    },
+                    v => panic!("FormeEcran {v}"),
+                },
+            },
+            10 => {
+                let salle = CodeSalle(self.brut::<4>());
+                let fragment = self.texte();
+                let n = self.varint();
+                let adresses = (0..n)
+                    .map(|_| AdresseAnnoncee {
+                        ip: match self.octet() {
+                            0 => AdresseIp::V4(self.brut::<4>()),
+                            1 => AdresseIp::V6(self.brut::<16>()),
+                            v => panic!("AdresseIp {v}"),
+                        },
+                        port: u16::try_from(self.varint()).unwrap(),
+                    })
+                    .collect();
+                VersPage::Accueil {
+                    salle,
+                    fragment,
+                    adresses,
+                }
+            }
+            11 => VersPage::Cle(self.brut::<32>()),
+            12 => VersPage::Banc(self.texte()),
             v => panic!("VersPage {v}"),
         }
     }
@@ -594,8 +718,18 @@ impl<'a> Lecteur<'a> {
                     ecarter: self.option(|l| IdGeste::du_fil(l.varint())),
                 },
                 3 => CommandeEcran::Marque,
+                4 => CommandeEcran::ExporterLaCle,
+                5 => CommandeEcran::Figer,
+                6 => CommandeEcran::Retarder {
+                    ms: self.u32(),
+                    fois: self.u32(),
+                },
                 v => panic!("CommandeEcran {v}"),
             }),
+            5 => DeLaPage::Demarrer {
+                banc: self.oui(),
+                module: self.option(Lecteur::brut::<32>),
+            },
             v => panic!("DeLaPage {v}"),
         }
     }
@@ -639,7 +773,7 @@ proptest! {
     /// REM-64 : un message figé abîmé à un octet ne fait jamais paniquer.
     #[test]
     fn un_message_abime_ne_fait_jamais_paniquer_rem64(
-        k in 0usize..23,
+        k in 0usize..40,
         position in any::<usize>(),
         octet in any::<u8>(),
     ) {

@@ -18,6 +18,7 @@ members = [
     "moteur-navigateur",
     "rendu",
     "ecran",
+    "autorite",
 ]
 # Le témoin de la règle « mêmes lints » : une crate aux lints différents, que la règle
 # doit refuser. Il n'est pas membre, et ne se compile jamais.
@@ -41,6 +42,7 @@ liaison = { path = "../crates/liaison", version = "0.1.0" }
 salle = { path = "../crates/salle", version = "0.1.0" }
 # Les crates de ce workspace.
 rendu = { path = "rendu", version = "0.1.0" }
+moteur-navigateur = { path = "moteur-navigateur", version = "0.1.0" }
 
 # Les dépendances tierces, chacune avec sa raison.
 

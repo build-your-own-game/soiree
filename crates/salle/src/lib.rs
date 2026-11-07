@@ -12,20 +12,27 @@
 //!   (§ 2.4) ;
 //! - [`autorite`] : l'autorité, la partie qui fait foi et ses appareils (§ 2.3 à § 2.7) ;
 //! - [`appareil`] : un appareil, le cœur du téléphone sans sa page (§ 2.10) ;
+//! - [`en_cours`] : le geste en cours, que l'autorité dit à la page avant chaque `Entree`
+//!   (P39, lot 10a) ;
+//! - [`chien`] : le chien de garde de la page de l'écran, ses deux garde-fous muraux,
+//!   l'entrée qui bloque deux fois, les relances, le retard des réveils (P5, P39, lot 10a) ;
 //! - [`simulation`] : un relais en mémoire et un réseau simulé déterministe, à horloge
 //!   qui saute d'échéance en échéance et graine fixe (SAL-09), qui font tourner la vraie
 //!   autorité et de vrais appareils (SAL-10 ; PHASE-3, § 8.1, lot 4b).
 //!
 //! **Le hasard y entre en paramètre**, comme le temps ([`chiffre::Hasard`]) : un
-//! générateur donné par la coque. `getrandom` ne sert qu'aux coques de `web/`.
+//! générateur donné par la coque ; celle du Worker (`web/autorite`, lot 10a) le tire de
+//! `crypto.getRandomValues`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 pub mod appareil;
 pub mod autorite;
+pub mod chien;
 pub mod chiffre;
 pub mod ecran;
+pub mod en_cours;
 pub mod fil;
 pub mod garde;
 pub mod horloge;

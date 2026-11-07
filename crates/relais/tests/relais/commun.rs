@@ -39,6 +39,8 @@ pub fn reglages(nom: &str, banc: Banc) -> Reglages {
         enregistrer: None,
         interfaces: Some(sans_reseau()),
         page: None,
+        paquet: None,
+        jeux: relais::paquet::Jeux::default(),
     }
 }
 

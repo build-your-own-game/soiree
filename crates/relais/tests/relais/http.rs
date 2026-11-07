@@ -15,7 +15,7 @@ use relais::http::{
     Banc, Contexte, Jugement, Requete, Route, boucle_locale_permise, juger_websocket, router,
 };
 
-use crate::commun::{http, ouvrir, reglages};
+use crate::commun::{dossier, http, ouvrir, reglages};
 
 const SALLE: CodeSalle = CodeSalle([0xab, 0xcd, 0x01, 0x23]);
 const UN_PEU: Duration = Duration::from_secs(5);
@@ -448,4 +448,138 @@ fn une_adresse_imposee_doit_etre_celle_d_une_interface_sal77() {
     assert!(e.contains("aucune interface"), "{e}");
     let e = choisir(&toutes, Some("127.0.0.1".parse().unwrap())).unwrap_err();
     assert!(e.contains("ne peuvent pas joindre"), "{e}");
+}
+
+/// Un paquet et un catalogue dans des dossiers neufs : `<empreinte>/demarrage.js` et un
+/// `.wasm`, et un module livré sous son empreinte.
+fn paquet_et_jeux(nom: &str) -> (relais::paquet::Paquet, relais::paquet::Jeux, String) {
+    let d = dossier(nom);
+    let p = d.join("0123456789abcdef");
+    std::fs::create_dir_all(&p).unwrap();
+    std::fs::write(p.join("demarrage.js"), b"// demarrage").unwrap();
+    std::fs::write(p.join("ecran_bg.wasm"), b"\0asm\x01\0\0\0").unwrap();
+    let j = d.join("jeux");
+    std::fs::create_dir_all(&j).unwrap();
+    let empreinte = "ab".repeat(32);
+    std::fs::write(j.join(format!("{empreinte}.wasm")), b"\0asm module").unwrap();
+    (
+        relais::paquet::Paquet::lire(&p).unwrap(),
+        relais::paquet::Jeux::lire(&j).unwrap(),
+        empreinte,
+    )
+}
+
+/// SAL-150, P16 (lot 10a) : le paquet de la page se sert de sa table, à tous, `immutable`
+/// sous son empreinte ; les modules livrés et le catalogue, à la boucle locale seulement ;
+/// la page de démarrage charge `demarrage.js` du paquet, sans script en ligne, et dit le
+/// banc à la page seulement avec `--banc`. Rien d'autre ne se sert.
+#[test]
+fn le_paquet_et_les_modules_se_servent_de_la_table_sal150() {
+    let (paquet, jeux, empreinte) = paquet_et_jeux("paquet");
+    let mut r = reglages("paquet", Banc::Oui);
+    r.paquet = Some(paquet.clone());
+    r.jeux = jeux.clone();
+    let relais = coque::lancer(&r).unwrap();
+    let port = relais.port();
+    let get = |chemin: &str, entetes: &str| {
+        http(
+            port,
+            &format!("GET {chemin} HTTP/1.1\r\nHost: localhost:{port}\r\n{entetes}\r\n"),
+        )
+    };
+    let (statut, page) = get("/", "");
+    assert_eq!(statut, 200);
+    assert!(
+        page.contains(
+            "<script type=\"module\" src=\"/web/0123456789abcdef/demarrage.js\"></script>"
+        )
+    );
+    assert!(page.contains("<meta name=\"soiree-banc\" content=\"oui\">"));
+    assert!(page.contains("connect-src 'self'"), "{page}");
+    assert!(page.contains("Cross-Origin-Embedder-Policy: require-corp"));
+    let (statut, js) = get("/web/0123456789abcdef/demarrage.js", "");
+    assert_eq!(statut, 200);
+    assert!(js.contains("Content-Type: text/javascript"));
+    assert!(js.contains("immutable"));
+    assert!(js.ends_with("// demarrage"));
+    let (statut, wasm) = get("/web/0123456789abcdef/ecran_bg.wasm", "");
+    assert_eq!(statut, 200);
+    assert!(wasm.contains("Content-Type: application/wasm"));
+    for chemin in [
+        "/web/fedcba9876543210/demarrage.js",
+        "/web/0123456789abcdef/absent.js",
+        "/web/0123456789abcdef/../ecran_bg.wasm",
+        "/web/0123456789abcdef",
+        "/jeux/absent.wasm",
+        "/jeux/../Cargo.toml",
+    ] {
+        assert_eq!(get(chemin, "").0, 404, "{chemin}");
+    }
+    let (statut, catalogue) = get("/jeux/catalogue", "");
+    assert_eq!(statut, 200);
+    assert!(catalogue.ends_with(&format!(
+        "{{\"jeux\":[{{\"empreinte\":\"{empreinte}\",\"taille\":11}}]}}"
+    )));
+    let (statut, module) = get(&format!("/jeux/{empreinte}.wasm"), "");
+    assert_eq!(statut, 200);
+    assert!(module.ends_with("\0asm module"));
+    // La boucle locale seulement, d'un `Host` local, sans `Origin` étrangère (SAL-33).
+    assert_eq!(
+        get("/jeux/catalogue", "Origin: http://ailleurs.example\r\n").0,
+        403
+    );
+    assert_eq!(
+        http(
+            port,
+            "GET /jeux/catalogue HTTP/1.1\r\nHost: ailleurs.example\r\n\r\n"
+        )
+        .0,
+        403
+    );
+    // Le paquet, à tous ceux qui parlent d'un `Host` permis ; pas d'un rebond DNS.
+    assert_eq!(
+        http(
+            port,
+            "GET /web/0123456789abcdef/demarrage.js HTTP/1.1\r\nHost: ailleurs.example\r\n\r\n"
+        )
+        .0,
+        403
+    );
+    relais.arreter();
+    // Sans le banc, la page ne le dit pas.
+    let mut r = reglages("paquet-soiree", Banc::Non);
+    r.paquet = Some(paquet);
+    let relais = coque::lancer(&r).unwrap();
+    let port = relais.port();
+    let (statut, page) = http(
+        port,
+        &format!("GET / HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"),
+    );
+    assert_eq!(statut, 200);
+    assert!(!page.contains("soiree-banc"));
+    relais.arreter();
+}
+
+/// Un paquet ou un catalogue mal formé se refuse au lancement, haut et clair.
+#[test]
+fn un_paquet_ou_un_catalogue_mal_forme_se_refuse() {
+    let d = dossier("paquet-refus");
+    let p = d.join("pas-une-empreinte");
+    std::fs::create_dir_all(&p).unwrap();
+    std::fs::write(p.join("demarrage.js"), b"").unwrap();
+    assert!(relais::paquet::Paquet::lire(&p).is_err());
+    let p = d.join("0123456789abcdef");
+    std::fs::create_dir_all(&p).unwrap();
+    assert!(
+        relais::paquet::Paquet::lire(&p)
+            .unwrap_err()
+            .contains("demarrage.js")
+    );
+    std::fs::write(p.join("demarrage.js"), b"").unwrap();
+    std::fs::write(p.join("nom avec espace.js"), b"").unwrap();
+    assert!(relais::paquet::Paquet::lire(&p).is_err());
+    let j = d.join("jeux");
+    std::fs::create_dir_all(&j).unwrap();
+    std::fs::write(j.join("module.wasm"), b"").unwrap();
+    assert!(relais::paquet::Jeux::lire(&j).is_err());
 }

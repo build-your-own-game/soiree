@@ -43,6 +43,8 @@ pub struct Firefox {
     bidi: Bidi,
     /// `browserName` et `browserVersion` de la session (`firefox 158.0.1`).
     pub version: String,
+    /// Les onglets ouverts, dans l'ordre : leur contexte `BiDi` (lot 10a).
+    onglets: Vec<String>,
 }
 
 /// L'adresse `BiDi` que Firefox écrit sur sa sortie d'erreur.
@@ -97,6 +99,7 @@ impl Firefox {
             profil,
             bidi,
             version: String::new(),
+            onglets: Vec::new(),
         };
         let s = firefox
             .bidi
@@ -133,7 +136,121 @@ impl Firefox {
             &json!({ "context": contexte, "url": url, "wait": "none" }),
             DELAI,
         )?;
+        self.onglets.push(contexte);
         Ok(())
+    }
+
+    fn contexte(&self, onglet: usize) -> Result<String, String> {
+        self.onglets
+            .get(onglet)
+            .cloned()
+            .ok_or_else(|| format!("pas d'onglet {onglet}"))
+    }
+
+    /// Ouvre un onglet de plus à `url` ; rend son rang parmi les onglets ouverts.
+    pub fn nouvel_onglet(&mut self, url: &str) -> Result<usize, String> {
+        let c = self
+            .bidi
+            .envoyer("browsingContext.create", &json!({ "type": "tab" }), DELAI)?;
+        let contexte = c
+            .get("context")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("browsingContext.create sans contexte : {c}"))?
+            .to_owned();
+        self.bidi.envoyer(
+            "browsingContext.navigate",
+            &json!({ "context": contexte, "url": url, "wait": "none" }),
+            DELAI,
+        )?;
+        self.onglets.push(contexte);
+        Ok(self.onglets.len().saturating_sub(1))
+    }
+
+    /// Évalue `expression` dans l'onglet, sa promesse attendue ; rend sa valeur, si elle
+    /// est primitive (une chaîne, un nombre, un booléen).
+    pub fn evaluer(&mut self, onglet: usize, expression: &str) -> Result<Json, String> {
+        let contexte = self.contexte(onglet)?;
+        let r = self.bidi.envoyer(
+            "script.evaluate",
+            &json!({ "expression": expression, "target": { "context": contexte }, "awaitPromise": true, "resultOwnership": "none" }),
+            DELAI,
+        )?;
+        if r.get("type").and_then(Json::as_str) == Some("exception") {
+            return Err(format!(
+                "{expression} : {}",
+                r.get("exceptionDetails").cloned().unwrap_or(Json::Null)
+            ));
+        }
+        Ok(r.pointer("/result/value").cloned().unwrap_or(Json::Null))
+    }
+
+    /// Recharge l'onglet.
+    pub fn recharger(&mut self, onglet: usize) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "browsingContext.reload",
+                &json!({ "context": contexte, "wait": "none" }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Ferme l'onglet ; son rang reste pris.
+    pub fn fermer_onglet(&mut self, onglet: usize) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "browsingContext.close",
+                &json!({ "context": contexte }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Passe un onglet vierge devant les autres : ils sont cachés (comme la mesure 6).
+    pub fn cacher(&mut self) -> Result<(), String> {
+        let c = self
+            .bidi
+            .envoyer("browsingContext.create", &json!({ "type": "tab" }), DELAI)?;
+        let contexte = c
+            .get("context")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("browsingContext.create sans contexte : {c}"))?
+            .to_owned();
+        self.bidi
+            .envoyer(
+                "browsingContext.activate",
+                &json!({ "context": contexte }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Remet l'onglet devant.
+    pub fn montrer(&mut self, onglet: usize) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "browsingContext.activate",
+                &json!({ "context": contexte }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Appuie sur F8, par la chaîne d'entrées du navigateur (`input.performActions`).
+    pub fn touche_f8(&mut self, onglet: usize) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": [
+                    { "type": "keyDown", "value": "\u{E038}" }, { "type": "keyUp", "value": "\u{E038}" }
+                ] }] }),
+                DELAI,
+            )
+            .map(|_| ())
     }
 
     /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont dit.

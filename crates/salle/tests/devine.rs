@@ -10,12 +10,18 @@
 
 #![cfg(test)]
 
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::process::Command;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
-use jeu_abi::Oui;
+use jeu_abi::{IdGeste, Oui, SorteAppel};
 use moteur_wasmtime::{InstantaneWasm, Moteur, ReglagesMoteur};
+use partie::{CausePanne, Echec, Fabrique, Instance, PanneOutil};
+use salle::chien::{Chien, Decision, TIC_MS};
+use salle::ecran::{CommandeEcran, DeLaPage, VersPage};
+use salle::en_cours::{Dire, FabriqueQuiDit, geste_de_l_appel};
 use salle::simulation::{Pannes, Soiree, verifier_l_historique};
 
 /// Le module de `devine`, compilé une fois par binaire de test, dans un dossier à part
@@ -94,4 +100,319 @@ fn une_soiree_de_devine_en_memoire_survit_a_ses_pannes() {
 #[test]
 fn une_soiree_en_memoire_se_refait_a_l_identique_sal09() {
     assert_eq!(soiree_de_devine(12), soiree_de_devine(12));
+}
+
+// ---------------------------------------------------------------------------
+// L'entrée qui bloque (P39, lot 10a)
+// ---------------------------------------------------------------------------
+
+/// Une fabrique dont les instances « bloquent » sur un geste : le premier qu'elles voient
+/// entrer une fois armées, puis le même à chaque fois. On l'arme après quelques secondes
+/// de soirée : l'identité d'un geste tient à son appareil, qu'une reprise ne retrouve
+/// que si le registre qui l'inscrit a été écrit (une case suit l'arrivée de 100 ms). Bloquer, ici, c'est rendre la panne
+/// `GardeFouMural`, ce que rend wasmtime quand son garde-fou coupe un appel : l'autorité
+/// s'arrête et ne bat plus, comme un Worker figé que la page doit tuer.
+struct Bloquante {
+    fabrique: moteur_wasmtime::FabriqueWasm,
+    poison: Rc<Cell<Option<u64>>>,
+    arme: Rc<Cell<bool>>,
+}
+
+struct InstanceBloquante {
+    instance: <moteur_wasmtime::FabriqueWasm as Fabrique>::I,
+    poison: Rc<Cell<Option<u64>>>,
+    arme: Rc<Cell<bool>>,
+}
+
+impl Fabrique for Bloquante {
+    type I = InstanceBloquante;
+    fn neuve(&mut self) -> Result<InstanceBloquante, PanneOutil> {
+        Ok(InstanceBloquante {
+            instance: self.fabrique.neuve()?,
+            poison: Rc::clone(&self.poison),
+            arme: Rc::clone(&self.arme),
+        })
+    }
+}
+
+impl Instance for InstanceBloquante {
+    type Instantane = InstantaneWasm;
+    fn appeler(&mut self, sorte: SorteAppel, appel: &[u8], budget: u64) -> Result<Vec<u8>, Echec> {
+        if let Some(id) = geste_de_l_appel(appel)
+            && self.arme.get()
+        {
+            let poison = self.poison.get().unwrap_or(id.fil());
+            self.poison.set(Some(poison));
+            if id.fil() == poison {
+                return Err(Echec::Panne(PanneOutil::new(
+                    CausePanne::GardeFouMural,
+                    "le geste empoisonné ne rend pas la main",
+                )));
+            }
+        }
+        self.instance.appeler(sorte, appel, budget)
+    }
+    fn carburant(&self) -> Option<u64> {
+        self.instance.carburant()
+    }
+    fn instantane(&mut self) -> Result<InstantaneWasm, PanneOutil> {
+        self.instance.instantane()
+    }
+    fn restaurer(&mut self, i: &InstantaneWasm) -> Result<(), PanneOutil> {
+        self.instance.restaurer(i)
+    }
+    fn empreinte(&mut self) -> Result<[u8; 32], PanneOutil> {
+        self.instance.empreinte()
+    }
+}
+
+/// P39 (CONTRAT, « La forme d'un jeu » : une entrée qui fait échouer le jeu est isolée et
+/// écartée ; HIS-06, OUT-11 : un arrêt mural est une panne de l'outil). Un geste fait
+/// s'arrêter l'autorité pendant son appel : le chien de garde de la page la relance ; le
+/// téléphone, sans accusé, le renvoie, et elle s'arrête de nouveau ; au second arrêt sur
+/// le même geste, le Worker neuf reçoit `Reprendre { ecarter }`, la salle refuse le geste
+/// au téléphone (`Ecarte`), la page le dit en panne de l'outil en le nommant, et la soirée
+/// continue : les gestes suivants comptent, rien d'autre n'est perdu, le geste écarté
+/// n'est pas dans la chaîne écrite, et la file du téléphone se vide.
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    reason = "un seul scénario, de bout en bout, qui se lit d'une traite"
+)]
+fn une_entree_qui_bloque_deux_fois_est_ecartee() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let poison: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+    let arme = Rc::new(Cell::new(false));
+    let page: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+    let dire: Dire = {
+        let page = Rc::clone(&page);
+        Rc::new(move |id| {
+            page.borrow_mut()
+                .push(VersPage::EnCours(id).encoder().unwrap());
+        })
+    };
+    let p = Rc::clone(&poison);
+    let a = Rc::clone(&arme);
+    let mut s = Soiree::new(
+        move || {
+            FabriqueQuiDit::new(
+                Bloquante {
+                    fabrique: charge.fabrique(),
+                    poison: Rc::clone(&p),
+                    arme: Rc::clone(&a),
+                },
+                Rc::clone(&dire),
+            )
+        },
+        21,
+        Oui::Oui,
+        Pannes::AUCUNE,
+    );
+    {
+        let page = Rc::clone(&page);
+        s.observer_la_page(move |o| page.borrow_mut().push(o.to_vec()));
+    }
+    for _ in 0..3 {
+        let _: usize = s.ajouter_telephone();
+    }
+    let mut chien = Chien::new();
+    let ms = |s: &Soiree<_, _>| s.t_us / 1000;
+    chien.demarre(ms(&s));
+    let mut relances = Vec::new();
+    let mut pannes = Vec::new();
+    let fin = s.t_us + 90_000_000;
+    let armer = s.t_us + 10_000_000;
+    while s.t_us < fin {
+        if s.t_us >= armer {
+            arme.set(true);
+        }
+        s.avancer_jusqua(s.t_us + TIC_MS * 1000);
+        let t = ms(&s);
+        for o in page.borrow_mut().drain(..) {
+            let m = VersPage::decoder(&o).unwrap();
+            if let VersPage::Panne(r) = &m {
+                pannes.push(r.detail.to_owned());
+            }
+            let _: bool = chien.message(t, &m);
+        }
+        match chien.tic(t) {
+            Decision::Rien => {}
+            Decision::Relancer { ecarter, .. } => {
+                relances.push(ecarter);
+                if let Some(e) = ecarter {
+                    s.a_la_relance(
+                        DeLaPage::Commande(CommandeEcran::Reprendre { ecarter: Some(e) })
+                            .encoder()
+                            .unwrap(),
+                    );
+                }
+                // La page tue le Worker figé et en lance un neuf.
+                s.tuer_l_autorite(200_000);
+                chien.demarre(t);
+            }
+            Decision::Panne { .. } => panic!("le commun en panne : {relances:?} {pannes:?}"),
+        }
+    }
+    let poison = poison.get().expect("un geste a bloqué");
+    assert_eq!(
+        relances,
+        vec![None, Some(IdGeste::du_fil(poison))],
+        "deux arrêts sur le même geste, puis plus aucun"
+    );
+    let a = s.autorite.as_ref().expect("l'autorité vit");
+    assert!(a.arret().is_none(), "{:?}", a.arret());
+    assert_eq!(a.comptes().gestes_ecartes, 1);
+    assert!(
+        a.comptes().gestes_places > 0,
+        "la soirée continue après l'écart : {:?}",
+        a.comptes()
+    );
+    let nomme = format!("{poison:016x}");
+    assert!(
+        pannes
+            .iter()
+            .any(|d| d.contains("deux arrêts muraux") && d.contains(&nomme)),
+        "la page dit l'entrée écartée, nommée : {pannes:?}"
+    );
+    s.calmer();
+    let historique = s.relais.historique();
+    let h = verifier_l_historique::<InstantaneWasm>(&s.cle_de_garde(), s.salle(), &historique)
+        .expect("la chaîne de la soirée");
+    assert!(
+        !h.gestes.contains(&poison),
+        "le geste écarté n'est pas écrit"
+    );
+    assert_eq!(h.en_double, Vec::<u64>::new());
+    assert_eq!(s.accuses_non_ecrits(&h), Vec::<String>::new());
+    for (k, t) in s.telephones.iter().enumerate() {
+        assert_eq!(t.appareil.en_file(), 0, "téléphone {k}");
+    }
+    s.comparer_a_la_garde()
+        .expect("la garde reprend la même partie");
+}
+
+/// SAL-162 : F8 pose une marque au journal. Elle part à la garde avec la case suivante,
+/// même sans ligne nouvelle, dans le registre que chaque case porte ; une autorité reprise
+/// de la garde la retrouve, et la garde relue la donne à son indice, au bord d'un pas.
+#[test]
+fn une_marque_f8_va_a_la_garde_et_survit_a_la_reprise_sal162() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 22, Oui::Oui, Pannes::AUCUNE);
+    for _ in 0..2 {
+        let _: usize = s.ajouter_telephone();
+    }
+    let marque = DeLaPage::Commande(CommandeEcran::Marque).encoder().unwrap();
+    s.avancer_jusqua(s.t_us + 5_000_000);
+    s.depuis_la_page(&marque);
+    s.avancer_jusqua(s.t_us + 3_000_000);
+    s.depuis_la_page(&marque);
+    s.avancer_jusqua(s.t_us + 1_000_000);
+    let avant = s.autorite.as_ref().unwrap().registre().unwrap().marques;
+    assert_eq!(avant.len(), 2, "{avant:?}");
+    assert!(avant[0].indice < avant[1].indice && avant[0].pas < avant[1].pas);
+    // La garde relue les porte, à des bords de pas du journal écrit.
+    let cases = s.relais.cases();
+    let lue = salle::garde::relire::<InstantaneWasm>(&s.cle_de_garde(), s.salle(), &cases, None)
+        .expect("la garde se relit");
+    assert_eq!(lue.registre.marques, avant);
+    // Une autorité reprise les retrouve, et en ajoute.
+    s.tuer_l_autorite(300_000);
+    s.avancer_jusqua(s.t_us + 2_000_000);
+    s.depuis_la_page(&marque);
+    s.avancer_jusqua(s.t_us + 1_000_000);
+    let apres = s.autorite.as_ref().unwrap().registre().unwrap().marques;
+    assert_eq!(apres.len(), 3, "{apres:?}");
+    assert_eq!(&apres[..2], &avant[..]);
+    assert_eq!(s.autorite.as_ref().unwrap().comptes().marques, 1);
+}
+
+/// Lot 10a, correction après la vérification : un point de reprise se scelle une tranche
+/// par réveil, et non d'un coup dans le tour qui le prend (un point de Punchline, scellé
+/// d'un coup, tenait le Worker de Firefox jusqu'à 24 ms, et le jeu sautait un pas). Le
+/// tour où il commence ne l'écrit pas ; il part plusieurs réveils plus tard ; aucune case
+/// de journal ne passe devant lui ; une autorité tuée pendant qu'il se scelle reprend du
+/// point d'avant ; la chaîne entière se vérifie, et la garde reprend la même partie.
+#[test]
+fn un_point_se_scelle_par_tranches_sur_plusieurs_reveils() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 23, Oui::Oui, Pannes::AUCUNE);
+    s.regler_la_tranche_du_point(1024);
+    for _ in 0..2 {
+        let _: usize = s.ajouter_telephone();
+    }
+    // Pas après pas, jusqu'à deux points commencés : le point compte quand il part.
+    let mut commences = 0;
+    let mut reveils_par_point = Vec::new();
+    let mut en_scellement: Option<u64> = None;
+    let mut journal_au_debut = 0;
+    let mut tue = false;
+    let mut depuis = s.autorite.as_ref().unwrap().depuis_le_point();
+    let fin = s.t_us + 60_000_000;
+    while s.t_us < fin && reveils_par_point.len() < 2 {
+        let points = s.autorite.as_ref().map_or(0, |a| a.comptes().points);
+        s.avancer_jusqua(s.t_us + 16_667);
+        let Some(a) = s.autorite.as_ref() else {
+            continue;
+        };
+        let d = a.depuis_le_point();
+        if d < depuis && depuis.is_some_and(|x| x > 100) {
+            // Un point vient de commencer : il n'est pas écrit dans ce tour.
+            commences += 1;
+            assert_eq!(
+                a.comptes().points,
+                points,
+                "le point s'écrit dans le tour qui le prend"
+            );
+            en_scellement = Some(0);
+            journal_au_debut = a.comptes().cases_journal;
+        }
+        depuis = d;
+        if let Some(n) = en_scellement.as_mut() {
+            *n += 1;
+            if a.comptes().points > points {
+                reveils_par_point.push(*n);
+                en_scellement = None;
+            } else {
+                // Aucune case de journal ne se scelle devant le point.
+                assert_eq!(
+                    a.comptes().cases_journal,
+                    journal_au_debut,
+                    "une case de journal passe devant le point"
+                );
+                if !tue && *n == 3 && commences == 1 {
+                    // Tuée pendant le scellement : la reprise part du point d'avant.
+                    tue = true;
+                    en_scellement = None;
+                    s.tuer_l_autorite(300_000);
+                    s.avancer_jusqua(s.t_us + 1_000_000);
+                    s.comparer_a_la_garde()
+                        .expect("la garde reprend la même partie après un point perdu");
+                    depuis = s.autorite.as_ref().unwrap().depuis_le_point();
+                }
+            }
+        }
+    }
+    assert!(tue, "l'autorité n'a pas été tuée pendant un scellement");
+    assert_eq!(reveils_par_point.len(), 2, "{reveils_par_point:?}");
+    assert!(
+        reveils_par_point.iter().all(|&n| n > 3),
+        "le point s'est scellé en trop peu de réveils : {reveils_par_point:?}"
+    );
+    s.avancer_jusqua(s.t_us + 2_000_000);
+    let historique = s.relais.historique();
+    let h = verifier_l_historique::<InstantaneWasm>(&s.cle_de_garde(), s.salle(), &historique)
+        .expect("la chaîne de la soirée");
+    assert_eq!(h.en_double, Vec::<u64>::new());
+    s.comparer_a_la_garde()
+        .expect("la garde reprend la même partie");
+    // La minuterie de secours (P6) : juste après une image, rien ne presse ; attendre
+    // deux pas de plus ferait sauter un jeu qui ne rattrape qu'un pas.
+    s.avancer_jusqua(s.t_us + 100_000);
+    let a = s.autorite.as_ref().unwrap();
+    assert!(!a.secours_presse(s.t_us, 0));
+    assert!(a.secours_presse(s.t_us, 2 * 16_667 + 1));
 }

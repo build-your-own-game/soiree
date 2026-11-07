@@ -160,6 +160,15 @@ snow = { version = "0.10.0", default-features = false, features = ["use-curve255
 # grossiraient le paquet du téléphone) ; sans `getrandom` ni `alloc`, dont on n'a pas
 # besoin : le nonce d'une case vient du hasard donné à `salle`.
 chacha20poly1305 = { version = "0.10.1", default-features = false }
+# Le scellement d'une case de point par tranches (lot 10a, correction après la
+# vérification : un point d'environ un Mio scellé d'un coup tenait le Worker jusqu'à
+# 24 ms dans Firefox, et Punchline sautait un pas) : les deux primitives de
+# XChaCha20-Poly1305, appelées une tranche à la fois, pour rendre exactement les octets
+# de `chacha20poly1305`. Les versions que `chacha20poly1305` 0.10.1 tire déjà (vérifiées
+# dans les deux Cargo.lock) : aucune crate de plus dans l'arbre ; sans fonctionnalité
+# par défaut.
+chacha20 = { version = "0.9.1", default-features = false }
+poly1305 = { version = "0.8.0", default-features = false }
 # La mesure des textes de la scène (PHASE-3, § 2.9, P21) : façonnage (harfrust), bidi,
 # polices de repli, en pur Rust, la même dans l'épreuve et, au lot 9, dans la télé, où
 # `glyphon` 0.12 la dessine (il demande `cosmic-text` 0.19). La dernière version (0.19.0,

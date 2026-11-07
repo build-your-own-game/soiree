@@ -9,6 +9,8 @@
 //! - [`admission`] : les places, décidées avant de créer un fil (SAL-143) ;
 //! - [`adresses`] : où écouter, quoi annoncer (SAL-75 à SAL-77) ;
 //! - [`garde`] : la garde sur disque, durable (SAL-26, SAL-27) ;
+//! - [`paquet`] : le paquet de la page et les modules livrés, lus au lancement et servis
+//!   d'une table en mémoire (SAL-150, P16 ; lot 10a) ;
 //! - [`enregistrement`] : tout ce que le relais voit, pour le banc (§ 8.1) ;
 //! - [`coque`] : les fils, les sockets, l'heure ;
 //! - le binaire `soiree-relais`.
@@ -29,3 +31,4 @@ pub mod file;
 pub mod garde;
 pub mod horloge;
 pub mod http;
+pub mod paquet;

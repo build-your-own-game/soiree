@@ -43,6 +43,7 @@ use crate::file::{Envoi, FileSortante};
 use crate::garde::{Dossier, GARDE_MAX, PreuvesSurDisque};
 use crate::horloge::maintenant_us;
 use crate::http::{self, Banc, Contexte, Isolement, Jugement, Route};
+use crate::paquet::{self, Jeux, Paquet};
 
 /// Le port du relais par défaut (P14).
 pub const PORT: u16 = 7878;
@@ -86,8 +87,13 @@ pub struct Reglages {
     pub enregistrer: Option<PathBuf>,
     /// Les interfaces de la machine ; lues du système si absentes (les tests en donnent).
     pub interfaces: Option<Vec<Interface>>,
-    /// La page de démarrage (en attendant celle du lot 10b) ; une page minimale si vide.
+    /// La page de démarrage (en attendant celle du lot 10b) ; sans elle, celle qui charge
+    /// le paquet, s'il y en a un, sinon une page minimale.
     pub page: Option<Vec<u8>>,
+    /// `--paquet` : le paquet de la page, lu au lancement (lot 10a).
+    pub paquet: Option<Paquet>,
+    /// `--jeux` : les modules livrés, lus au lancement (lot 10a).
+    pub jeux: Jeux,
 }
 
 impl Reglages {
@@ -101,6 +107,8 @@ impl Reglages {
             enregistrer: None,
             interfaces: None,
             page: None,
+            paquet: None,
+            jeux: Jeux::default(),
         }
     }
 }
@@ -192,6 +200,8 @@ enum Evenement {
 struct Partage {
     contexte: Contexte,
     page: Vec<u8>,
+    paquet: Option<Paquet>,
+    jeux: Jeux,
     dossier: Dossier,
     admission: Mutex<Admission>,
     prochain: AtomicU32,
@@ -287,6 +297,17 @@ fn ecouter_la_boucle(port: u16) -> Result<(TcpListener, TcpListener), ErreurLanc
     )))
 }
 
+/// La page de démarrage : celle des réglages, sinon celle qui charge le paquet, sinon une
+/// page minimale.
+fn page_de(r: &Reglages) -> Vec<u8> {
+    r.page.clone().unwrap_or_else(|| {
+        r.paquet.as_ref().map_or_else(
+            || PAGE_MINIMALE.to_vec(),
+            |p| paquet::page_de_demarrage(p, r.banc),
+        )
+    })
+}
+
 /// Lance le relais.
 pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
     let interfaces = match r.interfaces.clone() {
@@ -337,7 +358,9 @@ pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
             annoncees: annoncees.clone(),
             banc: r.banc,
         },
-        page: r.page.clone().unwrap_or_else(|| PAGE_MINIMALE.to_vec()),
+        page: page_de(r),
+        paquet: r.paquet.clone(),
+        jeux: r.jeux.clone(),
         dossier: dossier.clone(),
         admission: Mutex::new(Admission::new()),
         prochain: AtomicU32::new(0),
@@ -484,10 +507,30 @@ fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
     let c = &p.contexte;
     match http::router(&r) {
         Route::Methode => repondre(&mut flux, &http::erreur("405 Method Not Allowed")),
-        Route::Introuvable | Route::Web(_) => {
-            // Rien n'est servi d'un chemin de fichier : la table est en mémoire, et le
-            // paquet de la page n'y entre qu'au lot 10a (SAL-150).
-            repondre(&mut flux, &http::erreur("404 Not Found"));
+        Route::Introuvable => repondre(&mut flux, &http::erreur("404 Not Found")),
+        Route::Web(reste) => {
+            // Rien n'est servi d'un chemin de fichier : la table est en mémoire (SAL-150).
+            if !http::publique_permise(pair.ip(), &r, c) {
+                return repondre(&mut flux, &http::erreur("403 Forbidden"));
+            }
+            match p.paquet.as_ref().and_then(|q| q.fichier(&reste)) {
+                Some((type_, octets)) => {
+                    repondre(&mut flux, &http::fichier_du_paquet(type_, octets));
+                }
+                None => repondre(&mut flux, &http::erreur("404 Not Found")),
+            }
+        }
+        Route::Jeux(reste) => {
+            if !http::boucle_locale_permise(pair.ip(), &r, c) {
+                return repondre(&mut flux, &http::erreur("403 Forbidden"));
+            }
+            match p.jeux.servir(&reste) {
+                Some((type_, octets)) => repondre(
+                    &mut flux,
+                    &http::reponse("200 OK", type_, &octets, &[("Cache-Control", "no-store")]),
+                ),
+                None => repondre(&mut flux, &http::erreur("404 Not Found")),
+            }
         }
         Route::Demarrage => {
             if http::boucle_locale_permise(pair.ip(), &r, c) {

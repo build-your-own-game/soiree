@@ -11,15 +11,15 @@
     reason = "code de test : des instants et des numéros petits ; un débordement y serait l'échec du test"
 )]
 
-use jeu_abi::{Appareil, Oui};
+use jeu_abi::{Appareil, Oui, Pas};
 use liaison::{Case, CodeSalle};
 use partie::modele::{FabriqueModele, InstantaneModele};
 use proptest::prelude::*;
 use salle::chiffre::CleDeGarde;
 use salle::garde::{
-    ContenuJournal, ContenuPoint, Inscrit, OngletInscrit, RefusContenu, RefusDeGarde, Registre,
-    VERSION_CASES, decoder_contenu_journal, decoder_contenu_point, encoder_contenu_journal,
-    encoder_contenu_point, numero, relire,
+    ContenuJournal, ContenuPoint, Inscrit, Marque, OngletInscrit, RefusContenu, RefusDeGarde,
+    Registre, VERSION_CASES, decoder_contenu_journal, decoder_contenu_point,
+    encoder_contenu_journal, encoder_contenu_point, numero, relire,
 };
 use salle::simulation::{Pannes, Soiree};
 
@@ -212,11 +212,16 @@ fn registre() -> Registre {
                 onglets: Vec::new(),
             },
         ],
+        marques: vec![Marque {
+            indice: 600,
+            pas: Pas::du_fil(601),
+        }],
+        ecartes: vec![0xabc],
     }
 }
 
-const POINT_FIGE: &str = "010000000003010203020708021111111111111111111111111111111111111111111111111111111111111111ac020202058080808080200022222222222222222222222222222222222222222222222222222222222222220100";
-const JOURNAL_FIGE: &str = "01000000010304050600";
+const POINT_FIGE: &str = "020000000003010203020708021111111111111111111111111111111111111111111111111111111111111111ac02020205808080808020002222222222222222222222222222222222222222222222222222222222222222010001d804d90401bc15";
+const JOURNAL_FIGE: &str = "020000000103040506000000";
 
 fn hexa(o: &[u8]) -> String {
     use std::fmt::Write;
@@ -251,7 +256,7 @@ fn journal() -> ContenuJournal {
 
 #[test]
 fn la_version_des_cases_est_figee() {
-    assert_eq!(VERSION_CASES, 1);
+    assert_eq!(VERSION_CASES, 2);
 }
 
 #[test]
@@ -268,10 +273,10 @@ fn les_octets_des_contenus_de_case_sont_figes() {
         RefusContenu::Sorte { lue: 0 }
     );
     let mut v = j.clone();
-    v[0] = 2;
+    v[0] = 3;
     assert_eq!(
         decoder_contenu_journal(&v).unwrap_err(),
-        RefusContenu::Version { lue: 2 }
+        RefusContenu::Version { lue: 3 }
     );
     assert_eq!(
         decoder_contenu_point(&[1, 0]).unwrap_err(),
@@ -347,7 +352,20 @@ impl Lecteur<'_> {
                 }
             })
             .collect();
-        Registre { appareils }
+        let k = self.varint();
+        let marques = (0..k)
+            .map(|_| Marque {
+                indice: self.varint(),
+                pas: Pas::du_fil(self.varint()),
+            })
+            .collect();
+        let e = self.varint();
+        let ecartes = (0..e).map(|_| self.varint()).collect();
+        Registre {
+            appareils,
+            marques,
+            ecartes,
+        }
     }
 
     fn entete(&mut self, sorte: u8) {

@@ -14,7 +14,20 @@
 //! soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes]
 //!                           [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne]
 //!                           [--travail <dossier>] [--calme S]
+//! soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--telephones N]
+//!                    [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]
+//! soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S]
+//!                          [--fois N] [--telephones N] [--travail <dossier>] [--sans-construire]
+//! soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm>
+//!                           [--salle CODE] [--sortie <dossier>]
 //! ```
+//!
+//! `soiree` : la vraie autorité dans le Worker d'un navigateur, l'écran rechargé, le
+//! Worker tué, un second onglet, F8, la partie jusqu'au podium, chaque reprise et la
+//! soirée entière jugées contre wasmtime (lot 10a, `banc::soiree`) ; `--m12` mesure la
+//! reprise au pire moment. `arriere-plan` : l'onglet caché (§ 8.3). `rejouer-garde` : la
+//! garde rejouée jusqu'à chaque marque F8 (§ 2.4, `banc::rejouer_garde`). Code 0 si tout
+//! tient, 1 au moindre écart, 2 si rien n'a pu jouer.
 //!
 //! `machine` : les essais de `Machine` (lot 3a). `rejouer` : E20, que `soiree-epreuve
 //! --navigateurs` lance sur le dossier qu'il écrit (lot 3b, `banc::rejouer`).
@@ -55,11 +68,12 @@ use banc::machine::{self, Arret, Options};
 use banc::navigateur::Navigateur;
 use banc::rapport::Attendu;
 use banc::rejouer;
+use banc::soiree;
 use banc::soiree_native;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]\n        soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--telephones N] [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]\n        soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S] [--fois N] [--telephones N] [--travail <dossier>] [--sans-construire]\n        soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm> [--salle CODE] [--sortie <dossier>]"
     );
     ExitCode::from(2)
 }
@@ -560,6 +574,156 @@ fn dessin_(args: &[String]) -> ExitCode {
     }
 }
 
+/// `soiree` ou `arriere-plan`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scenario {
+    Soiree,
+    ArrierePlan,
+}
+
+fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
+    let commun = banc::commun();
+    let mut o = soiree::Options {
+        module: PathBuf::new(),
+        navigateurs: vec![Navigateur::Chrome, Navigateur::Firefox],
+        telephones: None,
+        construire: true,
+        duree_max_s: 400,
+        travail: commun.join("target/banc/soiree"),
+        m12: 0,
+        fois: 1,
+        cache_s: if scenario == Scenario::ArrierePlan {
+            360
+        } else {
+            0
+        },
+    };
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        match a.as_str() {
+            "--sans-construire" => o.construire = false,
+            "--navigateurs" => match i.next().map(|n| Navigateur::liste(n)) {
+                Some(Ok(n)) => o.navigateurs = n,
+                _ => return usage(),
+            },
+            "--telephones" => match i.next().and_then(|d| d.parse().ok()) {
+                Some(n) => o.telephones = Some(n),
+                None => return usage(),
+            },
+            "--duree-max" => match i.next().and_then(|d| d.parse().ok()) {
+                Some(n) => o.duree_max_s = n,
+                None => return usage(),
+            },
+            "--m12" if scenario == Scenario::Soiree => {
+                match i.next().and_then(|d| d.parse().ok()) {
+                    Some(n) => o.m12 = n,
+                    None => return usage(),
+                }
+            }
+            "--cache" if scenario == Scenario::ArrierePlan => {
+                match i.next().and_then(|d| d.parse().ok()) {
+                    Some(n) if n > 0 => o.cache_s = n,
+                    _ => return usage(),
+                }
+            }
+            "--fois" if scenario == Scenario::ArrierePlan => {
+                match i.next().and_then(|d| d.parse().ok()) {
+                    Some(n) if n > 0 => o.fois = n,
+                    _ => return usage(),
+                }
+            }
+            "--travail" => match i.next() {
+                Some(d) => o.travail = PathBuf::from(d),
+                None => return usage(),
+            },
+            _ if a.starts_with("--") || !o.module.as_os_str().is_empty() => return usage(),
+            _ => o.module = PathBuf::from(a),
+        }
+    }
+    if o.module.as_os_str().is_empty() {
+        return usage();
+    }
+    let passages = match soiree::jouer(&o, &commun) {
+        Ok(p) => p,
+        Err(e) => {
+            println!("soiree : l'outil n'a pas pu jouer : {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let (mut reussis, mut echecs, mut non) = (0u32, 0u32, 0u32);
+    for p in &passages {
+        print!("{p}");
+        if p.pas_execute.is_some() {
+            non = non.saturating_add(1);
+        } else if p.fautes.is_empty() {
+            reussis = reussis.saturating_add(1);
+        } else {
+            echecs = echecs.saturating_add(1);
+        }
+    }
+    println!(
+        "
+soiree : {reussis} réussi(s), {echecs} échec(s), {non} pas exécuté(s)"
+    );
+    if echecs > 0 {
+        ExitCode::from(1)
+    } else if reussis == 0 {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn rejouer_garde_(args: &[String]) -> ExitCode {
+    let (mut garde, mut cle, mut module, mut salle, mut sortie) = (None, None, None, None, None);
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        match a.as_str() {
+            "--cle" => cle = i.next().map(PathBuf::from),
+            "--module" => module = i.next().map(PathBuf::from),
+            "--sortie" => sortie = i.next().map(PathBuf::from),
+            "--salle" => match i.next().and_then(|c| liaison::CodeSalle::lire(c)) {
+                Some(c) => salle = Some(c),
+                None => return usage(),
+            },
+            _ if a.starts_with("--") || garde.is_some() => return usage(),
+            _ => garde = Some(PathBuf::from(a)),
+        }
+    }
+    let (Some(garde), Some(cle), Some(module)) = (garde, cle, module) else {
+        return usage();
+    };
+    let sortie = sortie.unwrap_or_else(|| garde.join("marques"));
+    let g = match banc::rejouer_garde::lire_la_cle(&cle) {
+        Ok(g) => g,
+        Err(e) => {
+            println!("rejouer-garde : {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let octets = match std::fs::read(&module) {
+        Ok(o) => o,
+        Err(e) => {
+            println!("rejouer-garde : {} : {e}", module.display());
+            return ExitCode::from(2);
+        }
+    };
+    match banc::rejouer_garde::rejouer(&garde, salle, &g, &octets, &sortie) {
+        Ok(r) => {
+            print!("{r}");
+            if r.marques.iter().all(|m| m.issue.is_ok()) {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }
+        Err(e) => {
+            println!("rejouer-garde : {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
@@ -569,6 +733,9 @@ fn main() -> ExitCode {
         Some((c, reste)) if c == "regles-web" && reste.is_empty() => regles_web(),
         Some((c, reste)) if c == "soiree-native" => soiree_native(reste),
         Some((c, reste)) if c == "dessin" => dessin_(reste),
+        Some((c, reste)) if c == "soiree" => soiree_(reste, Scenario::Soiree),
+        Some((c, reste)) if c == "arriere-plan" => soiree_(reste, Scenario::ArrierePlan),
+        Some((c, reste)) if c == "rejouer-garde" => rejouer_garde_(reste),
         _ => usage(),
     }
 }

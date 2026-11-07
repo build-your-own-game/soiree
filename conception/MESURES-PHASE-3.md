@@ -711,3 +711,50 @@ Mesuré le 2026-11-07 de 06 h 10 min 09 s à 06 h 10 min 34 s (GMT, `target/preu
 - **Ce que la mesure ne dit pas** : des images au rythme d'un écran (le banc dessine une image puis attend le GPU, une à la fois) ; le photon (OUT-88) ; Safari ; une machine de soirée autre que celle de l'hôte ; le travail long de Tier list (M8, lot 11).
 
 Les compilations du lot (pas des mesures au calme : charge de 2,4 à 3,8) : `rendu` et `ecran` en natif depuis rien, 49 s et 1,00 Go résidents au plus ; pour `wasm32` en release, 28 s et 0,70 Go (`target/preuves/lot-9/compilation-native/`, `compilation-wasm32/`).
+
+## Lot 10a : M12, la durée d'une reprise au pire moment
+
+Mesuré le 2026-11-07 de 08 h 10 min 39 s à 08 h 16 min 20 s (GMT, `target/preuves/lot-10a/m12-*/code.txt`), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), par `target/hote/lourd --calme`, un jeu après l'autre : Punchline (charge 0,98 au départ, 1,86 à la fin, 1,94 au plus pendant), Sidequest (1,86 ; 1,83 ; 1,99), Tier list (1,83 ; 1,98 ; 1,95) ; chaque tour sous 3 du début à la fin, aucun écarté ; 45 à 48 % de mémoire libre ; aucune compilation pendant (le paquet est construit avant, `--sans-construire`). Chrome 156.0.8078.80 sans interface, Firefox 158.0.1 sans interface ; Safari non mesuré. Les modules du lot 7 (sha256 `82669f77…`, `62043526…`, `84315a1b…`), le paquet `web/` `9b384233…` (`target/preuves/lot-10a/soiree/paquet.txt`). Des téléphones natifs jouent les coups des bots (6 chez Punchline et Sidequest, aucun chez Tier list, qui n'en a pas). La règle de validité, posée avant les tours : un tour dont la charge atteint 3 ne vaut pas mesure ; aucun ne l'a atteinte.
+
+**Ce qui est mesuré** : le Worker est tué par le crochet de test de la page (`window.__banc.tuer()`, comme le chien de garde le tue) au pire moment, quand la partie a joué au moins 575 pas depuis le dernier point (`POINT_TOUS_LES` vaut 600) ; le Worker neuf, de sa création à la partie reprise (`performance.now()` du Worker, dont l'origine est sa création) : la colle chargée, IndexedDB lue, le module téléchargé et vérifié, réécrit, compilé, `Bonjour` et `Decrire`, les deux WebSocket ouvertes, la garde listée et lue, puis `Partie::reprendre`, qui rejoue les pas du journal depuis le dernier point en vérifiant chaque empreinte. Chaque reprise a, de plus, la même forme canonique et la même empreinte que celle que wasmtime reprend des mêmes cases (le banc le juge).
+
+| Jeu, navigateur | Pas rejoués | IndexedDB lue | Module téléchargé | Réécrit, compilé, chargé | **Partie reprise** (trois tours) |
+|---|---|---|---|---|---|
+| Punchline, Chrome | 589, 590, 589 | 16 à 19 ms | 21 à 25 ms | 168 à 174 ms | **213, 234, 239 ms** |
+| Punchline, Firefox | 587, 575, 578 | 36 à 40 ms | 40 à 45 ms | 194 à 201 ms | **537, 405, 657 ms** |
+| Sidequest, Chrome | 590, 587, 586 | 16 à 17 ms | 22 ms | 158 à 160 ms | **241, 250, 252 ms** |
+| Sidequest, Firefox | 588, 577, 576 | 37 à 38 ms | 41 ms | 180 à 182 ms | **573, 651, 568 ms** |
+| Tier list, Chrome | 589, 586, 584 | 16 à 18 ms | 24 à 25 ms | 181 à 183 ms | **245, 288, 318 ms** |
+| Tier list, Firefox | 587, 576, 577 | 37 ms | 43 ms | 203 à 205 ms | **601, 537, 467 ms** |
+
+(Chaque colonne est l'heure du Worker à la fin de l'étape, depuis sa création ; la dernière est le total.)
+
+- **Au plus 657 ms** de la création du Worker à la partie reprise, au pire moment, dans Firefox (Punchline) ; au plus 318 ms dans Chrome. La réécriture et la compilation en prennent 140 à 160 ms (le module chargé, `moteur_navigateur::charger`) ; le reste, la garde lue et les quelque 590 pas rejoués, 40 à 135 ms dans Chrome, 200 à 460 ms dans Firefox.
+- **`POINT_TOUS_LES` ne change pas** (600) : une reprise au pire moment reste sous la seconde ; un point plus fréquent coûterait plus souvent ce que coûte un point dans le tour du Worker (voir `arriere-plan`, plus bas), pour gagner au plus quelques centaines de ms à une reprise.
+- **Ce que la mesure ne dit pas** : Tier list sur un plateau plein d'images (l'instantané au pire, M3, 16,8 Mio dans wasmtime) : les bots jouent un plateau presque vide ; une reprise après un rechargement de l'écran (la page refaite, le GPU repris, le paquet servi) : la page n'est pas mesurée ici ; Safari ; une autre machine que celle de l'hôte.
+- Pour refaire : `cargo build -p banc --bin soiree-banc`, puis `target/hote/lourd --calme target/debug/soiree-banc soiree <module.wasm> --navigateurs chrome,firefox --m12 3 [--sans-construire]`. La preuve : `target/preuves/lot-10a/m12-punchline/`, `m12-sidequest/`, `m12-tier-list/`.
+
+**Un constat, pas une mesure de temps : les sauts de Firefox onglet caché** (`soiree-banc arriere-plan`, `target/preuves/lot-10a/arriere-plan/`, le 2026-11-07 de 07 h 57 à 08 h 10 GMT, charge 1,77 au départ, 0,98 à la fin, 3,06 au plus : pas une machine calme, et ce n'est pas une durée qu'on donne). Punchline, onglet caché 360 s : Chrome joue 21 587 pas sans aucun `Saut` ; Firefox en joue 21 598, avec **24 sauts d'un pas** (un de trois). 15 d'entre eux tombent au pas qui suit un multiple de 600 (2 401, 5 401, 6 601…) : le tour où le Worker prend un point, le chiffre et l'envoie dure assez, dans Firefox, pour que le réveil suivant ait manqué deux pas, et Punchline ne rattrape qu'un pas (`rattrapage: 1`). Le coût d'un point dans le Worker n'est pas mesuré ici (M3, lot 11) ; il touche R2 et P9 (un second Worker pour le chiffrement) et la question 4.
+
+## Lot 10a, correction après la vérification : M12 remesuré, et les sauts d'`arriere-plan`
+
+**M12, remesuré** sur le code corrigé (le point scellé par tranches, la minuterie de secours à 4 ms ; le Worker envoie en mode banc un rapport de plus au pire moment, `PIRE_MOMENT`, 580 pas depuis le point, où le banc le tue), le 2026-11-07, sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface, Safari non mesuré, les mêmes modules (`82669f77…`, `62043526…`, `84315a1b…`), le paquet `web/` `6b6be334…` ; par `target/hote/lourd --calme`, un jeu après l'autre. La règle de validité, posée avant : un tour dont la charge atteint 3 ne vaut pas mesure. Punchline et Sidequest, mesurés d'abord de 11 h 48 à 11 h 51 GMT, ont vu la charge monter à 3,96 et 3,16 : **écartés** (`target/preuves/lot-10a-corr/m12-punchline/`, `m12-sidequest/`), et refaits de 12 h 02 à 12 h 05 (charge 1,82 au départ, 2,38 au plus ; puis 2,38 et 2,90) ; Tier list, de 11 h 51 à 11 h 52 (2,48 au départ et au plus).
+
+| Jeu, navigateur | Pas depuis le point | **Partie reprise** (trois tours) |
+|---|---|---|
+| Punchline, Chrome | 580, 580, 580 | **217, 233, 228 ms** |
+| Punchline, Firefox | 580, 580, 580 | **482, 450, 587 ms** |
+| Sidequest, Chrome | 580, 580, 598 | **239, 258, 234 ms** |
+| Sidequest, Firefox | 580, 580, 580 | **660, 485, 493 ms** |
+| Tier list, Chrome | 580, 580, 599 | **247, 285, 259 ms** |
+| Tier list, Firefox | 580, 580, 580 | **536, 499, 437 ms** |
+
+- Au plus **660 ms** dans Firefox, **285 ms** dans Chrome : du même ordre qu'au lot (657 et 318 ms). `POINT_TOUS_LES` reste à 600.
+- Pour refaire : `target/hote/lourd --calme target/debug/soiree-banc soiree <module.wasm> --navigateurs chrome,firefox --m12 3 --sans-construire`. Les preuves : `target/preuves/lot-10a-corr/m12-punchline-refait/`, `m12-sidequest-refait/`, `m12-tier-list/`.
+
+**Des constats, pas des mesures de temps** (`soiree-banc arriere-plan`, Punchline, 360 s caché, trois passages par navigateur, lancé par `lourd --calme`, qui n'attend le calme qu'au départ ; les durées sont celles que le Worker rapporte en mode banc, `performance.now()`) :
+
+- **Le tour où un point commence** (l'instantané et l'encodage) : de 10 à 18 ms dans Firefox, de 10 à 14 ms dans Chrome ; **celui qui le finit** (la dernière tranche, l'étiquette et le message `Ecrire`) : au plus 11 ms ; une tranche de 128 Kio ne fait jamais un tour de plus de 10 ms. Avant la correction, le tour qui prenait, scellait et envoyait un point durait de 13 à 33 ms dans Firefox (`target/travail/lot-10a-corr/essai1/`).
+- **Les sauts qui restent** suivent un trou de plus de 30 ms entre deux pas joués, le tour lui-même court (le fil du Worker n'a pas tourné), et ils suivent la charge de la machine : charge au plus 3,25 (premier passage de la preuve, minuterie encore à 8 ms, `target/preuves/lot-10a-corr-passage1/`) : Chrome 3 réussis, Firefox 1 passage à 3 sauts ; charge au plus 3,97 (minuterie à 4 ms, `…-passage2/`) : Chrome 3 réussis, Firefox 2 réussis et 1 saut ; charge au plus 5,48 (la preuve finale, `target/preuves/lot-10a-corr/arriere-plan/`) : Chrome 2 réussis et une rafale de 7 sauts en 2,7 s (trous de 30 à 89 ms, et un tour de 23 ms), Firefox 5, 2 et 1 sauts (trous de 30 à 73 ms).
+- **Firefox donne encore, de loin en loin, une image à un onglet caché** : de 0 à 3 en 360 s, `document.visibilityState` valant `hidden`.
+

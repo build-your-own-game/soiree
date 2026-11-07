@@ -77,7 +77,7 @@ pub const PASSAGES: [(&str, Attendu); 2] = [
     ("i64-par-nombre", Attendu::SeuleEchoue("globales_i64")),
 ];
 
-fn lancer(c: &mut Command, quoi: &str) -> Result<String, String> {
+pub(crate) fn lancer(c: &mut Command, quoi: &str) -> Result<String, String> {
     let sortie = c.output().map_err(|e| format!("{quoi} : {e}"))?;
     if sortie.status.success() {
         Ok(String::from_utf8_lossy(&sortie.stdout).into_owned())

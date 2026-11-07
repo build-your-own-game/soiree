@@ -23,6 +23,10 @@ serde.workspace = true
 snow.workspace = true
 # Les trames de transport et les cases de la garde (§ 2.4, § 2.6).
 chacha20poly1305.workspace = true
+# Le scellement d'une case de point par tranches, sur plusieurs réveils du Worker
+# (lot 10a) : les primitives de XChaCha20-Poly1305, les mêmes octets.
+chacha20.workspace = true
+poly1305.workspace = true
 # La psk tirée du secret d'entrée, la preuve d'autorité, la clé des cases de la garde,
 # l'empreinte d'une case (§ 2.6, § 2.7).
 blake3.workspace = true

@@ -33,9 +33,13 @@
 
 use core::fmt;
 
+use chacha20::XChaCha20;
+use chacha20::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag, XChaCha20Poly1305, XNonce};
 use liaison::{Case, Classe, CodeSalle, TRAME_MAX};
+use poly1305::Poly1305;
+use poly1305::universal_hash::UniversalHash;
 use snow::params::{CipherChoice, DHChoice, HashChoice, NoiseParams};
 use snow::resolvers::{CryptoResolver, DefaultResolver};
 use snow::types::{Cipher, Dh, Hash, Random};
@@ -78,9 +82,9 @@ pub const AVANT_LA_PREMIERE_CASE: [u8; 32] = [0; 32];
 // Le hasard
 // ---------------------------------------------------------------------------
 
-/// Le hasard, donné par la coque (PHASE-3, § 2.2) : `crypto.getRandomValues` par
-/// `getrandom` dans le navigateur (SAL-93), un générateur à graine fixe dans les
-/// tests (SAL-09). `salle` ne tire jamais le sien.
+/// Le hasard, donné par la coque (PHASE-3, § 2.2) : `crypto.getRandomValues` dans le
+/// navigateur (SAL-93 ; la coque du Worker l'appelle directement, lot 10a), un générateur
+/// à graine fixe dans les tests (SAL-09). `salle` ne tire jamais le sien.
 pub trait Hasard {
     /// Remplit `octets` de hasard.
     fn remplir(&mut self, octets: &mut [u8]);
@@ -854,6 +858,118 @@ pub fn sceller_case(
     v.extend_from_slice(&corps);
     v.extend_from_slice(&etiquette);
     Ok(v)
+}
+
+/// Un bloc de `ChaCha20` : une tranche du scellement en est un multiple, pour que Poly1305
+/// la lise comme le scellement d'un coup.
+const OCTETS_D_UN_BLOC: usize = 64;
+
+/// Une case scellée par tranches (lot 10a, correction après la vérification) : le point
+/// de reprise, d'environ un Mio, se scelle sur plusieurs réveils du Worker, pour qu'aucun
+/// tour ne tienne le fil plus d'un pas. Rend **exactement** les octets de
+/// [`sceller_case`] (le même nonce tiré au même moment) et leur [`empreinte_case`],
+/// calculée en chemin : `XChaCha20` puis Poly1305 sur chaque tranche, comme
+/// `chacha20poly1305` sur tout le corps (RFC 8439, § 2.8).
+pub struct ScellementDeCase {
+    chacha: XChaCha20,
+    mac: Poly1305,
+    hacheur: blake3::Hasher,
+    longueur_ad: u64,
+    /// Le nonce, puis le corps, chiffré jusqu'à `fait`, puis l'étiquette à la fin.
+    octets: Vec<u8>,
+    fait: usize,
+}
+
+impl fmt::Debug for ScellementDeCase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScellementDeCase")
+            .field("octets", &self.octets.len())
+            .field("fait", &self.fait)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ScellementDeCase {
+    /// Commence à sceller `clair` sous `entete` : le nonce est tiré maintenant, rien
+    /// n'est encore chiffré.
+    pub fn commencer(
+        g: &CleDeGarde,
+        entete: &EnteteCase,
+        clair: &[u8],
+        h: &mut (impl Hasard + ?Sized),
+    ) -> Result<ScellementDeCase, ErreurChiffre> {
+        // La borne de `chacha20poly1305` : le compteur de blocs ne déborde pas.
+        if clair.len() / OCTETS_D_UN_BLOC >= u32::MAX as usize {
+            return Err(ErreurChiffre::ClairTropLong);
+        }
+        let nonce: [u8; OCTETS_DU_NONCE_DE_CASE] = tirer(h);
+        let mut chacha = XChaCha20::new(
+            &chacha20::Key::from(g.cle_des_cases()),
+            &chacha20::XNonce::from(nonce),
+        );
+        // La clé de Poly1305 : les 32 premiers octets du flot ; le corps commence au
+        // bloc 1.
+        let mut cle_mac = poly1305::Key::default();
+        chacha.apply_keystream(&mut cle_mac);
+        let mut mac = Poly1305::new(&cle_mac);
+        cle_mac.fill(0);
+        chacha.seek(OCTETS_D_UN_BLOC as u64);
+        let ad = entete.donnees_associees();
+        mac.update_padded(&ad);
+        let mut octets = Vec::with_capacity(
+            OCTETS_DU_NONCE_DE_CASE
+                .saturating_add(clair.len())
+                .saturating_add(OCTETS_DE_L_ETIQUETTE),
+        );
+        octets.extend_from_slice(&nonce);
+        octets.extend_from_slice(clair);
+        let mut hacheur = blake3::Hasher::new();
+        hacheur.update(&nonce);
+        Ok(ScellementDeCase {
+            chacha,
+            mac,
+            hacheur,
+            longueur_ad: ad.len() as u64,
+            octets,
+            fait: OCTETS_DU_NONCE_DE_CASE,
+        })
+    }
+
+    /// Chiffre la tranche suivante, d'au plus `octets_max` octets (arrondi au bloc, au
+    /// moins un bloc). Rend vrai quand tout le corps est chiffré.
+    pub fn avancer(&mut self, octets_max: usize) -> bool {
+        let reste = self.octets.len().saturating_sub(self.fait);
+        let tranche = (octets_max / OCTETS_D_UN_BLOC)
+            .max(1)
+            .saturating_mul(OCTETS_D_UN_BLOC)
+            .min(reste);
+        let fin = self.fait.saturating_add(tranche);
+        if let Some(t) = self.octets.get_mut(self.fait..fin) {
+            self.chacha.apply_keystream(t);
+            // Une tranche est un multiple de 16 octets, sauf la dernière : Poly1305 ne
+            // complète que celle-là, comme le scellement d'un coup.
+            self.mac.update_padded(t);
+            self.hacheur.update(t);
+        }
+        self.fait = fin;
+        self.fait >= self.octets.len()
+    }
+
+    /// Finit le scellement (ce qui reste se chiffre d'un coup) : la case scellée, et son
+    /// empreinte.
+    pub fn finir(mut self) -> (Vec<u8>, [u8; 32]) {
+        while !self.avancer(usize::MAX) {}
+        let longueur = self.octets.len().saturating_sub(OCTETS_DU_NONCE_DE_CASE) as u64;
+        let mut bloc = poly1305::Block::default();
+        let (ad, corps) = bloc.split_at_mut(8);
+        ad.copy_from_slice(&self.longueur_ad.to_le_bytes());
+        corps.copy_from_slice(&longueur.to_le_bytes());
+        self.mac.update(&[bloc]);
+        let etiquette = self.mac.finalize();
+        self.hacheur.update(&etiquette);
+        self.octets.extend_from_slice(&etiquette);
+        (self.octets, *self.hacheur.finalize().as_bytes())
+    }
 }
 
 /// Ouvre une case de la garde, sous l'en-tête où on l'attend. Une case d'une autre

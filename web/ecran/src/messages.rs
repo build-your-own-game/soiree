@@ -71,5 +71,10 @@ pub fn recevoir(octets: &[u8], polices: &mut Polices) -> Result<Recu, String> {
         VersPage::Panne(_) => Ok(Recu::Laisse("panne")),
         VersPage::Traces(_) => Ok(Recu::Laisse("traces")),
         VersPage::EnCours(_) => Ok(Recu::Laisse("geste en cours")),
+        VersPage::Chargement(_) => Ok(Recu::Laisse("chargement")),
+        VersPage::Jeu { .. } => Ok(Recu::Laisse("jeu")),
+        VersPage::Accueil { .. } => Ok(Recu::Laisse("accueil")),
+        VersPage::Cle(_) => Ok(Recu::Laisse("clé de garde")),
+        VersPage::Banc(_) => Ok(Recu::Laisse("banc")),
     }
 }

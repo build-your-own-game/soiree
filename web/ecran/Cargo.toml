@@ -7,6 +7,12 @@ rust-version.workspace = true
 publish.workspace = true
 repository.workspace = true
 
+# Une bibliothèque WebAssembly que `wasm-bindgen` relie à la page de la télé
+# (`web/demarrage.js`, lot 10a), et une bibliothèque Rust pour l'exemple du banc et les
+# tests natifs.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 # Le dessin de la scène.
 rendu.workspace = true
@@ -14,13 +20,19 @@ rendu.workspace = true
 salle.workspace = true
 # La scène, la forme de l'écran, les clés.
 jeu-abi.workspace = true
+# Le refus du relais qu'un message du Worker porte (« Remplacée », P36).
+liaison.workspace = true
 # Les polices de la télé, validées comme E1 les valide (P22).
 mise-en-page.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
 js-sys.workspace = true
-web-sys.workspace = true
+# La toile, et, au lot 10a, le Worker de l'autorité, le clavier, le bandeau du commun.
+web-sys = { workspace = true, features = [
+    "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "ErrorEvent", "KeyboardEvent",
+    "Location", "HtmlElement", "CssStyleDeclaration", "Node", "Event", "EventTarget",
+] }
 wasm-bindgen-futures.workspace = true
 
 [dev-dependencies]
