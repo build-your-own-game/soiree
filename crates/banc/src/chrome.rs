@@ -162,13 +162,20 @@ impl Chrome {
     }
 
     /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS, au rapport de
-    /// pixels 1 (`Emulation.setDeviceMetricsOverride`, lot 11).
-    pub fn fenetre(&mut self, onglet: usize, largeur: u32, hauteur: u32) -> Result<(), String> {
+    /// pixels `dpr` (`Emulation.setDeviceMetricsOverride`, lot 11 ; `dpr` depuis la
+    /// remontée du lot 10b).
+    pub fn fenetre(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+        dpr: f64,
+    ) -> Result<(), String> {
         let s = self.session_de(onglet)?;
         self.cdp
             .envoyer(
                 "Emulation.setDeviceMetricsOverride",
-                &json!({ "width": largeur, "height": hauteur, "deviceScaleFactor": 1, "mobile": false }),
+                &json!({ "width": largeur, "height": hauteur, "deviceScaleFactor": dpr, "mobile": false }),
                 Some(&s),
                 DELAI,
             )
@@ -358,6 +365,36 @@ impl Chrome {
             self.cdp.envoyer(
                 "Input.dispatchKeyEvent",
                 &json!({ "type": sorte, "key": "F8", "code": "F8", "windowsVirtualKeyCode": 119, "nativeVirtualKeyCode": 119 }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Appuie sur Échap, par la chaîne d'entrées du navigateur (lot 10b, P38).
+    pub fn touche_echap(&mut self, onglet: usize) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        for sorte in ["rawKeyDown", "keyUp"] {
+            self.cdp.envoyer(
+                "Input.dispatchKeyEvent",
+                &json!({ "type": sorte, "key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27 }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Un clic gauche en `(x, y)`, pixels de la fenêtre, par la chaîne d'entrées du
+    /// navigateur (`Input.dispatchMouseEvent`) : un vrai geste, qui permet le plein écran et
+    /// le son (lot 10b).
+    pub fn cliquer(&mut self, onglet: usize, x: f64, y: f64) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        for sorte in ["mouseMoved", "mousePressed", "mouseReleased"] {
+            self.cdp.envoyer(
+                "Input.dispatchMouseEvent",
+                &json!({ "type": sorte, "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1 }),
                 Some(&s),
                 DELAI,
             )?;

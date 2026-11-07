@@ -43,6 +43,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod aide;
 pub mod bidi;
 pub mod cdp;
 pub mod chrome;

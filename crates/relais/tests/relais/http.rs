@@ -518,7 +518,7 @@ fn le_paquet_et_les_modules_se_servent_de_la_table_sal150() {
     let (statut, catalogue) = get("/jeux/catalogue", "");
     assert_eq!(statut, 200);
     assert!(catalogue.ends_with(&format!(
-        "{{\"jeux\":[{{\"empreinte\":\"{empreinte}\",\"taille\":11}}]}}"
+        "{{\"jeux\":[{{\"empreinte\":\"{empreinte}\",\"taille\":11,\"eprouve\":false}}]}}"
     )));
     let (statut, module) = get(&format!("/jeux/{empreinte}.wasm"), "");
     assert_eq!(statut, 200);

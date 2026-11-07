@@ -7,10 +7,15 @@
 //! - [`file`] : la file de ce que le relais envoie sur un lien, bornée (SAL-06, SAL-07) ;
 //! - [`http`] : la requête, qui parle (SAL-33), les routes (SAL-150), les réponses ;
 //! - [`admission`] : les places, décidées avant de créer un fil (SAL-143) ;
+//! - [`aide`] : l'aide du jour J, les pages de téléphone sans lien et le pare-feu (lot
+//!   10b) ;
 //! - [`adresses`] : où écouter, quoi annoncer (SAL-75 à SAL-77) ;
 //! - [`garde`] : la garde sur disque, durable (SAL-26, SAL-27) ;
 //! - [`paquet`] : le paquet de la page et les modules livrés, lus au lancement et servis
 //!   d'une table en mémoire (SAL-150, P16 ; lot 10a) ;
+//! - [`preparer`] : le paquet de la page, construit une fois (`soiree-relais preparer`,
+//!   lot 10b) ;
+//! - [`jouer`] : la commande unique du jour J, `soiree-relais jouer` (P17, P35 ; lot 10b) ;
 //! - [`enregistrement`] : tout ce que le relais voit, pour le banc (§ 8.1) ;
 //! - [`coque`] : les fils, les sockets, l'heure ;
 //! - le binaire `soiree-relais`.
@@ -24,6 +29,7 @@
 
 pub mod admission;
 pub mod adresses;
+pub mod aide;
 pub mod coeur;
 pub mod coque;
 pub mod enregistrement;
@@ -31,4 +37,6 @@ pub mod file;
 pub mod garde;
 pub mod horloge;
 pub mod http;
+pub mod jouer;
 pub mod paquet;
+pub mod preparer;

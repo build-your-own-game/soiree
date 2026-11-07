@@ -1028,6 +1028,30 @@ fn compiler_la_copie_native(
         .ok_or_else(|| String::from("Cargo n'a nommé aucun exécutable pour la copie native"))
 }
 
+/// `soiree-epreuve --construire <dossier>` (PHASE-3, § 2.8 ; lot 10b) : **la compilation du
+/// module de l'étape 1**, par la même fonction et donc la même invocation de cargo
+/// ([`compiler_le_module`] : profil `module`, `wasm32-unknown-unknown`, le même dossier de
+/// compilation par défaut), sans les règles d'écriture, ni clippy, ni la copie native :
+/// seuls les octets comptent ici, et c'est le rapport d'épreuve, cherché par leur
+/// empreinte, qui garantit le reste (`soiree-relais jouer`). Rend le module et son
+/// empreinte BLAKE3.
+pub(crate) fn construire(d: &Demande) -> Result<(PathBuf, [u8; 32]), String> {
+    let dossier = canon(&d.dossier);
+    let manifeste = dossier.join("Cargo.toml");
+    if !manifeste.is_file() {
+        return Err(format!("{} : pas de Cargo.toml", d.dossier.display()));
+    }
+    let mut c = cargo(&dossier);
+    c.args(["metadata", "--format-version", "1", "--manifest-path"])
+        .arg(&manifeste);
+    let w = lire_workspace(&lancer(&mut c).map_err(|e| format!("cargo metadata : {e}"))?)?;
+    let module = trouver_le_module(&w, d)?.clone();
+    let cible = d.cible.clone().unwrap_or_else(|| w.cible.clone());
+    let (wasm, _) = compiler_le_module(&w, &module, &cible)?;
+    let octets = std::fs::read(&wasm).map_err(|e| format!("{} : {e}", wasm.display()))?;
+    Ok((wasm, *blake3::hash(&octets).as_bytes()))
+}
+
 /// L'étape 1 : lit le workspace, vérifie les règles, compile le module et la copie
 /// native. `Err` : le dossier n'est pas un projet Cargo lisible.
 #[expect(

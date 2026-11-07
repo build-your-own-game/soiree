@@ -37,6 +37,9 @@ partie.workspace = true
 mise-en-page.workspace = true
 # L'empreinte du module joué, au rapport ; celle de chaque agencement (`dessin`).
 blake3.workspace = true
+# `aide` (lot 10b) : la version de la réécriture, que le rapport d'un module nomme (le
+# Worker la vérifie avec l'empreinte réécrite, § 2.8).
+reecriture.workspace = true
 # Les pilotes de Chrome et de Firefox : CDP et WebDriver BiDi sont des WebSocket.
 tungstenite.workspace = true
 # Les messages de CDP et de BiDi, et le rapport qu'une page envoie à `POST /banc/rapport`.

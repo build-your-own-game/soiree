@@ -6,6 +6,13 @@
 //!
 //! Ce qu'il joue, dans chaque navigateur, et avec WebGL2 forcé dans Chrome :
 //!
+//! - **l'écran du commun qui couvre le jeu** (la remontée du lot 10b) : sous l'écran de
+//!   démarrage, un clic sur un bouton du jeu et des images données à son sélecteur ne lui
+//!   vont pas ; le clic sur « Jouer » non plus, une fois l'écran tombé ; ni, après le
+//!   rechargement, le clic sur « Cliquer pour reprendre » posé sur le bouton Reset du jeu.
+//!   La page dit chaque entrée qui va au jeu (une ligne `au-jeu` : un clic, un glisser qui
+//!   commence, des fichiers) ; le banc constate qu'il n'y en a aucune tant que l'écran du
+//!   commun couvre le jeu, et qu'il y en a une pour chaque geste du jeu après ;
 //! - **l'import** : des images données au sélecteur « Add Images » (`DOM.setFileInputFiles`
 //!   dans Chrome, `input.setFiles` dans Firefox), décodées, recadrées et réduites par la
 //!   page (`Image`), qui arrivent dans la réserve, dessinées ;
@@ -26,9 +33,16 @@
 //!   (M8 : les images de la page pendant le rendu, les tours longs du Worker, et dans
 //!   Chrome les images perdues de la trace).
 //!
-//! Son contrôle négatif : `--fautif activation-perdue` (la page attend que l'activation
+//! Ses contrôles négatifs : `--fautif activation-perdue` (la page attend que l'activation
 //! du geste de `Telecharger` soit perdue) : la sauvegarde n'est pas captée, et le passage
-//! échoue pour cette raison.
+//! échoue pour cette raison ; `--fautif geste-au-jeu` (le clic du geste n'est pas arrêté) :
+//! le clic sur « Jouer » va au jeu ; `--fautif ne-couvre-pas` (la page oublie que l'écran
+//! du commun couvre le jeu) : le clic et les images donnés sous l'écran de démarrage
+//! vont au jeu.
+//!
+//! `--dpr R` joue la page à un rapport de pixels de `R` (1 par défaut) : la toile est en
+//! pixels de l'appareil, les clics et `window.__banc.centre()` en pixels CSS ; le banc
+//! constate le rapport, la taille de la toile, et que « Jouer » tombe dans la fenêtre.
 
 #![expect(
     clippy::many_single_char_names,
@@ -76,6 +90,8 @@ pub struct Options {
     pub fautif: Option<String>,
     /// Les images de bruit du plateau plein (0 : pas de plateau plein).
     pub images_plein: usize,
+    /// Le rapport de pixels de la page (`--dpr`, 1 par défaut ; la remontée du lot 10b).
+    pub dpr: f64,
     /// Construire le paquet `web/` (sinon, le dernier construit).
     pub construire: bool,
     /// Le dossier de travail.
@@ -434,6 +450,194 @@ fn cliquer(s: &mut Session, (x, y): (f64, f64)) -> Result<(), String> {
     s.tourner(Duration::from_millis(100))
 }
 
+/// Un point, ou une taille, en pixels CSS.
+type Point = (f64, f64);
+
+/// Où l'écran du commun propose de cliquer (`window.__banc.centre()`, en pixels de la
+/// fenêtre), et la taille de la fenêtre ; `None` s'il ne propose rien.
+fn centre_du_commun(s: &mut Session) -> Result<(Option<Point>, Point), String> {
+    // Une chaîne : `BiDi` ne rend une valeur que si elle est primitive.
+    let v = s.evaluer(
+        0,
+        "JSON.stringify([window.__banc.centre(), window.innerWidth, window.innerHeight])",
+    )?;
+    let v: Json = v
+        .as_str()
+        .and_then(|t| serde_json::from_str(t).ok())
+        .unwrap_or(Json::Null);
+    let n = |k: usize| v.get(k).and_then(Json::as_f64).unwrap_or(0.0);
+    let centre = v
+        .get(0)
+        .and_then(Json::as_array)
+        .map(Vec::as_slice)
+        .and_then(|a| match a {
+            [x, y] => Some((x.as_f64()?, y.as_f64()?)),
+            _ => None,
+        });
+    Ok((centre, (n(1), n(2))))
+}
+
+/// Clique sur ce que l'écran du commun propose (« Jouer » sur l'écran de démarrage,
+/// « Cliquer pour reprendre » après un rechargement ; lot 10b), par la vraie chaîne
+/// d'entrées, et attend que la page dise son geste : tant que l'écran du commun couvre
+/// le jeu, aucun clic ni aucune touche ne lui va. `ou` : un autre point du voile que son
+/// centre, en pixels de la fenêtre. Le point que la page donne doit tomber dans la
+/// fenêtre : à un rapport de pixels autre que 1, des pixels de l'appareil pris pour des
+/// pixels CSS l'en sortiraient (la remontée du lot 10b). Rend la ligne `geste-fait`.
+fn le_geste(
+    s: &mut Session,
+    p: &mut Passage,
+    pourquoi: &str,
+    ou: Option<(f64, f64)>,
+) -> Result<Json, String> {
+    let (centre, (l, h)) = centre_du_commun(s)?;
+    let Some((x, y)) = centre else {
+        return Err(format!(
+            "{pourquoi} : l'écran du commun ne propose rien à cliquer"
+        ));
+    };
+    if !(x > 0.0 && x < l && y > 0.0 && y < h) {
+        return Err(format!(
+            "{pourquoi} : la page le place en ({x:.0}, {y:.0}), hors de la fenêtre de {l:.0} × {h:.0} pixels CSS"
+        ));
+    }
+    let (x, y) = ou.unwrap_or((x, y));
+    let depuis = s.lignes.len();
+    s.navigateur.cliquer(0, x, y)?;
+    let l = s.attendre(depuis, Duration::from_secs(20), pourquoi, |l| {
+        l.quoi() == "geste-fait"
+    })?;
+    p.etapes.push(format!(
+        "{pourquoi} : le clic en ({x:.0}, {y:.0}) est le geste ; {}",
+        l.json
+    ));
+    Ok(l.json.clone())
+}
+
+/// Les lignes `au-jeu` venues depuis `depuis` : les entrées que la page a données au jeu
+/// (un clic, un glisser qui commence, des fichiers ; la remontée du lot 10b).
+fn au_jeu(s: &Session, depuis: usize) -> Vec<String> {
+    lignes(s, depuis, "au-jeu").map(Json::to_string).collect()
+}
+
+/// Rien n'est allé au jeu depuis `depuis` (l'écran du commun le couvrait) ; une faute
+/// sinon.
+fn rien_au_jeu(s: &mut Session, p: &mut Passage, depuis: usize, quoi: &str) -> Result<(), String> {
+    // La ligne `au-jeu` d'un clic qui passerait suit le geste dans la même tâche de la
+    // page : ce délai la laisse arriver au banc.
+    s.tourner(Duration::from_millis(400))?;
+    let vu = au_jeu(s, depuis);
+    if vu.is_empty() {
+        p.etapes
+            .push(format!("{quoi} : rien au jeu (aucune ligne au-jeu)"));
+    } else {
+        p.fautes.push(format!(
+            "{quoi} est allé au jeu, que l'écran du commun couvrait : {}",
+            vu.join(" ")
+        ));
+    }
+    Ok(())
+}
+
+/// La page a-t-elle dit `au-jeu` pour `par` depuis `depuis` ? Une faute sinon : sans ces
+/// lignes, « rien au jeu » ne prouverait rien.
+fn vu_au_jeu(s: &Session, p: &mut Passage, depuis: usize, par: &str, quoi: &str) {
+    let vu = lignes(s, depuis, "au-jeu").any(|j| texte_de(j, "par") == par);
+    if !vu {
+        p.fautes.push(format!(
+            "{quoi} : la page ne dit pas au-jeu (par {par}) ; « rien au jeu » ne prouverait rien"
+        ));
+    }
+}
+
+/// Sous l'écran de démarrage (lot 10b), un clic sur la page du jeu, loin de « Jouer » (le
+/// milieu du premier rang, ou à défaut le titre : sous l'écran de démarrage, la page ne
+/// défile pas, et les boutons de Tier list sont sous le bas de la fenêtre), et des images
+/// données à son sélecteur ne vont pas au jeu, et ne font pas le geste.
+fn sous_l_ecran_de_demarrage(
+    s: &mut Session,
+    p: &mut Passage,
+    c: &Json,
+    images: &[PathBuf],
+) -> Result<(), String> {
+    let depuis = s.lignes.len();
+    let (jouer, (l, h)) = centre_du_commun(s)?;
+    let (jx, jy) = jouer.ok_or("l'écran de démarrage ne propose pas « Jouer »")?;
+    let titre = elements(c)
+        .iter()
+        .find(|e| texte_de(e, "sorte") == "en-place")
+        .map(centre);
+    let (nom, point) = [
+        ("le premier rang", zones(c).first().map(centre)),
+        ("le titre", titre),
+    ]
+    .into_iter()
+    .find_map(|(nom, point)| {
+        let (x, y) = point?;
+        let dedans = x > 0.0 && x < l && y > 0.0 && y < h;
+        let loin = (x - jx).abs() > 150.0 || (y - jy).abs() > 80.0;
+        (dedans && loin).then_some((nom, (x, y)))
+    })
+    .ok_or("sous l'écran de démarrage : rien du jeu dans la fenêtre, loin de « Jouer »")?;
+    // Ce que la page montre du jeu, que ni le clic ni l'image ne doivent changer : le
+    // plateau, et la modale (un clic sur un rang de Tier list l'ouvre).
+    let montre = |c: &Json| {
+        format!(
+            "{} modale {}",
+            plateau(c),
+            c.get("modale").unwrap_or(&Json::Null)
+        )
+    };
+    let avant = montre(c);
+    cliquer(s, point)?;
+    s.navigateur.fichiers(
+        0,
+        "input[type=file][data-genres=\"image/*\"]",
+        images.get(..1).unwrap_or(images),
+    )?;
+    s.tourner(Duration::from_millis(800))?;
+    let quoi = format!("sous l'écran de démarrage, le clic sur {nom} et une image donnée");
+    if lignes(s, depuis, "geste-fait").next().is_some() {
+        p.fautes.push(format!(
+            "{quoi} : le clic a fait le geste, loin de « Jouer »"
+        ));
+    }
+    rien_au_jeu(s, p, depuis, &quoi)?;
+    let apres = montre(&composants(s)?);
+    if apres != avant {
+        p.fautes.push(format!(
+            "{quoi} : ce que la page montre du jeu a changé, avant {avant} ; après {apres}"
+        ));
+    }
+    Ok(())
+}
+
+/// Le rapport de pixels de la page, la largeur de sa fenêtre (pixels CSS) et de sa toile
+/// (pixels de l'appareil), constatés contre `--dpr`.
+fn rapport_de_pixels(s: &mut Session, p: &mut Passage, voulu: f64) -> Result<(), String> {
+    let v = s.evaluer(
+        0,
+        "JSON.stringify([window.devicePixelRatio, window.innerWidth, Math.max(0, ...[...document.querySelectorAll('canvas')].map(c => c.width))])",
+    )?;
+    let v: Vec<Json> = serde_json::from_str(v.as_str().unwrap_or("[]")).unwrap_or_default();
+    let n = |k: usize| v.get(k).and_then(Json::as_f64).unwrap_or(0.0);
+    let (r, l, t) = (n(0), n(1), n(2));
+    if (r - voulu).abs() > 1e-6 {
+        p.fautes.push(format!(
+            "le rapport de pixels de la page vaut {r}, pas {voulu}"
+        ));
+    } else if (t - (l * r).floor()).abs() > 1.0 {
+        p.fautes.push(format!(
+            "la toile fait {t} pixels de large, pour une fenêtre de {l} pixels CSS au rapport {r} : pas en pixels de l'appareil"
+        ));
+    } else {
+        p.etapes.push(format!(
+            "rapport de pixels {r} : la fenêtre fait {l} pixels CSS de large, la toile {t} pixels de l'appareil"
+        ));
+    }
+    Ok(())
+}
+
 /// Le banc écoute les événements de pointeur que la page reçoit, pour dire, quand un
 /// glisser n'a pas l'effet attendu, ce que la page a vraiment reçu.
 const ECOUTER_LES_POINTEURS: &str = "(() => { if (!window.__pointeurs) { window.__pointeurs = []; for (const n of ['pointerdown','pointermove','pointerup','pointercancel']) document.addEventListener(n, e => { window.__pointeurs.push([n, e.button, e.buttons, Math.round(e.pageX), Math.round(e.pageY), Math.round(e.clientY), Math.round(window.scrollY), window.innerHeight, e.isTrusted]); if (window.__pointeurs.length > 40) window.__pointeurs.shift(); }, true); } return 0; })()";
@@ -604,7 +808,8 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
     // Une fenêtre où tient la page de Tier list (1 120 pixels de large) et, d'un même
     // regard, un rang et la réserve loin des bords où la page défile seule (70 pixels,
     // TL-40).
-    s.navigateur.fenetre(0, LARGEUR_FENETRE, HAUTEUR_FENETRE)?;
+    s.navigateur
+        .fenetre(0, LARGEUR_FENETRE, HAUTEUR_FENETRE, o.dpr)?;
     let mut sp = soiree::Passage::default();
     let _: String = soiree::debuter(s, &mut sp, 0)?;
     p.moteur.clone_from(&sp.moteur);
@@ -618,6 +823,14 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
     let c = attendre_que(s, Duration::from_secs(60), "la scène de Tier list", |c| {
         bouton(c, "Export Image (PNG)").is_some() && reserve(c).is_some()
     })?;
+    rapport_de_pixels(s, p, o.dpr)?;
+    // L'écran de démarrage couvre la partie jusqu'au geste (lot 10b) : rien ne va au jeu
+    // dessous, ni le clic sur « Jouer » (la remontée du lot 10b).
+    let images = ecrire_les_images(&o.travail.join("images"), IMAGES_ORDINAIRES, Images::Rayees)?;
+    sous_l_ecran_de_demarrage(s, p, &c, &images)?;
+    let avant_jouer = s.lignes.len();
+    let _: Json = le_geste(s, p, "« Jouer »", None)?;
+    rien_au_jeu(s, p, avant_jouer, "le clic sur « Jouer »")?;
     let rangs = zones(&c).len().saturating_sub(1);
     p.etapes.push(format!(
         "la scène : {rangs} rangs et la réserve, {} éléments posés",
@@ -625,8 +838,9 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
     ));
 
     // L'import.
-    let images = ecrire_les_images(&o.travail.join("images"), IMAGES_ORDINAIRES, Images::Rayees)?;
+    let depuis = s.lignes.len();
     let _: Json = importer(s, p, &images, IMAGES_ORDINAIRES, Duration::from_secs(60))?;
+    vu_au_jeu(s, p, depuis, "fichiers", "l'import");
 
     // Le glisser : deux tuiles de la réserve vers les rangs S et A, une à la poubelle.
     for (k, rang) in [(0usize, 0usize), (0, 1)] {
@@ -637,6 +851,7 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
             .ok_or("la réserve est vide")?;
         let dans = zones(&c).get(rang).map_or(0, |z| objets(z).len());
         let a = zones(&c).get(rang).map(centre).ok_or("pas de rang")?;
+        let depuis = s.lignes.len();
         glisser(s, de, a)?;
         let apres = attendre_que(
             s,
@@ -652,6 +867,7 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
             "glisser : une tuile de la réserve au rang {rang}, {} tuile(s) au plateau",
             tuiles(&apres)
         ));
+        vu_au_jeu(s, p, depuis, "appui", "le glisser");
     }
     {
         let c = composants(s)?;
@@ -769,6 +985,30 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
                 l.json
             ));
         }
+        // « Cliquer pour reprendre » couvre la partie reprise jusqu'au geste (lot 10b). Le
+        // banc clique sur le voile là où le jeu a son bouton Reset : le clic du geste ne
+        // va pas au jeu, et le plateau reste (la remontée du lot 10b).
+        let c = attendre_que(
+            s,
+            Duration::from_secs(60),
+            "le bouton Reset sous « Cliquer pour reprendre »",
+            |c| bouton(c, "Reset").is_some(),
+        )?;
+        let (rx, ry) = bouton(&c, "Reset").map(centre).ok_or("pas de Reset")?;
+        let d = montrer(s, &[ry])?;
+        let (_, h) = fenetre(s)?;
+        if !(0.0..h).contains(&(ry - d)) {
+            return Err(format!(
+                "le bouton Reset n'est pas dans la fenêtre sous le voile : ({rx}, {ry}), défilement {d}"
+            ));
+        }
+        let _: Json = le_geste(s, p, "« Cliquer pour reprendre »", Some((rx, ry - d)))?;
+        rien_au_jeu(
+            s,
+            p,
+            depuis,
+            "le clic sur « Cliquer pour reprendre », posé sur Reset",
+        )?;
         let c = attendre_que(
             s,
             Duration::from_secs(60),
@@ -796,6 +1036,7 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
     {
         let avant = plateau(&composants(s)?);
         let c = composants(s)?;
+        let depuis = s.lignes.len();
         cliquer(s, bouton(&c, "Reset").map(centre).ok_or("pas de Reset")?)?;
         let _: Json = attendre_que(
             s,
@@ -803,6 +1044,7 @@ fn derouler(s: &mut Session, p: &mut Passage, o: &Options, moteur: Moteur) -> Re
             "le plateau remis à zéro",
             |c| plateau(c) != avant,
         )?;
+        vu_au_jeu(s, p, depuis, "clic", "le clic sur Reset");
         s.navigateur.fichiers(
             0,
             "input[type=file][data-genres=\".json,application/json\"]",
@@ -1187,8 +1429,17 @@ fn plein(s: &mut Session, p: &mut Passage, o: &Options, dossier: &Path) -> Resul
 
 fn passage(o: &Options, n: Navigateur, moteur: Moteur, paquet: &Path, module: &[u8]) -> Passage {
     let webgl2 = moteur == Moteur::WebGl2;
+    let dpr = if (o.dpr - 1.0).abs() > f64::EPSILON {
+        format!(" (dpr {})", o.dpr)
+    } else {
+        String::new()
+    };
     let mut p = Passage {
-        navigateur: format!("{}{}", n.nom(), if webgl2 { " (WebGL2 forcé)" } else { "" }),
+        navigateur: format!(
+            "{}{}{dpr}",
+            n.nom(),
+            if webgl2 { " (WebGL2 forcé)" } else { "" }
+        ),
         ..Passage::default()
     };
     let so = soiree::Options {

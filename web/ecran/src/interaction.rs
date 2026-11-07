@@ -23,7 +23,7 @@ use std::rc::Rc;
 use jeu_abi::{
     Cle, CodeTouche, Composant, ComposantVuFil, DemandeFil, Deplace, EchecDemande, EcranFil,
     FinSaisie, FormatImage, FormeEcran, IdDemande, IdGeste, ImageRendue, Mods, Oui, PhasePointeur,
-    PhaseTouche, Reponse, SceneFil, SorteNoeud, Touche,
+    PhaseTouche, Reponse, SceneFil, SorteNoeud,
 };
 use js_sys::{Function, Promise};
 use rendu::{Boite, Cadre, Contexte};
@@ -37,7 +37,7 @@ use crate::cibles::{self, Modale};
 use crate::composants::{Composants, Evenement, FileEvenements, Sorte};
 use crate::demandes::{self, Fichiers};
 use crate::deplacables::{Glisser, Plateau, defilement};
-use crate::page::{Etat, Page, banc, chaine, heure_us, poster};
+use crate::page::{Etat, Page, banc, chaine, heure_us, le_commun_couvre, poster};
 use crate::toile::{attendre, maintenant_ms, texte_d_erreur};
 
 /// La hauteur d'une bande d'un rendu hors écran, en pixels (choisie) : une bande par
@@ -97,9 +97,10 @@ pub(crate) struct Interaction {
     a_telecharger: BTreeMap<u64, EnAttente>,
     rang_suivant: u64,
     pub mesure_images: Option<MesureImages>,
-    mac: Oui,
     pub dpr: f64,
     boutons_du_commun: HtmlElement,
+    /// L'écran de démarrage couvre-t-il le jeu (l'espaceur caché, lot 10b) ?
+    couvert: Oui,
 }
 
 fn style(e: &web_sys::Element, regles: &[(&str, &str)]) {
@@ -176,13 +177,6 @@ impl Interaction {
             Rc::clone(traiter),
         );
         composants.poser_police(Cle::POLICE_DU_COMMUN.fil(), mise_en_page::OCTETS_DU_COMMUN);
-        let mac = oui!(
-            fenetre
-                .navigator()
-                .platform()
-                .unwrap_or_default()
-                .contains("Mac")
-        );
         let base = (heure_us(fenetre) & 0x00ff_ffff_ffff_ffff).saturating_mul(16);
         let i = Interaction {
             file,
@@ -201,9 +195,9 @@ impl Interaction {
             a_telecharger: BTreeMap::new(),
             rang_suivant: 0,
             mesure_images: None,
-            mac,
             dpr: rapport_de_pixels(fenetre),
             boutons_du_commun,
+            couvert: Oui::Non,
         };
         ecouter(fenetre, document, &i.file, traiter)?;
         Ok(i)
@@ -299,7 +293,8 @@ fn ecouter(
                 let Some(k) = e.dyn_ref::<web_sys::KeyboardEvent>() else {
                     return;
                 };
-                if k.code() == "F8" || !e.is_trusted() {
+                // F8 aussi : il va au commun par la même file (`page::touche`).
+                if !e.is_trusted() {
                     return;
                 }
                 let champ = web_sys::window()
@@ -454,7 +449,12 @@ fn traiter_un(p: &mut Page, ev: Evenement) {
         Evenement::Fichiers {
             selecteur,
             fichiers,
-        } => fichiers_recus(p, selecteur, fichiers),
+        } => {
+            if !le_commun_couvre(p) {
+                banc(p, "{\"quoi\":\"au-jeu\",\"par\":\"fichiers\"}");
+                fichiers_recus(p, selecteur, fichiers);
+            }
+        }
         Evenement::Pointeur {
             phase,
             id,
@@ -468,6 +468,13 @@ fn traiter_un(p: &mut Page, ev: Evenement) {
             if core::mem::take(&mut p.jeu.glisser_fini) {
                 return;
             }
+            // Le clic sur « Jouer » ou sur un voile est au commun (lot 10b).
+            if le_commun_couvre(p) {
+                return;
+            }
+            // Pour le banc : ce clic va au jeu (la remontée du lot 10b, constatée par
+            // `soiree-banc ecran`).
+            banc(p, "{\"quoi\":\"au-jeu\",\"par\":\"clic\"}");
             let dpr = p.jeu.dpr;
             let point = ((x * dpr) as f32, (y * dpr) as f32);
             let action = p.ecran.as_ref().and_then(|e| {
@@ -492,8 +499,11 @@ fn traiter_un(p: &mut Page, ev: Evenement) {
                 p.jeu.dernier_geste_ms = maintenant_ms();
             }
             // Pendant une composition, aucune touche n'est un raccourci (TL-32) ; un
-            // raccourci cède au champ qui a le focus (TL-34).
-            if composition == Oui::Oui || dans_un_champ == Oui::Oui {
+            // raccourci cède au champ qui a le focus (TL-34). F8 reste au commun
+            // (SAL-162).
+            if code != CodeTouche::F8.as_str()
+                && (composition == Oui::Oui || dans_un_champ == Oui::Oui)
+            {
                 return;
             }
             if phase == PhaseTouche::Enfoncee
@@ -507,29 +517,9 @@ fn traiter_un(p: &mut Page, ev: Evenement) {
                 p.dessin.sale = true;
                 return;
             }
-            let Some(scene) = p.ecran.as_ref().and_then(|e| e.scene()).cloned() else {
-                return;
-            };
-            if phase == PhaseTouche::Enfoncee
-                && let Some(a) =
-                    cibles::raccourci(&scene.raccourcis, &code, mods, repetition, p.jeu.mac)
-            {
-                evenement.prevent_default();
-                entree(p, EcranFil::Action(a));
-            }
-            if let (jeu_abi::ClavierBrut::Oui { .. }, Some(c)) =
-                (scene.clavier_brut, CodeTouche::essayer(&code))
-            {
-                entree(
-                    p,
-                    EcranFil::Touche(Touche {
-                        code: c,
-                        mods,
-                        phase,
-                        repetition,
-                    }),
-                );
-            }
+            // Le reste : F8, Échap en plein écran (P38), les raccourcis de la scène et son
+            // clavier brut, l'écran du commun qui couvre le jeu (lot 10b).
+            crate::page::touche(p, &evenement, (&code, mods), phase, repetition);
         }
         Evenement::Telecharger { rang } => {
             p.jeu.dernier_geste_ms = maintenant_ms();
@@ -584,9 +574,14 @@ fn pointeur(
     match phase {
         PhasePointeur::Appui => {
             p.jeu.dernier_geste_ms = maintenant_ms();
-            if bouton == 0 && p.jeu.glisser.is_none() {
+            // Aucun glisser ne commence sous l'écran du commun (lot 10b) ; un glisser
+            // commencé avant finit.
+            if bouton == 0 && p.jeu.glisser.is_none() && !le_commun_couvre(p) {
                 p.jeu.glisser = Glisser::appui(plateau, point, id);
                 p.jeu.dernier_defilement_ms = maintenant_ms();
+                if p.jeu.glisser.is_some() {
+                    banc(p, "{\"quoi\":\"au-jeu\",\"par\":\"appui\"}");
+                }
             }
         }
         PhasePointeur::Deplacement => {
@@ -735,12 +730,10 @@ pub(crate) fn regler_la_taille(p: &mut Page) {
         e.regler_taille((l * dpr) as u32, (h * dpr) as u32);
         e.echelle_page = dpr as f32;
     }
-    if let Some(t) = p.toile.as_ref() {
-        style(
-            t,
-            &[("width", &format!("{l}px")), ("height", &format!("{h}px"))],
-        );
-    }
+    style(
+        &p.toile,
+        &[("width", &format!("{l}px")), ("height", &format!("{h}px"))],
+    );
 }
 
 /// La géométrie de la dernière scène, et ce qui en dépend : les composants posés, la
@@ -821,6 +814,19 @@ pub(crate) fn avant_de_dessiner(p: &mut Page) {
             }
             v
         });
+    }
+}
+
+/// L'écran de démarrage (lot 10b) couvre-t-il le jeu ? Ses composants, posés sur la
+/// toile, ne se montrent pas dessus ; ils reviennent quand il tombe.
+pub(crate) fn couvrir(p: &mut Page, couvert: Oui) {
+    if p.jeu.couvert != couvert {
+        p.jeu.couvert = couvert;
+        let affichage = match couvert {
+            Oui::Oui => "none",
+            Oui::Non => "block",
+        };
+        style(&p.jeu.espaceur, &[("display", affichage)]);
     }
 }
 

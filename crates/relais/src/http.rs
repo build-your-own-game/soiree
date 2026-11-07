@@ -259,6 +259,19 @@ pub fn publique_permise(pair: IpAddr, r: &Requete, c: &Contexte) -> bool {
     annoncee || (est_boucle(pair) && hotes_locaux(c.port).iter().any(|h| h == host))
 }
 
+/// La page d'un téléphone vient-elle du réseau ? Rend l'adresse que l'aide suit
+/// (`crate::aide`) : celle du pair, hors de la boucle locale. Avec `--banc` seulement, une
+/// page demandée depuis la boucle d'un `Host` annoncé compte aussi comme venue du réseau :
+/// le banc joue ainsi un téléphone du Wi-Fi sans rien ouvrir sur le Wi-Fi (l'adresse que
+/// le relais du banc annonce sans l'écouter, `Reglages::annonce_du_banc`).
+pub fn page_du_reseau(pair: IpAddr, r: &Requete, c: &Contexte) -> Option<IpAddr> {
+    if !est_boucle(pair) {
+        return Some(pair);
+    }
+    let host = r.entete("host")?;
+    (c.banc == Banc::Oui && c.annoncees.iter().any(|ip| hote(*ip, c.port) == host)).then_some(pair)
+}
+
 /// Ce qu'une requête demande.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
@@ -272,9 +285,13 @@ pub enum Route {
     Ws,
     /// `GET /salle` : le code de salle que le relais garde (boucle locale, P41).
     Salle,
-    /// `GET /jeux/<reste>` : le catalogue (`catalogue`) ou un module livré
-    /// (`<empreinte>.wasm`), pour l'écran (boucle locale, P16).
+    /// `GET /jeux/<reste>` : le catalogue (`catalogue`), un module livré
+    /// (`<empreinte>.wasm`) ou son rapport d'épreuve (`<empreinte>.json`), pour l'écran
+    /// (boucle locale, P16).
     Jeux(String),
+    /// `GET /aide` : ce que le relais sait des téléphones qui n'arrivent pas, et du
+    /// pare-feu, pour l'aide de l'écran (boucle locale ; lot 10b).
+    Aide,
     /// Rien de connu : `404`.
     Introuvable,
     /// Une autre méthode que `GET` : `405`.
@@ -297,6 +314,7 @@ pub fn router(r: &Requete) -> Route {
         "/" => Route::Demarrage,
         "/ws" => Route::Ws,
         "/salle" => Route::Salle,
+        "/aide" => Route::Aide,
         _ => {
             if let Some(code) = chemin.strip_prefix("/s/") {
                 return CodeSalle::lire(code).map_or(Route::Introuvable, Route::Telephone);

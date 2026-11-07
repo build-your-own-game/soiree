@@ -28,7 +28,8 @@ use crate::serveur::{Requete, Serveur};
 use crate::{commun, web};
 
 /// La version de `wasm-bindgen`, la crate de `web/` comme l'outil (PHASE-3, P32).
-pub const WASM_BINDGEN: &str = "0.2.129";
+/// Sa seule définition est celle du relais, qui construit le paquet de la page (lot 10b).
+pub use relais::preparer::WASM_BINDGEN;
 
 /// Les réglages du scénario.
 #[derive(Debug, Clone)]

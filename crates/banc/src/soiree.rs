@@ -58,7 +58,6 @@ use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use jeu_abi::{ApplicableFil, Capacites};
@@ -163,90 +162,22 @@ pub struct Passage {
 
 /// Construit le paquet de la page (`web/` pour `wasm32`, `ecran` et `autorite`, leur colle
 /// `wasm-bindgen`, et `demarrage.js`) dans `<soiree>/target/soiree-web/<empreinte>/` ;
-/// rend ce dossier. L'empreinte est le BLAKE3 des noms et des octets, tronqué à 16 octets.
-/// Ce que fera `soiree-relais preparer` (lot 10b).
+/// rend ce dossier. Depuis le lot 10b, la seule définition est celle de
+/// `soiree-relais preparer` (`relais::preparer`).
 pub fn construire_le_paquet(soiree: &Path) -> Result<PathBuf, String> {
-    let web = soiree.join("web");
-    let cible = web.join("target");
-    let mut cargo = Command::new("cargo");
-    cargo
-        .current_dir(&web)
-        .args([
-            "build",
-            "-p",
-            "ecran",
-            "-p",
-            "autorite",
-            "--lib",
-            "--target",
-            "wasm32-unknown-unknown",
-            "--release",
-            "--target-dir",
-        ])
-        .arg(&cible);
-    crate::machine::lancer(&mut cargo, "cargo build de ecran et autorite")?;
-    let brouillon = soiree.join("target/soiree-web/brouillon");
-    let _: std::io::Result<()> = std::fs::remove_dir_all(&brouillon);
-    std::fs::create_dir_all(&brouillon).map_err(|e| format!("{e}"))?;
-    for nom in ["ecran", "autorite"] {
-        let wasm = cible.join(format!("wasm32-unknown-unknown/release/{nom}.wasm"));
-        crate::machine::lancer(
-            Command::new("wasm-bindgen")
-                .args(["--target", "web", "--no-typescript", "--out-dir"])
-                .arg(&brouillon)
-                .arg(&wasm),
-            &format!("wasm-bindgen de {nom}"),
-        )?;
-    }
-    std::fs::copy(web.join("demarrage.js"), brouillon.join("demarrage.js"))
-        .map_err(|e| format!("demarrage.js : {e}"))?;
-    let mut noms: Vec<PathBuf> = std::fs::read_dir(&brouillon)
-        .map_err(|e| format!("{e}"))?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .collect();
-    noms.sort();
-    let mut h = blake3::Hasher::new();
-    for n in &noms {
-        let o = std::fs::read(n).map_err(|e| format!("{} : {e}", n.display()))?;
-        h.update(
-            n.file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("")
-                .as_bytes(),
-        );
-        h.update(&u64::try_from(o.len()).unwrap_or(0).to_le_bytes());
-        h.update(&o);
-    }
-    let empreinte = h.finalize().to_hex();
-    let dossier = soiree
-        .join("target/soiree-web")
-        .join(empreinte.get(..32).unwrap_or(""));
-    let _: std::io::Result<()> = std::fs::remove_dir_all(&dossier);
-    std::fs::rename(&brouillon, &dossier).map_err(|e| format!("{e}"))?;
-    Ok(dossier)
+    relais::preparer::construire_le_paquet(soiree, None)
 }
 
 /// Le dernier paquet construit.
 pub fn dernier_paquet(soiree: &Path) -> Result<PathBuf, String> {
-    let racine = soiree.join("target/soiree-web");
-    let mut paquets: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&racine)
-        .map_err(|e| format!("{} : {e}", racine.display()))?
-        .filter_map(Result::ok)
-        .filter(|e| e.file_name().to_str().is_some_and(|n| n.len() == 32))
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .collect();
-    paquets.sort();
-    paquets
-        .pop()
-        .map(|(_, p)| p)
-        .ok_or_else(|| format!("aucun paquet sous {}", racine.display()))
+    relais::preparer::dernier_paquet(&soiree.join("target/soiree-web"))
 }
 
 // ---------------------------------------------------------------------------
 // Les téléphones natifs
 // ---------------------------------------------------------------------------
 
-struct Telephone {
+pub(crate) struct Telephone {
     appareil: Appareil<Graine>,
     ws: Option<Ws>,
     jeton: [u8; 32],
@@ -259,19 +190,19 @@ struct Telephone {
 // ---------------------------------------------------------------------------
 
 pub(crate) struct Session {
-    relais: Option<relais::coque::Relais>,
+    pub(crate) relais: Option<relais::coque::Relais>,
     pub(crate) port: u16,
-    garde: PathBuf,
-    enregistrement: PathBuf,
+    pub(crate) garde: PathBuf,
+    pub(crate) enregistrement: PathBuf,
     pub(crate) navigateur: Lance,
     pub(crate) lignes: Vec<Ligne>,
     pub(crate) autres: Vec<String>,
-    telephones: Vec<Telephone>,
-    redite_us: Option<u64>,
-    salle: Option<CodeSalle>,
-    fragment: Option<Fragment>,
+    pub(crate) telephones: Vec<Telephone>,
+    pub(crate) redite_us: Option<u64>,
+    pub(crate) salle: Option<CodeSalle>,
+    pub(crate) fragment: Option<Fragment>,
     pub(crate) depart: Instant,
-    graine: u64,
+    pub(crate) graine: u64,
 }
 
 fn heure_locale_us(depart: Instant) -> u64 {
@@ -527,6 +458,7 @@ pub(crate) fn ouvrir(
         page: None,
         paquet: Some(relais::paquet::Paquet::lire(paquet)?),
         jeux: relais::paquet::Jeux::lire(&jeux)?,
+        annonce_du_banc: None,
     })
     .map_err(|e| format!("le relais : {e}"))?;
     let profils = o.travail.join("profils");

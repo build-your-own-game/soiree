@@ -45,6 +45,7 @@
 #![deny(missing_docs)]
 
 mod budgets;
+mod catalogue;
 mod controles;
 mod determinisme;
 mod deux_moteurs;

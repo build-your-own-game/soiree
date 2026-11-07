@@ -2,11 +2,13 @@
 //! § 8.2, lot 3b), sans `geckodriver` : Firefox ouvre lui-même `BiDi` sous
 //! `--remote-debugging-port` (le harnais de mesure l'a fait le 2026-11-05).
 //!
-//! `--headless` est le vrai navigateur sans fenêtre ; `--remote-debugging-port 0`
-//! choisit un port libre, que Firefox écrit sur sa sortie d'erreur (`WebDriver BiDi
-//! listening on ws://…`). Le profil est un dossier neuf sous `target/banc/profils/`,
-//! avec un `user.js` sans première page, sans télémétrie ni mise à jour, effacé à la
-//! fermeture. Les préférences sont celles du harnais (`mesures/navigateur/navigateurs.mjs`).
+//! `--headless` est le vrai navigateur sans fenêtre (sauf [`Interface::Avec`], lot 10b :
+//! sa fenêtre sur l'écran de l'hôte, seul moyen d'y avoir le plein écran au clic) ;
+//! `--remote-debugging-port 0` choisit un port libre, que Firefox écrit sur sa sortie
+//! d'erreur (`WebDriver BiDi listening on ws://…`). Le profil est un dossier neuf sous
+//! `target/banc/profils/`, avec un `user.js` sans première page, sans télémétrie ni mise
+//! à jour, effacé à la fermeture. Les préférences sont celles du harnais
+//! (`mesures/navigateur/navigateurs.mjs`).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -17,7 +19,7 @@ use serde_json::{Value as Json, json};
 
 use crate::bidi::{Bidi, ligne_d_evenement};
 use crate::chrome::GesteSouris;
-use crate::navigateur::{arreter_processus, attendre_l_adresse, effacer, profil_neuf};
+use crate::navigateur::{Interface, arreter_processus, attendre_l_adresse, effacer, profil_neuf};
 
 /// Le Firefox de la machine de l'hôte (macOS).
 pub const FIREFOX: &str = "/Applications/Firefox.app/Contents/MacOS/firefox";
@@ -46,6 +48,8 @@ pub struct Firefox {
     pub version: String,
     /// Les onglets ouverts, dans l'ordre : leur contexte `BiDi` (lot 10a).
     onglets: Vec<String>,
+    /// Avec ou sans fenêtre (lot 10b).
+    interface: Interface,
 }
 
 /// L'adresse `BiDi` que Firefox écrit sur sa sortie d'erreur.
@@ -60,6 +64,17 @@ impl Firefox {
     /// Lance `executable` sans interface, sur un profil neuf sous `profils`, ouvre une
     /// session `BiDi` et s'abonne au journal des pages.
     pub fn lancer(executable: &Path, profils: &Path) -> Result<Firefox, String> {
+        Firefox::lancer_avec(executable, profils, Interface::Sans)
+    }
+
+    /// Comme [`Firefox::lancer`] ; avec [`Interface::Avec`], sans `--headless` : une vraie
+    /// fenêtre sur l'écran de l'hôte, où Firefox donne le plein écran à un vrai clic du
+    /// banc, ce qu'il refuse sans interface (lot 10b, constaté).
+    pub fn lancer_avec(
+        executable: &Path,
+        profils: &Path,
+        interface: Interface,
+    ) -> Result<Firefox, String> {
         if !executable.exists() {
             return Err(format!("Firefox absent : {}", executable.display()));
         }
@@ -68,6 +83,20 @@ impl Firefox {
             let _: std::fmt::Result = writeln!(s, "user_pref(\"{k}\", {v});");
             s
         });
+        if interface == Interface::Avec {
+            // Constaté le 2026-11-07 (Firefox 158.0.1, macOS 27.2,
+            // `target/travail/lot-10b-corr/ff/essai.py`) : la page menée par `BiDi` n'a pas le
+            // focus (il reste à la barre d'adresse : `document.hasFocus()` faux, le plein écran
+            // refusé, « Fullscreen request denied »), et ni `browsingContext.activate` ni
+            // `focusmanager.testmode` ne le lui donnent ; un `window.focus()` de la page le
+            // lui donne si les pages peuvent passer leur fenêtre devant ([`Firefox::montrer`]).
+            prefs.push_str("user_pref(\"dom.disable_window_flip\", false);\n");
+            // Le plein écran natif de macOS (un bureau à part) y est quitté aussitôt entré,
+            // sans Échap ni rien d'autre (constaté, cause non trouvée) ; le plein écran de
+            // Firefox dans sa fenêtre tient. Échap est jugé par la page, qui ne voit pas la
+            // différence (`fullscreenchange`, `document.fullscreenElement`).
+            prefs.push_str("user_pref(\"full-screen-api.macos-native-full-screen\", false);\n");
+        }
         // Les téléchargements vont dans le profil, sous leur nom, sans question (lot 11) :
         // le banc les y lit avant la fermeture, qui efface le profil.
         let telechargements = profil.join("telechargements");
@@ -95,8 +124,12 @@ impl Firefox {
         }
         std::fs::write(profil.join("user.js"), prefs)
             .map_err(|e| format!("{} : {e}", profil.display()))?;
-        let mut processus = Command::new(executable)
-            .args(["--headless", "--no-remote", "--profile"])
+        let mut commande = Command::new(executable);
+        if interface == Interface::Sans {
+            commande.arg("--headless");
+        }
+        let mut processus = commande
+            .args(["--no-remote", "--profile"])
             .arg(&profil)
             .args(["--remote-debugging-port", "0", "about:blank"])
             .stdin(Stdio::null())
@@ -126,6 +159,7 @@ impl Firefox {
             bidi,
             version: String::new(),
             onglets: Vec::new(),
+            interface,
         };
         let s = firefox
             .bidi
@@ -210,14 +244,21 @@ impl Firefox {
         Ok(r.pointer("/result/value").cloned().unwrap_or(Json::Null))
     }
 
-    /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS
-    /// (`browsingContext.setViewport`, lot 11).
-    pub fn fenetre(&mut self, onglet: usize, largeur: u32, hauteur: u32) -> Result<(), String> {
+    /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS, au rapport de
+    /// pixels `dpr` (`browsingContext.setViewport`, lot 11 ; `dpr` depuis la remontée du
+    /// lot 10b).
+    pub fn fenetre(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+        dpr: f64,
+    ) -> Result<(), String> {
         let contexte = self.contexte(onglet)?;
         self.bidi
             .envoyer(
                 "browsingContext.setViewport",
-                &json!({ "context": contexte, "viewport": { "width": largeur, "height": hauteur }, "devicePixelRatio": 1 }),
+                &json!({ "context": contexte, "viewport": { "width": largeur, "height": hauteur }, "devicePixelRatio": dpr }),
                 DELAI,
             )
             .map(|_| ())
@@ -382,16 +423,26 @@ impl Firefox {
             .map(|_| ())
     }
 
-    /// Remet l'onglet devant.
+    /// Remet l'onglet devant ; avec sa fenêtre ([`Interface::Avec`]), lui donne aussi le
+    /// focus, par un `window.focus()` de la page (voir [`Firefox::lancer_avec`]).
     pub fn montrer(&mut self, onglet: usize) -> Result<(), String> {
         let contexte = self.contexte(onglet)?;
-        self.bidi
-            .envoyer(
-                "browsingContext.activate",
-                &json!({ "context": contexte }),
-                DELAI,
-            )
-            .map(|_| ())
+        self.bidi.envoyer(
+            "browsingContext.activate",
+            &json!({ "context": contexte }),
+            DELAI,
+        )?;
+        if self.interface == Interface::Avec {
+            self.evaluer(onglet, "window.focus()")?;
+            // Le focus passe par le processus parent : l'attendre, au plus 2 s.
+            for _ in 0..20 {
+                if self.evaluer(onglet, "document.hasFocus()")? == Json::Bool(true) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        Ok(())
     }
 
     /// Appuie sur F8, par la chaîne d'entrées du navigateur (`input.performActions`).
@@ -402,6 +453,37 @@ impl Firefox {
                 "input.performActions",
                 &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": [
                     { "type": "keyDown", "value": "\u{E038}" }, { "type": "keyUp", "value": "\u{E038}" }
+                ] }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Appuie sur Échap, par la chaîne d'entrées du navigateur (lot 10b, P38).
+    pub fn touche_echap(&mut self, onglet: usize) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": [
+                    { "type": "keyDown", "value": "\u{E00C}" }, { "type": "keyUp", "value": "\u{E00C}" }
+                ] }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Un clic gauche en `(x, y)`, pixels de la fenêtre (`input.performActions`) : un vrai
+    /// geste (lot 10b).
+    pub fn cliquer(&mut self, onglet: usize, x: f64, y: f64) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        // `BiDi` veut des entiers pour la position d'un pointeur.
+        let (x, y) = (x.round(), y.round());
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "pointer", "id": "souris", "parameters": { "pointerType": "mouse" }, "actions": [
+                    { "type": "pointerMove", "x": x, "y": y }, { "type": "pointerDown", "button": 0 }, { "type": "pointerUp", "button": 0 }
                 ] }] }),
                 DELAI,
             )

@@ -407,7 +407,10 @@ impl Ecran {
                 self.scene = Some(scene.clone());
             }
             Recu::Police(_) => self.rendu.poser_polices(self.polices.clone()),
-            Recu::Image { .. } | Recu::Laisse(_) => {}
+            // Une image se décode hors d'ici (`recevoir`, ou la page sans tenir l'écran,
+            // lot 11) ; un son se garde dans la page, qui le décode quand un effet le joue
+            // (lot 10b).
+            Recu::Image { .. } | Recu::Son { .. } | Recu::Laisse(_) => {}
         }
         Ok(r)
     }
@@ -482,6 +485,23 @@ impl Ecran {
         self.appareil.file.submit([encodeur.finish()]);
         self.appareil.file.present(image);
         Ok(dessin)
+    }
+
+    /// Dessine une scène du commun (l'écran de démarrage, lot 10b) dans sa forme, à la place
+    /// de celle du jeu, qui reste la dernière reçue et se redessinera ensuite.
+    pub fn dessiner_le_commun(
+        &mut self,
+        scene: SceneFil,
+        forme: FormeEcran,
+    ) -> Result<Dessin, String> {
+        let du_jeu = self.scene.replace(scene);
+        let forme_du_jeu = core::mem::replace(&mut self.forme, forme);
+        let pas = core::mem::replace(&mut self.contexte.pas, Pas::ZERO);
+        let r = self.dessiner();
+        self.scene = du_jeu;
+        self.forme = forme_du_jeu;
+        self.contexte.pas = pas;
+        r
     }
 
     /// Le travail du GPU soumis jusqu'ici est-il fini ? Rend une case où l'heure de la

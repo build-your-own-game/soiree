@@ -41,6 +41,7 @@ pub fn reglages(nom: &str, banc: Banc) -> Reglages {
         page: None,
         paquet: None,
         jeux: relais::paquet::Jeux::default(),
+        annonce_du_banc: None,
     }
 }
 
