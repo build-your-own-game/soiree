@@ -57,6 +57,7 @@ pub mod safari;
 pub mod serveur;
 pub mod soiree;
 pub mod soiree_native;
+mod telephones;
 pub mod web;
 pub mod ws;
 

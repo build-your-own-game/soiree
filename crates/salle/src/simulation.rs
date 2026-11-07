@@ -478,10 +478,13 @@ pub struct ComptesSomme {
     pub coups_banc: u64,
     /// Les coups du bot de l'écran entrés.
     pub coups_ecran: u64,
+    /// Les morceaux du module et les ressources livrés aux téléphones (lot 12).
+    pub morceaux_livres: u64,
 }
 
 impl ComptesSomme {
     fn ajouter(&mut self, c: Comptes) {
+        self.morceaux_livres = self.morceaux_livres.saturating_add(c.morceaux_livres);
         self.gestes_places = self.gestes_places.saturating_add(c.gestes_places);
         self.gestes_en_double = self.gestes_en_double.saturating_add(c.gestes_en_double);
         self.gestes_hors_suite = self.gestes_hors_suite.saturating_add(c.gestes_hors_suite);
@@ -573,6 +576,12 @@ pub struct Soiree<F: Fabrique, M: FnMut() -> F> {
     observateur: Option<Observateur>,
     /// Ce que la page dit à l'autorité suivante, dès sa relance (`Reprendre { ecarter }`).
     a_la_relance: Vec<Vec<u8>>,
+    /// Le module livré aux téléphones par l'autorité (lot 12), et son empreinte.
+    livraison: Option<([u8; 32], Vec<u8>)>,
+    /// Les téléphones passent par la page (lot 12) : les `singes` premiers sont des singes.
+    par_la_page: Option<usize>,
+    /// La page de chaque téléphone, quand il passe par elle.
+    pub joueurs: BTreeMap<usize, crate::page::JoueurDePage<F>>,
 }
 
 /// Ce qui voit les messages de l'autorité à la page.
@@ -581,6 +590,9 @@ type Observateur = Box<dyn FnMut(&[u8])>;
 /// L'heure de l'ordinateur au début d'une soirée simulée : le 2023-11-14, comme
 /// l'ouverture de l'épreuve.
 pub const DEBUT_US: u64 = 1_700_000_000_000_000;
+
+/// Un singe de page joue un geste toutes les 700 ms (choisi : plus vite qu'un joueur).
+pub const SINGE_US: u64 = 700_000;
 
 impl<F, M> Soiree<F, M>
 where
@@ -640,9 +652,30 @@ where
             bilan: Bilan::default(),
             observateur: None,
             a_la_relance: Vec::new(),
+            livraison: None,
+            par_la_page: None,
+            joueurs: BTreeMap::new(),
         };
         s.lancer_l_autorite(None);
         s
+    }
+
+    /// L'autorité livre ce module aux téléphones (lot 12) : celle qui vit, et chaque
+    /// autorité relancée.
+    pub fn livrer_le_module(&mut self, module: Vec<u8>) {
+        let e = *blake3::hash(&module).as_bytes();
+        if let Some(a) = self.autorite.as_mut() {
+            a.livrer(e, &module);
+        }
+        self.livraison = Some((e, module));
+    }
+
+    /// Les téléphones passent **par la page** (§ 8.1, lot 12) : chacun charge le module
+    /// reçu de l'autorité (par la fabrique de la soirée, une fois son BLAKE3 vérifié),
+    /// appelle `Page`, et joue les coups du bot du bouton qui les porte ; les `singes`
+    /// premiers jouent en plus au hasard, à graine. Demande [`Soiree::livrer_le_module`].
+    pub fn par_la_page(&mut self, singes: usize) {
+        self.par_la_page = Some(singes);
     }
 
     /// La période de redite des tenus des téléphones à venir (P27).
@@ -689,6 +722,9 @@ where
         let mut a = Autorite::demarrer((self.fabriquer)(), cles, self.reglages, hasard, dernier_n);
         for m in core::mem::take(&mut self.a_la_relance) {
             a.page(self.t_us, &m);
+        }
+        if let Some((e, octets)) = &self.livraison {
+            a.livrer(*e, octets);
         }
         self.autorite = Some(a);
         self.vider_l_autorite();
@@ -847,6 +883,8 @@ where
         if let Some(t) = self.telephones.get_mut(k) {
             t.appareil.recharger();
         }
+        // La page rechargée repart de zéro : le module revient par la connexion.
+        let _: Option<crate::page::JoueurDePage<F>> = self.joueurs.remove(&k);
         self.bilan.rechargements = self.bilan.rechargements.saturating_add(1);
     }
 
@@ -1205,6 +1243,24 @@ where
             }
             let local = t.saturating_add(tel.decalage_us);
             tel.appareil.reveiller(local);
+            if let Some(singes) = self.par_la_page {
+                tel.appareil.coups_par_la_page();
+                let joueur = self.joueurs.entry(k).or_insert_with(|| {
+                    if k < singes {
+                        crate::page::JoueurDePage::singe(SINGE_US)
+                    } else {
+                        crate::page::JoueurDePage::default()
+                    }
+                });
+                let fabriquer = &mut self.fabriquer;
+                let attendue = self.livraison.as_ref().map(|(e, _)| *e);
+                joueur.jouer(
+                    local,
+                    &mut tel.appareil,
+                    |m| (attendue == Some(*blake3::hash(m).as_bytes())).then(fabriquer),
+                    &mut self.hasard,
+                );
+            }
             self.vider_le_telephone(k);
         }
     }

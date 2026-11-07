@@ -1,0 +1,50 @@
+[package]
+name = "telephone"
+description = "La page du téléphone : le cœur de l'appareil, la page du jeu appelée dans son module, rendue en DOM, la connexion au relais (PHASE-3, § 2.10)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+# Une bibliothèque WebAssembly que `wasm-bindgen` relie à la page du téléphone
+# (`web/demarrage.js`, lot 12), et une bibliothèque Rust pour ses tests natifs (ce qui ne
+# touche pas au navigateur). Elle ne tire pas `wgpu` (PHASE-3, § 7, lot 12).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# L'appareil sans entrées-sorties (le lien, Noise, les gestes, le tenu, le module reçu),
+# et la page sans DOM (les locaux, `Page`, les relâchements) : une seule définition avec
+# les téléphones natifs du banc.
+salle.workspace = true
+# Les types de la page et du fil (`PageFil`, `Cle`, `Capacites`).
+jeu-abi.workspace = true
+# Le code de salle, le refus du relais.
+liaison.workspace = true
+# Le trait `Fabrique` que la page appelle.
+partie.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Le module du jeu, réécrit et compilé dans le navigateur, pour `Page`.
+moteur-navigateur.workspace = true
+# Le réglage de la réécriture des modules (`Reglages::PHASE_3`), comme le Worker.
+reecriture.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+# Ce que la page touche du navigateur : le DOM de la page et ses événements (pointeur,
+# clavier, saisie, composition), la WebSocket, `localStorage` et `sessionStorage`,
+# `crypto.getRandomValues` (SAL-93), `visualViewport`, `FontFace`, les `Blob` des images,
+# `navigator.vibrate`.
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "HtmlImageElement",
+    "HtmlButtonElement", "CssStyleDeclaration", "Node", "Event", "EventTarget",
+    "PointerEvent", "MouseEvent", "KeyboardEvent", "InputEvent", "CompositionEvent",
+    "WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Storage", "Crypto",
+    "VisualViewport", "VisibilityState", "HtmlCollection", "OrientationType", "FontFace", "FontFaceSet", "Blob", "BlobPropertyBag", "Url",
+    "Location", "Navigator", "Performance", "DomRect", "console", "Screen",
+    "ScreenOrientation",
+] }
+
+[lints]
+workspace = true

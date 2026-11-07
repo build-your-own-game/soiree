@@ -62,11 +62,12 @@ use std::time::{Duration, Instant};
 
 use jeu_abi::{ApplicableFil, Capacites};
 use liaison::CodeSalle;
-use moteur_wasmtime::{InstantaneWasm, ModuleCharge, Moteur, ReglagesMoteur};
+use moteur_wasmtime::{FabriqueWasm, InstantaneWasm, ModuleCharge, Moteur, ReglagesMoteur};
 use salle::appareil::Appareil;
 use salle::chiffre::{CleDeGarde, Fragment, Hasard};
 use salle::garde::relire;
 use salle::horloge::us_de_duree;
+use salle::page::JoueurDePage;
 use salle::simulation::{
     Graine, Historique, PAS_US, TelephoneAccuse, accuses_hors_de_l_historique,
     reprendre_de_l_historique, reprendre_de_la_garde, verifier_l_historique,
@@ -104,7 +105,31 @@ pub struct Options {
     /// `arriere-plan` : les passages dans chaque navigateur (un « réussi » d'un seul
     /// passage ne dit pas qu'un navigateur tient : vérification du lot 10a).
     pub fois: u32,
+    /// Les pages du téléphone dans ces navigateurs, en plus des téléphones natifs (lot 12) :
+    /// une page par navigateur, pilotée par sa chaîne d'entrées.
+    pub pages: Vec<Navigateur>,
+    /// Le passage dure au moins ce nombre de secondes depuis la partie ouverte : la partie
+    /// continue (et le pilote des pages) avant les marques F8 (*correction du lot 12* :
+    /// « Sidequest 5 min »).
+    pub duree_min_s: u64,
+    /// Les pages arrivent en retard, une à une, quand tous les téléphones natifs sont
+    /// accueillis et ont reçu le module ; pendant que chacune reçoit le sien, les
+    /// allers-retours d'écho des natifs ne doivent pas croître (*correction du lot 12* :
+    /// « un téléphone qui rejoint Sidequest à 71 appareils ne retarde personne »).
+    pub retardataires: bool,
 }
+
+/// Un téléphone qui rejoint retarde les autres si la médiane ou le 99ᵉ centile de leurs
+/// allers-retours d'écho, pendant qu'il reçoit le module, dépasse celle ou celui des 20 s
+/// d'avant de plus d'un pas à 60 Hz (choisi, correction du lot 12 : une vue qui arrive un
+/// pas plus tard).
+pub const RETARD_TOLERE_US: u64 = 16_667;
+
+/// M13 : la part du commun dans le Worker à chaque tour doit tenir dans la moitié de la
+/// part d'image que E19 laisse au commun (PHASE-3, § 3, R2) : une image courante de
+/// 1/60 s, la moitié au jeu (`PART_DU_JEU_POUR_CENT`), la moitié du reste, 4,17 ms ; jugée
+/// au 99ᵉ centile, comme l'image courante de E19.
+pub const M13_MAX_MS: f64 = 1000.0 / 60.0 / 2.0 / 2.0;
 
 /// Une ligne que la page écrit pour le banc : `banc <onglet> <json>`.
 #[derive(Debug, Clone)]
@@ -183,6 +208,11 @@ pub(crate) struct Telephone {
     jeton: [u8; 32],
     revient: Option<Instant>,
     prochain_reveil: Instant,
+    /// La page du téléphone (lot 12) : les coups du bot partent du bouton qui les porte ;
+    /// le premier téléphone est en plus un singe.
+    pub(crate) joueur: JoueurDePage<FabriqueWasm>,
+    /// Le hasard du singe.
+    hasard: Graine,
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +233,23 @@ pub(crate) struct Session {
     pub(crate) fragment: Option<Fragment>,
     pub(crate) depart: Instant,
     pub(crate) graine: u64,
+    /// Les téléphones natifs chargent le module reçu par cette fabrique, une fois son
+    /// BLAKE3 vérifié (lot 12 : ils passent par la page).
+    pub(crate) fabrique: Option<(FabriqueWasm, [u8; 32])>,
+    /// Quand le relais du banc a été lancé : son horloge (celle de son enregistrement) part
+    /// de là, à quelques millisecondes près.
+    pub(crate) relais_lance: Instant,
+    /// L'heure du relais à `relais_lance`, en microsecondes : son horloge (celle de son
+    /// enregistrement) part du premier relais lancé par ce processus, pas de chacun
+    /// (`relais::horloge`). *Correction du lot 12* : au second passage, M7 comparait les
+    /// croix tenues à des instants décalés de tout le premier passage, et n'y lisait rien.
+    pub(crate) relais_us0: u64,
+    /// Les pages dans les navigateurs (lot 12).
+    pub(crate) pages: Vec<crate::telephones::PageTel>,
+    pub(crate) prochain_pilotage: Instant,
+    /// Les allers-retours d'écho des téléphones natifs : (reçu à, durée), en microsecondes
+    /// depuis `depart` (correction du lot 12).
+    pub(crate) allers_retours: Vec<(u64, u64)>,
 }
 
 fn heure_locale_us(depart: Instant) -> u64 {
@@ -220,6 +267,12 @@ impl Session {
         let fin = maintenant().checked_add(delai).ok_or("délai")?;
         loop {
             self.telephones_tournent();
+            if maintenant() >= self.prochain_pilotage && !self.pages.is_empty() {
+                self.prochain_pilotage = maintenant()
+                    .checked_add(crate::telephones::PILOTAGE)
+                    .unwrap_or_else(maintenant);
+                crate::telephones::piloter(self);
+            }
             let lignes = self.navigateur.ecouter(Duration::from_millis(8))?;
             for l in lignes {
                 self.noter(&l);
@@ -305,7 +358,11 @@ impl Session {
             let mut jeton = [0u8; 32];
             h.remplir(&mut jeton);
             let onglet = h.entier();
-            let appareil = Appareil::new(
+            let singe = Graine::new(
+                "singe",
+                self.graine.wrapping_mul(1000).wrapping_add(k as u64),
+            );
+            let mut appareil = Appareil::new(
                 fragment.clone(),
                 salle,
                 (jeton, onglet),
@@ -313,12 +370,19 @@ impl Session {
                 self.redite_us,
                 h,
             );
+            appareil.coups_par_la_page();
             self.telephones.push(Telephone {
                 appareil,
                 ws: None,
                 jeton,
                 revient: Some(maintenant()),
                 prochain_reveil: maintenant(),
+                joueur: if k == 0 {
+                    JoueurDePage::singe(salle::simulation::SINGE_US)
+                } else {
+                    JoueurDePage::default()
+                },
+                hasard: singe,
             });
         }
         Ok(())
@@ -347,7 +411,11 @@ impl Session {
             if let Some(ws) = t.ws.as_mut() {
                 loop {
                     match ws.recevoir() {
-                        Ok(Some(o)) => t.appareil.recevoir(local, &o),
+                        Ok(Some(o)) => {
+                            t.appareil.recevoir(local, &o);
+                            self.allers_retours
+                                .extend(t.appareil.prendre_les_allers_retours());
+                        }
                         Ok(None) => break,
                         Err(_) => {
                             perdu = true;
@@ -361,6 +429,17 @@ impl Session {
                     .checked_add(Duration::from_micros(PAS_US))
                     .unwrap_or_else(maintenant);
                 t.appareil.reveiller(local);
+                let fabrique = self.fabrique.as_ref();
+                t.joueur.jouer(
+                    local,
+                    &mut t.appareil,
+                    |m| {
+                        fabrique
+                            .filter(|(_, e)| blake3::hash(m).as_bytes() == e)
+                            .map(|(f, _)| f.clone())
+                    },
+                    &mut t.hasard,
+                );
             }
             for o in t.appareil.sorties() {
                 if let Some(ws) = t.ws.as_mut()
@@ -391,6 +470,9 @@ impl Session {
             if let Some(ws) = t.ws.take() {
                 ws.couper();
             }
+        }
+        for p in self.pages.drain(..) {
+            p.fermer();
         }
         self.navigateur.fermer();
         if let Some(r) = self.relais.take() {
@@ -447,6 +529,8 @@ fn ouvrir(
     } else {
         port_libre()?
     };
+    let relais_lance = maintenant();
+    let relais_us0 = relais::horloge::maintenant_us();
     let relais = relais::coque::lancer(&relais::coque::Reglages {
         port,
         adresse: None,
@@ -488,6 +572,14 @@ fn ouvrir(
         fragment: None,
         depart: maintenant(),
         graine: 1,
+        fabrique: charger_le_module(module)
+            .ok()
+            .map(|c| (c.fabrique(), *blake3::hash(module).as_bytes())),
+        pages: Vec::new(),
+        prochain_pilotage: maintenant(),
+        relais_lance,
+        relais_us0,
+        allers_retours: Vec::new(),
     })
 }
 
@@ -792,6 +884,12 @@ fn soiree(
     };
     let deroule = (|| -> Result<Option<Ligne>, String> {
         let premier = debuter(&mut s, &mut p, telephones)?;
+        let ouverte = maintenant();
+        if o.retardataires {
+            ouvrir_les_pages_en_retard(o, &mut s, &mut p)?;
+        } else {
+            ouvrir_les_pages(o, &mut s, &mut p)?;
+        }
         // L'écran rechargé en pleine manche.
         attendre_le_pas(&mut s, &premier, 1_200, Duration::from_secs(60))?;
         let depuis = s.lignes.len();
@@ -867,6 +965,11 @@ fn soiree(
         let depuis = s.lignes.len();
         s.evaluer(0, "window.__banc.reprendre_ici(), true")?;
         reprise(&mut s, &mut p, depuis, Some(&onglet0), "Reprendre ici")?;
+        // Les pages du téléphone : rechargée en pleine écriture, puis un onglet jumeau.
+        recharger_une_page_en_pleine_ecriture(&mut s, &mut p);
+        onglet_jumeau(&mut s, &mut p);
+        couper_une_page_qui_tient_la_croix(&mut s, &mut p);
+        remplir_la_file_d_une_page(&mut s, &mut p);
         // La partie jusqu'à une phase terminale.
         let o0 = onglet0.clone();
         s.attendre(
@@ -879,6 +982,41 @@ fn soiree(
                     && l.json.get("terminale").and_then(Json::as_bool) == Some(true)
             },
         )?;
+        // Avec des pages : le podium, puis « On rejoue » (une partie neuve qui n'est plus
+        // terminale).
+        if !s.pages.is_empty() {
+            let o0 = onglet0.clone();
+            let depuis = s.lignes.len();
+            match s.attendre(
+                depuis,
+                Duration::from_secs(180),
+                "« On rejoue »",
+                move |l| {
+                    l.onglet == o0
+                        && l.quoi() == "etat"
+                        && l.json.get("terminale").and_then(Json::as_bool) == Some(false)
+                },
+            ) {
+                Ok(_) => p.notes.push(String::from(
+                    "« On rejoue » : une partie neuve après le podium",
+                )),
+                Err(e) => p.fautes.push(e),
+            }
+        }
+        // La partie prolongée jusqu'à la durée demandée (« Sidequest 5 min »).
+        if o.duree_min_s > 0 {
+            let fin = ouverte
+                .checked_add(Duration::from_secs(o.duree_min_s))
+                .ok_or("délai")?;
+            while maintenant() < fin {
+                s.tourner(Duration::from_secs(1))?;
+            }
+            p.notes.push(format!(
+                "partie jouée {} s depuis son ouverture (au moins {} s demandées)",
+                maintenant().saturating_duration_since(ouverte).as_secs(),
+                o.duree_min_s
+            ));
+        }
         // Les marques F8, juste après un point, pour que la garde finale les rejoue.
         let o0 = onglet0.clone();
         let depuis = s.lignes.len();
@@ -928,6 +1066,9 @@ fn soiree(
         }
         _ => Err(String::from("la partie n'a pas été figée")),
     };
+    juger_les_pages(&mut s, &mut p, g_pour_les_pages(&cle));
+    juger_les_natifs(&s, &mut p);
+    noter_m13(o, &s, &mut p);
     constater_la_politique(&s, &mut p);
     controler_les_lignes(&s, &mut p, &["Relais(Remplacee)"]);
     p.lignes = s.lignes.len();
@@ -947,7 +1088,8 @@ fn soiree(
             // image trop tardive) est une faute.
             Ok(chaine) => match s.salle.map(|salle| sauts(&chaine, g, salle)) {
                 Some(Ok(v)) => {
-                    let (rattaches, seuls) = rattacher_les_sauts(&v, &s.lignes);
+                    let (rattaches, seuls) =
+                        rattacher_les_sauts(&v, &s.lignes, charge.declaration().rattrapage);
                     p.notes.push(format!(
                         "sauts rattachés : {}",
                         rattaches
@@ -1003,6 +1145,1054 @@ fn soiree(
     }
     ecrire_les_lignes(&dossier, &lignes, &autres);
     Ok(p)
+}
+
+// ---------------------------------------------------------------------------
+// Les pages du téléphone (lot 12)
+// ---------------------------------------------------------------------------
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "des microsecondes en millisecondes, pour le rapport"
+)]
+fn ms(us: u64) -> f64 {
+    us as f64 / 1000.0
+}
+
+fn g_pour_les_pages(cle: &Result<CleDeGarde, String>) -> Option<[u8; 32]> {
+    cle.as_ref().ok().map(|g| *g.octets())
+}
+
+/// Ouvre une page du téléphone dans chaque navigateur de `--pages`, et attend que chacune
+/// soit accueillie, ait reçu le module par la connexion et posé une page (M4 relevé).
+fn ouvrir_les_pages(o: &Options, s: &mut Session, p: &mut Passage) -> Result<(), String> {
+    if o.pages.is_empty() {
+        return Ok(());
+    }
+    let (Some(salle), Some(fragment)) = (s.salle, s.fragment.clone()) else {
+        return Err(String::from("pages : ni salle ni fragment"));
+    };
+    let profils = o.travail.join("profils-pages");
+    for n in &o.pages {
+        match crate::telephones::PageTel::ouvrir(
+            *n,
+            s.port,
+            &salle.to_string(),
+            &fragment.ecrire(),
+            &profils,
+        ) {
+            Ok(page) => s.pages.push(page),
+            Err(e) => p.notes.push(format!("page {} : {e}", n.nom())),
+        }
+    }
+    if s.pages.is_empty() {
+        p.notes.push(String::from("pages : aucune n'a pu s'ouvrir"));
+        return Ok(());
+    }
+    let fin = maintenant()
+        .checked_add(Duration::from_secs(90))
+        .ok_or("délai")?;
+    loop {
+        s.tourner(Duration::from_millis(300))?;
+        let pretes = s.pages.iter().all(|pg| {
+            pg.etat.as_ref().is_some_and(|e| {
+                e.get("accueilli").and_then(Json::as_bool) == Some(true)
+                    && e.get("noeuds").and_then(Json::as_u64).unwrap_or(0) > 0
+            })
+        });
+        if pretes {
+            break;
+        }
+        if reste(fin).is_zero() {
+            for pg in &s.pages {
+                p.fautes.push(format!(
+                    "page {} : pas accueillie avec une page en 90 s ; état {} ; console {:?}",
+                    pg.nom,
+                    pg.etat
+                        .as_ref()
+                        .map_or_else(|| String::from("aucun"), Json::to_string),
+                    pg.console.iter().rev().take(8).collect::<Vec<_>>()
+                ));
+            }
+            return Err(String::from("les pages ne sont pas prêtes"));
+        }
+    }
+    for pg in &s.pages {
+        p.notes.push(format!(
+            "page {} ({}) accueillie ; M4 {}",
+            pg.nom,
+            pg.version,
+            pg.m4
+                .as_ref()
+                .map_or_else(|| String::from("non dit"), Json::to_string)
+        ));
+    }
+    Ok(())
+}
+
+/// Les quantiles d'une liste de durées en microsecondes : (nombre, médiane, 99ᵉ centile,
+/// maximum).
+fn quantiles(mut v: Vec<u64>) -> (usize, u64, u64, u64) {
+    v.sort_unstable();
+    let q = |f: usize| {
+        v.get(v.len().saturating_sub(1).saturating_mul(f) / 100)
+            .copied()
+            .unwrap_or(0)
+    };
+    (v.len(), q(50), q(99), v.last().copied().unwrap_or(0))
+}
+
+/// Les retardataires (*correction du lot 12*, « un téléphone qui rejoint Sidequest à 71
+/// appareils ne retarde personne ») : quand chaque téléphone natif est accueilli et a reçu
+/// le module, les pages arrivent une à une. Pour chacune, le navigateur est lancé, puis la
+/// page ouverte ; pendant qu'elle reçoit le module (de son ouverture à son module entier,
+/// à l'état qu'elle dit), les allers-retours d'écho des natifs (chacun toutes les 250 ms,
+/// SAL-129) se comparent à ceux des 20 s d'avant le lancement : ni leur médiane ni leur
+/// 99ᵉ centile ne doivent croître de plus de [`RETARD_TOLERE_US`]. Le banc tourne sur un
+/// seul fil : ses propres arrêts (une évaluation dans une page) comptent dans les deux.
+#[expect(
+    clippy::too_many_lines,
+    reason = "les retardataires se lisent d'un trait : attendre, lancer, ouvrir, mesurer, juger"
+)]
+fn ouvrir_les_pages_en_retard(o: &Options, s: &mut Session, p: &mut Passage) -> Result<(), String> {
+    if o.pages.is_empty() {
+        return Ok(());
+    }
+    let (Some(salle), Some(fragment)) = (s.salle, s.fragment.clone()) else {
+        return Err(String::from("pages : ni salle ni fragment"));
+    };
+    let fin = maintenant()
+        .checked_add(Duration::from_secs(300))
+        .ok_or("délai")?;
+    loop {
+        s.tourner(Duration::from_millis(500))?;
+        let prets = s
+            .telephones
+            .iter()
+            .filter(|t| t.appareil.accueilli() && t.appareil.module().is_some())
+            .count();
+        if prets == s.telephones.len() {
+            p.notes.push(format!(
+                "retardataires : les {prets} téléphones natifs accueillis, leur module reçu"
+            ));
+            break;
+        }
+        if reste(fin).is_zero() {
+            return Err(format!(
+                "retardataires : {prets} téléphones natifs sur {} accueillis avec leur module en 300 s",
+                s.telephones.len()
+            ));
+        }
+    }
+    let profils = o.travail.join("profils-pages");
+    for n in &o.pages {
+        // Les 20 s d'avant, sans rien de nouveau.
+        s.tourner(Duration::from_secs(20))?;
+        let base_jusqu_a = heure_locale_us(s.depart);
+        let lance = match Lance::lancer(*n, None, &profils) {
+            Ok(l) => l,
+            Err(e) => {
+                p.notes
+                    .push(format!("page {} : pas exécuté : {e}", n.nom()));
+                continue;
+            }
+        };
+        s.tourner(Duration::from_secs(3))?;
+        let debut = heure_locale_us(s.depart);
+        let page = crate::telephones::PageTel::sur(
+            lance,
+            *n,
+            s.port,
+            &salle.to_string(),
+            &fragment.ecrire(),
+        )?;
+        s.pages.push(page);
+        let k = s.pages.len().saturating_sub(1);
+        let fin = maintenant()
+            .checked_add(Duration::from_secs(90))
+            .ok_or("délai")?;
+        loop {
+            s.tourner(Duration::from_millis(50))?;
+            let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+            let e = pg.etat_de(0)?;
+            let progres: Vec<u64> = e
+                .get("progres")
+                .and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(Json::as_u64).collect())
+                .unwrap_or_default();
+            if let [recus, total] = progres[..]
+                && total > 0
+                && recus >= total
+                && e.get("noeuds").and_then(Json::as_u64).unwrap_or(0) > 0
+            {
+                pg.etat = Some(e);
+                break;
+            }
+            if reste(fin).is_zero() {
+                return Err(format!(
+                    "retardataire {} : le module n'est pas reçu en 90 s ; état {e}",
+                    pg.nom
+                ));
+            }
+        }
+        let fin_us = heure_locale_us(s.depart);
+        let avant: Vec<u64> = s
+            .allers_retours
+            .iter()
+            .filter(|(t, _)| t.saturating_add(20_000_000) >= base_jusqu_a && *t < base_jusqu_a)
+            .map(|(_, d)| *d)
+            .collect();
+        let pendant: Vec<u64> = s
+            .allers_retours
+            .iter()
+            .filter(|(t, _)| *t >= debut && *t <= fin_us)
+            .map(|(_, d)| *d)
+            .collect();
+        let (na, ma, ca, xa) = quantiles(avant);
+        let (np, mp, cp, xp) = quantiles(pendant);
+        let pg = s.pages.get(k).ok_or("pas de page")?;
+        let texte = format!(
+            "retardataire {} ({} téléphones natifs, {} pages) : module reçu en {:.0} ms ; allers-retours d'écho des natifs, 20 s avant : {na}, médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms ; pendant la livraison : {np}, médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms ; M4 {}",
+            pg.nom,
+            s.telephones.len(),
+            s.pages.len(),
+            ms(fin_us.saturating_sub(debut)),
+            ms(ma),
+            ms(ca),
+            ms(xa),
+            ms(mp),
+            ms(cp),
+            ms(xp),
+            pg.m4
+                .as_ref()
+                .or_else(|| pg.etat.as_ref().and_then(|e| e.get("m4")))
+                .map_or_else(|| String::from("non dit"), Json::to_string)
+        );
+        if na == 0 || np == 0 {
+            p.fautes
+                .push(format!("{texte} : pas assez d'allers-retours pour juger"));
+        } else if cp > ca.saturating_add(RETARD_TOLERE_US)
+            || mp > ma.saturating_add(RETARD_TOLERE_US)
+        {
+            p.fautes.push(format!(
+                "{texte} : le retardataire retarde les autres (médiane + {:.1} ms, 99ᵉ centile + {:.1} ms ; au plus {:.1} ms chacun)",
+                ms(mp.saturating_sub(ma)),
+                ms(cp.saturating_sub(ca)),
+                ms(RETARD_TOLERE_US)
+            ));
+        } else {
+            p.notes.push(texte);
+        }
+    }
+    Ok(())
+}
+
+/// M13 (§ 8.6, *correction du lot 12*) : la part du commun dans le Worker à chaque tour qui
+/// joue un pas (les vues de l'écran et des téléphones et leur chiffrement, la garde), que
+/// le Worker répartit et rapporte dans ses lignes `etat`. Le Worker qui a joué le plus de
+/// tours fait foi (une reprise en relance un neuf). Jugée contre [`M13_MAX_MS`] au 99ᵉ
+/// centile avec les retardataires (le scénario des 71 appareils) ; notée sinon.
+fn noter_m13(o: &Options, s: &Session, p: &mut Passage) {
+    let tours = |l: &Ligne| {
+        l.json
+            .pointer("/m13/commun/tours")
+            .and_then(Json::as_u64)
+            .unwrap_or(0)
+    };
+    let Some(l) = s
+        .lignes
+        .iter()
+        .filter(|l| l.quoi() == "etat")
+        .max_by_key(|l| tours(l))
+    else {
+        p.notes.push(String::from("M13 : aucune ligne `etat`"));
+        return;
+    };
+    let m = |chemin: &str| l.json.pointer(chemin).and_then(Json::as_f64).unwrap_or(0.0);
+    let texte = format!(
+        "M13 : {} tours, {} appareils accueillis au dernier rapport ; la part du commun (vues, chiffrement, garde) : médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.2} ms ; le tour entier : médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.2} ms (cases de 0,1 ms, bornes par excès)",
+        tours(l),
+        l.json
+            .pointer("/m13/appareils")
+            .and_then(Json::as_u64)
+            .unwrap_or(0),
+        m("/m13/commun/mediane"),
+        m("/m13/commun/c99"),
+        m("/m13/commun/max"),
+        m("/m13/tour/mediane"),
+        m("/m13/tour/c99"),
+        m("/m13/tour/max"),
+    );
+    if o.retardataires && m("/m13/commun/c99") > M13_MAX_MS {
+        p.fautes.push(format!(
+            "{texte} : au-delà de {M13_MAX_MS:.2} ms au 99ᵉ centile"
+        ));
+    } else {
+        p.notes.push(texte);
+    }
+}
+
+/// La première page, rechargée en pleine écriture : aucun geste perdu (P26, SAL-56). Le
+/// banc gèle le réseau de la page (`__banc.geler` : rien ne part, rien n'arrive), y tape
+/// une réponse et touche un bouton (« Envoyer » s'il y est) : le geste reste dans la file,
+/// jamais parti ; puis il recharge la page. La page reprend sa file de `sessionStorage`,
+/// la renvoie après l'accueil, et le geste doit être accusé ; la chaîne finale n'en compte
+/// aucun en double (`juger`).
+fn recharger_une_page_en_pleine_ecriture(s: &mut Session, p: &mut Passage) {
+    if s.pages.is_empty() {
+        return;
+    }
+    let r = (|| -> Result<String, String> {
+        let fin = maintenant()
+            .checked_add(Duration::from_secs(120))
+            .ok_or("délai")?;
+        loop {
+            s.tourner(Duration::from_millis(300))?;
+            let pg = s.pages.first_mut().ok_or("pas de page")?;
+            let noeuds = pg.evaluer_json(0, "window.__banc.noeuds()")?;
+            let a = noeuds.as_array().cloned().unwrap_or_default();
+            let sorte = |n: &Json, x: &str| n.get("sorte").and_then(Json::as_str) == Some(x);
+            let champ = a.iter().find(|n| sorte(n, "champ"));
+            let bouton = a.iter().filter(|n| sorte(n, "bouton")).max_by_key(|n| {
+                n.get("nom")
+                    .and_then(Json::as_str)
+                    .is_some_and(|t| t.contains("Envoyer"))
+            });
+            let e = pg.etat_de(0)?;
+            let ecran_du_jeu = e.get("ecran").is_some_and(Json::is_null);
+            if let (Some(c), Some(b), true) = (champ, bouton, ecran_du_jeu) {
+                let c = c
+                    .get("cle")
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                let b = b
+                    .get("cle")
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                pg.arreter_le_pilote();
+                let avant = e.get("dernier_geste").and_then(Json::as_u64).unwrap_or(0);
+                pg.lance.evaluer(0, "window.__banc.geler(20000)")?;
+                pg.toucher(0, &c)?;
+                pg.lance.taper(0, "au rechargement")?;
+                pg.textes_tapes.push(String::from("au rechargement"));
+                pg.toucher(0, &b)?;
+                let e = pg.etat_de(0)?;
+                let n = e.get("dernier_geste").and_then(Json::as_u64).unwrap_or(0);
+                if n <= avant {
+                    // Ce bouton n'a rien envoyé (une page qui attend autre chose) : on
+                    // dégèle et on réessaie plus tard.
+                    pg.lance.evaluer(0, "window.__banc.geler(0)")?;
+                    pg.pilote = true;
+                    if reste(fin).is_zero() {
+                        return Err(String::from("page : aucun geste d'écriture en 120 s"));
+                    }
+                    continue;
+                }
+                pg.lance.recharger(0)?;
+                let fin2 = maintenant()
+                    .checked_add(Duration::from_secs(60))
+                    .ok_or("délai")?;
+                loop {
+                    s.tourner(Duration::from_millis(300))?;
+                    let pg = s.pages.first_mut().ok_or("pas de page")?;
+                    if let Ok(e) = pg.etat_de(0) {
+                        let accuse = e.get("accuse").and_then(Json::as_u64).unwrap_or(0);
+                        if e.get("accueilli").and_then(Json::as_bool) == Some(true) && accuse >= n {
+                            pg.pilote = true;
+                            return Ok(format!(
+                                "page {} rechargée en pleine écriture, réseau gelé : le geste {n}, jamais parti avant le rechargement, est accusé après lui (accusé {accuse})",
+                                pg.nom
+                            ));
+                        }
+                    }
+                    if reste(fin2).is_zero() {
+                        return Err(format!(
+                            "page rechargée : le geste {n} n'est pas accusé en 60 s (geste perdu)"
+                        ));
+                    }
+                }
+            }
+            if reste(fin).is_zero() {
+                return Err(String::from("page : aucune écriture en 120 s"));
+            }
+        }
+    })();
+    match r {
+        Ok(n) => p.notes.push(n),
+        Err(e) => p.fautes.push(e),
+    }
+    if let Some(pg) = s.pages.first_mut() {
+        pg.pilote = true;
+    }
+}
+
+/// Un onglet jumeau de la dernière page (même jeton, un autre onglet) : le plus récent
+/// gagne, l'ancien montre « Remplacé — Reprendre ici » (SAL-18, SAL-19, SAL-21) ; toucher
+/// « Reprendre ici » le rend à l'ancien, et le jumeau est remplacé à son tour.
+fn onglet_jumeau(s: &mut Session, p: &mut Passage) {
+    if s.pages.is_empty() {
+        return;
+    }
+    let r = (|| -> Result<String, String> {
+        let k = s.pages.len().saturating_sub(1);
+        let url = s
+            .pages
+            .get(k)
+            .map(|pg| pg.url.clone())
+            .ok_or("pas de page")?;
+        let jumeau = {
+            let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+            pg.arreter_le_pilote();
+            let j = pg.lance.nouvel_onglet(&url)?;
+            pg.onglets.push(j);
+            j
+        };
+        let attendre =
+            |s: &mut Session, quoi: &str, f: &dyn Fn(&Json, &Json) -> bool| -> Result<(), String> {
+                let fin = maintenant()
+                    .checked_add(Duration::from_secs(45))
+                    .ok_or("délai")?;
+                loop {
+                    s.tourner(Duration::from_millis(300))?;
+                    let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+                    let (Ok(a), Ok(b)) = (pg.etat_de(0), pg.etat_de(1)) else {
+                        continue;
+                    };
+                    if f(&a, &b) {
+                        return Ok(());
+                    }
+                    if reste(fin).is_zero() {
+                        return Err(format!(
+                            "onglet jumeau : {quoi} en 45 s ; premier {a}, jumeau {b}"
+                        ));
+                    }
+                }
+            };
+        let remplace = |e: &Json| e.get("ecran").and_then(Json::as_str) == Some("remplace");
+        let accueilli = |e: &Json| e.get("accueilli").and_then(Json::as_bool) == Some(true);
+        attendre(s, "le jumeau ne prend pas la place", &|a, b| {
+            remplace(a) && accueilli(b)
+        })?;
+        let visible = {
+            let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+            pg.lance.montrer(0)?;
+            let v = pg.lance.evaluer(0, "document.visibilityState")?;
+            pg.toucher(0, "reprendre")?;
+            v
+        };
+        if attendre(s, "« Reprendre ici » touché", &|a, b| {
+            accueilli(a) && remplace(b)
+        })
+        .is_err()
+        {
+            // Un doigt n'a rien fait (l'onglet ramené devant était « {visible} ») : un clic de
+            // souris, par la même chaîne d'entrées.
+            let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+            let c = pg.evaluer_json(0, "window.__banc.centre('reprendre')")?;
+            let (x, y) = (
+                c.get("x").and_then(Json::as_f64).unwrap_or(0.0),
+                c.get("y").and_then(Json::as_f64).unwrap_or(0.0),
+            );
+            pg.lance.cliquer(0, x, y)?;
+            p.notes.push(format!(
+                "onglet jumeau : le doigt sur « Reprendre ici » n'a rien fait dans {} (onglet {visible}) ; un clic de souris",
+                pg.nom
+            ));
+            attendre(s, "« Reprendre ici » ne rend pas la place", &|a, b| {
+                accueilli(a) && remplace(b)
+            })?;
+        }
+        let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+        pg.lance.fermer_onglet(jumeau)?;
+        pg.onglets.truncate(1);
+        pg.actif = 0;
+        pg.pilote = true;
+        Ok(format!(
+            "page {} : onglet jumeau remplacé puis « Reprendre ici » (SAL-19, SAL-21)",
+            pg.nom
+        ))
+    })();
+    match r {
+        Ok(n) => p.notes.push(n),
+        Err(e) => p.fautes.push(e),
+    }
+    if let Some(pg) = s.pages.last_mut() {
+        pg.pilote = true;
+    }
+}
+
+/// P28 : une page qui tient la croix d'un jeu dont le tenu déclare une fraîcheur
+/// (Sidequest) perd son réseau 2,5 s (`__banc.geler`, en mode banc : ce qui arrive se perd,
+/// rien ne part) ; l'écho reste sans réponse 1,5 s, la page relâche de son côté (son compte
+/// `coupures`), reconnecte, et le doigt resté posé ne compte plus. Sans croix (Punchline),
+/// rien à couper : c'est dit.
+fn couper_une_page_qui_tient_la_croix(s: &mut Session, p: &mut Passage) {
+    if s.pages.is_empty() {
+        return;
+    }
+    let r = (|| -> Result<Option<String>, String> {
+        let fin = maintenant()
+            .checked_add(Duration::from_secs(60))
+            .ok_or("délai")?;
+        loop {
+            s.tourner(Duration::from_millis(300))?;
+            let tenue = s.pages.iter().position(|pg| {
+                pg.croix
+                    .is_some_and(|(t, _, _)| t.elapsed() >= Duration::from_secs(1))
+            });
+            if let Some(k) = tenue {
+                let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+                let avant = pg
+                    .etat_de(0)?
+                    .get("coupures")
+                    .and_then(Json::as_u64)
+                    .unwrap_or(0);
+                let o = pg.onglets.first().copied().unwrap_or(0);
+                pg.lance.evaluer(o, "window.__banc.geler(2500)")?;
+                s.tourner(Duration::from_secs(6))?;
+                let pg = s.pages.get_mut(k).ok_or("pas de page")?;
+                let e = pg.etat_de(0)?;
+                let apres = e.get("coupures").and_then(Json::as_u64).unwrap_or(0);
+                if apres <= avant {
+                    return Err(format!(
+                        "page {} : réseau gelé 2,5 s en tenant la croix, aucun relâchement côté page (P28) ; état {e}",
+                        pg.nom
+                    ));
+                }
+                if e.get("accueilli").and_then(Json::as_bool) != Some(true) {
+                    return Err(format!(
+                        "page {} : pas revenue après la coupure ; état {e}",
+                        pg.nom
+                    ));
+                }
+                return Ok(Some(format!(
+                    "page {} : coupure en tenant la croix, relâchement côté page (P28 : coupures {avant} → {apres}), revenue",
+                    pg.nom
+                )));
+            }
+            if reste(fin).is_zero() {
+                return Ok(None);
+            }
+        }
+    })();
+    match r {
+        Ok(Some(n)) => p.notes.push(n),
+        Ok(None) => p.notes.push(String::from(
+            "coupure (P28) : aucune page n'a tenu de croix en 60 s (un jeu sans croix)",
+        )),
+        Err(e) => p.fautes.push(e),
+    }
+}
+
+/// SAL-07 (*correction du lot 12* : au lot 12, `FilePleine` n'était que compté, jamais
+/// provoqué) : la première page, son réseau gelé (`__banc.geler`), reçoit autant de touchers
+/// d'un bouton que sa file tient de gestes, et huit de plus. Chaque toucher est un geste
+/// tenté : placé en file tant qu'il y a de la place, sinon refusé et compté
+/// (`files_pleines`), et dit à l'écran (« Trop de gestes en attente »). Le compte doit être
+/// exact : placés + refusés = touchers, la file à sa limite. Puis le réseau revient, et
+/// chaque geste placé doit être accusé (aucun perdu ; la chaîne finale n'en compte aucun en
+/// double, `juger`).
+#[expect(
+    clippy::too_many_lines,
+    reason = "la file remplie, comptée, puis vidée : un constat, d'un trait"
+)]
+fn remplir_la_file_d_une_page(s: &mut Session, p: &mut Passage) {
+    if s.pages.is_empty() {
+        return;
+    }
+    let r = (|| -> Result<String, String> {
+        let fin = maintenant()
+            .checked_add(Duration::from_secs(120))
+            .ok_or("délai")?;
+        loop {
+            s.tourner(Duration::from_millis(300))?;
+            if reste(fin).is_zero() {
+                return Err(String::from(
+                    "file pleine : aucun bouton sur une page du jeu, file vide, en 120 s",
+                ));
+            }
+            let pg = s.pages.first_mut().ok_or("pas de page")?;
+            if pg.croix.is_some() {
+                continue;
+            }
+            let o = pg.onglets.first().copied().unwrap_or(0);
+            let e = pg.etat_de(0)?;
+            let lire = |e: &Json, c: &str| e.get(c).and_then(Json::as_u64).unwrap_or(0);
+            let noeuds = pg.evaluer_json(o, "window.__banc.noeuds()")?;
+            let boutons: Vec<String> = noeuds
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|n| n.get("sorte").and_then(Json::as_str) == Some("bouton"))
+                .filter_map(|n| n.get("cle").and_then(Json::as_str))
+                .map(str::to_owned)
+                .collect();
+            let pret = e.get("ecran").is_some_and(Json::is_null)
+                && e.get("accueilli").and_then(Json::as_bool) == Some(true)
+                && lire(&e, "en_file") == 0
+                && lire(&e, "file_max") > 0;
+            if !pret || boutons.is_empty() {
+                continue;
+            }
+            pg.arreter_le_pilote();
+            let limite = lire(&e, "file_max");
+            let touchers = limite.saturating_add(8);
+            // Ce que le doigt touche, pour dire pourquoi un bouton ne répond pas.
+            let _: Json = pg.lance.evaluer(
+                o,
+                "window.__banc_doigt = []; for (const n of ['pointerdown', 'touchstart', 'click']) document.addEventListener(n, e => window.__banc_doigt.push(n + ' ' + (e.pointerType || '') + ' ' + ((e.target && e.target.outerHTML) || '').slice(0, 120)), true); true",
+            )?;
+            // Le réseau gelé d'abord : aucune vue n'arrive, la page ne change pas sous le
+            // doigt (un geste change souvent la page qui le porte : le personnage choisi
+            // dans le salon de Punchline, le vote envoyé). Le premier toucher qui place un
+            // geste désigne le bouton ; un bouton qui ne répond pas au doigt se dit.
+            pg.lance.evaluer(o, "window.__banc.geler(60000)")?;
+            let mut bouton = None;
+            for b in &boutons {
+                let avant = lire(&pg.etat_de(0)?, "gestes");
+                let _: Json = pg.lance.evaluer(o, "window.__banc_doigt = []; true")?;
+                pg.toucher(o, b)?;
+                if lire(&pg.etat_de(0)?, "gestes") > avant {
+                    bouton = Some(b.clone());
+                    break;
+                }
+                let doigt = pg
+                    .lance
+                    .evaluer(o, "JSON.stringify(window.__banc_doigt)")
+                    .unwrap_or(Json::Null);
+                p.notes.push(format!(
+                    "file pleine : le bouton « {b} » de la page {} n'a émis aucun geste au toucher ({:?}) ; le doigt a touché : {doigt}",
+                    pg.nom,
+                    noeuds
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|n| n.get("cle").and_then(Json::as_str) == Some(b.as_str()))
+                ));
+            }
+            let Some(bouton) = bouton else {
+                pg.lance.evaluer(o, "window.__banc.geler(0)")?;
+                pg.pilote = true;
+                continue;
+            };
+            let mut faits = 1u64;
+            for _ in 1..touchers {
+                if pg.toucher(o, &bouton).is_err() {
+                    break;
+                }
+                faits = faits.saturating_add(1);
+            }
+            let e1 = pg.etat_de(0)?;
+            let places = lire(&e1, "gestes").saturating_sub(lire(&e, "gestes"));
+            let refuses = lire(&e1, "files_pleines").saturating_sub(lire(&e, "files_pleines"));
+            let en_file = lire(&e1, "en_file");
+            let bandeau = pg
+                .lance
+                .evaluer(
+                    o,
+                    "document.body.innerText.includes('Trop de gestes en attente')",
+                )
+                .ok()
+                .and_then(|v| v.as_bool())
+                == Some(true);
+            if faits < touchers {
+                // Le bouton a disparu sous le doigt (une page qui change) : on dégèle, on
+                // attend que tout soit accusé, et on réessaie plus tard.
+                pg.lance.evaluer(o, "window.__banc.geler(0)")?;
+                pg.pilote = true;
+                continue;
+            }
+            let compte = format!(
+                "{faits} touchers de « {bouton} », file de {limite} : {places} placés, {refuses} refusés, {en_file} en file, bandeau {}",
+                if bandeau { "dit" } else { "non dit" }
+            );
+            pg.lance.evaluer(o, "window.__banc.geler(0)")?;
+            if refuses == 0
+                || places.saturating_add(refuses) != faits
+                || en_file != limite
+                || !bandeau
+            {
+                pg.pilote = true;
+                return Err(format!(
+                    "file pleine : le compte n'est pas exact : {compte}"
+                ));
+            }
+            let dernier = lire(&e1, "dernier_geste");
+            let fin2 = maintenant()
+                .checked_add(Duration::from_secs(60))
+                .ok_or("délai")?;
+            loop {
+                s.tourner(Duration::from_millis(300))?;
+                let pg = s.pages.first_mut().ok_or("pas de page")?;
+                if let Ok(e2) = pg.etat_de(0)
+                    && lire(&e2, "accuse") >= dernier
+                    && lire(&e2, "en_file") == 0
+                {
+                    pg.pilote = true;
+                    return Ok(format!(
+                        "page {} : file pleine provoquée, réseau gelé (SAL-07) : {compte} ; chaque geste placé accusé après le dégel (jusqu'au {dernier})",
+                        pg.nom
+                    ));
+                }
+                if reste(fin2).is_zero() {
+                    return Err(format!(
+                        "file pleine : après le dégel, les gestes jusqu'au {dernier} ne sont pas accusés en 60 s ({compte})"
+                    ));
+                }
+            }
+        }
+    })();
+    match r {
+        Ok(n) => p.notes.push(n),
+        Err(e) => p.fautes.push(e),
+    }
+    if let Some(pg) = s.pages.first_mut() {
+        pg.pilote = true;
+    }
+}
+
+/// Ce que les pages ont fait : chacune a joué (des gestes émis), dit M4, sans erreur du
+/// pilote ni de sa console ; et le relais n'a vu aucun secret (le secret d'entrée, G, les
+/// jetons des téléphones natifs et des pages, les textes tapés).
+#[expect(clippy::too_many_lines, reason = "un jugement par constat, à la suite")]
+fn juger_les_pages(s: &mut Session, p: &mut Passage, g: Option<[u8; 32]>) {
+    if s.pages.is_empty() {
+        return;
+    }
+    let mut aiguilles: Vec<(String, Vec<u8>)> = Vec::new();
+    for pg in &s.pages {
+        if pg.gestes_max == 0 {
+            p.fautes.push(format!("page {} : aucun geste émis", pg.nom));
+        }
+        if pg.m4.is_none() {
+            p.fautes.push(format!("page {} : M4 non dit", pg.nom));
+        }
+        if !pg.erreurs.is_empty() {
+            p.notes.push(format!(
+                "page {} : le pilote a buté {} fois : {:?}",
+                pg.nom,
+                pg.erreurs.len(),
+                pg.erreurs.iter().take(4).collect::<Vec<_>>()
+            ));
+        }
+        let erreurs: Vec<&String> = pg
+            .console
+            .iter()
+            .filter(|l| l.contains("error") || l.contains("exception") || l.contains("panicked"))
+            // Le navigateur demande `/favicon.ico` de lui-même ; le relais n'en sert pas.
+            .filter(|l| !l.contains("/favicon.ico"))
+            .collect();
+        if !erreurs.is_empty() {
+            p.fautes.push(format!(
+                "page {} : la console dit des erreurs : {:?}",
+                pg.nom,
+                erreurs.iter().take(6).collect::<Vec<_>>()
+            ));
+        }
+        p.notes.push(format!(
+            "page {} : {} gestes au plus ; dernier état {}",
+            pg.nom,
+            pg.gestes_max,
+            pg.etat
+                .as_ref()
+                .map_or_else(|| String::from("aucun"), Json::to_string)
+        ));
+        for t in &pg.textes_tapes {
+            // Correction du lot 12 : quatre octets se trouvent au hasard dans un
+            // enregistrement chiffré de 62 Mo une fois sur 70 (62·10⁶ / 2³²), et une soirée
+            // de cinq minutes en tape plusieurs (« Hugo » y a été vu une fois, au milieu
+            // d'octets chiffrés). Un texte de moins de 8 octets se cherche donc tel qu'un
+            // message le porterait, précédé de sa longueur postcard (5 octets au moins : une
+            // fois sur 18 000 au hasard) ; un plus long, tel quel.
+            if t.len() >= 8 {
+                aiguilles.push((format!("le texte tapé « {t} »"), t.as_bytes().to_vec()));
+            } else if let Ok(n) = u8::try_from(t.len())
+                && n >= 4
+            {
+                let mut a = vec![n];
+                a.extend_from_slice(t.as_bytes());
+                aiguilles.push((format!("le texte tapé « {t} », précédé de sa longueur"), a));
+            }
+        }
+    }
+    if let Some(f) = s.fragment.as_ref() {
+        aiguilles.push((
+            String::from("le secret d'entrée"),
+            f.secret.octets().to_vec(),
+        ));
+    }
+    if let Some(g) = g {
+        aiguilles.push((String::from("G"), g.to_vec()));
+    }
+    for (k, t) in s.telephones.iter().enumerate() {
+        aiguilles.push((format!("le jeton du téléphone natif {k}"), t.jeton.to_vec()));
+    }
+    // Les jetons des pages, lus dans leur `localStorage` (correction du lot 12) : en octets,
+    // et tels que la page les écrit (en hexadécimal).
+    for pg in &mut s.pages {
+        let o = pg.onglets.get(pg.actif).copied().unwrap_or(0);
+        let lu = pg
+            .lance
+            .evaluer(o, "localStorage.getItem('soiree-jeton') || ''");
+        match lu
+            .as_ref()
+            .ok()
+            .and_then(Json::as_str)
+            .filter(|h| h.len() == 64)
+        {
+            Some(h) => match crate::telephones::octets_de_l_hexa(h) {
+                Some(j) => {
+                    aiguilles.push((format!("le jeton de la page {}", pg.nom), j));
+                    aiguilles.push((
+                        format!("le jeton de la page {} en hexadécimal", pg.nom),
+                        h.as_bytes().to_vec(),
+                    ));
+                }
+                None => p
+                    .fautes
+                    .push(format!("page {} : jeton illisible « {h} »", pg.nom)),
+            },
+            None => p.fautes.push(format!(
+                "page {} : le jeton de `localStorage` ne se lit pas ({lu:?})",
+                pg.nom
+            )),
+        }
+    }
+    // Les textes courts tels quels : un constat, pas un jugement (le hasard les y met).
+    let courts: Vec<(String, Vec<u8>)> = s
+        .pages
+        .iter()
+        .flat_map(|pg| pg.textes_tapes.iter())
+        .filter(|t| t.len() < 8)
+        .map(|t| (format!("« {t} »"), t.as_bytes().to_vec()))
+        .collect();
+    if let Ok(v) = crate::telephones::secrets_vus(&s.enregistrement, &courts)
+        && !v.is_empty()
+    {
+        let taille = std::fs::metadata(&s.enregistrement).map_or(0, |m| m.len());
+        p.notes.push(format!(
+            "secrets : des textes courts tapés se trouvent tels quels dans l'enregistrement ({} octets), sans leur longueur : {v:?} (au hasard, un texte de 4 octets s'y trouve avec une probabilité d'environ {:.1} %)",
+            taille,
+            // Un constat : la probabilité, en pour cent, qu'une suite de 4 octets donnée
+            // apparaisse au hasard dans autant d'octets.
+            f64::from(u32::try_from(taille / 1000).unwrap_or(u32::MAX)) * 1000.0 / 4_294_967_296.0
+                * 100.0
+        ));
+    }
+    match crate::telephones::secrets_vus(&s.enregistrement, &aiguilles) {
+        Ok(v) if v.is_empty() => p.notes.push(format!(
+            "le relais n'a vu aucun des {} secrets cherchés dans son enregistrement",
+            aiguilles.len()
+        )),
+        Ok(v) => p.fautes.push(format!("le relais a vu : {v:?}")),
+        Err(e) => p.fautes.push(e),
+    }
+    // Le témoin positif : des octets qu'une page a envoyés, que la même recherche doit voir.
+    let liens: std::collections::BTreeSet<u32> = s
+        .pages
+        .iter()
+        .flat_map(|pg| pg.liens.iter().copied())
+        .collect();
+    match crate::telephones::temoin_des_pages(&s.enregistrement, &liens) {
+        Ok(Some(t)) => match crate::telephones::secrets_vus(
+            &s.enregistrement,
+            &[(String::from("témoin"), t)],
+        ) {
+            Ok(v) if v.len() == 1 => p.notes.push(String::from(
+                "secrets : le témoin positif (24 octets d'une trame d'une page) est vu",
+            )),
+            Ok(_) => p.fautes.push(String::from(
+                "secrets : TÉMOIN POSITIF RATÉ, la recherche ne voit pas ce qu'une page a envoyé",
+            )),
+            Err(e) => p.fautes.push(e),
+        },
+        Ok(None) => p.fautes.push(String::from(
+            "secrets : aucune trame d'une page dans l'enregistrement, pas de témoin positif",
+        )),
+        Err(e) => p.fautes.push(e),
+    }
+    // Le scénario `pages` : les débordements vus, à chaque taille ; puis son contrôle
+    // négatif, un texte qui déborde ajouté par la page (`__banc.deborder`).
+    for pg in &s.pages {
+        p.notes.push(format!(
+            "pages {} : {} pages jugées (taille × suite de clés)",
+            pg.nom,
+            pg.pages_jugees.len()
+        ));
+        for d in &pg.debordements {
+            p.fautes.push(format!("débordement : {d}"));
+        }
+    }
+    if let Some(pg) = s.pages.first_mut() {
+        let o = pg.onglets.first().copied().unwrap_or(0);
+        let vu = pg
+            .lance
+            .evaluer(o, "window.__banc.deborder()")
+            .and_then(|_| pg.evaluer_json(o, "window.__banc.debordements()"));
+        match vu {
+            Ok(d) if d.to_string().contains("00000000deb0deb0") => {
+                p.notes.push(String::from(
+                    "pages : le contrôle négatif (un texte qui déborde) est vu",
+                ));
+            }
+            Ok(d) => p.fautes.push(format!(
+                "pages : CONTRÔLE NÉGATIF RATÉ, le texte qui déborde n'est pas vu ({d})"
+            )),
+            Err(e) => p.fautes.push(format!("pages : contrôle négatif : {e}")),
+        }
+    }
+    // M7 : la redite du tenu par la vraie page, telle que le relais l'a reçue : les écarts
+    // entre deux trames de tenu d'un lien de la page, pendant que le pilote tenait la croix
+    // (passé ses 300 premières ms, où le tenu change), à l'horloge du relais.
+    match crate::telephones::trames_de_tenu(&s.enregistrement) {
+        Ok(r) => {
+            for pg in &s.pages {
+                let fenetres: Vec<(u64, u64)> = pg
+                    .tenues
+                    .iter()
+                    .map(|(a, b)| {
+                        let us = |t: &Instant| {
+                            u64::try_from(t.saturating_duration_since(s.relais_lance).as_micros())
+                                .unwrap_or(u64::MAX)
+                                .saturating_add(s.relais_us0)
+                        };
+                        (us(a).saturating_add(300_000), us(b))
+                    })
+                    .collect();
+                let mut e: Vec<u64> = Vec::new();
+                for l in &pg.liens {
+                    let Some(t) = r.get(l) else {
+                        continue;
+                    };
+                    for w in t.windows(2) {
+                        if let [a, b] = w
+                            && fenetres.iter().any(|(de, jusqu)| a >= de && b <= jusqu)
+                        {
+                            e.push(b.saturating_sub(*a));
+                        }
+                    }
+                }
+                if e.is_empty() {
+                    // Correction du lot 12 : « aucune croix tenue » ne se dit que s'il n'y
+                    // en a eu aucune ; des croix tenues sans trame de tenu se disent telles.
+                    p.notes.push(if pg.tenues.is_empty() {
+                        format!("M7, page {} : aucune croix tenue, rien à lire", pg.nom)
+                    } else {
+                        format!(
+                            "M7, page {} : {} croix tenues, mais aucun écart entre deux trames de tenu reçues pendant elles (liens {:?})",
+                            pg.nom,
+                            pg.tenues.len(),
+                            pg.liens
+                        )
+                    });
+                    continue;
+                }
+                e.sort_unstable();
+                let q = |f: usize| {
+                    e.get(e.len().saturating_sub(1).saturating_mul(f) / 100)
+                        .copied()
+                        .unwrap_or(0)
+                };
+                p.notes.push(format!(
+                    "M7, page {} ({}) : {} écarts entre deux tenus reçus par le relais pendant {} croix tenues ; minimum {:.1} ms, médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms",
+                    pg.nom,
+                    pg.version,
+                    e.len(),
+                    pg.tenues.len(),
+                    ms(e.first().copied().unwrap_or(0)),
+                    ms(q(50)),
+                    ms(q(99)),
+                    ms(e.last().copied().unwrap_or(0))
+                ));
+                // Correction du lot 12 : les mêmes écarts, sur les seuls moments où la page
+                // disait, à deux coups de suite du pilote, un tenu qui n'est pas sa valeur
+                // relâchée (un tenu relâché part une fois et ne se redit pas : les commandes
+                // désactivées de Sidequest le relâchent sous un doigt resté posé).
+                let us = |t: &Instant| {
+                    u64::try_from(t.saturating_duration_since(s.relais_lance).as_micros())
+                        .unwrap_or(u64::MAX)
+                        .saturating_add(s.relais_us0)
+                };
+                let actifs: Vec<(u64, u64)> = pg
+                    .tenus_vus
+                    .windows(2)
+                    .filter_map(|w| match w {
+                        [(a, false), (b, false)] => Some((us(a), us(b))),
+                        _ => None,
+                    })
+                    .collect();
+                let mut ea: Vec<u64> = Vec::new();
+                for l in &pg.liens {
+                    let Some(t) = r.get(l) else {
+                        continue;
+                    };
+                    for w in t.windows(2) {
+                        if let [a, b] = w
+                            && actifs.iter().any(|(de, jusqu)| a >= de && b <= jusqu)
+                        {
+                            ea.push(b.saturating_sub(*a));
+                        }
+                    }
+                }
+                ea.sort_unstable();
+                let relaches = pg.tenus_vus.iter().filter(|(_, r)| *r).count();
+                let qa = |f: usize| {
+                    ea.get(ea.len().saturating_sub(1).saturating_mul(f) / 100)
+                        .copied()
+                        .unwrap_or(0)
+                };
+                p.notes.push(format!(
+                    "M7, page {}, tenu non relâché seulement : {} écarts ({} coups du pilote sous la croix, dont {relaches} où le tenu était relâché) ; médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms",
+                    pg.nom,
+                    ea.len(),
+                    pg.tenus_vus.len(),
+                    ms(qa(50)),
+                    ms(qa(99)),
+                    ms(ea.last().copied().unwrap_or(0))
+                ));
+            }
+        }
+        Err(e) => p.notes.push(format!("M7 : {e}")),
+    }
+}
+
+/// Les téléphones natifs, qui passent par la page depuis le lot 12 : ce que chacun a fait
+/// des coups du bot, et, *depuis la correction du lot 12*, une faute pour chaque téléphone
+/// qui n'a envoyé aucun geste par la page de toute la soirée (au lot 12, cinq téléphones
+/// sur six de Sidequest n'en envoyaient aucun, leur `Rejoindre` sans chemin, sans que le
+/// scénario le voie).
+fn juger_les_natifs(s: &Session, p: &mut Passage) {
+    if s.telephones.is_empty() {
+        return;
+    }
+    let natifs: Vec<String> = s
+        .telephones
+        .iter()
+        .enumerate()
+        .map(|(k, t)| {
+            format!(
+                "{k}: {:?}, module {:?}, accueilli {}, panne {:?}",
+                t.joueur.comptes,
+                t.appareil.progres_du_module(),
+                t.appareil.accueilli(),
+                t.joueur.panne
+            )
+        })
+        .collect();
+    p.notes.push(format!(
+        "téléphones natifs par la page : {}",
+        natifs.join(" ; ")
+    ));
+    for (k, t) in s.telephones.iter().enumerate() {
+        let c = &t.joueur.comptes;
+        if c.gestes_par_la_page == 0 && c.gestes_du_singe == 0 {
+            p.fautes.push(format!(
+                "téléphone natif {k} : aucun geste envoyé par la page ({c:?})"
+            ));
+        }
+    }
 }
 
 fn ecrire_les_lignes(dossier: &Path, lignes: &[Ligne], autres: &[String]) {
@@ -1246,7 +2436,8 @@ fn juger_les_sauts_caches(
         Ok(v) => v,
         Err(e) => return p.fautes.push(e),
     };
-    let (rattaches, seuls) = rattacher_les_sauts(&v, &s.lignes);
+    // La règle du lot 10a, inchangée ici (le lot 12 ne rejoue pas `arriere-plan`).
+    let (rattaches, seuls) = rattacher_les_sauts(&v, &s.lignes, 1);
     p.notes.push(format!(
         "sauts rattachés : {}",
         rattaches
@@ -1373,15 +2564,23 @@ fn sauts(chaine: &Chaine, g: &CleDeGarde, salle: CodeSalle) -> Result<Vec<(u64, 
 fn rattacher_les_sauts(
     sauts: &[SautDuJournal],
     lignes: &[Ligne],
+    rattrapage: u8,
 ) -> (Vec<(SautDuJournal, String)>, Vec<SautDuJournal>) {
+    // Après une reprise, le jeu rattrape `rattrapage` pas par tour avant de sauter le reste
+    // (sa déclaration) : le saut tombe au plus `rattrapage` pas après la partie reprise
+    // (corrigé au lot 12 : la règle du lot 10a supposait le rattrapage de Punchline, 1 ;
+    // Sidequest en déclare 3, et ses sauts tombent trois pas après chaque reprise).
+    let apres = u64::from(rattrapage.max(1));
     let mut raisons: Vec<(u64, u64, String)> = lignes
         .iter()
         .filter_map(|l| {
             let pas = l.json.get("pas").and_then(Json::as_u64)?;
             match l.quoi() {
-                "en-jeu" if l.json.get("relue").and_then(Json::as_u64).is_some() => {
-                    Some((pas, pas.saturating_add(1), format!("reprise au pas {pas}")))
-                }
+                "en-jeu" if l.json.get("relue").and_then(Json::as_u64).is_some() => Some((
+                    pas,
+                    pas.saturating_add(apres),
+                    format!("reprise au pas {pas}"),
+                )),
                 "retarde" => Some((
                     pas,
                     pas.saturating_add(2),
@@ -1510,5 +2709,59 @@ impl core::fmt::Display for Passage {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ligne(json: &str) -> Ligne {
+        Ligne {
+            onglet: String::from("a"),
+            json: serde_json::from_str(json).unwrap(),
+            ms: 0,
+        }
+    }
+
+    /// Correction du lot 12 (vérification, constat 8) : le saut d'une reprise se rattache
+    /// à la fenêtre du rattrapage que le jeu déclare, `de` de `p` à `p + rattrapage`, et pas
+    /// plus loin ; chaque reprise n'explique qu'un saut ; un retard injecté au pas `p`
+    /// explique un saut de `p` à `p + 2`, quel que soit le rattrapage.
+    #[test]
+    fn un_saut_se_rattache_au_rattrapage_du_jeu_une_fois() {
+        let lignes = [
+            ligne(r#"{"quoi":"en-jeu","pas":100,"relue":7}"#),
+            ligne(r#"{"quoi":"en-jeu","pas":500}"#),
+            ligne(r#"{"quoi":"retarde","pas":900}"#),
+        ];
+        // Sidequest, rattrapage 3 : un saut trois pas après la reprise s'y rattache.
+        let (r, seuls) = rattacher_les_sauts(&[(103, 120)], &lignes, 3);
+        assert_eq!(r.len(), 1);
+        assert_eq!(seuls, Vec::<SautDuJournal>::new());
+        // Quatre pas après : rien ne l'explique.
+        let (r, seuls) = rattacher_les_sauts(&[(104, 120)], &lignes, 3);
+        assert_eq!(r.len(), 0);
+        assert_eq!(seuls, [(104, 120)]);
+        // Punchline, rattrapage 1 : la fenêtre du lot 10a, `p` ou `p + 1`.
+        let (_, seuls) = rattacher_les_sauts(&[(101, 120)], &lignes, 1);
+        assert_eq!(seuls, Vec::<SautDuJournal>::new());
+        let (_, seuls) = rattacher_les_sauts(&[(102, 120)], &lignes, 1);
+        assert_eq!(seuls, [(102, 120)]);
+        // Un rattrapage nul se lit comme 1.
+        let (_, seuls) = rattacher_les_sauts(&[(101, 120)], &lignes, 0);
+        assert_eq!(seuls, Vec::<SautDuJournal>::new());
+        // Une reprise n'absorbe qu'un saut, même dans sa fenêtre.
+        let (r, seuls) = rattacher_les_sauts(&[(100, 101), (102, 120)], &lignes, 3);
+        assert_eq!(r.len(), 1);
+        assert_eq!(seuls, [(102, 120)]);
+        // Une ligne « en-jeu » sans case relue n'est pas une reprise.
+        let (_, seuls) = rattacher_les_sauts(&[(500, 510)], &lignes, 3);
+        assert_eq!(seuls, [(500, 510)]);
+        // Le retard injecté : de `p` à `p + 2`, le rattrapage n'y change rien.
+        let (_, seuls) = rattacher_les_sauts(&[(902, 905)], &lignes, 3);
+        assert_eq!(seuls, Vec::<SautDuJournal>::new());
+        let (_, seuls) = rattacher_les_sauts(&[(903, 905)], &lignes, 3);
+        assert_eq!(seuls, [(903, 905)]);
     }
 }

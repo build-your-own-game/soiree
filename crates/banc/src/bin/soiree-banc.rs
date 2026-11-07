@@ -14,7 +14,8 @@
 //! soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes]
 //!                           [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne]
 //!                           [--travail <dossier>] [--calme S]
-//! soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--telephones N]
+//! soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--pages chrome,firefox,safari] [--telephones N]
+//!                    [--retardataires] [--minutes M]
 //!                    [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]
 //! soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S]
 //!                          [--fois N] [--telephones N] [--travail <dossier>] [--sans-construire]
@@ -83,7 +84,7 @@ use banc::soiree_native;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]\n        soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--telephones N] [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]\n        soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S] [--fois N] [--telephones N] [--travail <dossier>] [--sans-construire]\n        soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm> [--salle CODE] [--sortie <dossier>]\n        soiree-banc aide <module.wasm>… [--navigateurs chrome,firefox,safari] [--travail <dossier>] [--sans-construire] [--sans-negatif] [--avec-interface]"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]\n        soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--pages chrome,firefox,safari] [--retardataires] [--minutes M] [--telephones N] [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]\n        soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S] [--fois N] [--telephones N] [--travail <dossier>] [--sans-construire]\n        soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm> [--salle CODE] [--sortie <dossier>]\n        soiree-banc aide <module.wasm>… [--navigateurs chrome,firefox,safari] [--travail <dossier>] [--sans-construire] [--sans-negatif] [--avec-interface]"
     );
     ExitCode::from(2)
 }
@@ -591,6 +592,10 @@ enum Scenario {
     ArrierePlan,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "une option par bras, à la suite, comme les autres scénarios"
+)]
 fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
     let commun = banc::commun();
     let mut o = soiree::Options {
@@ -607,6 +612,9 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
         } else {
             0
         },
+        pages: Vec::new(),
+        duree_min_s: 0,
+        retardataires: false,
     };
     let mut i = args.iter();
     while let Some(a) = i.next() {
@@ -646,6 +654,19 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
                 Some(d) => o.travail = PathBuf::from(d),
                 None => return usage(),
             },
+            "--pages" if scenario == Scenario::Soiree => {
+                match i.next().map(|n| Navigateur::liste(n)) {
+                    Some(Ok(n)) => o.pages = n,
+                    _ => return usage(),
+                }
+            }
+            "--minutes" if scenario == Scenario::Soiree => {
+                match i.next().and_then(|d| d.parse::<u64>().ok()) {
+                    Some(n) => o.duree_min_s = n.saturating_mul(60),
+                    None => return usage(),
+                }
+            }
+            "--retardataires" if scenario == Scenario::Soiree => o.retardataires = true,
             _ if a.starts_with("--") || !o.module.as_os_str().is_empty() => return usage(),
             _ => o.module = PathBuf::from(a),
         }

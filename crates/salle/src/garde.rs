@@ -122,8 +122,11 @@ impl Registre {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContenuPoint {
     /// L'ouverture de la soirée ([`partie::persistance::encoder_ouverture`]).
+    #[serde(with = "partie::persistance::octets")]
     pub ouverture: Vec<u8>,
-    /// Le point de reprise ([`partie::persistance::encoder_point`]).
+    /// Le point de reprise ([`partie::persistance::encoder_point`]), écrit d'un bloc
+    /// (les mêmes octets ; correction du lot 12, question 30).
+    #[serde(with = "partie::persistance::octets")]
     pub point: Vec<u8>,
     /// Le registre au point.
     pub registre: Registre,

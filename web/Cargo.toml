@@ -19,6 +19,7 @@ members = [
     "rendu",
     "ecran",
     "autorite",
+    "telephone",
 ]
 # Le témoin de la règle « mêmes lints » : une crate aux lints différents, que la règle
 # doit refuser. Il n'est pas membre, et ne se compile jamais.

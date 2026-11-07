@@ -269,8 +269,66 @@ struct PointPlat {
 /// premier étant celui qu'on garde.
 #[derive(Serialize, Deserialize)]
 struct PointFil {
-    instantanes: Vec<Vec<u8>>,
+    instantanes: Vec<Bloc>,
     points: Vec<PointPlat>,
+}
+
+/// Un instantané écrit d'un bloc ([`octets`]) : les mêmes octets qu'un `Vec<u8>`.
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct Bloc(#[serde(with = "octets")] Vec<u8>);
+
+/// Des octets sur le fil, écrits et lus **d'un bloc** (`serialize_bytes`,
+/// `deserialize_byte_buf`), à mettre sur un champ `Vec<u8>` par `#[serde(with = …)]`.
+/// Postcard écrit alors exactement les octets d'une suite de `u8` (sa longueur en varint,
+/// puis eux), et les tests de forme figée le tiennent ; mais sans un appel de sérialiseur
+/// par octet. *Correction du lot 12* (question 30) : un point de Punchline (de 0,9 à
+/// 1,4 Mo) passait deux fois octet par octet, dans le tour même qui le prend (10 à 22 ms
+/// à le sceller, constaté dans Chrome et Firefox), assez pour qu'un jeu qui ne rattrape
+/// qu'un pas saute. La lecture accepte aussi une suite de `u8` (un format qui n'aurait pas
+/// d'octets en bloc), et ne réserve rien de plus que ce qui est présent (REM-58).
+pub mod octets {
+    use alloc::vec::Vec;
+    use core::fmt;
+
+    use serde::de::{Error, SeqAccess, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    /// Écrit `v` d'un bloc.
+    pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(v)
+    }
+
+    /// Lit des octets écrits d'un bloc (ou en suite de `u8`).
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        d.deserialize_byte_buf(Octets)
+    }
+
+    struct Octets;
+
+    impl<'de> Visitor<'de> for Octets {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("des octets")
+        }
+
+        fn visit_bytes<E: Error>(self, v: &[u8]) -> Result<Vec<u8>, E> {
+            Ok(v.to_vec())
+        }
+
+        fn visit_byte_buf<E: Error>(self, v: Vec<u8>) -> Result<Vec<u8>, E> {
+            Ok(v)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut a: A) -> Result<Vec<u8>, A::Error> {
+            let mut v = Vec::new();
+            while let Some(b) = a.next_element::<u8>()? {
+                v.push(b);
+            }
+            Ok(v)
+        }
+    }
 }
 
 /// Le rang de `v` dans `table`, ajouté s'il n'y est pas.
@@ -317,7 +375,7 @@ pub fn encoder_point<S: InstantaneGarde + PartialEq>(p: &PointDeReprise<S>) -> V
         .map(|i| {
             let mut o = Vec::new();
             i.ecrire(&mut o);
-            o
+            Bloc(o)
         })
         .collect();
     ecrire(
@@ -349,7 +407,7 @@ pub fn decoder_point<S: InstantaneGarde + Clone>(
     let instantanes: Vec<S> = f
         .instantanes
         .iter()
-        .map(|o| S::lire(o))
+        .map(|o| S::lire(&o.0))
         .collect::<Result<_, _>>()?;
     if f.points.is_empty() {
         return Err(RefusGarde::Incoherente("un point sans point"));

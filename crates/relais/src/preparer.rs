@@ -1,8 +1,8 @@
 //! `soiree-relais preparer` (PHASE-3, § 2.5, § 2.8 ; lot 10b) : construire **une fois** le
 //! paquet de la page, que le relais charge ensuite en mémoire (`--paquet`).
 //!
-//! Le workspace `web/` du commun pour `wasm32-unknown-unknown` (`ecran` et `autorite`, en
-//! `--release`), puis la CLI `wasm-bindgen` à la version épinglée de la crate
+//! Le workspace `web/` du commun pour `wasm32-unknown-unknown` (`ecran`, `autorite` et,
+//! depuis le lot 12, `telephone`, en `--release`), puis la CLI `wasm-bindgen` à la version épinglée de la crate
 //! ([`WASM_BINDGEN`], REM-156), puis `web/demarrage.js`, dans
 //! `<cible>/<empreinte>/`. Le banc construit le sien par cette même fonction
 //! (`banc::soiree`) : une seule définition du paquet.
@@ -132,6 +132,8 @@ pub fn construire_le_paquet(commun: &Path, cible: Option<&Path>) -> Result<PathB
             "ecran",
             "-p",
             "autorite",
+            "-p",
+            "telephone",
             "--lib",
             "--target",
             "wasm32-unknown-unknown",
@@ -141,12 +143,12 @@ pub fn construire_le_paquet(commun: &Path, cible: Option<&Path>) -> Result<PathB
         .arg(&compilation);
     let _: String = lancer(
         &mut cargo,
-        "cargo build de ecran et autorite (web/, wasm32)",
+        "cargo build de ecran, autorite et telephone (web/, wasm32)",
     )?;
     let brouillon = racine.join("brouillon");
     let _: std::io::Result<()> = std::fs::remove_dir_all(&brouillon);
     std::fs::create_dir_all(&brouillon).map_err(|e| format!("{} : {e}", brouillon.display()))?;
-    for nom in ["ecran", "autorite"] {
+    for nom in ["ecran", "autorite", "telephone"] {
         let wasm = compilation.join(format!("wasm32-unknown-unknown/release/{nom}.wasm"));
         let _: String = lancer(
             Command::new("wasm-bindgen")

@@ -1389,6 +1389,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "telephone"
+version = "0.1.0"
+dependencies = [
+ "jeu-abi",
+ "js-sys",
+ "liaison",
+ "moteur-navigateur",
+ "partie",
+ "reecriture",
+ "salle",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

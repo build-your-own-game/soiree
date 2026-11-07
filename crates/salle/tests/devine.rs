@@ -103,6 +103,92 @@ fn une_soiree_en_memoire_se_refait_a_l_identique_sal09() {
 }
 
 // ---------------------------------------------------------------------------
+// Par la page (lot 12)
+// ---------------------------------------------------------------------------
+
+/// PHASE-3, § 8.1 (lot 12) : les téléphones passent **par la page**. L'autorité leur livre
+/// le module par la connexion chiffrée, par fenêtre (P18, § 2.5), à chaque arrivée et
+/// après chaque rechargement ; chacun le charge, appelle `Page` dans wasmtime, et les coups
+/// du bot partent du bouton (ou de l'Entrée, du choix) qui les porte ; un singe joue en
+/// plus au hasard. Sous les pannes de la graine, la chaîne écrite tient comme sans la page.
+#[test]
+fn une_soiree_de_devine_par_la_page_survit_a_ses_pannes() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 21, Oui::Oui, Pannes::SOIREE);
+    s.livrer_le_module(octets().to_vec());
+    s.par_la_page(1);
+    let b = s.jouer(4, 60_000_000);
+    eprintln!("devine par la page : {b:?}");
+    assert!(b.arret.is_none(), "{b:?}");
+    assert!(b.autorite.morceaux_livres > 0, "{b:?}");
+    assert!(b.autorite.gestes_places >= 10, "{b:?}");
+    let mut somme = salle::page::ComptesJoueur::default();
+    for (k, j) in &s.joueurs {
+        assert_eq!(j.panne, None, "téléphone {k}");
+        eprintln!("téléphone {k} : {:?}", j.comptes);
+        somme.gestes_par_la_page += j.comptes.gestes_par_la_page;
+        somme.tenus_par_la_page += j.comptes.tenus_par_la_page;
+        somme.gestes_du_singe += j.comptes.gestes_du_singe;
+    }
+    assert!(somme.gestes_par_la_page > 0, "{somme:?}");
+    assert!(somme.tenus_par_la_page > 0, "{somme:?}");
+    assert!(somme.gestes_du_singe > 0, "{somme:?}");
+    for t in &s.telephones {
+        assert_eq!(t.appareil.modules_faux(), 0);
+    }
+    let historique = s.relais.historique();
+    let h = verifier_l_historique::<InstantaneWasm>(&s.cle_de_garde(), s.salle(), &historique)
+        .expect("la chaîne de la soirée");
+    assert_eq!(h.en_double, Vec::<u64>::new());
+    assert_eq!(s.accuses_non_ecrits(&h), Vec::<String>::new());
+    s.comparer_a_la_garde()
+        .expect("la garde reprend la même partie");
+}
+
+/// P18 et § 2.5 (lot 12) : un téléphone qui revient sans avoir rechargé dit le module
+/// connu dans son bonjour, et ne le reçoit pas deux fois ; une page rechargée l'a perdu,
+/// et le reçoit de nouveau. Le module part par fenêtre : jamais plus de
+/// `FENETRE_MODULE` morceaux non accusés.
+#[test]
+fn le_module_ne_repart_qu_a_une_page_rechargee_p18() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 31, Oui::Oui, Pannes::AUCUNE);
+    s.livrer_le_module(octets().to_vec());
+    let _: usize = s.ajouter_telephone();
+    let _: usize = s.ajouter_telephone();
+    let t0 = s.t_us;
+    s.avancer_jusqua(t0 + 10_000_000);
+    let livres = |s: &Soiree<_, _>| {
+        s.autorite
+            .as_ref()
+            .map_or(0, |a| a.comptes().morceaux_livres)
+    };
+    let apres_arrivee = livres(&s);
+    let par_telephone = s.telephones[0].appareil.progres_du_module().1 as u64;
+    assert!(par_telephone > 0);
+    assert!(s.telephones.iter().all(|t| t.appareil.module().is_some()));
+    assert_eq!(
+        apres_arrivee,
+        2 * par_telephone,
+        "un module entier par téléphone"
+    );
+    // Coupé, puis revenu sans recharger : rien ne repart.
+    s.couper(0, Some(1_000_000));
+    let t = s.t_us;
+    s.avancer_jusqua(t + 6_000_000);
+    assert!(s.telephones[0].appareil.accueilli());
+    assert_eq!(livres(&s), apres_arrivee, "le module connu ne repart pas");
+    // Rechargé : la page a perdu le module, il repart entier.
+    s.recharger(0, 1_000_000);
+    let t = s.t_us;
+    s.avancer_jusqua(t + 6_000_000);
+    assert!(s.telephones[0].appareil.module().is_some());
+    assert_eq!(livres(&s), apres_arrivee + par_telephone);
+}
+
+// ---------------------------------------------------------------------------
 // L'entrée qui bloque (P39, lot 10a)
 // ---------------------------------------------------------------------------
 

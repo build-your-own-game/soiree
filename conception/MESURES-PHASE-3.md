@@ -758,3 +758,48 @@ Mesuré le 2026-11-07 de 08 h 10 min 39 s à 08 h 16 min 20 s (GMT, `target/preu
 - **Les sauts qui restent** suivent un trou de plus de 30 ms entre deux pas joués, le tour lui-même court (le fil du Worker n'a pas tourné), et ils suivent la charge de la machine : charge au plus 3,25 (premier passage de la preuve, minuterie encore à 8 ms, `target/preuves/lot-10a-corr-passage1/`) : Chrome 3 réussis, Firefox 1 passage à 3 sauts ; charge au plus 3,97 (minuterie à 4 ms, `…-passage2/`) : Chrome 3 réussis, Firefox 2 réussis et 1 saut ; charge au plus 5,48 (la preuve finale, `target/preuves/lot-10a-corr/arriere-plan/`) : Chrome 2 réussis et une rafale de 7 sauts en 2,7 s (trous de 30 à 89 ms, et un tour de 23 ms), Firefox 5, 2 et 1 sauts (trous de 30 à 73 ms).
 - **Firefox donne encore, de loin en loin, une image à un onglet caché** : de 0 à 3 en 360 s, `document.visibilityState` valant `hidden`.
 
+
+## Lot 12 : M4 (le module sur la page du téléphone) et M7 (la redite du tenu par la vraie page)
+
+Mesuré le 2026-11-07 de 17 h 24 min 49 s à 17 h 28 min 01 s (GMT, `target/preuves/lot-12/soiree-sidequest/code.txt`), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), par `target/hote/lourd --calme` : charge 2,63 au départ, 1,87 à la fin, **2,84 au plus pendant** (le portillon ne dit aucun dépassement de 3 : le tour vaut mesure sur machine calme). Chrome 156.0.8078.80 et Firefox 158.0.1, sans interface ; Safari « pas exécuté » (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché). La commande : `target/hote/lourd --calme /usr/bin/time -l target/debug/soiree-banc soiree <sidequest_module.wasm> --navigateurs chrome,firefox --pages chrome,firefox,safari --sans-construire`, le paquet construit avant par `soiree-relais preparer`. Le scénario fait tourner en même temps l'écran (un navigateur), deux navigateurs de pages et six téléphones natifs : la charge qu'il relève est aussi la sienne.
+
+**M4, sur la machine de l'hôte** (pas un téléphone) : la page dit, du module reçu entier par la connexion chiffrée à l'instance prête (`moteur_navigateur::charger` sous `PHASE_3` : réécrit, compilé par `new WebAssembly.Module` sur le fil principal, instancié, `Bonjour` et `Decrire`), mesuré par `performance.now()` de la page.
+
+| Module (octets livrés) | Chrome 156, page en émulation tactile | Firefox 158 |
+|---|---|---|
+| Sidequest (738 744) | 127,6 ms et 129,2 ms (un par passage : l’écran dans Chrome, puis dans Firefox) | 172,0 ms et 185,0 ms |
+
+- La taille téléchargée est celle du module livré (738 744 octets pour Sidequest), en douze morceaux de 64 Kio par la connexion chiffrée ; le temps du téléchargement lui-même n'est pas mesuré ici (la boucle locale).
+- **Ce que la mesure ne dit pas** : un vrai téléphone (la fiche humaine, § 8.5 : un processeur plus lent qu'un M5, de combien on ne le sait pas) ; Safari. Les relevés de Punchline (941 989 octets : 142,5 à 206,0 ms) ne valent pas mesure : la charge a atteint 5,57 pendant ce scénario (`target/preuves/lot-12/soiree-punchline/`), et le portillon le dit.
+- `TAILLE_MODULE_MAX` (4 Mio) ne change pas : aucune mesure ne le met en cause.
+
+**M7** : les écarts entre deux trames de tenu (`Classe::Remplacable`) qu'un lien de la page a envoyées, à l'horloge du relais (son enregistrement, `--enregistrer`), pendant que le pilote du banc tenait la croix de la manette d'un doigt posé (`Input.dispatchTouchEvent` dans Chrome, un pointeur `touch` de BiDi dans Firefox), 8 s par tenue, passé ses 300 premières ms. Sidequest déclare une fraîcheur de 450 ms : P27 donne une redite de 150 ms.
+
+| Page | Écarts | Minimum | Médiane | 99ᵉ centile | Maximum |
+|---|---|---|---|---|---|
+| Chrome 156 (premier passage, 4 croix tenues) | 63 | 47,9 ms | 153,5 ms | 1 248,5 ms | 3 503,1 ms |
+| Firefox 158 (premier passage, 4 croix tenues) | 116 | 37,6 ms | 167,2 ms | 199,5 ms | 3 503,2 ms |
+
+- **La médiane retrouve la période de P27** (150 ms, à 3,5 ms près dans Chrome et 17 ms dans Firefox, la granularité du réveil de la page étant de 50 ms). Les écarts plus courts sont des changements du tenu (une direction neuve part aussitôt, au débit du jeu) ; les plus longs, des moments où la manette ne déclare plus que l'arrêt (commandes désactivées entre deux phases : la valeur relâchée, qui ne se redit pas, § 2.10), et non des redites manquées : la mesure ne sait pas les distinguer, chiffrée qu'elle est. Au second passage, aucune tenue n'a été notée (le doigt est resté posé jusqu'à la fin) : rien n'en est lu.
+- `RAPPEL_TENU` (250 ms) du monde simulé de l'épreuve ne change pas : le passer à `liaison::periode_de_redite` change ce que l'épreuve joue (lot 4a).
+- Pour refaire : la commande ci-dessus ; la preuve : `target/preuves/lot-12/soiree-sidequest/`, et l'enregistrement du relais dans `target/travail/lot-12/final-sidequest/chrome/enregistrement.bin`.
+
+## Lot 12, correction après la vérification : M13 relevée, et rien de mesuré au calme
+
+Relevé le 2026-11-07 de 20 h 06 à 20 h 43 (GMT, `target/preuves/lot-12-corr/*/code.txt`), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), Chrome 156.0.8078.80 et Firefox 158.0.1 sans interface, Safari « pas exécuté ». Chaque scénario est passé par `target/hote/lourd --calme` (charge sous 3 au départ : de 1,38 à 2,86) et **chacun a dépassé 3 pendant** : Sidequest cinq minutes 3,02, Punchline 3,13 et 3,73, Punchline sans pages 3,24, les 71 appareils 4,47 ; le portillon l'a dit chaque fois. **Rien ici ne vaut mesure sur machine calme** : ce sont des relevés, et M4 et M7 du lot 12 (charge 2,84) restent les mesures. La charge vient pour partie du scénario lui-même (l'écran, deux navigateurs de pages, les natifs ; 69 natifs dans le dernier).
+
+**M13**, la part du commun dans le Worker à chaque tour qui joue un pas (les vues de l'écran et des téléphones et leur chiffrement, la garde ; `DureesDuTour::vues + garde`, répartie par cases de 0,1 ms, `RepartitionDuTour`, rapportée dans les lignes `etat`), relevée sur le Worker qui a joué le plus de tours de chaque passage. Le seuil : la moitié de la part d'image que E19 laisse au commun, 1/60 s × ½ × ½ = 4,17 ms, au 99ᵉ centile.
+
+| Scénario (appareils) | Navigateur de l'écran | Tours | Médiane | 99ᵉ centile | Maximum | Le tour entier (médiane, 99ᵉ, max) |
+|---|---|---|---|---|---|---|
+| `soiree-71` (69 natifs et 2 pages, 71 téléphones ; voir la réserve) | Chrome 156 | 6 121 | 0,4 ms | 1,7 ms | 4,19 ms | 0,8 ; 5,2 ; 30,6 ms |
+| `soiree-71` | Firefox 158 | 6 180 | 0,5 ms | 2,2 ms | 6,94 ms | 1,0 ; 4,6 ; 7,2 ms |
+| `soiree-sidequest` (6 natifs, 2 pages) | Chrome 156 | 15 502 | 0,4 ms | 0,7 ms | 5,47 ms | 0,7 ; 1,8 ; 6,8 ms |
+| `soiree-sidequest` | Firefox 158 | 15 506 | 0,5 ms | 1,0 ms | 4,36 ms | 0,9 ; 2,4 ; 6,6 ms |
+
+- **La réserve** : dans `soiree-71` (Chrome), le Worker compte 69 à 71 appareils accueillis jusqu'au pas 5 400 environ, puis 2 jusqu'à la fin (12 % de ses tours), alors que l'écran dit 71 téléphones reliés tout du long : la répartition ne porte qu'à 88 % sur des tours à 69-71 appareils, et la chute n'est pas expliquée.
+- Les centiles sont au haut de leur case de 0,1 ms (des bornes par excès), le maximum exact.
+- **Le point écrit d'un bloc** : aucun tour de point au-delà de 10 ms (le seuil d'une ligne `tour`) dans aucun des passages (au lot 12 : 10 à 22 ms à sceller le point de Punchline).
+- **M7, relevé** sur Sidequest cinq minutes (23 croix tenues par passage) : médiane 197 à 198 ms dans Chrome, 168 à 169 ms dans Firefox, pour 150 ms de P27 ; les écarts de 1,75 et 3,5 s sont des moments où la page disait un tenu relâché (`tenu_relache`), qui ne se redit pas.
+- **M4, relevé** : Sidequest, 126 à 130 ms dans Chrome, 144 à 200 ms dans Firefox.
+- Pour refaire : `target/travail/lot-12-corr/final.sh` (les commandes, une par preuve) ; les enregistrements du relais dans `target/travail/lot-12-corr/final-*/<navigateur>/enregistrement.bin`.

@@ -35,6 +35,7 @@ use crate::fil::{
     VersAutorite,
 };
 use crate::horloge::{Estimation, instant_de_la_partie};
+use crate::livraison::Reception;
 
 /// La file d'un appareil avant le premier accueil, qui seul dit `limites.file` : celle de
 /// Sidequest, la plus petite des trois jeux (choisi).
@@ -46,6 +47,28 @@ pub const CANAL_TENU: u8 = 0;
 /// Le bonjour chiffré se redit s'il reste sans accueil 2 s (choisi) : un accueil perdu
 /// pousse l'appareil à répéter sa demande, et rejoindre est idempotent (SAL-29).
 pub const BONJOUR_REDIT_US: u64 = 2_000_000;
+
+/// Un coup du bot que l'autorité envoie en mode banc, gardé pour que la page le joue
+/// (lot 12, `crate::page::JoueurDePage`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoupRecu {
+    /// Un geste.
+    Geste(Vec<u8>),
+    /// Un état tenu.
+    Tenu(Vec<u8>),
+}
+
+/// Le plus de gestes que la page reprend de `sessionStorage` : la plus grande file qu'un
+/// jeu peut déclarer (`limites.file`, un `u16`).
+pub const FILE_MAX_GARDEE: usize = u16::MAX as usize;
+
+/// La file gardée à travers un rechargement (P26).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FileGardee {
+    prochain_geste: u64,
+    accuse: u64,
+    file: Vec<(u64, Vec<u8>, Instant, Pas, TraceTelephone)>,
+}
 
 /// Pourquoi un geste n'est pas parti.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,7 +158,26 @@ pub struct Appareil<H: Hasard> {
     banc: bool,
     /// Quand redire le bonjour, s'il reste sans accueil.
     redire_bonjour_us: Option<u64>,
+    /// Le module du jeu et les ressources de la page, reçus de l'autorité (lot 12).
+    reception: Reception,
+    /// Depuis quand un écho attend sa réponse : la coupure se juge dessus (P28).
+    echo_attendu_depuis: Option<u64>,
+    /// La redite du tenu est tue jusqu'au prochain tenu (l'arrière-plan, REM-11).
+    redite_tue: bool,
+    /// Les coups du banc gardés pour la page, au lieu d'être joués tels quels (lot 12).
+    coups: Option<Vec<CoupRecu>>,
+    /// Le lien que le relais a donné à la connexion courante (son accueil) : le banc y
+    /// retrouve les trames du téléphone dans l'enregistrement du relais (M7).
+    lien_relais: Option<u32>,
+    /// Les allers-retours de ses échos, (reçu à, durée) en microsecondes, que le banc
+    /// relève (*correction du lot 12* : un téléphone qui rejoint ne retarde personne) ; au
+    /// plus [`ALLERS_RETOURS_GARDES`] en attente d'être relevés.
+    allers_retours: Vec<(u64, u64)>,
 }
+
+/// Le plus d'allers-retours d'écho qu'un appareil garde pour le banc avant qu'il les relève
+/// (choisi : quatre minutes d'échos toutes les 250 ms ; au-delà, les suivants se perdent).
+pub const ALLERS_RETOURS_GARDES: usize = 1024;
 
 impl<H: Hasard> Appareil<H> {
     /// Un appareil neuf : le fragment du QR, le code de salle de l'adresse, son jeton
@@ -176,7 +218,24 @@ impl<H: Hasard> Appareil<H> {
             comptes: ComptesAppareil::default(),
             banc: true,
             redire_bonjour_us: None,
+            reception: Reception::default(),
+            echo_attendu_depuis: None,
+            redite_tue: false,
+            allers_retours: Vec::new(),
+            coups: None,
+            lien_relais: None,
         }
+    }
+
+    /// Les coups du banc passent par la page (lot 12) : l'appareil les garde
+    /// ([`Appareil::prendre_les_coups`]) au lieu de les envoyer tels quels.
+    pub fn coups_par_la_page(&mut self) {
+        self.coups.get_or_insert_with(Vec::new);
+    }
+
+    /// Les coups du banc reçus depuis le dernier appel, pour la page.
+    pub fn prendre_les_coups(&mut self) -> Vec<CoupRecu> {
+        self.coups.as_mut().map(core::mem::take).unwrap_or_default()
     }
 
     /// L'appareil ne joue plus les coups que le banc lui envoie : la fin d'une soirée du
@@ -202,6 +261,103 @@ impl<H: Hasard> Appareil<H> {
         self.refus_relais = None;
         self.attente = None;
         self.sorties.clear();
+        // La page rechargée a perdu le module : il revient par la connexion (P18).
+        self.reception = Reception::default();
+        self.echo_attendu_depuis = None;
+        self.redite_tue = false;
+    }
+
+    /// Ce que la page garde dans `sessionStorage` à travers un rechargement (P26, SAL-56) :
+    /// le prochain numéro de geste, le dernier accusé et les gestes en file, encodés.
+    pub fn garder_la_file(&self) -> Vec<u8> {
+        let g = FileGardee {
+            prochain_geste: self.prochain_geste,
+            accuse: self.accuse,
+            file: self
+                .file
+                .iter()
+                .map(|g| (g.numero, g.octets.clone(), g.fait, g.vu, g.trace))
+                .collect(),
+        };
+        let mut o = Vec::new();
+        let _: Result<(), _> = jeu_abi::encoder(&g, &mut o);
+        o
+    }
+
+    /// Reprend ce que [`Appareil::garder_la_file`] a gardé, au chargement d'une page
+    /// rechargée. Des octets qui ne se relisent pas, ou plus de gestes que
+    /// [`FILE_MAX_GARDEE`], ne changent rien : un appareil sans file reste un appareil
+    /// qui marche (SAL-32). Rend vrai si la file est reprise.
+    pub fn reprendre_la_file(&mut self, octets: &[u8]) -> bool {
+        let Ok(g) = jeu_abi::decoder::<FileGardee>(octets) else {
+            return false;
+        };
+        if g.file.len() > FILE_MAX_GARDEE || g.file.iter().any(|f| f.0 >= g.prochain_geste) {
+            return false;
+        }
+        self.prochain_geste = g.prochain_geste.max(1);
+        self.accuse = g.accuse;
+        self.file = g
+            .file
+            .into_iter()
+            .map(|(numero, octets, fait, vu, trace)| EnFile {
+                numero,
+                octets,
+                fait,
+                vu,
+                trace,
+            })
+            .collect();
+        true
+    }
+
+    /// Le module du jeu reçu entier et vérifié, et son empreinte (lot 12).
+    pub fn module(&self) -> Option<([u8; 32], &[u8])> {
+        self.reception.module()
+    }
+
+    /// L'empreinte du module que la salle joue, dite par l'accueil.
+    pub const fn module_annonce(&self) -> Option<[u8; 32]> {
+        self.reception.empreinte()
+    }
+
+    /// Les ressources de la page reçues (polices, images), par clé d'asset.
+    pub fn ressources(&self) -> &[(u64, Vec<u8>)] {
+        self.reception.ressources()
+    }
+
+    /// Les morceaux du module reçus, sur le total attendu.
+    pub fn progres_du_module(&self) -> (usize, usize) {
+        self.reception.progres()
+    }
+
+    /// Les modules reçus dont le BLAKE3 n'était pas celui annoncé.
+    pub const fn modules_faux(&self) -> u64 {
+        self.reception.faux
+    }
+
+    /// Le lien que le relais a donné à la connexion courante.
+    pub const fn lien_relais(&self) -> Option<u32> {
+        self.lien_relais
+    }
+
+    /// L'écho reste-t-il sans réponse depuis `COUPURE_US` (P28) ?
+    pub fn coupe(&self, t_us: u64) -> bool {
+        self.accueilli()
+            && self
+                .echo_attendu_depuis
+                .is_some_and(|t0| t_us.saturating_sub(t0) >= crate::page::COUPURE_US)
+    }
+
+    /// La période de redite du tenu, connue quand la page a lu la déclaration du jeu
+    /// (`liaison::periode_de_redite`, P27) : un téléphone ne la sait pas avant le module.
+    pub const fn regler_la_redite(&mut self, redite_us: Option<u64>) {
+        self.redite_us = redite_us;
+    }
+
+    /// L'arrière-plan : plus rien ne se redit jusqu'au prochain tenu (REM-11).
+    pub fn taire_la_redite(&mut self) {
+        self.redite_tue = true;
     }
 
     /// « Reprendre ici » : après un remplacement, l'appareil peut se relier de nouveau,
@@ -241,6 +397,19 @@ impl<H: Hasard> Appareil<H> {
     /// Les gestes qui attendent leur accusé.
     pub fn en_file(&self) -> usize {
         self.file.len()
+    }
+
+    /// Les allers-retours de ses échos depuis le dernier relevé : (reçu à, durée), en
+    /// microsecondes de son heure locale (le banc seulement).
+    pub fn prendre_les_allers_retours(&mut self) -> Vec<(u64, u64)> {
+        core::mem::take(&mut self.allers_retours)
+    }
+
+    /// Le plus de gestes que la file tient (SAL-07) : la limite de l'accueil, ou
+    /// [`FILE_AVANT_ACCUEIL`] avant lui.
+    pub fn file_max(&self) -> usize {
+        self.limites
+            .map_or(FILE_AVANT_ACCUEIL, |l| usize::from(l.file))
     }
 
     /// Le numéro et les octets de chaque geste qui attend son accusé : ce qui voyage
@@ -370,10 +539,11 @@ impl<H: Hasard> Appareil<H> {
             return;
         };
         match m {
-            DuRelais::Accueil { .. } => {
+            DuRelais::Accueil { lien, .. } => {
                 if matches!(self.lien, Lien::Bonjour) {
                     self.lien = Lien::Relie;
                 }
+                self.lien_relais = Some(lien.0);
             }
             DuRelais::Refus(r) => {
                 self.refus_relais = Some(r);
@@ -445,8 +615,14 @@ impl<H: Hasard> Appareil<H> {
                 dernier_geste,
                 dernier_tenu,
                 limites,
+                module,
                 ..
-            } => self.accueil(t_us, session, dernier_geste, dernier_tenu, limites),
+            } => {
+                if let Some(m) = module {
+                    self.reception.annoncer(m);
+                }
+                self.accueil(t_us, session, dernier_geste, dernier_tenu, limites);
+            }
             VersAppareil::Refus(r) => {
                 self.refus = Some(r);
                 self.lien = Lien::Fini;
@@ -469,20 +645,56 @@ impl<H: Hasard> Appareil<H> {
                     self.vers_autorite(Classe::Fiable, &VersAutorite::Echo { t_us, echo_us: t });
                 } else {
                     self.horloge.noter(echo_us, t, t_us);
+                    self.echo_attendu_depuis = None;
+                    if self.allers_retours.len() < ALLERS_RETOURS_GARDES
+                        && let Some(d) = t_us.checked_sub(echo_us)
+                    {
+                        self.allers_retours.push((t_us, d));
+                    }
                 }
             }
             VersAppareil::Banc(CoupBanc::Geste(o)) => {
                 if self.banc {
-                    let _: Result<u64, Envoi> = self.geste(t_us, o);
+                    match self.coups.as_mut() {
+                        Some(c) => c.push(CoupRecu::Geste(o.to_vec())),
+                        None => {
+                            let _: Result<u64, Envoi> = self.geste(t_us, o);
+                        }
+                    }
                 }
             }
             VersAppareil::Banc(CoupBanc::Tenu(o)) => {
                 if self.banc {
-                    self.tenir(t_us, o);
+                    match self.coups.as_mut() {
+                        Some(c) => c.push(CoupRecu::Tenu(o.to_vec())),
+                        None => self.tenir(t_us, o),
+                    }
                 }
             }
-            // Le module et les ressources de la page viennent avec elle (lots 10a et 12).
-            VersAppareil::Module { .. } | VersAppareil::Ressource { .. } => {}
+            VersAppareil::Module {
+                empreinte,
+                morceau,
+                total,
+                octets,
+            } => {
+                if let Some(n) = self.reception.morceau(empreinte, morceau, total, octets) {
+                    self.vers_autorite(
+                        Classe::Fiable,
+                        &VersAutorite::ModuleRecu {
+                            empreinte,
+                            morceau: n,
+                        },
+                    );
+                }
+            }
+            VersAppareil::Ressource { cle, octets } => {
+                if let Some((empreinte, morceau)) = self.reception.ressource(cle, octets) {
+                    self.vers_autorite(
+                        Classe::Fiable,
+                        &VersAutorite::ModuleRecu { empreinte, morceau },
+                    );
+                }
+            }
         }
     }
 
@@ -517,6 +729,7 @@ impl<H: Hasard> Appareil<H> {
             self.envoyer_le_tenu(t_us);
         }
         self.prochain_echo_us = t_us;
+        self.echo_attendu_depuis = None;
         self.echo(t_us);
     }
 
@@ -568,6 +781,9 @@ impl<H: Hasard> Appareil<H> {
             return;
         }
         self.prochain_echo_us = t_us.saturating_add(u64::from(BATTEMENT_MS).saturating_mul(1000));
+        if self.echo_attendu_depuis.is_none() {
+            self.echo_attendu_depuis = Some(t_us);
+        }
         self.vers_autorite(Classe::Fiable, &VersAutorite::Echo { t_us, echo_us: 0 });
     }
 
@@ -624,6 +840,7 @@ impl<H: Hasard> Appareil<H> {
 
     /// L'état tenu change : le dernier gagne.
     pub fn tenir(&mut self, t_us: u64, octets: &[u8]) {
+        self.redite_tue = false;
         self.tenu = Some(octets.to_vec());
         if self.accueilli() {
             self.envoyer_le_tenu(t_us);
@@ -641,7 +858,7 @@ impl<H: Hasard> Appareil<H> {
                 jeton,
                 onglet: self.onglet,
                 capacites: self.capacites,
-                module_connu: None,
+                module_connu: self.reception.module().map(|(e, _)| e),
             },
         );
     }
@@ -659,8 +876,56 @@ impl<H: Hasard> Appareil<H> {
             }
         }
         self.echo(t_us);
-        if self.accueilli() && self.tenu.is_some() && t_us >= self.prochaine_redite_us {
+        if self.accueilli()
+            && self.tenu.is_some()
+            && !self.redite_tue
+            && t_us >= self.prochaine_redite_us
+        {
             self.envoyer_le_tenu(t_us);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chiffre::{ClePublique, SecretDEntree};
+    use crate::simulation::Graine;
+
+    fn appareil() -> Appareil<Graine> {
+        Appareil::new(
+            Fragment {
+                secret: SecretDEntree::depuis_octets([1; 16]),
+                autorite: ClePublique([2; 32]),
+            },
+            CodeSalle([1, 2, 3, 4]),
+            ([3; 32], 9),
+            Capacites::AUCUNE,
+            None,
+            Graine::new("essai", 1),
+        )
+    }
+
+    /// P26, SAL-56 : les gestes non accusés survivent au rechargement de la page, par
+    /// `sessionStorage` ; la numérotation reprend où elle était. Des octets qui ne se
+    /// relisent pas ne changent rien (SAL-32).
+    #[test]
+    fn la_file_survit_au_rechargement_sal56() {
+        let mut a = appareil();
+        assert_eq!(a.geste(0, b"un"), Ok(1));
+        assert_eq!(a.geste(0, b"deux"), Ok(2));
+        let gardee = a.garder_la_file();
+        let mut b = appareil();
+        assert!(b.reprendre_la_file(&gardee));
+        assert_eq!(b.en_file(), 2);
+        assert_eq!(
+            b.gestes_en_file().collect::<Vec<_>>(),
+            [(1, &b"un"[..]), (2, &b"deux"[..])]
+        );
+        assert_eq!(b.geste(0, b"trois"), Ok(3));
+        let mut c = appareil();
+        assert!(!c.reprendre_la_file(&[0xff, 0xff, 0xff]));
+        assert_eq!(c.en_file(), 0);
+        assert_eq!(c.geste(0, b"x"), Ok(1));
     }
 }

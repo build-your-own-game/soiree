@@ -6,8 +6,14 @@
 //!
 //! ```sh
 //! cargo run --release -p salle --example soiree_en_memoire -- <module.wasm> \
-//!     [--telephones N] [--duree S] [--graines 1,2,3]
+//!     [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page]
 //! ```
+//!
+//! Avec `--par-la-page` (correction du lot 12), les téléphones reçoivent le module de
+//! l'autorité et passent **par la page** (`Soiree::par_la_page`, le premier est un singe),
+//! comme ceux du scénario `soiree` du banc ; chacun dit alors ce qu'il a fait des coups du
+//! bot (`ComptesJoueur`), et un téléphone qui n'a envoyé aucun geste par la page est une
+//! faute.
 //!
 //! Juge, pour chaque graine : aucun arrêt de l'autorité ; la chaîne entière des cases
 //! écrites s'ouvre case après case et porte un journal d'un seul tenant ; aucun geste n'y
@@ -36,6 +42,7 @@ struct Demande {
     telephones: Option<usize>,
     duree_s: u64,
     graines: Vec<u64>,
+    par_la_page: bool,
 }
 
 fn lire(args: &[String]) -> Result<Demande, String> {
@@ -44,6 +51,7 @@ fn lire(args: &[String]) -> Result<Demande, String> {
         telephones: None,
         duree_s: 120,
         graines: vec![1, 2, 3],
+        par_la_page: false,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -63,13 +71,14 @@ fn lire(args: &[String]) -> Result<Demande, String> {
                     .map(|g| g.parse().map_err(|e| format!("--graines : {e}")))
                     .collect::<Result<_, _>>()?;
             }
+            "--par-la-page" => d.par_la_page = true,
             m if d.module.is_empty() => d.module = String::from(m),
             autre => return Err(format!("argument inconnu : {autre}")),
         }
     }
     if d.module.is_empty() {
         return Err(String::from(
-            "usage : soiree_en_memoire <module.wasm> [--telephones N] [--duree S] [--graines 1,2,3]",
+            "usage : soiree_en_memoire <module.wasm> [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page]",
         ));
     }
     Ok(d)
@@ -124,6 +133,26 @@ fn jouer_et_juger<F: FnMut() -> moteur_wasmtime::FabriqueWasm>(
     }
     if let Err(e) = s.comparer_a_la_garde() {
         fautes.push(format!("la garde finale : {e}"));
+    }
+    for (k, j) in &s.joueurs {
+        println!(
+            "  graine {graine} : téléphone {k} par la page : {:?}",
+            j.comptes
+        );
+        if let Some(p) = &j.panne {
+            fautes.push(format!("téléphone {k} : la page ne s'ouvre pas : {p}"));
+        }
+        // Un onglet jumeau (le jeton d'un téléphone d'avant) joue peu : il n'est pas jugé.
+        let jumeau = s
+            .telephones
+            .get(*k)
+            .is_some_and(|t| s.telephones.iter().take(*k).any(|u| u.jeton == t.jeton));
+        if !jumeau && j.comptes.gestes_par_la_page == 0 && j.comptes.gestes_du_singe == 0 {
+            fautes.push(format!(
+                "téléphone {k} : aucun geste par la page ({:?})",
+                j.comptes
+            ));
+        }
     }
     println!(
         "  graine {graine} : {} pas, {} redémarrages, {} coupures, {} rechargements, {} jumeaux, {} poignées rejouées ; {} gestes émis, {} accusés ; {:?} ; {} demandes",
@@ -193,6 +222,10 @@ fn main() -> ExitCode {
         let mut s = Soiree::new(|| charge.fabrique(), graine, Oui::Oui, Pannes::SOIREE);
         // Les téléphones redisent leur tenu à la période du jeu (P27).
         s.avec_redite(redite_us);
+        if d.par_la_page {
+            s.livrer_le_module(octets.clone());
+            s.par_la_page(1);
+        }
         let fautes = jouer_et_juger(&mut s, graine, telephones, d.duree_s);
         if fautes.is_empty() {
             println!("  graine {graine} : réussie");

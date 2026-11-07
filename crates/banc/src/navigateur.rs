@@ -235,6 +235,42 @@ impl Lance {
         }
     }
 
+    /// Un écran de téléphone dans l'onglet (lot 12) : Chrome l'émule, tactile compris ;
+    /// Firefox ne règle que la taille de sa fenêtre (ses pointeurs tactiles viennent de
+    /// `input.performActions`).
+    pub fn telephone(&mut self, onglet: usize, largeur: u32, hauteur: u32) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.emuler_un_telephone(onglet, largeur, hauteur),
+            Lance::Firefox(f) => f.dimensionner(onglet, largeur, hauteur),
+            Lance::Safari(_) => Err(String::from("Safari : pas d'émulation par le banc")),
+        }
+    }
+
+    /// Un doigt (lot 12) : `touchStart`, `touchMove` ou `touchEnd` en `(x, y)`, par la
+    /// chaîne d'entrées du navigateur.
+    pub fn doigt(&mut self, onglet: usize, sorte: &str, x: f64, y: f64) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.doigt(onglet, sorte, x, y),
+            Lance::Firefox(f) => f.doigt(onglet, sorte, x, y),
+            Lance::Safari(_) => Err(String::from("Safari : pas de pointeur par le banc")),
+        }
+    }
+
+    /// Un toucher bref en `(x, y)` (lot 12).
+    pub fn toucher(&mut self, onglet: usize, x: f64, y: f64) -> Result<(), String> {
+        self.doigt(onglet, "touchStart", x, y)?;
+        self.doigt(onglet, "touchEnd", x, y)
+    }
+
+    /// Tape `texte` dans l'élément qui a le focus (lot 12).
+    pub fn taper(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.taper(onglet, texte),
+            Lance::Firefox(f) => f.taper(onglet, texte),
+            Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
     /// Chrome, s'il l'est : ce que CDP seul permet (la trace).
     pub fn chrome(&mut self) -> Option<&mut Chrome> {
         match self {

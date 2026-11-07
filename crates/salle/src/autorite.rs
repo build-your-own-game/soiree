@@ -71,6 +71,7 @@ use crate::garde::{
     PointEnScellement, RefusDeGarde, Registre, Suite, empreinte_jeton, relire,
 };
 use crate::horloge::{AllerRetour, Horloge};
+use crate::livraison::{AEnvoyer, EnvoiEnCours, Livraison};
 
 /// Une case de journal toutes les 100 ms qui ont écrit (choisi, PHASE-3, § 2.4 ; M11).
 pub const JOURNAL_TOUS_LES_US: u64 = 100_000;
@@ -222,6 +223,9 @@ pub struct Comptes {
     /// Les entrées de l'écran (clavier, pointeur, actions) que la partie a placées : le
     /// banc y voit qu'Échap est arrivé au jeu en plein écran (P38, lot 10b).
     pub entrees_ecran: u64,
+    /// Les morceaux du module et les ressources de la page envoyés aux appareils
+    /// (`livraison`, lot 12).
+    pub morceaux_livres: u64,
 }
 
 /// Une partie de la salle : ce qui ne change pas de forme entre ouvrir et reprendre.
@@ -283,6 +287,9 @@ struct Accueilli {
     vue: Option<[u8; 32]>,
     vue_depuis: Pas,
     prochain_echo_us: u64,
+    /// La livraison du module et des ressources vers ce lien, s'il ne les a pas
+    /// (lot 12).
+    envoi: Option<EnvoiEnCours>,
 }
 
 /// Ce que la salle sait d'un appareil, de son jeton à ses onglets.
@@ -366,6 +373,84 @@ pub struct Autorite<F: Fabrique, H: Hasard> {
     chrono: Option<fn() -> f64>,
     /// Les durées du dernier tour, si `chrono` est donnée.
     durees: DureesDuTour,
+    /// Le module livré aux téléphones et les ressources de leur page (lot 12).
+    livraison: Option<Livraison>,
+    /// Les ressources de la page sont-elles lues de la partie ?
+    ressources_lues: bool,
+}
+
+/// La répartition d'une durée de tour, en millisecondes, par cases de 0,1 ms jusqu'à
+/// 51,1 ms (la dernière case tient tout ce qui dépasse) : M13, la part du commun dans le
+/// Worker à chaque tour (PHASE-3, § 8.6 ; *correction du lot 12*). Le Worker y note chaque
+/// tour qui joue un pas, et la rapporte au banc sans rien trier (un rapport coûte 512 cases,
+/// quel que soit le nombre de tours).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepartitionDuTour {
+    cases: Vec<u32>,
+    tours: u64,
+    max_ms: f64,
+}
+
+impl Default for RepartitionDuTour {
+    fn default() -> RepartitionDuTour {
+        RepartitionDuTour {
+            cases: vec![0; 512],
+            tours: 0,
+            max_ms: 0.0,
+        }
+    }
+}
+
+impl RepartitionDuTour {
+    /// Note une durée.
+    pub fn noter(&mut self, ms: f64) {
+        let ms = if ms.is_finite() && ms > 0.0 { ms } else { 0.0 };
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "une durée positive et finie, en dixièmes de ms, bornée à la dernière case"
+        )]
+        let i = ((ms * 10.0) as usize).min(self.cases.len().saturating_sub(1));
+        if let Some(c) = self.cases.get_mut(i) {
+            *c = c.saturating_add(1);
+        }
+        self.tours = self.tours.saturating_add(1);
+        if ms > self.max_ms {
+            self.max_ms = ms;
+        }
+    }
+
+    /// Les tours notés.
+    pub const fn tours(&self) -> u64 {
+        self.tours
+    }
+
+    /// La plus longue durée notée.
+    pub const fn max_ms(&self) -> f64 {
+        self.max_ms
+    }
+
+    /// Le `centieme`-ième centile, au haut de sa case de 0,1 ms (une borne par excès) ;
+    /// 0 sans tour.
+    pub fn centile_ms(&self, centieme: u32) -> f64 {
+        if self.tours == 0 {
+            return 0.0;
+        }
+        let rang = self
+            .tours
+            .saturating_mul(u64::from(centieme.min(100)))
+            .div_ceil(100)
+            .max(1);
+        let mut vus = 0u64;
+        for (i, c) in self.cases.iter().enumerate() {
+            vus = vus.saturating_add(u64::from(*c));
+            if vus >= rang {
+                let haut = u32::try_from(i.saturating_add(1)).unwrap_or(u32::MAX);
+                return f64::from(haut) / 10.0;
+            }
+        }
+        self.max_ms
+    }
 }
 
 /// Les durées du dernier réveil, en millisecondes, quand la coque a donné une horloge
@@ -444,6 +529,8 @@ where
             retard_ms: 0,
             chrono: None,
             durees: DureesDuTour::default(),
+            livraison: None,
+            ressources_lues: false,
         };
         let preuve = a.cles.garde.preuve();
         a.vers_relais(&VersRelais::Bonjour {
@@ -452,6 +539,14 @@ where
             role: Role::Autorite { preuve },
         });
         a
+    }
+
+    /// Le module que la salle joue, tel qu'il est livré (son BLAKE3, ses octets) : il part
+    /// aux téléphones par la connexion chiffrée, par fenêtre, suivi des ressources de leur
+    /// page (P18, § 2.5 ; `crate::livraison`). Sans lui, l'accueil ne nomme aucun module.
+    pub fn livrer(&mut self, empreinte: [u8; 32], module: &[u8]) {
+        self.livraison = Some(Livraison::new(empreinte, module));
+        self.ressources_lues = false;
     }
 
     /// Ce qu'il faut envoyer, depuis le dernier appel.
@@ -477,6 +572,26 @@ where
     /// Ce que l'autorité a compté.
     pub const fn comptes(&self) -> Comptes {
         self.comptes
+    }
+
+    /// Les appareils accueillis sur un lien ouvert (le banc, M13 : la part du commun croît
+    /// avec eux).
+    pub fn appareils_accueillis(&self) -> usize {
+        let Phase::EnJeu(j) = &self.phase else {
+            return 0;
+        };
+        j.liens
+            .values()
+            .filter(|e| {
+                matches!(
+                    e,
+                    EtatLien::Chiffre {
+                        accueil: Some(_),
+                        ..
+                    }
+                )
+            })
+            .count()
     }
 
     /// Pourquoi elle s'est arrêtée, si elle l'est.
@@ -979,8 +1094,19 @@ where
                 ..
             } => self.trame(t_us, *lien, *classe, trame),
             DuRelais::Ferme { lien, .. } => self.ferme(t_us, *lien),
-            DuRelais::Encombre { .. }
-            | DuRelais::Accueil { .. }
+            DuRelais::Encombre { lien, .. } => {
+                // Moins encore que la fenêtre : rien ne part vers ce lien avant le
+                // prochain accusé (§ 2.5).
+                if let Some(j) = self.jeu()
+                    && let Some(EtatLien::Chiffre {
+                        accueil: Some(a), ..
+                    }) = j.liens.get_mut(lien)
+                    && let Some(e) = a.envoi.as_mut()
+                {
+                    e.encombre = true;
+                }
+            }
+            DuRelais::Accueil { .. }
             | DuRelais::Refus(_)
             | DuRelais::Pour { .. }
             | DuRelais::AutoriteAbsente
@@ -1107,10 +1233,16 @@ where
                     jeton,
                     onglet,
                     capacites,
-                    ..
+                    module_connu,
                 },
                 _,
-            ) => self.bonjour(t_us, lien, protocole, &jeton, onglet, capacites),
+            ) => self.bonjour(
+                t_us,
+                lien,
+                protocole,
+                &jeton,
+                (onglet, capacites, module_connu),
+            ),
             (_, None) => {
                 // Rien avant le bonjour (SAL-17).
                 self.couper(lien, RaisonCoupure::Illisible);
@@ -1156,8 +1288,18 @@ where
                 self.nouvelle(t_us, appareil);
                 self.echo(t_us, lien, appareil, t, echo_us);
             }
-            (VersAutorite::ModuleRecu { .. }, Some((appareil, _))) => {
+            (VersAutorite::ModuleRecu { empreinte, morceau }, Some((appareil, _))) => {
                 self.nouvelle(t_us, appareil);
+                let attendue = self.livraison.as_ref().map(|l| l.empreinte);
+                if attendue == Some(empreinte)
+                    && let Some(j) = self.jeu()
+                    && let Some(EtatLien::Chiffre {
+                        accueil: Some(a), ..
+                    }) = j.liens.get_mut(&lien)
+                    && let Some(e) = a.envoi.as_mut()
+                {
+                    e.accuser(morceau);
+                }
             }
         }
     }
@@ -1226,8 +1368,7 @@ where
         lien: Lien,
         protocole: u32,
         jeton: &[u8; 32],
-        onglet: u64,
-        capacites: Capacites,
+        (onglet, capacites, module_connu): (u64, Capacites, Option<[u8; 32]>),
     ) {
         if protocole != PROTOCOLE {
             return self.refuser(
@@ -1346,7 +1487,15 @@ where
         let pas = j.partie.definitif();
         let heure = j.horloge.partie_us(t_us);
         let limites = j.partie.declaration().limites;
+        let module = self.livraison.as_ref().map(|l| l.empreinte);
+        let envoi = module
+            .filter(|m| module_connu != Some(*m))
+            .map(|_| EnvoiEnCours::default());
+        let Some(j) = self.jeu() else {
+            return;
+        };
         if let Some(EtatLien::Chiffre { accueil, .. }) = j.liens.get_mut(&lien) {
+            let envoi_en_cours = accueil.as_mut().and_then(|a| a.envoi.take());
             *accueil = Some(Accueilli {
                 appareil,
                 onglet,
@@ -1355,6 +1504,12 @@ where
                 vue: None,
                 vue_depuis: pas,
                 prochain_echo_us: t_us,
+                envoi: if deja {
+                    // Le même bonjour redit : la livraison continue où elle en est.
+                    envoi_en_cours
+                } else {
+                    envoi
+                },
             });
         }
         if let Some(p) = presence.filter(|_| !deja) {
@@ -1369,7 +1524,7 @@ where
                 dernier_tenu,
                 pas,
                 heure,
-                module: None,
+                module,
                 limites: LimitesSalle {
                     geste: limites.geste,
                     file: limites.file,
@@ -1611,6 +1766,7 @@ where
             self.banc(t_us);
         }
         self.echos_et_silences(t_us);
+        self.livrer_aux_appareils();
         let avant_la_garde = self.heure_du_chrono();
         self.garder(t_us);
         let garde = self.heure_du_chrono();
@@ -1626,6 +1782,83 @@ where
             let pas = j.partie.definitif();
             self.vers_page(&VersPage::Battement { pas, retard_ms });
         }
+    }
+
+    /// Le module et les ressources de la page, vers chaque lien qui ne les a pas, par
+    /// fenêtre (§ 2.5, `crate::livraison`).
+    fn livrer_aux_appareils(&mut self) {
+        let Some(mut l) = self.livraison.take() else {
+            return;
+        };
+        if !self.ressources_lues
+            && let Some(j) = self.jeu()
+        {
+            let cles: Vec<u64> = j
+                .partie
+                .declaration()
+                .assets
+                .iter()
+                .map(|a| a.cle.fil())
+                .collect();
+            for cle in cles {
+                if let Ok(r) = j.partie.ressources(&[cle]) {
+                    l.ressources.extend(r);
+                }
+            }
+            self.ressources_lues = true;
+        }
+        let mut a_envoyer: Vec<(Lien, Vec<AEnvoyer>)> = Vec::new();
+        if let Some(j) = self.jeu() {
+            for (lien, etat) in &mut j.liens {
+                if let EtatLien::Chiffre {
+                    accueil: Some(a), ..
+                } = etat
+                    && let Some(e) = a.envoi.as_mut()
+                {
+                    let n = e.a_envoyer(&l);
+                    if e.fini(&l) {
+                        a.envoi = None;
+                    }
+                    if !n.is_empty() {
+                        a_envoyer.push((*lien, n));
+                    }
+                }
+            }
+        }
+        let total = l.total();
+        for (lien, quoi) in a_envoyer {
+            for q in quoi {
+                self.comptes.morceaux_livres = self.comptes.morceaux_livres.saturating_add(1);
+                match q {
+                    AEnvoyer::Morceau(n) => {
+                        let octets = l
+                            .morceaux
+                            .get(usize::try_from(n).unwrap_or(usize::MAX))
+                            .map_or(&[][..], Vec::as_slice);
+                        self.envoyer(
+                            lien,
+                            Classe::Fiable,
+                            &VersAppareil::Module {
+                                empreinte: l.empreinte,
+                                morceau: n,
+                                total,
+                                octets,
+                            },
+                        );
+                    }
+                    AEnvoyer::Ressource(i) => {
+                        if let Some((cle, octets)) = l.ressources.get(i) {
+                            self.envoyer(
+                                lien,
+                                Classe::Fiable,
+                                &VersAppareil::Ressource { cle: *cle, octets },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.livraison = Some(l);
     }
 
     fn traiter(&mut self, a: &Avancee) {
@@ -2259,5 +2492,31 @@ fn demande_fil(d: &DemandeArrivee) -> DemandeFil<'_> {
             flux: *flux,
             octets,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RepartitionDuTour;
+
+    /// M13 (correction du lot 12) : la répartition rend ses centiles au haut de leur case de
+    /// 0,1 ms, garde le maximum exact, et met ce qui dépasse 51,1 ms dans la dernière case.
+    #[test]
+    fn la_repartition_du_tour_rend_ses_centiles_m13() {
+        let mut r = RepartitionDuTour::default();
+        assert_eq!(r.centile_ms(99), 0.0);
+        for _ in 0..98 {
+            r.noter(1.04);
+        }
+        r.noter(3.0);
+        r.noter(80.0);
+        assert_eq!(r.tours(), 100);
+        assert_eq!(r.centile_ms(50), 1.1);
+        assert_eq!(r.centile_ms(99), 3.1);
+        assert_eq!(r.centile_ms(100), 51.2);
+        assert_eq!(r.max_ms(), 80.0);
+        r.noter(f64::NAN);
+        assert_eq!(r.tours(), 101);
+        assert_eq!(r.centile_ms(0), 0.1, "une durée illisible compte pour zéro");
     }
 }

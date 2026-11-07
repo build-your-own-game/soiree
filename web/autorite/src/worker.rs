@@ -16,7 +16,7 @@ use jeu_abi::{IdGeste, Oui};
 use js_sys::{Array, Function, Promise, Uint8Array};
 use liaison::CodeSalle;
 use moteur_navigateur::{FabriqueNavigateur, ModuleCharge};
-use salle::autorite::{Autorite, Cles, ReglagesSalle, Venue};
+use salle::autorite::{Autorite, Cles, ReglagesSalle, RepartitionDuTour, Venue};
 use salle::chiffre::{CleDeGarde, Hasard, PaireAutorite, SecretDEntree};
 use salle::ecran::{CommandeEcran, DeLaPage, PanneSalle, RapportPanne, VersPage};
 use salle::en_cours::{Dire, FabriqueQuiDit};
@@ -188,6 +188,10 @@ struct Coque {
     dernier_pas_ms: f64,
     /// Le banc : les points écrits quand le pire moment a été rapporté.
     pire_rapporte: Option<u64>,
+    /// Le banc : M13, la part du commun à chaque tour qui joue un pas (les vues de l'écran
+    /// et des téléphones, leur chiffrement, la garde), et le tour entier (correction du
+    /// lot 12).
+    m13: (RepartitionDuTour, RepartitionDuTour),
 }
 
 type Etat = Rc<RefCell<Coque>>;
@@ -294,6 +298,7 @@ pub fn demarrer_le_worker() {
         par_minuterie: 0,
         dernier_pas_ms: 0.0,
         pire_rapporte: None,
+        m13: (RepartitionDuTour::default(), RepartitionDuTour::default()),
     }));
     let pour_la_page = Rc::clone(&etat);
     let surmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |m: MessageEvent| {
@@ -669,7 +674,7 @@ async fn l_enregistrement(
 async fn le_module(
     global: &DedicatedWorkerGlobalScope,
     module: &[u8; 32],
-) -> Result<(ModuleCharge, f64), String> {
+) -> Result<(ModuleCharge, f64, Vec<u8>), String> {
     let url = format!("/jeux/{}.wasm", hexa(module));
     let (statut, octets) = charger(global, &url).await?;
     if statut != 200 {
@@ -693,7 +698,7 @@ async fn le_module(
         .map_err(|r| format!("le module est refusé au chargement : {r:?}"))?;
     poster(global, &VersPage::Chargement(Oui::Non));
     verifier_le_rapport(global, module, &charge).await?;
-    Ok((charge, telecharge))
+    Ok((charge, telecharge, octets))
 }
 
 /// § 2.8, point 2 (lot 10b) : **l'empreinte réécrite contre le rapport d'épreuve** du
@@ -748,7 +753,7 @@ async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), Str
     let base = ouvrir_la_base(&global).await?;
     let enregistrement = l_enregistrement(&global, &base, &mut hasard, module_demande).await?;
     let t_idb = maintenant_ms(&global);
-    let (charge, t_module) = le_module(&global, &enregistrement.module).await?;
+    let (charge, t_module, livre) = le_module(&global, &enregistrement.module).await?;
     let t_charge = maintenant_ms(&global);
     poster(
         &global,
@@ -781,6 +786,9 @@ async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), Str
     if reglages.banc == Oui::Oui {
         autorite.chronometrer(chrono_ms);
     }
+    // Le module part aux téléphones par la connexion chiffrée, par fenêtre (P18, § 2.5 ;
+    // lot 12).
+    autorite.livrer(enregistrement.module, &livre);
     let en_attente = {
         let mut coque = etat.borrow_mut();
         coque.temps_reel = Some(temps_reel);
@@ -914,6 +922,8 @@ fn apres_le_tour(coque: &mut Coque, via: &str, avant: Option<u64>) -> Option<Str
     } else {
         coque.par_minuterie = coque.par_minuterie.saturating_add(1);
     }
+    coque.m13.0.noter(d.vues + d.garde);
+    coque.m13.1.noter(d.total);
     let trou = maintenant - d.total - coque.dernier_pas_ms;
     let premier = coque.dernier_pas_ms == 0.0;
     coque.dernier_pas_ms = maintenant;
@@ -1062,6 +1072,7 @@ fn rapport_d_etat(etat: &Etat) {
         return;
     };
     let comptes = autorite.comptes();
+    let appareils = autorite.appareils_accueillis();
     let depuis = autorite.depuis_le_point();
     let dernier = autorite.dernier_ecrit();
     let arret = autorite.arret().map(|r| format!("{r:?}"));
@@ -1071,8 +1082,23 @@ fn rapport_d_etat(etat: &Etat) {
         .is_some_and(|e| e.terminale == Oui::Oui);
     let pas = autorite.partie().map(|p| p.definitif().numero());
     let (par_image, par_minuterie) = (coque.par_image, coque.par_minuterie);
+    let repartition = |r: &RepartitionDuTour| {
+        format!(
+            "{{\"tours\":{},\"mediane\":{:.1},\"c99\":{:.1},\"max\":{:.2}}}",
+            r.tours(),
+            r.centile_ms(50),
+            r.centile_ms(99),
+            r.max_ms()
+        )
+    };
+    let m13 = format!(
+        "{{\"commun\":{},\"tour\":{},\"appareils\":{}}}",
+        repartition(&coque.m13.0),
+        repartition(&coque.m13.1),
+        appareils
+    );
     let json = format!(
-        "{{\"quoi\":\"etat\",\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"ecran\":{},\"arret\":{}}}",
+        "{{\"quoi\":\"etat\",\"m13\":{m13},\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"ecran\":{},\"arret\":{}}}",
         nombre(pas),
         nombre(depuis),
         nombre(dernier),

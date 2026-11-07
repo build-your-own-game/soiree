@@ -251,6 +251,63 @@ impl Chrome {
         Ok(())
     }
 
+    /// Émule un téléphone dans l'onglet (lot 12) : un écran de `largeur` × `hauteur` pixels
+    /// CSS, mobile, et les événements tactiles (`Emulation.setTouchEmulationEnabled`).
+    pub fn emuler_un_telephone(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+    ) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        self.cdp.envoyer(
+            "Emulation.setDeviceMetricsOverride",
+            &json!({ "width": largeur, "height": hauteur, "deviceScaleFactor": 2, "mobile": true }),
+            Some(&s),
+            DELAI,
+        )?;
+        self.cdp
+            .envoyer(
+                "Emulation.setTouchEmulationEnabled",
+                &json!({ "enabled": true, "maxTouchPoints": 5 }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Un doigt (lot 12), par la chaîne d'entrées du navigateur
+    /// (`Input.dispatchTouchEvent`) : `touchStart`, `touchMove` ou `touchEnd` en `(x, y)`.
+    pub fn doigt(&mut self, onglet: usize, sorte: &str, x: f64, y: f64) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        let points = if sorte == "touchEnd" {
+            json!([])
+        } else {
+            json!([{ "x": x, "y": y, "id": 1 }])
+        };
+        self.cdp
+            .envoyer(
+                "Input.dispatchTouchEvent",
+                &json!({ "type": sorte, "touchPoints": points }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Tape `texte` dans l'élément qui a le focus (`Input.insertText`, lot 12).
+    pub fn taper(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        self.cdp
+            .envoyer(
+                "Input.insertText",
+                &json!({ "text": texte }),
+                Some(&s),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
     /// Un onglet neuf, attaché, sa console et ses exceptions écoutées, mené à `url`.
     fn onglet(&mut self, url: &str) -> Result<(String, String), String> {
         let cible = self.cdp.envoyer(

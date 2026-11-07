@@ -12,6 +12,11 @@
 //!   (§ 2.4) ;
 //! - [`autorite`] : l'autorité, la partie qui fait foi et ses appareils (§ 2.3 à § 2.7) ;
 //! - [`appareil`] : un appareil, le cœur du téléphone sans sa page (§ 2.10) ;
+//! - [`livraison`] : le module et les ressources de la page, de l'autorité aux téléphones,
+//!   par fenêtre (§ 2.5, P18, lot 12) ;
+//! - [`page`] : la page du téléphone sans son DOM : les locaux, `Page` appelée sur une
+//!   instance du module, les tenus, les gestes des boutons, les relâchements (§ 2.10,
+//!   lot 12) ;
 //! - [`en_cours`] : le geste en cours, que l'autorité dit à la page avant chaque `Entree`
 //!   (P39, lot 10a) ;
 //! - [`chien`] : le chien de garde de la page de l'écran, ses deux garde-fous muraux,
@@ -36,4 +41,6 @@ pub mod en_cours;
 pub mod fil;
 pub mod garde;
 pub mod horloge;
+pub mod livraison;
+pub mod page;
 pub mod simulation;

@@ -328,6 +328,62 @@ impl Firefox {
             .map(|_| ())
     }
 
+    /// La taille de la fenêtre de l'onglet, en pixels CSS (`browsingContext.setViewport`,
+    /// lot 12).
+    pub fn dimensionner(
+        &mut self,
+        onglet: usize,
+        largeur: u32,
+        hauteur: u32,
+    ) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        self.bidi
+            .envoyer(
+                "browsingContext.setViewport",
+                &json!({ "context": contexte, "viewport": { "width": largeur, "height": hauteur } }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Un doigt (lot 12) : `pointerDown`, `pointerMove` ou `pointerUp` d'un pointeur
+    /// tactile en `(x, y)` (`input.performActions`, `pointerType` `touch`).
+    pub fn doigt(&mut self, onglet: usize, sorte: &str, x: f64, y: f64) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let (x, y) = (x.round(), y.round());
+        let actions = match sorte {
+            "touchStart" => {
+                json!([{ "type": "pointerMove", "x": x, "y": y }, { "type": "pointerDown", "button": 0 }])
+            }
+            "touchMove" => json!([{ "type": "pointerMove", "x": x, "y": y }]),
+            _ => json!([{ "type": "pointerUp", "button": 0 }]),
+        };
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "pointer", "id": "doigt", "parameters": { "pointerType": "touch" }, "actions": actions }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Tape `texte`, une touche par caractère (`input.performActions`, lot 12).
+    pub fn taper(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        let contexte = self.contexte(onglet)?;
+        let mut actions = Vec::new();
+        for c in texte.chars() {
+            actions.push(json!({ "type": "keyDown", "value": c.to_string() }));
+            actions.push(json!({ "type": "keyUp", "value": c.to_string() }));
+        }
+        self.bidi
+            .envoyer(
+                "input.performActions",
+                &json!({ "context": contexte, "actions": [{ "type": "key", "id": "clavier", "actions": actions }] }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
     /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont dit.
     pub fn ecouter(&mut self, delai: Duration) -> Result<Vec<String>, String> {
         self.bidi.ecouter(delai)?;
