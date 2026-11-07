@@ -1,15 +1,24 @@
 //! E16 : les pires cas (§ 7.2). Pour chaque `Cas`, sur une instance nue :
-//! `cas(pire_cas(c)) = c`, les invariants tiennent, et la scène de l'écran est valide
-//! (§ 6.1, `partie::regles::valider_scene`). La mesure des débordements du texte
-//! viendra avec le rendu (phase 2).
+//! `cas(pire_cas(c)) = c`, les invariants tiennent, la scène de l'écran est valide
+//! (§ 6.1, `partie::regles::valider_scene`), et **chaque texte tient dans sa boîte**
+//! (PHASE-3, § 2.9, lot 8) : mesuré par `mise-en-page`, dans les polices du jeu que E1
+//! admet et celle du commun, même à la plus petite taille de son style. Un débordement
+//! nomme le pire cas, la clé et le texte.
+//!
+//! Ce qui se mesure : les nœuds `Texte`. Ni le nom d'un `Bouton` (le commun le dessine
+//! dans un style que la télé fixera au lot 9), ni un `CompteARebours` (son texte se
+//! forme à chaque image), ni la valeur d'un composant `EnPlace` (le joueur l'écrit).
 //!
 //! La forme canonique de chaque pire cas passe aussi le constat de E17 : aucun
 //! flottant non fini.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use jeu_abi::{
-    Appel, Cle, ConstatFil, DeclarationFil, RegardFil, Retour, SceneFil, SorteAppel, SorteAsset,
-    decoder, encoder,
+    Appel, Cle, ConstatFil, DeclarationFil, Oui, RegardFil, Retour, SceneFil, SorteAppel,
+    SorteAsset, SorteNoeud, Taille, decoder, encoder,
 };
+use mise_en_page::{MiseEnPage, Polices, Tient};
 use moteur_wasmtime::{InstanceWasm, ModuleCharge};
 use partie::{Echec, Fabrique, Instance};
 
@@ -36,6 +45,79 @@ pub(crate) struct Constat {
     /// du jeu choisissent ne le remplace pas (CONTRAT, « Le résultat annoncé par
     /// l'auteur est un indice »).
     pub(crate) carburant_vue: Vec<(u32, u64)>,
+    /// Les textes mesurés, sur tous les pires cas.
+    pub(crate) textes: u64,
+    /// Ceux qui ne tiennent pas.
+    pub(crate) debords: u64,
+    /// Les glyphes absents de toutes les polices connues, dessinés comme des boîtes.
+    pub(crate) absents: u64,
+    /// Les textes dont la police n'est pas connue (refusée par E1, ou jamais déclarée),
+    /// mesurés dans celle du commun.
+    pub(crate) polices_inconnues: u64,
+}
+
+/// Les premiers caractères d'un texte, pour le nommer dans un échec.
+fn extrait(texte: &str) -> String {
+    const LONGUEUR: usize = 60;
+    let mut e: String = texte.chars().take(LONGUEUR).collect();
+    if texte.chars().nth(LONGUEUR).is_some() {
+        e.push('…');
+    }
+    e.replace('\n', "⏎")
+}
+
+/// La taille où un texte se mesure quand il déborde : sa taille, ou la plus petite.
+fn plus_petite(taille: Taille) -> String {
+    match taille {
+        Taille::Fixe(t) => format!("à sa taille, {:.2}", t.en_unites()),
+        Taille::Budget { min, .. } => {
+            format!("même à sa plus petite taille, {:.2}", min.en_unites())
+        }
+    }
+}
+
+/// Mesure chaque texte de la scène d'un pire cas (PHASE-3, § 2.9).
+fn mesurer(constat: &mut Constat, mise_en_page: &mut MiseEnPage, indice: u32, octets: &[u8]) {
+    let Ok(scene) = decoder::<SceneFil>(octets) else {
+        return;
+    };
+    for noeud in &scene.noeuds {
+        let SorteNoeud::Texte {
+            texte,
+            boite,
+            style,
+        } = &noeud.sorte
+        else {
+            continue;
+        };
+        let mesure = catch_unwind(AssertUnwindSafe(|| {
+            mise_en_page.agencer(texte, *boite, style)
+        }));
+        let Ok(a) = mesure else {
+            constat.pannes.push(format!(
+                "la mise en page panique sur le texte « {} » du pire cas d'indice {indice}",
+                extrait(texte)
+            ));
+            return;
+        };
+        constat.textes = constat.textes.saturating_add(1);
+        constat.absents = constat.absents.saturating_add(u64::from(a.absents));
+        if a.police_inconnue == Oui::Oui {
+            constat.polices_inconnues = constat.polices_inconnues.saturating_add(1);
+        }
+        constat.e16.evaluer();
+        if let Tient::Non(debord) = &a.tient {
+            constat.debords = constat.debords.saturating_add(1);
+            constat.e16.echouer(format!(
+                "le pire cas d'indice {indice} : le texte « {} » (clé {:016x}) ne tient pas dans sa boîte de {:.2} × {:.2}, {} : {debord}",
+                extrait(texte),
+                noeud.cle.fil(),
+                boite.l.en_unites(),
+                boite.h.en_unites(),
+                plus_petite(style.taille),
+            ));
+        }
+    }
 }
 
 fn encode(a: &Appel<'_>) -> Vec<u8> {
@@ -156,6 +238,7 @@ fn juger(
     constat: &mut Constat,
     inst: &mut InstanceWasm,
     declaration: &DeclarationFil,
+    mise_en_page: &mut MiseEnPage,
     indice: u32,
 ) {
     constat.e16.evaluer();
@@ -186,8 +269,8 @@ fn juger(
     {
         constat.carburant_vue.push((indice, c));
     }
-    match scene.and_then(|o| valider(inst, declaration, &o)) {
-        Ok(()) => {}
+    match scene.and_then(|o| valider(inst, declaration, &o).map(|()| o)) {
+        Ok(o) => mesurer(constat, mise_en_page, indice, &o),
         Err(e) => constat.e16.echouer(format!(
             "la scène du pire cas d'indice {indice} est invalide : {e}"
         )),
@@ -208,10 +291,11 @@ fn juger(
 }
 
 /// Les pires cas du module, un par indice de `Cas::TOUTES`, jusqu'au premier indice
-/// que le module ne connaît pas.
-pub(crate) fn eprouver(module: &ModuleCharge) -> Constat {
+/// que le module ne connaît pas ; leurs textes mesurés dans ces polices.
+pub(crate) fn eprouver(module: &ModuleCharge, polices: &Polices) -> Constat {
     let mut constat = Constat::default();
     let declaration = module.declaration().clone();
+    let mut mise_en_page = MiseEnPage::new(polices);
     for indice in 0..=u32::from(u16::MAX) {
         let mut inst = match nue(module) {
             Ok(i) => i,
@@ -229,7 +313,13 @@ pub(crate) fn eprouver(module: &ModuleCharge) -> Constat {
         match rendu {
             Ok(r) if matches!(decoder::<Retour<'_>>(&r), Ok(Retour::PireCas { .. })) => {
                 constat.cas = constat.cas.saturating_add(1);
-                juger(&mut constat, &mut inst, &declaration, indice);
+                juger(
+                    &mut constat,
+                    &mut inst,
+                    &declaration,
+                    &mut mise_en_page,
+                    indice,
+                );
             }
             // L'indice est au-delà de `Cas::TOUTES` : `Retour::Illisible`.
             Ok(_) => break,

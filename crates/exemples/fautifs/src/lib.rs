@@ -99,4 +99,8 @@ pub mod jeux {
     pub type DiagnosticF8 = Socle<defauts::DiagnosticF8>;
     /// E21 : un jeu à téléphones qui garde la page par défaut, vide (lot 7).
     pub type PageVide = Socle<defauts::PageVide>;
+    /// E1 : une police déclarée en WOFF2, que le commun ne lit pas (lot 8).
+    pub type PoliceWoff2 = Socle<defauts::PoliceWoff2>;
+    /// E16 : à 9 999 points, une phrase qui ne tient pas dans sa boîte (lot 8).
+    pub type TexteQuiDeborde = Socle<defauts::TexteQuiDeborde>;
 }

@@ -1,0 +1,33 @@
+[package]
+name = "mise-en-page"
+description = "La mesure des textes de la scène : coupe, taille qui rétrécit pour tenir, débordements ; pour l'épreuve et la télé."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Le vocabulaire de la scène : `StyleTexte`, `Taille`, `Lignes`, `Coupe`, `Rect`, `Fixe`, `Cle`.
+jeu-abi.workspace = true
+# Le façonnage (harfrust), le bidi, les polices de repli, en pur Rust : la même mise en
+# forme dans l'épreuve et, au lot 9, dans la télé (`glyphon` la dessine).
+cosmic-text.workspace = true
+# Les occasions de coupure entre les mots (UAX #14), que `Coupe::Mots` suit : la version
+# que `cosmic-text` tire déjà, appelée directement.
+unicode-linebreak.workspace = true
+# Les limites des graphèmes, que `Coupe::Graphemes` suit (TL-55) : jamais une ligne ne
+# coupe un graphème, ce que la coupe par glyphe de `cosmic-text` ferait.
+unicode-segmentation.workspace = true
+# Le type de l'écriture d'un texte, que nomme le trait des polices de repli : la mesure
+# n'en a aucune propre à une écriture.
+unicode-script.workspace = true
+
+[dev-dependencies]
+# Des textes au hasard : l'agencement tient toujours dans sa boîte, ou le dit (PUN-53).
+proptest.workspace = true
+# Le sha256 de la police du commun : la provenance que `polices.rs` cite est vérifiée.
+sha2.workspace = true
+
+[lints]
+workspace = true

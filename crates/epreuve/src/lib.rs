@@ -59,6 +59,7 @@ mod ligne;
 mod pages;
 mod pires_cas;
 mod plan;
+mod polices;
 mod proprietes;
 mod rapport;
 mod script;

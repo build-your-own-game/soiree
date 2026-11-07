@@ -81,6 +81,8 @@ fn jeu(nom: &str) -> (Box<dyn FabriqueDynamique>, Option<IdControle>) {
         ),
         "diagnostic-f8" => (n!(jeux::DiagnosticF8), Some(IdControle::E1)),
         "page-vide" => (n!(jeux::PageVide), Some(IdControle::E21)),
+        "police-woff2" => (n!(jeux::PoliceWoff2), Some(IdControle::E1)),
+        "texte-qui-deborde" => (n!(jeux::TexteQuiDeborde), Some(IdControle::E16)),
         autre => panic!("jeu sans attendu : {autre}"),
     }
 }

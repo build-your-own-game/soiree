@@ -140,12 +140,14 @@ const fn rect(x: i32, y: i32, l: i32, h: i32) -> Rect {
     }
 }
 
-/// Le style des libellés.
+/// Le style des libellés. Un chiffre dans une case d'une unité : une ligne fait 1,2 fois
+/// la taille (`mise_en_page::INTERLIGNE`), d'où une plus petite taille d'une demi-unité,
+/// que E16 mesure depuis le lot 8 de la phase 3.
 const STYLE: StyleTexte = StyleTexte {
     police: Cle::POLICE_DU_COMMUN,
     taille: Taille::Budget {
         max: Fixe::unites(1),
-        min: Fixe::unites(1),
+        min: Fixe::depuis_brut(Fixe::PAR_UNITE / 2),
     },
     couleur: Rgba::BLANC,
     alignement: Alignement::Centre,

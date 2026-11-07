@@ -66,6 +66,8 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         }
         "diagnostic-f8" => Box::new(FabriqueNative::<jeux::DiagnosticF8>::new()),
         "page-vide" => Box::new(FabriqueNative::<jeux::PageVide>::new()),
+        "police-woff2" => Box::new(FabriqueNative::<jeux::PoliceWoff2>::new()),
+        "texte-qui-deborde" => Box::new(FabriqueNative::<jeux::TexteQuiDeborde>::new()),
         _ => return None,
     })
 }

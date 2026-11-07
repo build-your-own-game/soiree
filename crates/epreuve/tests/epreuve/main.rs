@@ -173,6 +173,27 @@ fn le_socle_sain_passe_tout() {
     assert_eq!(e12.issue, IssueControle::Reussi, "{}", lisible(&r));
     assert!(e12.evaluations > 0);
     assert!(e12.detail.contains("découpage"), "{}", e12.detail);
+    // E16 mesure vraiment les textes de ses pires cas (PHASE-3, § 2.9, lot 8) : le
+    // prénom de douze « W » tient dans ses six unités, à sa plus petite taille.
+    let e16 = r.resultat(IdControle::E16).expect("au rapport");
+    assert!(
+        e16.detail.contains("texte(s) mesuré(s) dans leur boîte")
+            && e16.detail.contains(": 0 débordent"),
+        "{}",
+        e16.detail
+    );
+    // Le compte se lit au début de sa ligne (les notes du détail sont jointes par des
+    // fins de ligne) : un compte nul serait un E16 qui ne mesure rien.
+    let mesures: u64 = e16
+        .detail
+        .lines()
+        .find_map(|l| {
+            l.split_once(" texte(s) mesuré(s) dans leur boîte")
+                .map(|(n, _)| n)
+        })
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("aucun compte de textes mesurés : {}", e16.detail));
+    assert!(mesures > 0, "E16 n'a mesuré aucun texte : {}", e16.detail);
 }
 
 /// Le contrôle négatif de E12 pour le découpage d'un pas (PHASE-3, § 8.3 et P7) :
@@ -519,6 +540,48 @@ fn page_vide_echoue_e21() {
             .contains("la page est celle par défaut de Jeu::page"),
         "{}",
         e21.detail
+    );
+}
+
+/// PHASE-3, P22, lot 8 : le commun ne lit que les polices sfnt (TTF, OTF). Une police
+/// déclarée en WOFF2, celle d'une page web, est refusée par E1, qui le dit et dit quoi
+/// faire ; aucun texte ne s'en sert, et rien d'autre n'échoue.
+#[test]
+fn police_woff2_echoue_e1() {
+    let r = eprouver(
+        "police-woff2",
+        &mut FabriqueNative::<jeux::PoliceWoff2>::new(),
+        &Plan::court(GRAINE),
+    );
+    echoue_exactement(&r, IdControle::E1);
+    let e1 = r.resultat(IdControle::E1).expect("au rapport");
+    assert!(
+        e1.detail.contains("WOFF2") && e1.detail.contains("TTF ou OTF"),
+        "{}",
+        e1.detail
+    );
+}
+
+/// PHASE-3, § 2.9, lot 8 (PUN-53, PUN-54) : E16 mesure chaque texte des pires cas dans
+/// sa boîte. Une phrase trop longue pour sa ligne, même à la plus petite taille de son
+/// style, fait échouer E16, et lui seul, en nommant le texte et la boîte.
+#[test]
+fn texte_qui_deborde_echoue_e16() {
+    let r = eprouver(
+        "texte-qui-deborde",
+        &mut FabriqueNative::<jeux::TexteQuiDeborde>::new(),
+        &Plan::court(GRAINE),
+    );
+    echoue_exactement(&r, IdControle::E16);
+    let e16 = r.resultat(IdControle::E16).expect("au rapport");
+    assert!(
+        e16.detail.contains("« Record absolu")
+            && e16
+                .detail
+                .contains("ne tient pas dans sa boîte de 16.00 × 1.00")
+            && e16.detail.contains("même à sa plus petite taille, 0.50"),
+        "{}",
+        e16.detail
     );
 }
 

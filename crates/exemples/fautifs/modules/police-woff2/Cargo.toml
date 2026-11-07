@@ -1,0 +1,19 @@
+[package]
+name = "fautif-police-woff2-module"
+description = "Le module WebAssembly du jeu qui déclare une police WOFF2, que le commun ne lit pas, qui fait échouer E1."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+build = "../../build-module.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jeu.workspace = true
+fautifs.workspace = true
+
+[lints]
+workspace = true

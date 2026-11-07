@@ -3,7 +3,7 @@
 //!
 //! | Contrôle | Où il se lit |
 //! |---|---|
-//! | E1 | le module chargé, son constat, et une instance nue où se mesure le carburant |
+//! | E1 | le module chargé, son constat, une instance nue où se mesure le carburant, et les polices déclarées, lues par `Ressources` (`polices.rs`) |
 //! | E2, E3 | les soirées principales ; les pires cas, pour connaître les phases et les cas |
 //! | E4, E6, E7 | la sonde, à chaque entrée et à chaque lecture des soirées principales |
 //! | E5, E8 | après chaque pas qui change l'état, sur des copies du module |
@@ -12,7 +12,7 @@
 //! | E14 | les redémarrages de l'autorité, les reprises depuis des points tirés, et le même script sur la copie native |
 //! | E15 | une soirée longue, où des appareils vont et viennent |
 //! | E10, E11, E12 | une soirée sans panne, dont le script se rejoue renuméroté, coupé, retardé (`proprietes.rs`) |
-//! | E16 | chaque pire cas, sur une instance nue (`pires_cas.rs`) |
+//! | E16 | chaque pire cas, sur une instance nue, et ses textes mesurés (`pires_cas.rs`) |
 //! | E17 | la forme canonique et la scène des soirées principales, et des pires cas |
 //! | E18 | une soirée de gels pendant les échéances (`gel.rs`) |
 //! | E19 | le coût (carburant et coût fixe) de chaque appel et de chaque image des soirées principales, de la vue de chaque pire cas, et de chaque page de E21 (`budgets.rs`) |
@@ -119,6 +119,8 @@ struct Epreuve<'m, 'n> {
     soirees_e20: Vec<moteur_commun::releve::SoireeJouee>,
     /// E21 : les vues parties vers les téléphones, sur toutes les soirées.
     vues_e21: crate::pages::VuesVues,
+    /// E1 et E16 : les polices déclarées, lues une fois (PHASE-3, P22, lot 8).
+    polices: Option<crate::polices::PolicesLues>,
 }
 
 fn encode(a: &Appel<'_>) -> Vec<u8> {
@@ -155,6 +157,46 @@ impl Epreuve<'_, '_> {
 
     fn demande(&self, c: IdControle) -> bool {
         self.plan.demande(c)
+    }
+
+    /// Les polices déclarées, lues et validées une fois (E1 les juge, E16 s'en sert).
+    fn polices(&mut self) -> crate::polices::PolicesLues {
+        if let Some(p) = &self.polices {
+            return p.clone();
+        }
+        let p = crate::polices::lire(self.module, self.plan.graine);
+        self.polices = Some(p.clone());
+        p
+    }
+
+    /// E1 : chaque police déclarée est un fichier sfnt (TTF ou OTF) que la mise en page
+    /// lit, à la taille déclarée, rendu par `Ressources` (PHASE-3, P22, lot 8).
+    fn juger_les_polices(&mut self) {
+        let lues = self.polices();
+        let a = self.acc(IdControle::E1);
+        if let Some(p) = &lues.panne {
+            a.pannes.push(format!("les polices déclarées : {p}"));
+        }
+        for r in &lues.refus {
+            a.compte.evaluer();
+            a.compte.echouer(r.clone());
+        }
+        for _ in &lues.admises {
+            a.compte.evaluer();
+        }
+        if lues.declarees == 0 {
+            a.noter("aucune police déclarée : les textes s'écrivent dans celle du commun");
+        } else {
+            a.noter(format!(
+                "{} police(s) déclarée(s), lues par Ressources ; admises, des fichiers sfnt (TTF ou OTF) que la mise en page lit (PHASE-3, P22) : {}",
+                lues.declarees,
+                if lues.admises.is_empty() {
+                    String::from("aucune")
+                } else {
+                    lues.admises.join(", ")
+                }
+            ));
+        }
     }
 
     /// E1 : la réécriture a accepté le module ; aucun import ; exactement les exports
@@ -230,6 +272,7 @@ impl Epreuve<'_, '_> {
             }
             Err(Echec::Panne(p)) => a.pannes.push(p.to_string()),
         }
+        self.juger_les_polices();
     }
 
     /// Le carburant de chaque appel d'ouverture, sur une instance neuve.
@@ -1190,9 +1233,11 @@ impl Epreuve<'_, '_> {
         juger_la_memoire(a, &bilan.memoire);
     }
 
-    /// E16 : chaque pire cas, sur une instance nue ; et E17 sur leur forme canonique.
+    /// E16 : chaque pire cas, sur une instance nue, et ses textes mesurés ; et E17 sur
+    /// leur forme canonique.
     fn pires_cas(&mut self) {
-        let c = crate::pires_cas::eprouver(self.module);
+        let polices = self.polices().polices;
+        let c = crate::pires_cas::eprouver(self.module, &polices);
         self.joue.push(format!("pires cas : {}", c.cas));
         let vue_ecran_max = self.vue_ecran_max;
         let a = self.acc(IdControle::E16);
@@ -1201,6 +1246,22 @@ impl Epreuve<'_, '_> {
         a.noter(format!(
             "{} cas construits, chacun : son cas, ses invariants, sa scène",
             c.cas
+        ));
+        a.noter(format!(
+            "{} texte(s) mesuré(s) dans leur boîte (police du commun : {} ; interligne {} fois la taille) : {} débordent ; {} glyphe(s) absent(s) de toutes les polices, dessinés comme des boîtes{}",
+            c.textes,
+            mise_en_page::FAMILLE_DU_COMMUN,
+            mise_en_page::INTERLIGNE,
+            c.debords,
+            c.absents,
+            if c.polices_inconnues == 0 {
+                String::new()
+            } else {
+                format!(
+                    " ; {} texte(s) dans une police refusée ou inconnue, mesurés dans celle du commun",
+                    c.polices_inconnues
+                )
+            }
         ));
         // Un pire cas se construit depuis les limites, pour être le plus lourd
         // (INTERFACE, § 2.13) : aucune vue de l'écran des soirées ne doit coûter plus
@@ -1900,6 +1961,7 @@ fn eprouver_et_garder(
         monde: crate::plan::MondeJoue::default(),
         soirees_e20: Vec::new(),
         vues_e21: crate::pages::VuesVues::default(),
+        polices: None,
     };
     if plan.demande(IdControle::E1) {
         e.constat();

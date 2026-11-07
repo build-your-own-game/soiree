@@ -36,6 +36,8 @@
 //! | [`PageQuiEnvoieUnGesteInvalide`] | la page porte un bouton dont le geste dépasse `limites.geste` | E21 |
 //! | [`DiagnosticF8`] | la touche du diagnostic est F8, celle du commun | E1 (F8 réservé) |
 //! | [`PageVide`] | la page est celle par défaut de `Jeu::page` : vide | E21 (page vide) |
+//! | [`PoliceWoff2`] | une police déclarée en WOFF2 | E1 (polices sfnt) |
+//! | [`TexteQuiDeborde`] | à 9 999 points, une phrase trop longue pour sa boîte, même à la plus petite taille | E16 (débordements) |
 //!
 //! `JugeSurLeFait` et `FichierQuiPanique` passent dans le monde trop sage de la phase 1 (`Monde::PHASE_1`
 //! de l'épreuve) : seul le monde réel les fait échouer.
@@ -292,6 +294,12 @@ pub trait Defaut: Etat {
     /// sain.
     fn page_par_defaut() -> Oui {
         Oui::Non
+    }
+
+    /// Un texte de plus à l'écran quand un joueur a 9 999 points : aucun, dans le jeu
+    /// sain.
+    fn texte_du_record() -> Option<&'static str> {
+        None
     }
 }
 
@@ -1096,5 +1104,53 @@ impl Defaut for PageVide {
     }
     fn page_par_defaut() -> Oui {
         Oui::Oui
+    }
+}
+
+/// Un en-tête WOFF2 (signature `wOF2`, saveur TrueType, 48 octets, aucune table) : ce
+/// qu'un jeu livre quand il garde les polices de sa page web. Le commun ne lit que les
+/// fichiers sfnt (PHASE-3, P22).
+const EN_TETE_WOFF2: [u8; 48] = [
+    b'w', b'O', b'F', b'2', 0, 1, 0, 0, 0, 0, 0, 48, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+marqueur!(
+    /// E1, les polices sfnt (PHASE-3, P22 ; lot 8) : une police déclarée en WOFF2, que
+    /// `cosmic-text` ne lit pas. Aucun texte ne s'en sert : le reste est le jeu sain, et
+    /// seul E1 échoue.
+    PoliceWoff2
+);
+impl Defaut for PoliceWoff2 {
+    type Cas = Etape;
+    const DECLARATION: Declaration = Declaration {
+        assets: &[Asset {
+            cle: Cle::nommee("fautifs/police-woff2"),
+            sorte: SorteAsset::Police,
+            octets: &EN_TETE_WOFF2,
+        }],
+        ..socle::DECLARATION
+    };
+    fn neuf() -> Self {
+        PoliceWoff2
+    }
+}
+
+marqueur!(
+    /// E16, les débordements (PHASE-3, § 2.9 ; lot 8) : à 9 999 points, l'écran écrit une
+    /// phrase de 127 caractères sur une ligne de 16 unités, qui ne tient pas même à la
+    /// plus petite taille de son style (une demi-unité). Seuls les pires cas ont un
+    /// joueur à 9 999 points : seul E16 échoue.
+    TexteQuiDeborde
+);
+impl Defaut for TexteQuiDeborde {
+    type Cas = Etape;
+    fn neuf() -> Self {
+        TexteQuiDeborde
+    }
+    fn texte_du_record() -> Option<&'static str> {
+        Some(
+            "Record absolu : neuf mille neuf cent quatre-vingt-dix-neuf points, du jamais vu dans toute l'histoire de ce petit jeu de mots !",
+        )
     }
 }

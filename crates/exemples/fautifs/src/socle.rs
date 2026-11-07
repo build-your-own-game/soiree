@@ -294,11 +294,14 @@ const fn rect(x: i32, y: i32, l: i32, h: i32) -> Rect {
     }
 }
 
+/// Le style des textes de l'écran. Sa plus petite taille, une demi-unité, laisse tenir
+/// le prénom le plus large (douze « W ») dans ses six unités, et une ligne (1,2 fois la
+/// taille) dans une unité de haut : E16 le mesure depuis le lot 8 de la phase 3.
 const STYLE: StyleTexte = StyleTexte {
     police: Cle::POLICE_DU_COMMUN,
     taille: Taille::Budget {
         max: Fixe::unites(3),
-        min: Fixe::unites(1),
+        min: Fixe::depuis_brut(Fixe::PAR_UNITE / 2),
     },
     couleur: Rgba::BLANC,
     alignement: Alignement::Centre,
@@ -885,6 +888,11 @@ impl<D: Defaut> Jeu for Socle<D> {
         }
         if D::deborder() == Oui::Oui && self.joueurs.iter().any(|(_, j)| j.points >= 9_999) {
             let _: &mut Noeud = s.texte(Cle::de(&"record"), "Record !", rect(40, 0, 4, 1), STYLE);
+        }
+        if record == Oui::Oui
+            && let Some(t) = D::texte_du_record()
+        {
+            let _: &mut Noeud = s.texte(Cle::de(&"bravo"), t, rect(0, 1, 16, 1), STYLE);
         }
         if let Some(n) = D::compteur_affiche() {
             let _: &mut Noeud = s.texte(Cle::de(&"compteur"), nombre(n), rect(0, 8, 2, 1), STYLE);

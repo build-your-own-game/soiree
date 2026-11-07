@@ -6,7 +6,7 @@
 # Les neuf crates du § 8 sont un découpage voulu : en ajouter une se décide ici.
 # `moteur-commun` est la première des crates de la phase 3 (PHASE-3, § 2.2, lot 2) ;
 # `banc`, la deuxième (lot 3a) ; `liaison` et `salle`, la troisième et la quatrième (lot
-# 4a) ; `relais`, la cinquième (lot 5). Ce qui ne sert que dans le navigateur est dans le second workspace, `web/` (P31),
+# 4a) ; `relais`, la cinquième (lot 5) ; `mise-en-page`, la sixième (lot 8). Ce qui ne sert que dans le navigateur est dans le second workspace, `web/` (P31),
 # dont les règles d'écriture sont celles-ci, à l'identique.
 #
 # Les crates de module (`<jeu>-module`, § 2.1) restent dans le workspace :
@@ -35,6 +35,9 @@ members = [
     "crates/salle",
     # Le relais de la soirée, `soiree-relais` (PHASE-3, § 2.5 ; lot 5).
     "crates/relais",
+    # La mesure des textes de la scène, pour l'épreuve (E16) et la télé (PHASE-3, § 2.9 ;
+    # lot 8).
+    "crates/mise-en-page",
     # Un jeu d'exemple par dossier, et sa crate de module à côté de ses règles.
     "crates/exemples/*",
     "crates/exemples/*/module",
@@ -74,6 +77,8 @@ salle = { path = "crates/salle", version = "0.1.0" }
 # Le relais, `soiree-relais` : son cœur, sa coque et sa garde sur disque (lot 5). Le banc
 # le lance dans ses tests et lit sa garde.
 relais = { path = "crates/relais", version = "0.1.0" }
+# La mesure des textes : E16 la lit, la télé la dessine (lot 8).
+mise-en-page = { path = "crates/mise-en-page", version = "0.1.0" }
 devine = { path = "crates/exemples/devine", version = "0.1.0" }
 fautifs = { path = "crates/exemples/fautifs", version = "0.1.0" }
 # Les cinq fautifs dont la faute est un `static`, à part : la règle « rien hors de
@@ -155,12 +160,31 @@ snow = { version = "0.10.0", default-features = false, features = ["use-curve255
 # grossiraient le paquet du téléphone) ; sans `getrandom` ni `alloc`, dont on n'a pas
 # besoin : le nonce d'une case vient du hasard donné à `salle`.
 chacha20poly1305 = { version = "0.10.1", default-features = false }
+# La mesure des textes de la scène (PHASE-3, § 2.9, P21) : façonnage (harfrust), bidi,
+# polices de repli, en pur Rust, la même dans l'épreuve et, au lot 9, dans la télé, où
+# `glyphon` 0.12 la dessine (il demande `cosmic-text` 0.19). La dernière version (0.19.0,
+# publiée le 2026-04-22, vérifiée sur crates.io). Sans ses fonctionnalités par défaut :
+# ni `swash` (le dessin des glyphes, l'affaire de la télé), ni `fontconfig` (les polices
+# du système, que la mesure n'a jamais le droit de voir) ; `std` seulement.
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std"] }
+# Les occasions de coupure d'une ligne (UAX #14), que `Coupe::Mots` suit : la version que
+# `cosmic-text` tire déjà (0.1.5, la dernière, publiée le 2023-07-25), appelée directement.
+unicode-linebreak = "0.1.5"
+# L'écriture d'un texte (latin, arabe…), que le trait des polices de repli de
+# `cosmic-text` nomme : la mesure n'a pas de repli propre à une écriture. La version que
+# `cosmic-text` demande au moins, et la plus récente publiée depuis plus de deux semaines
+# (0.5.8, le 2025-12-03 ; 0.5.9 date du 2026-11-02) : le `Cargo.lock` la tient à 0.5.8.
+unicode-script = "0.5.8"
 
 # Pour les tests seulement.
 # Les propriétés et les octets au hasard (§ 8.1, § 8.6).
 proptest = "1.12.0"
 # Ce qui ne doit pas compiler (§ 8.2, § 8.3).
 trybuild = "1.0.116"
+# Le sha256 de la police du commun, comparé à celui de la copie que Tier list a vérifiée
+# (`mise-en-page`, `tests/mesure.rs`). La version que wasmtime tire déjà par
+# `cranelift-codegen` (0.10.9, 2025) : rien de neuf au `Cargo.lock`, ni à compiler.
+sha2 = { version = "0.10.9", default-features = false }
 # Les petits modules écrits à la main dans les tests de la réécriture et du moteur.
 # La version de la famille de wasmparser 0.245, que lit wasmtime 50.
 wat = "~1.245.1"
