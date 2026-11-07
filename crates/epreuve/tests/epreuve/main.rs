@@ -117,8 +117,16 @@ fn echoue_exactement(r: &Rapport, vise: IdControle) {
     let e = r.resultat(vise).expect("le contrôle visé est au rapport");
     assert!(!e.detail.is_empty(), "le rapport dit ce qui a échoué");
     assert_eq!(r.code_de_sortie(), 1);
-    // Un pire cas se refait par son indice, que le détail nomme : il n'a pas de soirée.
-    if vise != IdControle::E1 && vise != IdControle::E3 && vise != IdControle::E16 {
+    // Un pire cas se refait par son indice, que le détail nomme : il n'a pas de soirée ;
+    // une page, par sa vue et ses locaux (E21), sur une instance nue.
+    if ![
+        IdControle::E1,
+        IdControle::E3,
+        IdControle::E16,
+        IdControle::E21,
+    ]
+    .contains(&vise)
+    {
         assert!(
             e.rejeu.is_some(),
             "{vise} : un échec d'une soirée porte son rejeu"
@@ -449,6 +457,30 @@ fautif!(
     jeux::PireCasTropLeger,
     IdControle::E16
 );
+// PHASE-3, § 2.8, lot 6 : un module que le Worker refuserait au chargement le soir même
+// échoue à l'épreuve ; le reste du jeu est le jeu sain.
+fautif!(
+    module_trop_gros_echoue_e1,
+    "module-trop-gros",
+    jeux::ModuleTropGros,
+    IdControle::E1
+);
+// PHASE-3, § 8.3, lot 6 : des locaux tirés au hasard ne font jamais fauter une page
+// (REM-57 : ce que la page reçoit est borné, ce qu'elle en fait aussi).
+fautif!(
+    page_qui_panique_echoue_e21,
+    "page-qui-panique",
+    jeux::PageQuiPanique,
+    IdControle::E21
+);
+// PHASE-3, § 2.10, lot 6 : ce qu'une page envoie est validé comme ce qui vient de
+// l'extérieur ; un geste au-delà de `limites.geste` ne passe pas.
+fautif!(
+    page_qui_envoie_un_geste_invalide_echoue_e21,
+    "page-qui-envoie-un-geste-invalide",
+    jeux::PageQuiEnvoieUnGesteInvalide,
+    IdControle::E21
+);
 
 /// La reprise (§ 4.6 ; INTERFACE, § 8.8, `panique_au_temps` ; RESTE-PHASE-1, point 9) :
 /// trois `Temps` qui paniquent mettent la partie en panne ; l'épreuve la fait repartir
@@ -532,7 +564,7 @@ fn zero_evaluation_n_est_pas_un_succes() {
     assert!(e4.detail.contains("OUT-07"), "{}", e4.detail);
     // Hors du plan, chaque autre contrôle figure au rapport, « pas exécuté » (OUT-10).
     assert_eq!(r.controles.len(), IdControle::TOUS.len());
-    assert_eq!(r.controles.len(), 20);
+    assert_eq!(r.controles.len(), 21);
     for c in &r.controles {
         if c.id != IdControle::E4 {
             assert_eq!(c.issue, IssueControle::PasExecute, "{}", c.id);

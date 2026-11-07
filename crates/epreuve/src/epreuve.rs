@@ -15,7 +15,8 @@
 //! | E16 | chaque pire cas, sur une instance nue (`pires_cas.rs`) |
 //! | E17 | la forme canonique et la scène des soirées principales, et des pires cas |
 //! | E18 | une soirée de gels pendant les échéances (`gel.rs`) |
-//! | E19 | le coût (carburant et coût fixe) de chaque appel et de chaque image des soirées principales, et de la vue de chaque pire cas (`budgets.rs`) |
+//! | E19 | le coût (carburant et coût fixe) de chaque appel et de chaque image des soirées principales, de la vue de chaque pire cas, et de chaque page de E21 (`budgets.rs`) |
+//! | E21 | les vues parties vers les téléphones de toutes les soirées, chacune appelée en `Page` sur une instance nue, avec des locaux vides puis tirés au hasard (`pages.rs`) |
 //!
 //! Une panne déclarée qui n'a pas été constatée rend « pas exécuté » chaque contrôle
 //! lu dans les soirées principales : il porterait sur un monde qui n'a pas eu lieu
@@ -116,6 +117,8 @@ struct Epreuve<'m, 'n> {
     phases_des_soirees: Vec<PhasesEtGels>,
     /// E20 : chaque soirée jouée, son ouverture et son journal, quand E20 est demandé.
     soirees_e20: Vec<moteur_commun::releve::SoireeJouee>,
+    /// E21 : les vues parties vers les téléphones, sur toutes les soirées.
+    vues_e21: crate::pages::VuesVues,
 }
 
 fn encode(a: &Appel<'_>) -> Vec<u8> {
@@ -155,12 +158,26 @@ impl Epreuve<'_, '_> {
     }
 
     /// E1 : la réécriture a accepté le module ; aucun import ; exactement les exports
-    /// du contrat ; un maximum de mémoire ; la déclaration lue ; le carburant des
-    /// appels mesuré.
+    /// du contrat ; un maximum de mémoire ; la déclaration lue ; le module livré sous
+    /// `TAILLE_MODULE_MAX` (PHASE-3, § 2.8, lot 6) ; le carburant des appels mesuré.
     fn constat(&mut self) {
         let c = self.module.constat().clone();
         let d = self.module.declaration().clone();
+        let taille = self.module.taille_livree();
         let a = self.acc(IdControle::E1);
+        // PHASE-3, § 2.8 : le Worker refuse au chargement un module plus gros ; un
+        // module éprouvé ne doit pas l'être le soir même.
+        a.compte.evaluer();
+        if taille > moteur_wasmtime::TAILLE_MODULE_MAX {
+            a.compte.echouer(format!(
+                "le module livré fait {taille} octets, au-delà de TAILLE_MODULE_MAX ({} octets) : le Worker de l'écran le refuserait au chargement",
+                moteur_wasmtime::TAILLE_MODULE_MAX
+            ));
+        }
+        a.noter(format!(
+            "module livré de {taille} octets ; TAILLE_MODULE_MAX, {} octets (4 Mio, choisi)",
+            moteur_wasmtime::TAILLE_MODULE_MAX
+        ));
         a.compte.evaluer();
         if !c.imports.is_empty() {
             a.compte
@@ -405,6 +422,7 @@ impl Epreuve<'_, '_> {
             Ok(b) => {
                 if let Ok(bilan) = &b {
                     self.monde.ajouter(&bilan.monde);
+                    self.vues_e21.ajouter(&bilan.vues_telephones);
                     if self.plan.demande(IdControle::E20) {
                         self.garder_pour_e20(sorte, bilan);
                     }
@@ -519,6 +537,37 @@ impl Epreuve<'_, '_> {
         }
         if self.demande(IdControle::E19) {
             self.budgets();
+        }
+    }
+
+    /// E21 : la page de chaque vue partie vers un téléphone (`pages.rs`), et E19 sur
+    /// le coût de chacune.
+    fn pages(&mut self) {
+        let graine = graine_de(self.plan, "E21");
+        let vues = std::mem::take(&mut self.vues_e21);
+        let module = self.module;
+        let Ok(constat) = catch_unwind(AssertUnwindSafe(|| {
+            crate::pages::eprouver(module, &vues, &graine)
+        })) else {
+            self.acc(IdControle::E21)
+                .pannes
+                .push(String::from("l'épreuve a paniqué en éprouvant les pages"));
+            return;
+        };
+        let fixe = self.fixe;
+        if self.demande(IdControle::E19) && !constat.carburants.is_empty() {
+            let (c, notes) =
+                crate::budgets::juger_les_pages(&BUDGETS_E19, &constat.carburants, fixe);
+            let a = self.acc(IdControle::E19);
+            a.compte.ajouter(&c);
+            a.notes.extend(notes);
+        }
+        let a = self.acc(IdControle::E21);
+        a.compte.ajouter(&constat.compte);
+        a.pannes.extend(constat.pannes);
+        a.notes.extend(constat.notes);
+        if let Some(r) = constat.sans_objet {
+            a.sans_objet = Some(r);
         }
     }
 
@@ -1847,6 +1896,7 @@ fn eprouver_et_garder(
         phases_des_soirees: Vec::new(),
         monde: crate::plan::MondeJoue::default(),
         soirees_e20: Vec::new(),
+        vues_e21: crate::pages::VuesVues::default(),
     };
     if plan.demande(IdControle::E1) {
         e.constat();
@@ -1857,8 +1907,8 @@ fn eprouver_et_garder(
     if plan.demande(IdControle::E3) {
         e.univers();
     }
-    // E20 reprend au moins les soirées principales.
-    let principales: [IdControle; 12] = [
+    // E20 reprend au moins les soirées principales ; E21 éprouve leurs vues.
+    let principales: [IdControle; 13] = [
         IdControle::E2,
         IdControle::E3,
         IdControle::E4,
@@ -1871,6 +1921,7 @@ fn eprouver_et_garder(
         IdControle::E17,
         IdControle::E19,
         IdControle::E20,
+        IdControle::E21,
     ];
     if principales.iter().any(|c| plan.demande(*c)) {
         e.soirees();
@@ -1892,6 +1943,9 @@ fn eprouver_et_garder(
     }
     if plan.demande(IdControle::E15) {
         e.memoire();
+    }
+    if plan.demande(IdControle::E21) {
+        e.pages();
     }
     let monde = e.monde;
     let soirees_e20 = std::mem::take(&mut e.soirees_e20);

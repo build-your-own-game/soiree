@@ -602,9 +602,13 @@ pub(crate) fn normaliser_scene(o: &[u8]) -> Vec<u8> {
     let mut cles = BTreeMap::new();
     for n in &mut s.noeuds {
         n.cle = Cle::du_fil(rang(&mut cles, n.cle.fil()));
-        if let SorteNoeud::Composant(ComposantVuFil::Deplacables {
-            zones, poubelle, ..
-        }) = &mut n.sorte
+        if let SorteNoeud::Composant {
+            composant:
+                ComposantVuFil::Deplacables {
+                    zones, poubelle, ..
+                },
+            ..
+        } = &mut n.sorte
         {
             for z in zones {
                 z.cle = Cle::du_fil(rang(&mut cles, z.cle.fil()));

@@ -127,3 +127,19 @@ fn un_geste_de_telephone_sans_telephone_ne_se_decode_pas() {
         Retour::Illisible(_)
     ));
 }
+
+/// Besoin 3, à l'ABI 4 (PHASE-3, § 2.10) : un jeu sans téléphone n'a pas de page ;
+/// `Page` y est illisible, sans appeler le jeu, sur une instance où rien n'est créé.
+#[test]
+fn la_page_d_un_jeu_sans_telephone_est_illisible() {
+    let mut i = jeu_natif::InstanceNative::<Ardoise>::new();
+    let r = appeler(
+        &mut i,
+        &Appel::Page {
+            montre: &[0],
+            pas: jeu_abi::Pas::du_fil(1),
+            locaux: jeu_abi::LocauxFil::vides(),
+        },
+    );
+    assert!(illisible(&r), "{r:?}");
+}

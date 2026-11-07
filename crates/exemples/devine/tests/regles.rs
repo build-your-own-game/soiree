@@ -523,3 +523,103 @@ fn l_attente_nomme_ceux_qui_n_ont_pas_propose() {
     assert_eq!(p.geste(A, &GesteTel::Proposer, 12, 11), Decide::Acceptee);
     assert_eq!(attendus(&mut p), vec![B]);
 }
+
+/// La page du téléphone (PHASE-3, § 2.10 ; ABI 4) : `Page` passe l'enveloppe sans état,
+/// sur une instance où rien n'est créé, comme sur le téléphone ; elle rend une page
+/// valide pour chaque vue, lit ses locaux (le prénom tapé, nettoyé ; le choix du
+/// carrousel, qui devient le curseur tenu) et ne lit rien d'autre.
+#[test]
+fn la_page_se_lit_depuis_la_vue_et_les_locaux() {
+    let declaration = <Devine as Jeu>::DECLARATION.fil();
+    let mut p = Pilote::new(InstanceNative::<Devine>::new());
+    let page = |p: &mut Pilote<InstanceNative<Devine>>, vue: VueTel, l: jeu_abi::LocauxFil<'_>| {
+        let mut v = Vec::new();
+        encoder(&vue, &mut v).unwrap();
+        let mut m = Vec::new();
+        encoder(
+            &jeu_abi::MontreFil {
+                vue: &v,
+                effets: Vec::new(),
+                reglages: Reglages::ORDINAIRES,
+            },
+            &mut m,
+        )
+        .unwrap();
+        p.avec(
+            &Appel::Page {
+                montre: &m,
+                pas: Pas::du_fil(5),
+                locaux: l,
+            },
+            |r| match r {
+                Retour::Page(page) => page,
+                autre => panic!("{autre:?}"),
+            },
+        )
+    };
+    let valide = |pg: &jeu_abi::PageFil| {
+        jeu_abi::valider_page(pg, &declaration.assets, &declaration.limites).unwrap();
+    };
+    // Le prénom tapé, sale, part nettoyé dans le geste du bouton (D22).
+    let prenom = Cle::nommee("prénom");
+    let mut l = jeu_abi::LocauxFil::vides();
+    l.champs.push((prenom, "  léa\u{200B} "));
+    let pg = page(&mut p, VueTel::Prenom, l);
+    valide(&pg);
+    let attendu = {
+        let mut o = Vec::new();
+        encoder(&GesteTel::Rejoindre(Texte::nettoyer("léa")), &mut o).unwrap();
+        o
+    };
+    assert!(pg.noeuds.iter().any(|n| matches!(
+        &n.sorte,
+        jeu_abi::SorteNoeudPage::Bouton { geste, .. } if *geste == attendu
+    )));
+    // Le carrousel : son choix devient le curseur tenu ; une option hors des dix garde
+    // celui de la vue.
+    let curseur = Cle::nommee("curseur");
+    let tenu = |c: i64| {
+        let mut o = Vec::new();
+        encoder(&devine::Curseur(Borne::new(c).unwrap()), &mut o).unwrap();
+        o
+    };
+    for (choix, attendu) in [(Some(7), 7), (Some(42), 2), (None, 2)] {
+        let mut l = jeu_abi::LocauxFil::vides();
+        if let Some(n) = choix {
+            l.choix.push((curseur, n));
+        }
+        let pg = page(
+            &mut p,
+            VueTel::Choisis {
+                curseur: Borne::new(2).unwrap(),
+            },
+            l,
+        );
+        valide(&pg);
+        assert_eq!(
+            pg.tenu.as_ref().map(|t| t.octets.clone()),
+            Some(tenu(attendu)),
+            "choix {choix:?}"
+        );
+    }
+    for vue in [
+        VueTel::Attends,
+        VueTel::Resultat {
+            nombre: Borne::new(4).unwrap(),
+            gagne: Oui::Oui,
+        },
+    ] {
+        valide(&page(&mut p, vue, jeu_abi::LocauxFil::vides()));
+    }
+    // Une vue qui ne se décode pas : la colle le dit, sans appeler le jeu.
+    let r = p.brut(&Appel::Page {
+        montre: &[0xFF],
+        pas: Pas::du_fil(5),
+        locaux: jeu_abi::LocauxFil::vides(),
+    });
+    let r = r.unwrap();
+    assert!(
+        matches!(decoder::<Retour<'_>>(&r), Ok(Retour::Illisible(_))),
+        "{r:?}"
+    );
+}

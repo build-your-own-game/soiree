@@ -149,6 +149,7 @@ impl Etape {
                 IdControle::E16,
                 IdControle::E17,
                 IdControle::E18,
+                IdControle::E21,
             ],
             Etape::Mesurer => &[IdControle::E15, IdControle::E19],
             Etape::Compiler | Etape::Examiner | Etape::Injecter | Etape::Reverifier => &[],

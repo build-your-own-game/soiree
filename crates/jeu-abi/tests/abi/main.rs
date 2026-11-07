@@ -8,6 +8,7 @@
 
 mod commun;
 mod forme_figee;
+mod page;
 mod proprietes;
 mod seconde_lecture;
 mod strict;

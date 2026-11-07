@@ -158,8 +158,12 @@ impl Fichiers {
                     let (l, h) = taille_du_rendu(ecran, *echelle);
                     let fond = scene.fond.unwrap_or(Rgba::NOIR);
                     let px = [fond.0, fond.1, fond.2, fond.3];
+                    // Le monde simulé dessine un fond uni, sans image : aucune n'est
+                    // laissée de côté (ABI 4, TL-56).
                     ReponseArrivee::Rendu(
-                        png_de(l, h, &uni(l, h, px)).ok_or(EchecDemande::TropGros),
+                        png_de(l, h, &uni(l, h, px))
+                            .map(|o| (o, 0))
+                            .ok_or(EchecDemande::TropGros),
                     )
                 }
             }
@@ -186,9 +190,8 @@ impl Fichiers {
         };
         self.compte.servies = self.compte.servies.saturating_add(1);
         let reussie = match &r {
-            ReponseArrivee::Image(x) | ReponseArrivee::Rendu(x) | ReponseArrivee::Lu(x) => {
-                x.is_ok()
-            }
+            ReponseArrivee::Image(x) | ReponseArrivee::Lu(x) => x.is_ok(),
+            ReponseArrivee::Rendu(x) => x.is_ok(),
             ReponseArrivee::Fait(x) => x.is_ok(),
         };
         if reussie {
@@ -681,7 +684,8 @@ mod tests {
                 (16, 9),
                 &mut hasard,
             ) {
-                ReponseArrivee::Rendu(Ok(o)) => {
+                ReponseArrivee::Rendu(Ok((o, non_dessinees))) => {
+                    assert_eq!(non_dessinees, 0);
                     let image = decoder_png(&o).unwrap();
                     assert_eq!((image.largeur, image.hauteur), (640, 360));
                 }

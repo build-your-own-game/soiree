@@ -105,12 +105,23 @@ impl Flux {
 pub enum Reponse<'a> {
     /// L'image produite.
     Image(#[serde(borrow)] Result<&'a [u8], EchecDemande>),
-    /// Le rendu produit.
-    Rendu(#[serde(borrow)] Result<&'a [u8], EchecDemande>),
+    /// Le rendu produit (ABI 4 : avec les images qu'il n'a pas dessinées).
+    Rendu(#[serde(borrow)] Result<ImageRendue<'a>, EchecDemande>),
     /// Les octets lus.
     Lu(#[serde(borrow)] Result<&'a [u8], EchecDemande>),
     /// Le téléchargement est donné, ou la ligne écrite.
     Fait(Result<(), EchecDemande>),
+}
+
+/// Ce que rend un `Rendu` réussi (ABI 4) : l'image, et le nombre d'images de la
+/// scène que le rendu n'a pas pu dessiner (TL-56, besoin 20 de Tier list). Le jeu
+/// l'annonce ; il ne devine pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageRendue<'a> {
+    /// L'image produite, encodée dans le format demandé.
+    pub octets: &'a [u8],
+    /// Les images de la scène que le rendu n'a pas dessinées.
+    pub non_dessinees: u32,
 }
 
 /// La forme sur le fil d'une [`Reponse`] : la même.

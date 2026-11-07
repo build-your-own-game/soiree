@@ -27,7 +27,7 @@
 use alloc::vec::Vec;
 
 use jeu_abi::{
-    CauseTenu, Cle, ComposantVuFil, Deplace, Duree, Effet, Fixe, FormeEcran, Instant, Oui,
+    CauseTenu, Cle, ComposantVuFil, Deplace, Duree, Effet, Fixe, FormeEcran, Instant, Lignes, Oui,
     PAS_PAR_SECONDE, Pas, Rect, ReglesTenuFil, ReveilFil, SceneFil, SorteNoeud, Tenue, Unite,
     fnv1a64_suite,
 };
@@ -789,6 +789,11 @@ pub enum DefautScene {
         /// L'image.
         image: Cle,
     },
+    /// Un champ qui demande plus d'une ligne (ABI 4 : `Lignes::Une` seulement).
+    ChampMultiligne {
+        /// La clé du nœud.
+        cle: Cle,
+    },
 }
 
 impl core::fmt::Display for DefautScene {
@@ -822,6 +827,11 @@ impl core::fmt::Display for DefautScene {
                 "le nœud {:#x} montre une image inconnue {:#x}",
                 cle.fil(),
                 image.fil()
+            ),
+            DefautScene::ChampMultiligne { cle } => write!(
+                f,
+                "le champ {:#x} demande plus d'une ligne, qu'aucun texte ne tient",
+                cle.fil()
             ),
         }
     }
@@ -870,8 +880,54 @@ const fn rect_du_noeud(s: &SorteNoeud) -> Option<Rect> {
         | SorteNoeud::CompteARebours { boite, .. }
         | SorteNoeud::Qr { boite }
         | SorteNoeud::Avertissements { boite } => Some(*boite),
-        SorteNoeud::Groupe { .. } | SorteNoeud::Composant(_) | SorteNoeud::Definitif => None,
+        SorteNoeud::Composant { boite, .. } => *boite,
+        SorteNoeud::Groupe { .. } | SorteNoeud::Definitif => None,
     }
+}
+
+/// Le panneau d'une modale (ABI 4), qui tient dans le repère comme une boîte.
+const fn panneau_du_noeud(s: &SorteNoeud) -> Option<Rect> {
+    match s {
+        SorteNoeud::Composant {
+            composant: ComposantVuFil::Modale { panneau, .. },
+            ..
+        } => Some(*panneau),
+        SorteNoeud::Rect { .. }
+        | SorteNoeud::Texte { .. }
+        | SorteNoeud::Image { .. }
+        | SorteNoeud::Groupe { .. }
+        | SorteNoeud::Bouton { .. }
+        | SorteNoeud::CompteARebours { .. }
+        | SorteNoeud::Qr { .. }
+        | SorteNoeud::Composant { .. }
+        | SorteNoeud::Avertissements { .. }
+        | SorteNoeud::Surface { .. }
+        | SorteNoeud::Definitif => None,
+    }
+}
+
+/// Ce rectangle, décalé de `(dx, dy)`, a une taille positive et tient dans `bornes`
+/// (`x min`, `x max`, `y min`, `y max`, en 1/256 d'unité).
+fn dans_le_repere(
+    cle: Cle,
+    r: Rect,
+    (dx, dy): (i64, i64),
+    (x_min, x_max, y_min, y_max): (i64, i64, i64, i64),
+) -> Result<(), DefautScene> {
+    let (largeur, hauteur) = (i64::from(r.l.brut()), i64::from(r.h.brut()));
+    if largeur < 0 || hauteur < 0 {
+        return Err(DefautScene::TailleNegative { cle });
+    }
+    let gauche = dx.saturating_add(i64::from(r.x.brut()));
+    let haut = dy.saturating_add(i64::from(r.y.brut()));
+    if gauche < x_min
+        || haut < y_min
+        || gauche.saturating_add(largeur) > x_max
+        || haut.saturating_add(hauteur) > y_max
+    {
+        return Err(DefautScene::HorsDuRepere { cle });
+    }
+    Ok(())
 }
 
 /// Valide une scène de l'écran comme une entrée venue de l'extérieur (§ 6.1, D26) :
@@ -934,45 +990,51 @@ pub fn valider_scene(
             | SorteNoeud::Bouton { .. }
             | SorteNoeud::CompteARebours { .. }
             | SorteNoeud::Qr { .. }
-            | SorteNoeud::Composant(_)
+            | SorteNoeud::Composant { .. }
             | SorteNoeud::Avertissements { .. }
             | SorteNoeud::Surface { .. }
             | SorteNoeud::Definitif => (dx, dy),
         };
         profondeur.push(ici);
         decalage.push(enfants);
-        if let Some(r) = rect_du_noeud(&noeud.sorte) {
-            let (largeur, hauteur) = (i64::from(r.l.brut()), i64::from(r.h.brut()));
-            if largeur < 0 || hauteur < 0 {
-                return Err(DefautScene::TailleNegative { cle: noeud.cle });
-            }
-            let gauche = dx.saturating_add(i64::from(r.x.brut()));
-            let haut = dy.saturating_add(i64::from(r.y.brut()));
-            if gauche < x_min
-                || haut < y_min
-                || gauche.saturating_add(largeur) > x_max
-                || haut.saturating_add(hauteur) > y_max
-            {
-                return Err(DefautScene::HorsDuRepere { cle: noeud.cle });
-            }
+        // ABI 4 : un champ n'a qu'une ligne ; aucun `Texte<L>` n'en tient plus d'une
+        // (besoin 17 des jeux). `lignes` reste sur le fil pour le multiligne à venir.
+        if let SorteNoeud::Composant {
+            composant: ComposantVuFil::Champ { lignes, .. },
+            ..
+        } = &noeud.sorte
+            && *lignes != Lignes::Une
+        {
+            return Err(DefautScene::ChampMultiligne { cle: noeud.cle });
+        }
+        for r in [rect_du_noeud(&noeud.sorte), panneau_du_noeud(&noeud.sorte)]
+            .into_iter()
+            .flatten()
+        {
+            dans_le_repere(noeud.cle, r, (dx, dy), (x_min, x_max, y_min, y_max))?;
         }
         let police = match &noeud.sorte {
             SorteNoeud::Texte { style, .. } | SorteNoeud::CompteARebours { style, .. } => {
                 Some(style.police)
             }
-            SorteNoeud::Composant(ComposantVuFil::EnPlace { style, .. }) => Some(style.police),
+            SorteNoeud::Composant {
+                composant: ComposantVuFil::EnPlace { style, .. },
+                ..
+            } => Some(style.police),
             SorteNoeud::Rect { .. }
             | SorteNoeud::Image { .. }
             | SorteNoeud::Groupe { .. }
             | SorteNoeud::Bouton { .. }
             | SorteNoeud::Qr { .. }
-            | SorteNoeud::Composant(
-                ComposantVuFil::Champ { .. }
-                | ComposantVuFil::Deplacables { .. }
-                | ComposantVuFil::Selecteur { .. }
-                | ComposantVuFil::Modale { .. }
-                | ComposantVuFil::Lien { .. },
-            )
+            | SorteNoeud::Composant {
+                composant:
+                    ComposantVuFil::Champ { .. }
+                    | ComposantVuFil::Deplacables { .. }
+                    | ComposantVuFil::Selecteur { .. }
+                    | ComposantVuFil::Modale { .. }
+                    | ComposantVuFil::Lien { .. },
+                ..
+            }
             | SorteNoeud::Avertissements { .. }
             | SorteNoeud::Surface { .. }
             | SorteNoeud::Definitif => None,
@@ -1053,21 +1115,29 @@ fn action_presente(scene: &SceneFil, a: &[u8]) -> bool {
     scene.raccourcis.iter().any(|r| r.action == a)
         || scene.noeuds.iter().any(|n| match &n.sorte {
             SorteNoeud::Bouton { action, .. } => action == a,
-            SorteNoeud::Composant(ComposantVuFil::Champ { fin: Some(f), .. }) => f == a,
-            SorteNoeud::Composant(ComposantVuFil::Modale { fermer }) => fermer == a,
+            SorteNoeud::Composant {
+                composant: ComposantVuFil::Champ { fin: Some(f), .. },
+                ..
+            } => f == a,
+            SorteNoeud::Composant {
+                composant: ComposantVuFil::Modale { fermer, .. },
+                ..
+            } => fermer == a,
             SorteNoeud::Rect { .. }
             | SorteNoeud::Texte { .. }
             | SorteNoeud::Image { .. }
             | SorteNoeud::Groupe { .. }
             | SorteNoeud::CompteARebours { .. }
             | SorteNoeud::Qr { .. }
-            | SorteNoeud::Composant(
-                ComposantVuFil::Champ { fin: None, .. }
-                | ComposantVuFil::EnPlace { .. }
-                | ComposantVuFil::Deplacables { .. }
-                | ComposantVuFil::Selecteur { .. }
-                | ComposantVuFil::Lien { .. },
-            )
+            | SorteNoeud::Composant {
+                composant:
+                    ComposantVuFil::Champ { fin: None, .. }
+                    | ComposantVuFil::EnPlace { .. }
+                    | ComposantVuFil::Deplacables { .. }
+                    | ComposantVuFil::Selecteur { .. }
+                    | ComposantVuFil::Lien { .. },
+                ..
+            }
             | SorteNoeud::Avertissements { .. }
             | SorteNoeud::Surface { .. }
             | SorteNoeud::Definitif => false,
@@ -1076,7 +1146,7 @@ fn action_presente(scene: &SceneFil, a: &[u8]) -> bool {
 
 fn composants(scene: &SceneFil) -> impl Iterator<Item = (jeu_abi::Cle, &ComposantVuFil)> {
     scene.noeuds.iter().filter_map(|n| match &n.sorte {
-        SorteNoeud::Composant(c) => Some((n.cle, c)),
+        SorteNoeud::Composant { composant: c, .. } => Some((n.cle, c)),
         SorteNoeud::Rect { .. }
         | SorteNoeud::Texte { .. }
         | SorteNoeud::Image { .. }
@@ -1114,13 +1184,22 @@ fn composant_admis(scene: &SceneFil, c: &ComposantArrivee) -> bool {
             | ComposantVuFil::Modale { .. }
             | ComposantVuFil::Lien { .. } => false,
         }),
-        ComposantArrivee::Fichiers { fichiers, .. } => composants(scene).any(|(_, vu)| match vu {
+        ComposantArrivee::Fichiers {
+            fichiers,
+            selecteur,
+            ..
+        } => composants(scene).any(|(cle, vu)| match vu {
+            // ABI 4 : des fichiers qui nomment leur sélecteur ne passent que par lui ;
+            // un dépôt ou un collage (`None`), par n'importe lequel, comme avant
+            // l'ABI 4 (le contrôle de `depot_partout` et de `collage` vient avec la page
+            // de l'écran, lot 11).
             ComposantVuFil::Selecteur {
                 multiple,
                 taille_max,
                 ..
             } => {
-                (*multiple == Oui::Oui || fichiers.len() <= 1)
+                selecteur.is_none_or(|s| s == cle)
+                    && (*multiple == Oui::Oui || fichiers.len() <= 1)
                     && fichiers.iter().all(|f| f.taille <= *taille_max)
             }
             ComposantVuFil::Champ { .. }

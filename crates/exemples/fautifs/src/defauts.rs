@@ -31,6 +31,9 @@
 //! | [`FinTropLourde`] | en fin de partie, la vue de l'écran fait sept cent mille tours de boucle | E19 (lecture) |
 //! | [`ZonesLourdes`] | un brouillon de 32 Mio, que le moteur remet à zéro avant chaque appel | E19 (coût fixe) |
 //! | [`PireCasTropLeger`] | des pires cas sans aucun joueur, plus légers que l'écran d'une soirée | E16 |
+//! | [`ModuleTropGros`] | une table de 4,15 Mio dans le module, au-delà de `TAILLE_MODULE_MAX` | E1 (taille du module) |
+//! | [`PageQuiPanique`] | la page indexe un tableau de dix par l'option choisie, sans la borner | E21 |
+//! | [`PageQuiEnvoieUnGesteInvalide`] | la page porte un bouton dont le geste dépasse `limites.geste` | E21 |
 //!
 //! `JugeSurLeFait` et `FichierQuiPanique` passent dans le monde trop sage de la phase 1 (`Monde::PHASE_1`
 //! de l'épreuve) : seul le monde réel les fait échouer.
@@ -48,7 +51,7 @@
 
 use jeu::prelude::*;
 
-use crate::socle::{self, CasDuSocle, Etape, PRENOM_LENT, VALEURS};
+use crate::socle::{self, CasDuSocle, Etape, GesteTel, PRENOM_LENT, VALEURS};
 
 /// Ce qu'un défaut peut changer au socle. Chaque méthode a la valeur du jeu sain.
 pub trait Defaut: Etat {
@@ -267,6 +270,20 @@ pub trait Defaut: Etat {
     /// Le jeu promet-il la coupure transparente (E11) ?
     fn coupure_transparente() -> Oui {
         Oui::Oui
+    }
+
+    /// Le chiffre que la page envoie pour l'option choisie : 0 hors des dix, dans le
+    /// jeu sain.
+    fn chiffre_de_la_page(choisie: Option<u32>) -> u8 {
+        choisie
+            .and_then(|n| u8::try_from(n).ok())
+            .filter(|n| *n <= 9)
+            .unwrap_or(0)
+    }
+
+    /// Un bouton de plus sur la page, et son geste : aucun, dans le jeu sain.
+    fn geste_de_la_page() -> Option<GesteTel> {
+        None
     }
 }
 
@@ -942,5 +959,100 @@ impl Defaut for PireCasTropLeger {
     }
     fn joueurs_du_pire_cas() -> usize {
         0
+    }
+}
+
+marqueur!(
+    /// E1, la taille du module (PHASE-3, § 2.8, lot 6) : le module embarque une table
+    /// de 4,15 Mio, lue à chaque entrée, et dépasse `TAILLE_MODULE_MAX` (4 Mio) ; sa
+    /// mémoire, 8 Mio, la tient (`modules/module-trop-gros/build.rs`). Le reste est le
+    /// jeu sain : seul E1 échoue.
+    ModuleTropGros
+);
+
+/// Un bloc de 256 octets tous différents : répété, il fait une table qu'aucune
+/// optimisation ne réduit à une valeur.
+const BLOC: [u8; 256] = {
+    let mut b = [0u8; 256];
+    let mut i = 0usize;
+    while i < 256 {
+        #[expect(
+            clippy::indexing_slicing,
+            clippy::cast_possible_truncation,
+            reason = "à la compilation : i est sous 256"
+        )]
+        {
+            b[i] = i as u8;
+        }
+        i = i.saturating_add(1);
+    }
+    b
+};
+/// Les blocs de la table : 17 000 × 256 octets, 4 352 000 octets, au-delà des
+/// 4 194 304 de `TAILLE_MODULE_MAX`.
+const BLOCS: usize = 17_000;
+/// La table que `ModuleTropGros` embarque.
+#[expect(
+    clippy::large_const_arrays,
+    reason = "la faute de ce jeu fautif : un module livré trop gros"
+)]
+const GROSSE_TABLE: [[u8; 256]; BLOCS] = [BLOC; BLOCS];
+
+impl Defaut for ModuleTropGros {
+    type Cas = Etape;
+    const DECLARATION: Declaration = Declaration {
+        limites: Limites {
+            // 8 Mio : la table, la pile et le tas (`modules/module-trop-gros/build.rs`).
+            memoire: 128,
+            ..socle::DECLARATION.limites
+        },
+        ..socle::DECLARATION
+    };
+    fn neuf() -> Self {
+        ModuleTropGros
+    }
+    fn a_chaque_entree() {
+        // Une lecture que l'optimiseur ne peut ni prévoir ni retirer : la table reste
+        // dans le module livré.
+        // La référence est promue en `'static` : la table n'est jamais copiée sur la pile.
+        let table: &'static [[u8; 256]; BLOCS] = &GROSSE_TABLE;
+        let i = core::hint::black_box(0usize);
+        let _: Option<u8> = core::hint::black_box(table.get(i).and_then(|b| b.get(i)).copied());
+    }
+}
+
+marqueur!(
+    /// E21 : la page indexe un tableau de dix par l'option choisie du choix, sans la
+    /// borner. Des locaux vides ne la font jamais fauter ; une option hors des dix, que
+    /// des locaux tirés au hasard donnent, la fait paniquer (PHASE-3, § 8.3).
+    PageQuiPanique
+);
+impl Defaut for PageQuiPanique {
+    type Cas = Etape;
+    fn neuf() -> Self {
+        PageQuiPanique
+    }
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "la faute de ce jeu fautif : un index venu des locaux de la page, non borné"
+    )]
+    fn chiffre_de_la_page(choisie: Option<u32>) -> u8 {
+        const CHIFFRES: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        CHIFFRES[usize::try_from(choisie.unwrap_or(0)).unwrap_or(usize::MAX)]
+    }
+}
+
+marqueur!(
+    /// E21 : la page porte un bouton dont le geste, 300 octets bruts, dépasse
+    /// `limites.geste` (256) : l'autorité le refuserait à l'entrée (PHASE-3, § 2.10).
+    PageQuiEnvoieUnGesteInvalide
+);
+impl Defaut for PageQuiEnvoieUnGesteInvalide {
+    type Cas = Etape;
+    fn neuf() -> Self {
+        PageQuiEnvoieUnGesteInvalide
+    }
+    fn geste_de_la_page() -> Option<GesteTel> {
+        Some(GesteTel::Octets(alloc::vec![0; 300]))
     }
 }

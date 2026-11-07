@@ -792,6 +792,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-module-trop-gros-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-nan-dans-l-etat-module"
 version = "0.1.0"
 dependencies = [
@@ -809,6 +817,22 @@ dependencies = [
 
 [[package]]
 name = "fautif-octet-qui-panique-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-page-qui-envoie-un-geste-invalide-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
+name = "fautif-page-qui-panique-module"
 version = "0.1.0"
 dependencies = [
  "fautifs",

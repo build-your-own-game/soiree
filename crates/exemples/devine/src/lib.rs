@@ -190,6 +190,44 @@ fn chiffre(c: Chiffre) -> &'static str {
     CHIFFRES.get(c.indice()).copied().unwrap_or("?")
 }
 
+/// Les clés de la page du téléphone (PHASE-3, § 2.10).
+mod page {
+    use jeu::prelude::Cle;
+
+    /// La colonne de la page.
+    pub(crate) const COLONNE: Cle = Cle::nommee("page");
+    /// Le titre.
+    pub(crate) const TITRE: Cle = Cle::nommee("titre");
+    /// Le champ du prénom.
+    pub(crate) const PRENOM: Cle = Cle::nommee("prénom");
+    /// Le bouton qui envoie le prénom.
+    pub(crate) const REJOINDRE: Cle = Cle::nommee("rejoindre");
+    /// Le carrousel des chiffres.
+    pub(crate) const CURSEUR: Cle = Cle::nommee("curseur");
+    /// Le bouton qui propose.
+    pub(crate) const PROPOSER: Cle = Cle::nommee("proposer");
+}
+
+/// Les options du carrousel des chiffres, chacune par la clé de son numéro.
+const OPTIONS_CHIFFRES: [(Cle, &str); 10] = [
+    (Cle::numero(0), "0"),
+    (Cle::numero(1), "1"),
+    (Cle::numero(2), "2"),
+    (Cle::numero(3), "3"),
+    (Cle::numero(4), "4"),
+    (Cle::numero(5), "5"),
+    (Cle::numero(6), "6"),
+    (Cle::numero(7), "7"),
+    (Cle::numero(8), "8"),
+    (Cle::numero(9), "9"),
+];
+
+/// Le style des textes de la page : la police du commun, centrée.
+const STYLE_PAGE: StylePage = StylePage {
+    alignement: Alignement::Centre,
+    ..StylePage::ORDINAIRE
+};
+
 impl Devine {
     /// Une manche commence : un nombre neuf, caché ; les essais vidés ; l'échéance née de
     /// maintenant (PUN-34).
@@ -548,6 +586,63 @@ impl Jeu for Devine {
 
     fn ressource(&self, _: Cle) -> Option<&[u8]> {
         None
+    }
+
+    /// La page du téléphone (PHASE-3, § 2.10) : le prénom, l'attente, le carrousel des
+    /// chiffres (son choix est le curseur tenu) et le résultat. Elle ne lit que la vue
+    /// et les locaux.
+    fn page(vue: &Recue<VueTel>, l: &Locaux<'_>, p: &mut Page<Self>) {
+        p.colonne(page::COLONNE, |p| match vue.montre.vue {
+            VueTel::Prenom => {
+                p.texte(page::TITRE, "Ton prénom ?", STYLE_PAGE);
+                let prenom = l
+                    .texte::<Prenom>(page::PRENOM)
+                    .unwrap_or_else(|| Texte::nettoyer(""));
+                p.champ(
+                    page::PRENOM,
+                    ChampPage {
+                        exemple: "Léa",
+                        clavier: Clavier::Prenom,
+                        entree: Some(GesteTel::Rejoindre(prenom.clone())),
+                        ..ChampPage::de::<Prenom>()
+                    },
+                );
+                p.bouton(
+                    page::REJOINDRE,
+                    "C'est moi",
+                    GesteTel::Rejoindre(prenom),
+                    Declencheur::Relache,
+                    STYLE_PAGE,
+                );
+            }
+            VueTel::Attends => p.texte(page::TITRE, "La manche va commencer…", STYLE_PAGE),
+            VueTel::Choisis { curseur } => {
+                p.texte(page::TITRE, "Choisis un chiffre", STYLE_PAGE);
+                p.choix(page::CURSEUR, &OPTIONS_CHIFFRES, Oui::Oui);
+                // Le choix du carrousel est le curseur ; une option hors des dix garde
+                // celui de la vue.
+                let choisi = l
+                    .choix(page::CURSEUR)
+                    .and_then(|n| Chiffre::new(i64::from(n)))
+                    .unwrap_or(curseur);
+                p.tenir(Curseur(choisi));
+                p.bouton(
+                    page::PROPOSER,
+                    "Proposer",
+                    GesteTel::Proposer,
+                    Declencheur::Contact,
+                    STYLE_PAGE,
+                );
+            }
+            VueTel::Resultat { nombre, gagne } => {
+                let titre = match gagne {
+                    Oui::Oui => "Trouvé !",
+                    Oui::Non => "Raté…",
+                };
+                p.texte(page::TITRE, titre, STYLE_PAGE);
+                p.texte(Cle::nommee("nombre"), chiffre(nombre), STYLE_PAGE);
+            }
+        });
     }
 
     fn phase(&self) -> Etape {

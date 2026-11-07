@@ -37,7 +37,7 @@ use partie::Echec;
 pub const MAGIE: &[u8; 8] = b"SOIRTRC1";
 
 /// Le nom de chaque appel, par son indice dans la trace ([`indice_du_nom`]).
-pub const NOMS: [&str; 21] = [
+pub const NOMS: [&str; 22] = [
     "Bonjour",
     "Decrire",
     "Creer",
@@ -59,6 +59,7 @@ pub const NOMS: [&str; 21] = [
     "Memoire",
     "Proprietes",
     "Hypothese",
+    "Page",
 ];
 
 /// Les sections de la trace, par leur indice.
@@ -103,6 +104,7 @@ pub const fn indice_du_nom(a: &Appel<'_>) -> u8 {
         Appel::Memoire => 18,
         Appel::Proprietes => 19,
         Appel::Hypothese { .. } => 20,
+        Appel::Page { .. } => 21,
     }
 }
 

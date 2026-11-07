@@ -239,8 +239,8 @@ mod tests {
     #[test]
     fn les_octets_de_l_instantane_sont_figes() {
         assert_eq!(
-            VERSION_GARDE, 2,
-            "les octets de ce test sont ceux de la version 2"
+            VERSION_GARDE, 3,
+            "les octets de ce test sont ceux de la version 2, que la version 3 (lot 6) ne change pas"
         );
         let mut o = Vec::new();
         instantane_fige().ecrire(&mut o);

@@ -13,6 +13,7 @@ use crate::declaration::{Applicable, Declaration, Raison};
 use crate::etape::{Avant, Entree, Issue, Tenu};
 use crate::forme::{Aucun, Etat, Message};
 use crate::hasard::Hasard;
+use crate::page::{Locaux, Page, Recue};
 use crate::scene::{Montre, Scene};
 use crate::secret::{Absent, Autorite, Regard};
 use crate::temps::{Echeance, Maintenant, Reveil};
@@ -64,6 +65,15 @@ pub trait Jeu: Etat + Sized + 'static {
     fn vue_telephone(&self, r: &Regard) -> Montre<Self::VueTelephone>;
     /// Les octets d'une image citée par une scène, que le moteur n'a pas encore.
     fn ressource(&self, cle: Cle) -> Option<&[u8]>;
+
+    /// La page du téléphone (PHASE-3, § 2.10 ; ABI 4) : une fonction de la vue reçue
+    /// et de ce que le joueur fait en ce moment sur sa page. Elle ne lit pas l'état, ne
+    /// prédit rien, ne gère pas la connexion ; elle tourne sur le téléphone, à chaque
+    /// vue, chaque frappe et chaque changement de taille, et doit coûter peu (E19).
+    ///
+    /// Par défaut, une page vide. E21 refuse la page vide d'un jeu qui a des téléphones
+    /// (armé au lot 7).
+    fn page(_vue: &Recue<Self::VueTelephone>, _l: &Locaux<'_>, _p: &mut Page<Self>) {}
 
     /// La phase.
     fn phase(&self) -> Self::Phase;
@@ -189,6 +199,10 @@ impl<J: Jeu> Attente<'_, J> {
 
 /// Une demande au commun.
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Rendu porte sa scène par valeur, comme l'API du § 2.10 l'écrit ; une demande ne vit que le temps de `Jeu::demandes`, et la mettre en boîte casserait l'API des jeux (Tier list)"
+)]
 pub enum Demande<'d> {
     /// Décoder, recadrer au centre, réduire au carré, encoder (TL-60).
     Image {

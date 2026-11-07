@@ -15,7 +15,9 @@ use crate::declaration::{Accueil, ApplicableFil, DeclarationFil};
 use crate::demandes::{DemandeFil, ReponseFil};
 use crate::entrees::{CauseTenu, ComposantFil, Deplace, FinSaisie, Pointeur, Touche};
 use crate::format::ErreurFil;
+use crate::page::{LocauxFil, PageFil};
 use crate::scene::{Cle, Effet, Reglages};
+use crate::temps::Pas;
 use crate::valeurs::{Manette, Oui, TexteCourt};
 
 /// La version de l'enveloppe. Elle monte à chaque changement de la forme d'un
@@ -29,7 +31,14 @@ use crate::valeurs::{Manette, Oui, TexteCourt};
 /// 3 : [`ProprietesFil`] porte en plus `phases`, le nombre de variantes de `Phase`
 /// (E3), et `invariants`, les noms que le jeu déclare exiger (E4). Seuls les octets
 /// de `Retour::Proprietes` changent.
-pub const ABI: u32 = 3;
+///
+/// 4 (PHASE-3, § 6 et § 2.10) : la page du téléphone, `Appel::Page` et
+/// `Retour::Page`, à la fin de leurs enums ; dans la scène, la boîte d'un composant
+/// (`SorteNoeud::Composant { boite, composant }`), le panneau d'une modale et le nom
+/// de fichier d'un lien ; dans les entrées, le sélecteur d'où viennent des fichiers
+/// (`Composant::Fichiers::selecteur`) ; dans les réponses, les images que `Rendu` n'a
+/// pas dessinées. Les octets des autres variants ne bougent pas.
+pub const ABI: u32 = 4;
 
 /// Un appel du moteur au module.
 ///
@@ -152,6 +161,18 @@ pub enum Appel<'a> {
         /// L'appareil.
         appareil: u64,
     },
+    /// Lecture, sans état, sur le téléphone (ABI 4) : la page, depuis la vue reçue et
+    /// ce que le joueur fait sur sa page. Comme `Valider`, elle n'a pas besoin d'un
+    /// état créé : le téléphone n'appelle que `Bonjour`, `Decrire` et `Page`.
+    Page {
+        /// La vue reçue : une [`MontreFil`] encodée.
+        montre: &'a [u8],
+        /// Le pas de cette vue.
+        pas: Pas,
+        /// Ce que le joueur fait sur sa page.
+        #[serde(borrow)]
+        locaux: LocauxFil<'a>,
+    },
 }
 
 /// Lecture ou écriture : ce qu'un appel a le droit de faire à l'état (§ 3.4).
@@ -208,7 +229,8 @@ impl Appel<'_> {
             | Appel::Bot { .. }
             | Appel::Memoire
             | Appel::Proprietes
-            | Appel::Hypothese { .. } => SorteAppel::Lecture,
+            | Appel::Hypothese { .. }
+            | Appel::Page { .. } => SorteAppel::Lecture,
         }
     }
 }
@@ -275,6 +297,8 @@ pub enum Retour<'a> {
     Proprietes(ProprietesFil),
     /// À `Hypothese`.
     Hypothese(OuiFil),
+    /// À `Page` (ABI 4).
+    Page(PageFil),
 }
 
 /// Tous les combien l'épreuve lit l'hypothèse de la coupure transparente (E11), dans

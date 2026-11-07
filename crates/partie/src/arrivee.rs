@@ -116,6 +116,9 @@ pub enum ComposantArrivee {
     Fichiers {
         /// Le geste qui les a apportés.
         geste: IdGeste,
+        /// Le sélecteur d'où ils viennent, par sa clé dans la scène ; `None` : un dépôt
+        /// ou un collage (ABI 4).
+        selecteur: Option<jeu_abi::Cle>,
         /// Les fichiers.
         fichiers: Vec<FichierRecu>,
     },
@@ -131,8 +134,13 @@ impl ComposantArrivee {
                 fin: *fin,
             },
             ComposantArrivee::Deplace(d) => ComposantFil::Deplace(*d),
-            ComposantArrivee::Fichiers { geste, fichiers } => ComposantFil::Fichiers {
+            ComposantArrivee::Fichiers {
+                geste,
+                selecteur,
+                fichiers,
+            } => ComposantFil::Fichiers {
                 geste: *geste,
+                selecteur: *selecteur,
                 fichiers: fichiers.clone(),
             },
         }
@@ -144,8 +152,8 @@ impl ComposantArrivee {
 pub enum ReponseArrivee {
     /// L'image produite.
     Image(Result<Vec<u8>, EchecDemande>),
-    /// Le rendu produit.
-    Rendu(Result<Vec<u8>, EchecDemande>),
+    /// Le rendu produit, et le nombre d'images qu'il n'a pas dessinées (ABI 4).
+    Rendu(Result<(Vec<u8>, u32), EchecDemande>),
     /// Les octets lus.
     Lu(Result<Vec<u8>, EchecDemande>),
     /// Le téléchargement est donné, ou la ligne écrite.
@@ -157,7 +165,13 @@ impl ReponseArrivee {
     pub fn fil(&self) -> ReponseFil<'_> {
         match self {
             ReponseArrivee::Image(r) => ReponseFil::Image(r.as_deref().map_err(|e| *e)),
-            ReponseArrivee::Rendu(r) => ReponseFil::Rendu(r.as_deref().map_err(|e| *e)),
+            ReponseArrivee::Rendu(r) => ReponseFil::Rendu(match r {
+                Ok((octets, non_dessinees)) => Ok(jeu_abi::ImageRendue {
+                    octets,
+                    non_dessinees: *non_dessinees,
+                }),
+                Err(e) => Err(*e),
+            }),
             ReponseArrivee::Lu(r) => ReponseFil::Lu(r.as_deref().map_err(|e| *e)),
             ReponseArrivee::Fait(r) => ReponseFil::Fait(*r),
         }

@@ -336,6 +336,7 @@ pub(crate) const fn nom_appel(a: &Appel<'_>) -> &'static str {
         Appel::Memoire => "Memoire",
         Appel::Proprietes => "Proprietes",
         Appel::Hypothese { .. } => "Hypothese",
+        Appel::Page { .. } => "Page",
     }
 }
 

@@ -68,9 +68,9 @@ fn decodage_refuse_les_formes_invalides() {
             .map_err(|e| e.quoi),
         Err(Illisible::Varint)
     );
-    // Un variant inconnu : `Appel` en a 21 dans l'ABI 2, numérotés de 0 à 0x14.
+    // Un variant inconnu : `Appel` en a 22 dans l'ABI 4, numérotés de 0 à 0x15.
     assert_eq!(
-        decoder::<Appel<'_>>(&h("15"))
+        decoder::<Appel<'_>>(&h("16"))
             .map(|_| ())
             .map_err(|e| e.quoi),
         Err(Illisible::Valeur)

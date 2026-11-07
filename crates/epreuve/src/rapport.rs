@@ -94,7 +94,7 @@ pub struct Rapport {
     pub module: [u8; 32],
     /// Le plan joué.
     pub plan: Plan,
-    /// Un résultat par contrôle, de E1 à E20 : tous figurent, demandés ou non.
+    /// Un résultat par contrôle, de E1 à E21 : tous figurent, demandés ou non.
     pub controles: Vec<ResultatControle>,
     /// La copie native a-t-elle été comparée ?
     pub natif: bool,

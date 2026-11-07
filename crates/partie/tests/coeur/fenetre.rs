@@ -102,7 +102,7 @@ fn texte(s: &SceneFil, cle: jeu_abi::Cle) -> Option<String> {
             | SorteNoeud::Bouton { .. }
             | SorteNoeud::CompteARebours { .. }
             | SorteNoeud::Qr { .. }
-            | SorteNoeud::Composant(_)
+            | SorteNoeud::Composant { .. }
             | SorteNoeud::Avertissements { .. }
             | SorteNoeud::Surface { .. }
             | SorteNoeud::Definitif => None,

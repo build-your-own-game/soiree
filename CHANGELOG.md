@@ -21,6 +21,25 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 6 : l'ABI 4
+
+**L'ABI change** : `jeu_abi::ABI` vaut 4, et un module de l'ABI 3 est refusé au chargement ; chaque jeu se recompile contre ce commun (`conception/PHASE-3.md`, § 2.10, § 6, § 8.3 et lot 6 ; `conception/LOTS-PHASE-3.md`, « Lot 6 »). Les empreintes des modules et de leur forme changent avec.
+
+- **La page du téléphone** est une fonction du module (P19) : `Jeu::page(vue: &Recue<Self::VueTelephone>, l: &Locaux<'_>, p: &mut Page<Self>)`, une page vide par défaut. Elle ne lit que la vue reçue et les locaux (l'écran, le texte des champs nettoyé par `Texte<L>`, les choix, les maintenus appuyés, les croix, ce que la page a retenu, les capacités) ; elle s'écrit en flux : `colonne`, `rangee`, `grille`, `pile`, `texte`, `image`, `image_teintee`, `compte_a_rebours`, `bouton` (au contact ou au relâchement), `maintenu`, `croix`, `champ` (`ChampPage`), `choix` (balayable : un carrousel), `tenir`, `retenir` (1 Kio). Sur le fil : `Appel::Page` et `Retour::Page(PageFil)`, une lecture sans état, que la colle traite comme `Valider` ; un jeu sans téléphone y répond `Illisible`. Le commun valide une page comme ce qui vient de l'extérieur (`jeu_abi::valider_page` : 256 nœuds, 16 étages, clés uniques parmi les frères, textes, options, tailles bornés, assets déclarés, gestes sous `limites.geste`).
+- **La scène** : un composant peut avoir une boîte (`Scene::composant_dans(cle, boite, c)`, `SorteNoeud::Composant { boite: Option<Rect>, composant }`, vérifiée dans le repère) ; `ComposantVu::Modale` gagne `panneau`, `ComposantVu::Lien` gagne `fichier` ; un `Champ` ne demande plus qu'une ligne (`Lignes::Une`), sinon la vue est invalide (`DefautScene::ChampMultiligne`).
+- **Les entrées et les réponses** : `Composant::Fichiers` dit son sélecteur (`selecteur: Option<Cle>`, `None` pour un dépôt ou un collage ; des fichiers qui nomment leur sélecteur ne passent que par lui) ; `Reponse::Rendu` rend une `ImageRendue { octets, non_dessinees }` (TL-56). `Demande::Telecharger` ne change pas.
+- **La garde du cœur** : `partie::VERSION_GARDE` vaut 3 (une arrivée de fichiers et un rendu y changent de forme).
+- **L'épreuve** : **E21, « Pages »**, dans le plan par défaut et dans l'étape 4 du CONTRAT : chaque vue envoyée aux téléphones des soirées (distinctes, au plus 256) donne, dans wasmtime, une page valide, sous des locaux vides puis tirés au hasard, et chaque geste et tenu de la page passe `Valider` ; sans objet pour un jeu sans téléphone ; la page vide d'un jeu à téléphones n'est pas encore refusée (lot 7). **E19** juge chaque page sur `BudgetsE19::page`, une lecture courante divisée par `MARGE_TELEPHONE` (4, choisi). **E1** refuse un module livré au-delà de `moteur_commun::TAILLE_MODULE_MAX`, 4 Mio (choisi). Trois fautifs nouveaux : `module-trop-gros` (E1), `page-qui-panique` et `page-qui-envoie-un-geste-invalide` (E21). Le socle des fautifs et `devine` ont une page.
+- `moteur-commun` : `TAILLE_MODULE_MAX` ; `trace::NOMS` gagne `Page`. `reecriture::Reecrit` gagne `taille_originale` ; `moteur_wasmtime::ModuleCharge::taille_livree`.
+- L'exemple `cargo run --release -p epreuve --example cout_d_un_noeud -- <ardoise_module.wasm>` mesure le carburant d'un nœud de scène.
+
+#### Passer à cette version
+
+1. Recompile ton module : un module de l'ABI 3 est refusé (« le module parle l'ABI 3, le moteur de 4 à 4 »).
+2. Si ton jeu écrit `ComposantVu::Modale { fermer }`, ajoute `panneau` (la boîte de la fenêtre) ; s'il filtre `Composant::Fichiers { geste, fichiers }`, ajoute `..` (ou lis `selecteur`) ; s'il lit `Reponse::Rendu(Ok(o))`, `o` est une `ImageRendue` : `o.octets`, et `o.non_dessinees` à annoncer ; s'il filtre `SorteNoeud::Composant(c)` (dans ses tests), écris `SorteNoeud::Composant { composant: c, .. }` ; un `ComposantVu::Champ` doit avoir `lignes: Lignes::Une`. Tier list est adapté ainsi dans son dépôt, sans changer son comportement.
+3. Un jeu à téléphones peut écrire sa page dès maintenant (`Jeu::page`, voir `crates/exemples/devine`) ; elle sera exigée au lot 7 (E21 refusera la page vide). Sans page, rien ne change.
+4. Le rapport de l'épreuve a un contrôle de plus, E21 ; un jeu sans téléphone l'a sans objet.
+
 ### Phase 3, lot 5 : le relais et la soirée native
 
 Rien ne change pour l'API d'un jeu, ni pour l'ABI (`jeu_abi::ABI` vaut 3), ni pour les empreintes, ni pour ce que l'épreuve joue et juge (`conception/PHASE-3.md`, § 2.4, § 2.5, § 8.1 et lot 5 ; `conception/LOTS-PHASE-3.md`, « Lot 5 »).

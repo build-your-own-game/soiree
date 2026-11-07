@@ -225,6 +225,7 @@ pub fn plan() -> Plan {
     let reecrit = Reecrit {
         octets: Vec::new(),
         empreinte_originale: [1; 32],
+        taille_originale: 0,
         empreinte: [2; 32],
         constat: Constat {
             imports: Vec::new(),

@@ -49,11 +49,15 @@ pub enum IdControle {
     /// donnent, appel par appel, ce qu'ils donnent dans wasmtime (PHASE-3, § 8.3, lot
     /// 3b). Un contrôle long, hors du plan par défaut : `--navigateurs` le demande.
     E20,
+    /// Pages : chaque vue de téléphone d'une soirée donne une page valide, sous des
+    /// locaux tirés au hasard, et ce qu'elle envoie passe `Valider` (PHASE-3, § 8.3,
+    /// lot 6). Un contrôle rapide, en natif, dans le plan par défaut.
+    E21,
 }
 
 impl IdControle {
     /// Tous les contrôles, dans l'ordre.
-    pub const TOUS: [IdControle; 20] = [
+    pub const TOUS: [IdControle; 21] = [
         IdControle::E1,
         IdControle::E2,
         IdControle::E3,
@@ -74,12 +78,13 @@ impl IdControle {
         IdControle::E18,
         IdControle::E19,
         IdControle::E20,
+        IdControle::E21,
     ];
 
     /// Les contrôles du plan par défaut, standard comme court : tous, sauf E20, un
     /// contrôle long qu'on demande par `--navigateurs` (PHASE-3, § 8.3 et P17 : un code
     /// 0 sans lui suffit pour jouer ; la publication l'attend).
-    pub const DU_PLAN: [IdControle; 19] = [
+    pub const DU_PLAN: [IdControle; 20] = [
         IdControle::E1,
         IdControle::E2,
         IdControle::E3,
@@ -99,13 +104,14 @@ impl IdControle {
         IdControle::E17,
         IdControle::E18,
         IdControle::E19,
+        IdControle::E21,
     ];
 
-    /// Les contrôles écrits : tous, depuis les étapes 5 et 6 du § 8.9, et E20 depuis le
-    /// lot 3b de la phase 3.
-    pub const ECRITS: [IdControle; 20] = IdControle::TOUS;
+    /// Les contrôles écrits : tous, depuis les étapes 5 et 6 du § 8.9, E20 depuis le
+    /// lot 3b de la phase 3, et E21 depuis le lot 6.
+    pub const ECRITS: [IdControle; 21] = IdControle::TOUS;
 
-    /// Son nom court, « E1 » à « E20 ».
+    /// Son nom court, « E1 » à « E21 ».
     pub const fn nom(self) -> &'static str {
         match self {
             IdControle::E1 => "E1",
@@ -128,6 +134,7 @@ impl IdControle {
             IdControle::E18 => "E18",
             IdControle::E19 => "E19",
             IdControle::E20 => "E20",
+            IdControle::E21 => "E21",
         }
     }
 
@@ -154,10 +161,11 @@ impl IdControle {
             IdControle::E18 => "Gel",
             IdControle::E19 => "Budgets",
             IdControle::E20 => "Deux moteurs",
+            IdControle::E21 => "Pages",
         }
     }
 
-    /// Le contrôle de ce nom, « E1 » à « E20 ».
+    /// Le contrôle de ce nom, « E1 » à « E21 ».
     pub fn depuis_nom(nom: &str) -> Option<IdControle> {
         IdControle::TOUS
             .into_iter()

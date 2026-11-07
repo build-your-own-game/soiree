@@ -337,3 +337,85 @@ fn seconde_lecture_d_une_issue() {
     assert_eq!((l.varint(), l.varint()), (1, 1 << 20));
     assert!(l.fini());
 }
+
+proptest! {
+    /// `Appel::Page` (ABI 4), lu champ par champ par le lecteur indépendant, sur des
+    /// locaux tirés au hasard : l'écran, les champs, les choix, les appuyés, les croix,
+    /// le retenu.
+    #[test]
+    fn seconde_lecture_de_la_page(
+        montre in proptest::collection::vec(any::<u8>(), 0..32),
+        pas in any::<u64>(),
+        (largeur, hauteur) in (any::<u16>(), any::<u16>()),
+        champs in proptest::collection::vec((any::<u64>(), "[a-zé ]{0,12}"), 0..4),
+        choix in proptest::collection::vec((any::<u64>(), any::<u32>()), 0..4),
+        appuyes in proptest::collection::vec(any::<u64>(), 0..4),
+        croix in proptest::collection::vec((any::<u64>(), 0usize..9), 0..4),
+        retenu in proptest::option::of(proptest::collection::vec(any::<u8>(), 0..16)),
+    ) {
+        let champs_fil: Vec<(jeu_abi::Cle, &str)> = champs
+            .iter()
+            .map(|(c, t)| (jeu_abi::Cle::du_fil(*c), t.as_str()))
+            .collect();
+        let locaux = jeu_abi::LocauxFil {
+            ecran: jeu_abi::EcranTelephone {
+                largeur,
+                hauteur,
+                ..jeu_abi::EcranTelephone::ORDINAIRE
+            },
+            champs: champs_fil,
+            choix: choix.iter().map(|(c, n)| (jeu_abi::Cle::du_fil(*c), *n)).collect(),
+            appuyes: appuyes.iter().map(|c| jeu_abi::Cle::du_fil(*c)).collect(),
+            croix: croix
+                .iter()
+                .map(|(c, d)| (jeu_abi::Cle::du_fil(*c), jeu_abi::Direction8::TOUTES[*d]))
+                .collect(),
+            retenu: retenu.as_deref(),
+            capacites: Capacites::AUCUNE,
+        };
+        let octets = encode(&Appel::Page {
+            montre: &montre,
+            pas: jeu_abi::Pas::du_fil(pas),
+            locaux,
+        });
+        let mut l = Lecteur::new(&octets);
+        prop_assert_eq!(l.varint(), 21, "Appel::Page");
+        prop_assert_eq!(l.tranche(), montre.as_slice());
+        prop_assert_eq!(l.varint(), pas);
+        prop_assert_eq!((l.varint(), l.varint()), (u64::from(largeur), u64::from(hauteur)));
+        prop_assert_eq!(
+            (l.varint(), l.varint(), l.varint(), l.varint(), l.varint()),
+            (0, 0, 0, 0, 0),
+            "sans marge, en portrait"
+        );
+        prop_assert_eq!(l.varint(), u64::try_from(champs.len()).unwrap());
+        for (c, t) in &champs {
+            prop_assert_eq!(l.varint(), *c);
+            prop_assert_eq!(l.tranche(), t.as_bytes());
+        }
+        prop_assert_eq!(l.varint(), u64::try_from(choix.len()).unwrap());
+        for (c, n) in &choix {
+            prop_assert_eq!((l.varint(), l.varint()), (*c, u64::from(*n)));
+        }
+        prop_assert_eq!(l.varint(), u64::try_from(appuyes.len()).unwrap());
+        for c in &appuyes {
+            prop_assert_eq!(l.varint(), *c);
+        }
+        prop_assert_eq!(l.varint(), u64::try_from(croix.len()).unwrap());
+        for (c, d) in &croix {
+            prop_assert_eq!((l.varint(), l.varint()), (*c, u64::try_from(*d).unwrap()));
+        }
+        match &retenu {
+            None => prop_assert_eq!(l.octet(), 0),
+            Some(r) => {
+                prop_assert_eq!(l.octet(), 1);
+                prop_assert_eq!(l.tranche(), r.as_slice());
+            }
+        }
+        for _ in 0..6 {
+            prop_assert_eq!((l.varint(), l.varint()), (1, 0), "Non(NonSupportee)");
+        }
+        prop_assert_eq!((l.varint(), l.octet()), (0, 0), "Portrait, pas de prénom");
+        prop_assert!(l.fini());
+    }
+}

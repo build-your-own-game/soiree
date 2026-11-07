@@ -42,7 +42,7 @@ use wasmtime::{Config, Engine, Module, Strategy};
 
 pub use horloge::TIC_MS;
 pub use instance::{FabriqueWasm, InstanceWasm};
-pub use moteur_commun::{BUDGET_DE_CHARGEMENT, RefusModule};
+pub use moteur_commun::{BUDGET_DE_CHARGEMENT, RefusModule, TAILLE_MODULE_MAX};
 
 /// L'instantané d'une instance : celui du commun, la mémoire hors des quatre zones
 /// (PHASE-3, P3).
@@ -215,6 +215,12 @@ impl ModuleCharge {
     )]
     pub fn empreinte(&self) -> [u8; 32] {
         self.reecrit.empreinte_originale
+    }
+
+    /// La taille du module livré, avant réécriture, en octets (E1 la borne à
+    /// [`moteur_commun::TAILLE_MODULE_MAX`]).
+    pub fn taille_livree(&self) -> u64 {
+        self.reecrit.taille_originale
     }
 
     /// Le module réécrit.

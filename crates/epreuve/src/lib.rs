@@ -18,9 +18,9 @@
 //!
 //! # Ce qu'elle contrôle
 //!
-//! E1 à E19 (§ 7.2), chacun avec son contrôle négatif dans `exemples/fautifs`. Voir
-//! le module `epreuve` (le fichier `src/epreuve.rs`) pour ce que lit chaque
-//! contrôle. Et E20, « Deux moteurs » (PHASE-3, § 8.3, lot 3b), un contrôle long que
+//! E1 à E19 (§ 7.2), et E21, « Pages » (PHASE-3, § 8.3, lot 6), chacun avec son
+//! contrôle négatif dans `exemples/fautifs`. Voir le module `epreuve` (le fichier
+//! `src/epreuve.rs`) pour ce que lit chaque contrôle. Et E20, « Deux moteurs » (PHASE-3, § 8.3, lot 3b), un contrôle long que
 //! `--navigateurs` demande : les journaux de l'épreuve repris dans de vrais navigateurs
 //! par `soiree-banc rejouer`, et comparés appel par appel au relevé de wasmtime ; son
 //! contrôle négatif est un moteur fautif ([`CommunFautif::FausserApres`]).
@@ -56,6 +56,7 @@ mod fichiers;
 mod gel;
 mod json;
 mod ligne;
+mod pages;
 mod pires_cas;
 mod plan;
 mod proprietes;
@@ -69,8 +70,8 @@ mod tirage;
 
 pub use budgets::{
     ARRIERE_PAS, BUDGETS_E19, BudgetsE19, FIXE_NS, IMAGE_COURANTE_NS, IMAGE_MAX_NS, MARGE_MACHINE,
-    MARGE_NAVIGATEUR, PART_DES_ENTREES_POUR_CENT, PART_DU_JEU_POUR_CENT, PS_PAR_KIO_REMIS_A_ZERO,
-    PS_PAR_UNITE,
+    MARGE_NAVIGATEUR, MARGE_TELEPHONE, PART_DES_ENTREES_POUR_CENT, PART_DU_JEU_POUR_CENT,
+    PS_PAR_KIO_REMIS_A_ZERO, PS_PAR_UNITE,
 };
 pub use dynamique::{FabriqueDynamique, InstanceDynamique};
 pub use epreuve::{eprouver, eprouver_octets, rejouer};

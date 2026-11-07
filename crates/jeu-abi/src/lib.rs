@@ -55,6 +55,7 @@ mod demandes;
 mod entrees;
 mod enveloppe;
 mod format;
+mod page;
 mod scene;
 mod temps;
 mod valeurs;
@@ -68,7 +69,9 @@ pub use declaration::{
     Places, Prevision, ReglesTenuFil, Repartition, SorteAsset, TelephonesFil, Voulues,
     raison_suffisante,
 };
-pub use demandes::{DemandeFil, EchecDemande, Flux, FormatImage, IdDemande, Reponse, ReponseFil};
+pub use demandes::{
+    DemandeFil, EchecDemande, Flux, FormatImage, IdDemande, ImageRendue, Reponse, ReponseFil,
+};
 pub use entrees::{
     CauseTenu, Composant, ComposantFil, Deplace, FichierRecu, FinSaisie, GenrePointeur, IdFichier,
     IdGeste, Mods, PhasePointeur, PhaseTouche, Pointeur, Touche,
@@ -82,6 +85,12 @@ pub use enveloppe::{
 pub use format::{
     ErreurDecodage, ErreurEncodage, ErreurFil, Fnv1a, Illisible, decoder, encoder, fnv1a64,
     fnv1a64_suite,
+};
+pub use page::{
+    COLONNES_MAX, Clavier, Declencheur, DefautPage, Direction8, Directions, EcranTelephone, Envoi,
+    LocauxFil, Marges, NOEUDS_PAGE_MAX, NoeudPage, OPTIONS_MAX, PROFONDEUR_PAGE_MAX, PX_PAGE,
+    PageFil, RETENU_MAX, SorteNoeudPage, StylePage, TEXTE_PAGE_MAX, TaillePage, TenuPage,
+    valider_page,
 };
 pub use scene::{
     Alignement, Animation, ClavierBrut, Cle, ComposantVuFil, CompteAReboursFil, Coupe, Courbe,

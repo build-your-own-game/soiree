@@ -319,6 +319,24 @@ Rien de ce qui suit n'a de sens sans rendu ni page, qui sont la phase 2 (§ 8, �
 
 **Dans Punchline.** Rien à changer. Sur son module (`--wasm … --controles E8`, plan standard, 2026-11-05, machine de l'hôte) : E8 réussi, 2 820 évaluations, aucun échec (86 avant). Les autres changements de la revue (règles nouvelles de l'étape 1, départ pour de bon, doublons, arriérés de E19, plancher de E16) sont au `CHANGELOG.md` ; ils peuvent faire échouer un jeu qui passait.
 
+## 24. L'ABI 4 : la page du téléphone, la boîte d'un composant, le sélecteur, le rendu — accordé (phase 3, lot 6)
+
+**Les besoins.** Tier list, BESOINS-COMMUN § 7 (pas de boîte pour un composant ; un lien sans nom de fichier), § 8 (de quel sélecteur viennent des fichiers ; les images que le rendu n'a pas dessinées, TL-56) ; le besoin 17 ici (un champ d'une seule ligne) ; la page téléphone de Punchline et de Sidequest (besoin 20, la phase 2), avec le carrousel de Sidequest (CAHIER § 6.1). Décidé dans `PHASE-3.md`, § 6 et § 2.10 ; fait au lot 6 (`LOTS-PHASE-3.md`, « Lot 6 »).
+
+**La réponse du commun.** `jeu_abi::ABI` vaut 4 :
+- la page du téléphone est une fonction du module : `Jeu::page(vue: &Recue<VueTelephone>, l: &Locaux, p: &mut Page<Self>)`, une page vide par défaut ; elle s'écrit en flux (`colonne`, `rangee`, `grille`, `pile`, `texte`, `image`, `image_teintee`, `compte_a_rebours`, `bouton`, `maintenu`, `croix`, `champ`, `choix`, `tenir`, `retenir`) ; le carrousel de Sidequest est un `choix` balayable, ses personnages dans leur couleur des `image_teintee`, ses accessoires superposés une `pile` (tranché sur son cahier, sans son agent : à confirmer au lot 7) ;
+- un composant peut avoir une boîte : `Scene::composant_dans(cle, boite, c)` ; `Scene::composant` reste sans boîte ;
+- `ComposantVu::Modale { fermer, panneau }`, `ComposantVu::Lien { nom, ressource, fichier }` ;
+- `Composant::Fichiers { geste, selecteur, fichiers }`, `selecteur: Option<Cle>` (`None` : un dépôt ou un collage) ;
+- `Reponse::Rendu(Result<ImageRendue, EchecDemande>)`, `ImageRendue { octets, non_dessinees }` ;
+- un champ ne demande plus qu'une ligne (`Lignes::Une`) : une vue qui en demande plus est invalide.
+
+L'épreuve gagne E21, « Pages », et E19 juge chaque page sur une lecture divisée par une marge de téléphone de 4 ; E1 refuse un module livré au-delà de 4 Mio (`TAILLE_MODULE_MAX`).
+
+**Dans Tier list**, adapté au lot 6 dans son dépôt, sans changer son comportement : `panneau` vaut le voile entier, `Composant::Fichiers { geste, fichiers: f, .. }`, `o.octets` du rendu, son champ d'étiquette en `Lignes::Une`, et ses tests. Le vrai usage (boîtes, sélecteur nommé, avis des images non dessinées) vient au lot 7, par son agent.
+
+**Dans Punchline et Sidequest**, rien ne casse : leur page reste vide jusqu'au lot 7, et E21 ne refuse pas encore la page vide.
+
 ## Les changements d'API, précisément
 
 Aucun changement n'est une rupture de type pour un jeu qui compile aujourd'hui : chaque ajout est une fonction ou une méthode nouvelle, ou une méthode cachée avec un corps par défaut. Les ruptures de sens sont marquées.
@@ -339,12 +357,16 @@ Aucun changement n'est une rupture de type pour un jeu qui compile aujourd'hui :
 | `epreuve` | `Panne::du_telephone() -> Oui` ; les pannes de téléphone sans objet pour un jeu sans téléphone | ajout ; **sens** (rapport) |
 | `epreuve` | E11 lit l'hypothèse tous les 10 pas, pendant toute la coupure | **sens** |
 | `exemples` | `ardoise`, nouveau ; `devine::attente` nomme les joueurs attendus ; le socle des fautifs attend quatre secondes au salon | exemples |
+| `jeu-abi` (ABI 4, lot 6 de la phase 3) | `Appel::Page`, `Retour::Page`, le module `page` ; `SorteNoeud::Composant { boite, composant }` ; `ComposantVuFil::Modale::panneau`, `ComposantVuFil::Lien::fichier` ; `Composant::Fichiers::selecteur` ; `Reponse::Rendu` porte une `ImageRendue` | **rupture** : un jeu qui écrit `Modale`, filtre `Composant::Fichiers` sans `..`, lit `Reponse::Rendu(Ok(_))` ou filtre `SorteNoeud::Composant(_)` se corrige (Tier list, adapté) |
+| `jeu` (lot 6) | `Jeu::page`, avec un corps par défaut ; `Recue`, `Locaux`, `Page`, `ChampPage` ; `Scene::composant_dans` | ajout |
+| `partie` (lot 6) | `valider_scene` refuse un champ de plus d'une ligne (`DefautScene::ChampMultiligne`), vérifie la boîte d'un composant et le panneau d'une modale ; `VERSION_GARDE` = 3 | **sens** |
+| `epreuve` (lot 6) | E21 ; E19 juge `Page` ; E1 juge la taille du module livré | **sens** (rapport) |
 
 `INTERFACE.md` n'est pas modifié par ce chantier : § 2.13 (`Coupure`, « à son début »), § 3.6 (les passes, et la version), § 4.3 (les tenus) et § 8.5 (l'API de `reecriture`) sont à mettre à jour par le mainteneur d'après ce tableau.
 
 ## Ce qui n'est pas fait
 
 - ~~**Le téléphone simulé ne redit pas son état tenu.**~~ Fait en phase 2 (le monde simulé) : la page simulée redit son tenu toutes les 250 ms, fait maintenant (REM-13, `RESTE-PHASE-1.md`, point 22). La page réelle de la phase 2 devra en faire autant.
-- **Le coût d'un nœud de scène** reste d'environ 4 800 unités de carburant (mesuré sur `ardoise`) ; `jeu::Scene` n'est pas optimisée.
+- **Le coût d'un nœud de scène** reste d'environ 4 800 unités de carburant (mesuré sur `ardoise`) ; `jeu::Scene` n'est pas optimisée. *Remesuré au lot 6 de la phase 3* (`epreuve/examples/cout_d_un_noeud.rs`, `LOTS-PHASE-3.md`, « Lot 6 ») : un rectangle d'`ardoise` coûte 2 395 unités en médiane avant l'ABI 4 comme après.
 - **Les budgets de E19** restent des points de départ (question 12).
 - **Les modules des jeux n'ont pas été recompilés** contre ce commun : les mesures de ce document portent sur les modules livrés, avec leurs contournements.

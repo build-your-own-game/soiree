@@ -305,26 +305,29 @@ pub(crate) fn fixes_satures(scene: &jeu_abi::SceneFil) -> u64 {
                 voir(decalage.0);
                 voir(decalage.1);
             }
-            SorteNoeud::Composant(ComposantVuFil::EnPlace { style: st, .. }) => {
-                style(st, &mut voir);
+            SorteNoeud::Composant { boite, composant } => {
+                if let Some(b) = boite {
+                    rect(b, &mut voir);
+                }
+                match composant {
+                    ComposantVuFil::EnPlace { style: st, .. } => style(st, &mut voir),
+                    ComposantVuFil::Deplacables {
+                        seuil,
+                        bord,
+                        vitesse_max,
+                        ..
+                    } => {
+                        voir(*seuil);
+                        voir(*bord);
+                        voir(*vitesse_max);
+                    }
+                    ComposantVuFil::Modale { panneau, .. } => rect(panneau, &mut voir),
+                    ComposantVuFil::Champ { .. }
+                    | ComposantVuFil::Selecteur { .. }
+                    | ComposantVuFil::Lien { .. } => {}
+                }
             }
-            SorteNoeud::Composant(ComposantVuFil::Deplacables {
-                seuil,
-                bord,
-                vitesse_max,
-                ..
-            }) => {
-                voir(*seuil);
-                voir(*bord);
-                voir(*vitesse_max);
-            }
-            SorteNoeud::Composant(
-                ComposantVuFil::Champ { .. }
-                | ComposantVuFil::Selecteur { .. }
-                | ComposantVuFil::Modale { .. }
-                | ComposantVuFil::Lien { .. },
-            )
-            | SorteNoeud::Definitif => {}
+            SorteNoeud::Definitif => {}
         }
     }
     n

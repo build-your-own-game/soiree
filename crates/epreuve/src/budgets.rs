@@ -39,6 +39,7 @@
 //! | les images des soirées | leur 99ᵉ centile | [`BudgetsE19::image_courante`] |
 //! | chaque lecture courante du cœur (`Regarder`, `Etat`, `Valider`, `Ressources`) | son maximum | [`BudgetsE19::lecture`] |
 //! | la vue de l'écran de chaque pire cas (E16) | son maximum | [`BudgetsE19::pire_cas`] |
+//! | chaque page du téléphone (`Page`, appelée par E21) | son maximum | [`BudgetsE19::page`] |
 //!
 //! Une vue de pire cas est construite depuis les limites déclarées pour être la plus
 //! lourde : elle a droit à l'image la plus longue que le CONTRAT permet. Une lecture
@@ -134,6 +135,12 @@
 //! soit 155 800 unités pour `devine` (2 116 Kio de zones) et 1 333 400 pour 25 668
 //! Kio.
 //!
+//! **La page du téléphone** (PHASE-3, § 2.10, lot 6) tourne sur le fil principal du
+//! téléphone, à chaque vue, chaque frappe et chaque changement de taille, sans Worker.
+//! Aucun budget ni aucune durée ne visent encore un téléphone : `Page` a le budget d'une
+//! lecture courante divisé par [`MARGE_TELEPHONE`], 4, choisi (question 22 au
+//! mainteneur). Elle est jugée sur les pages que E21 appelle, coût fixe compris.
+//!
 //! # Ce qui n'est pas jugé
 //!
 //! La forme canonique, la garde, `Creer`, `Bonjour` et `Decrire` ne tombent pas
@@ -172,6 +179,11 @@ pub const PART_DU_JEU_POUR_CENT: u64 = 50;
 /// Choisi : la part de celle du jeu laissée aux entrées de l'image, l'autre allant à
 /// une lecture de la scène, en pour cent. Provisoire.
 pub const PART_DES_ENTREES_POUR_CENT: u64 = 50;
+/// Choisi : le facteur entre la machine de la mesure et un téléphone, pour la page
+/// (`Appel::Page`), qui tourne sur le fil principal du téléphone. Aucun téléphone n'est
+/// mesuré (PHASE-3, § 2.10 ; question 22) : provisoire, jusqu'à la mesure sur de vrais
+/// téléphones (§ 8.5).
+pub const MARGE_TELEPHONE: u64 = 4;
 /// Le CONTRAT : « aucune image au-delà de 33 ms en jeu ».
 pub const IMAGE_MAX_NS: u64 = 33_000_000;
 /// Le CONTRAT : « au moins 60 images par seconde ».
@@ -201,6 +213,9 @@ pub struct BudgetsE19 {
     pub lecture: u64,
     /// La vue de l'écran de chaque pire cas : depuis 33 ms.
     pub pire_cas: u64,
+    /// Chaque page du téléphone (`Appel::Page`, E21) : une lecture courante divisée par
+    /// [`MARGE_TELEPHONE`].
+    pub page: u64,
 }
 
 /// `duree_ns`, la part du jeu et une part de l'image, en unités de carburant.
@@ -225,12 +240,14 @@ pub const BUDGETS_E19: BudgetsE19 = BudgetsE19 {
     image_courante: en_unites(IMAGE_COURANTE_NS, PART_DES_ENTREES_POUR_CENT),
     lecture: en_unites(IMAGE_COURANTE_NS, 100 - PART_DES_ENTREES_POUR_CENT),
     pire_cas: en_unites(IMAGE_MAX_NS, 100 - PART_DES_ENTREES_POUR_CENT),
+    page: en_unites(IMAGE_COURANTE_NS, 100 - PART_DES_ENTREES_POUR_CENT) / MARGE_TELEPHONE,
 };
 
 // Une vue de pire cas a droit à l'image la plus longue ; une lecture courante, à une
 // image de 60 par seconde : la séparation tient à la compilation.
 const _: () = assert!(BUDGETS_E19.lecture < BUDGETS_E19.pire_cas);
 const _: () = assert!(BUDGETS_E19.image_courante < BUDGETS_E19.image_max);
+const _: () = assert!(BUDGETS_E19.page < BUDGETS_E19.lecture);
 
 impl BudgetsE19 {
     /// Le coût fixe d'un appel d'un module dont le moteur remet `octets_remis_a_zero`
@@ -259,13 +276,14 @@ impl BudgetsE19 {
             },
         );
         format!(
-            "provisoires, non fixés par le CONTRAT (bornes choisies au-dessus de mesures faites le 2026-11-04 dans wasmtime sur un Apple M5 : {} ps par unité, choisis, quand la mesure des appels lourds donne de 25 à 63 ps en médiane ; marge {} choisie pour le navigateur et l'ordinateur de la soirée ; la moitié de l'image au jeu) : entrées d'une image {} unités au plus, {} au 99ᵉ centile ; lecture courante {} au plus ; vue d'un pire cas {} au plus ; {fixe}",
+            "provisoires, non fixés par le CONTRAT (bornes choisies au-dessus de mesures faites le 2026-11-04 dans wasmtime sur un Apple M5 : {} ps par unité, choisis, quand la mesure des appels lourds donne de 25 à 63 ps en médiane ; marge {} choisie pour le navigateur et l'ordinateur de la soirée ; la moitié de l'image au jeu) : entrées d'une image {} unités au plus, {} au 99ᵉ centile ; lecture courante {} au plus ; vue d'un pire cas {} au plus ; page du téléphone {} au plus (une lecture divisée par une marge de téléphone de {MARGE_TELEPHONE}, choisie, aucun téléphone n'étant mesuré) ; {fixe}",
             self.ps_par_unite,
             self.marge,
             self.image_max,
             self.image_courante,
             self.lecture,
             self.pire_cas,
+            self.page,
         )
     }
 }
@@ -455,6 +473,33 @@ pub(crate) fn juger_les_pires_cas(
     (c, notes)
 }
 
+/// E19 sur les pages du téléphone (`Page`, appelées par E21) : chacune sous
+/// [`BudgetsE19::page`], coût fixe compris.
+pub(crate) fn juger_les_pages(
+    b: &BudgetsE19,
+    carburants: &[u64],
+    fixe: u64,
+) -> (Compte, Vec<String>) {
+    let mut c = Compte::default();
+    let mut notes = Vec::new();
+    if carburants.is_empty() {
+        return (c, notes);
+    }
+    let mut v = carburants.to_vec();
+    v.sort_unstable();
+    notes.push(format!("carburant, {}", decrire("Page", "pages", &v)));
+    c.evaluer();
+    let max = cout(v.last().copied().unwrap_or(0), fixe);
+    if max > b.page {
+        let trop = v.iter().filter(|x| cout(**x, fixe) > b.page).count();
+        c.echouer(format!(
+            "Page : {trop} page(s) coûtent plus que le budget d'une page du téléphone, {} (une lecture courante divisée par {MARGE_TELEPHONE}), jusqu'à {max} (carburant et coût fixe de {fixe})",
+            b.page
+        ));
+    }
+    (c, notes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,6 +540,7 @@ mod tests {
         assert_eq!(B.pire_cas, 10_312_500);
         assert_eq!(B.image_courante, 5_208_333);
         assert_eq!(B.lecture, 5_208_333);
+        assert_eq!(B.page, 1_302_083);
         assert_eq!(B.cout_fixe(2116 * 1024), 155_800);
         assert_eq!(B.cout_fixe(25_668 * 1024), 1_333_400);
         // Le Kio entamé compte entier ; sans zones, il reste le fixe.
@@ -582,6 +628,19 @@ mod tests {
                 .echecs,
             1
         );
+    }
+
+    /// PHASE-3, § 2.10 : une page du téléphone se juge à son maximum, coût fixe compris,
+    /// sur une lecture divisée par la marge du téléphone ; aucune page, rien à juger.
+    #[test]
+    fn une_page_trop_lourde_pour_un_telephone_echoue() {
+        let (c, _) = juger_les_pages(&B, &[10, B.page], 0);
+        assert_eq!((c.evaluations, c.echecs), (1, 0), "{:?}", c.details);
+        let (c, _) = juger_les_pages(&B, &[10, B.page], 1);
+        assert_eq!((c.evaluations, c.echecs), (1, 1), "{:?}", c.details);
+        let (c, _) = juger_les_pages(&B, &[], 0);
+        assert_eq!(c.evaluations, 0);
+        assert!(B.decrire(None).contains("page du téléphone 1302083"));
     }
 
     /// RESTE-PHASE-1, point 19 : un pire cas dont la vue dépasse son budget échoue,

@@ -55,7 +55,12 @@ use crate::partie::{Ouverture, PointDeReprise};
 /// Version 2 (PHASE-3, lot 2) : l'instantané d'un module ne garde plus que la mémoire
 /// hors des quatre zones (P3). Les types de `partie` n'ont pas changé : leurs octets
 /// figés sont ceux de la version 1, sous un autre en-tête.
-pub const VERSION_GARDE: u32 = 2;
+///
+/// Version 3 (PHASE-3, lot 6, l'ABI 4) : une arrivée de fichiers dit son sélecteur
+/// (`ComposantArrivee::Fichiers::selecteur`), et un rendu réussi le nombre d'images
+/// qu'il n'a pas dessinées (`ReponseArrivee::Rendu`). Les octets des autres types ne
+/// bougent pas.
+pub const VERSION_GARDE: u32 = 3;
 
 /// La sorte d'un message de la garde : le cinquième octet de l'en-tête.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1895,12 +1895,15 @@ fn ecran_possede(e: &EcranFil<'_>) -> EcranArrivee {
         EcranFil::Composant(ComposantFil::Deplace(d)) => {
             EcranArrivee::Composant(ComposantArrivee::Deplace(*d))
         }
-        EcranFil::Composant(ComposantFil::Fichiers { geste, fichiers }) => {
-            EcranArrivee::Composant(ComposantArrivee::Fichiers {
-                geste: *geste,
-                fichiers: fichiers.clone(),
-            })
-        }
+        EcranFil::Composant(ComposantFil::Fichiers {
+            geste,
+            selecteur,
+            fichiers,
+        }) => EcranArrivee::Composant(ComposantArrivee::Fichiers {
+            geste: *geste,
+            selecteur: *selecteur,
+            fichiers: fichiers.clone(),
+        }),
     }
 }
 
@@ -1908,7 +1911,9 @@ fn ecran_possede(e: &EcranFil<'_>) -> EcranArrivee {
 fn reponse_possedee(r: &ReponseFil<'_>) -> ReponseArrivee {
     match r {
         ReponseFil::Image(r) => ReponseArrivee::Image(r.map(<[u8]>::to_vec)),
-        ReponseFil::Rendu(r) => ReponseArrivee::Rendu(r.map(<[u8]>::to_vec)),
+        ReponseFil::Rendu(r) => {
+            ReponseArrivee::Rendu(r.map(|i| (i.octets.to_vec(), i.non_dessinees)))
+        }
         ReponseFil::Lu(r) => ReponseArrivee::Lu(r.map(<[u8]>::to_vec)),
         ReponseFil::Fait(r) => ReponseArrivee::Fait(*r),
     }

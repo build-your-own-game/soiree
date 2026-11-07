@@ -522,6 +522,8 @@ impl InstanceModele {
                 sortie,
             ),
             Appel::Hypothese { .. } => ecrire(&Retour::Hypothese(Oui::Non), sortie),
+            // Le modèle n'a pas de page : la sienne est vide (ABI 4).
+            Appel::Page { .. } => ecrire(&Retour::Page(jeu_abi::PageFil::vide()), sortie),
         }
     }
 
@@ -810,14 +812,17 @@ pub fn scene() -> SceneFil {
     s.noeuds.push(NoeudFil::simple(
         CLE_CHAMP,
         None,
-        SorteNoeud::Composant(ComposantVuFil::Champ {
-            limite: LIMITE_CHAMP,
-            unite: Unite::PointsDeCode,
-            lignes: Lignes::Une,
-            valeur: String::new(),
-            exemple: String::new(),
-            fin: None,
-        }),
+        SorteNoeud::Composant {
+            boite: None,
+            composant: ComposantVuFil::Champ {
+                limite: LIMITE_CHAMP,
+                unite: Unite::PointsDeCode,
+                lignes: Lignes::Une,
+                valeur: String::new(),
+                exemple: String::new(),
+                fin: None,
+            },
+        },
     ));
     s
 }

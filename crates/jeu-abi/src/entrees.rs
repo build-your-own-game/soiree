@@ -181,6 +181,9 @@ pub enum Composant<'a> {
     Fichiers {
         /// Le geste qui les a apportés.
         geste: IdGeste,
+        /// ABI 4 : le sélecteur d'où ils viennent, par sa clé dans la scène ; `None` :
+        /// un dépôt ou un collage.
+        selecteur: Option<Cle>,
         /// Les fichiers.
         fichiers: Vec<FichierRecu>,
     },

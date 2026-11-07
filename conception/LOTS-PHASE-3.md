@@ -1361,3 +1361,102 @@ Dans `target/preuves/lot-5/correction/` (hors dépôt), chaque dossier comme au 
 - La garde sur disque : `cases/<n sur 20 chiffres>`, l'octet de sorte en tête (`relais::garde::octet_de_sorte`, `case_de_sorte`). Toute lecture de la garde passe par `Dossier::lister` et `Dossier::lire`, qui retirent l'octet ; un outil qui lirait les fichiers à la main doit le savoir.
 - `le_relais_ne_voit_aucun_secret` et la soirée native cherchent les messages en clair, pas seulement les octets des jeux : un changement de la forme de `VersAutorite::Geste` (l'ordre de ses champs) ou de `VersAppareil::Vue` doit garder `message_du_geste` juste ; il rend `None` si le préfixe ne finit pas par les octets du geste, et le test échoue alors faute de messages de geste cherchés.
 - Les contrôles négatifs du relais sont dans `target/travail/lot-5/correction/controles.py` ; un test nouveau du relais y gagne le sien (la règle d'`AGENTS.md`).
+
+## Lot 6 — L'ABI 4
+
+Fait du 2026-11-06, 23 h 10, au 2026-11-07, 00 h 40 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1). Chaque commande cargo lourde, chaque épreuve et chaque mesure sont passées par le portillon (`target/hote/lourd`). Aucun navigateur, aucun serveur. Rien n'est commité. Le commun et Tier list sont modifiés ; Punchline et Sidequest ne le sont pas.
+
+### Ce qui est fait
+
+**`jeu-abi`, l'ABI 4** (`jeu_abi::ABI` = 4) :
+- `Appel::Page { montre, pas, locaux: LocauxFil }` et `Retour::Page(PageFil)`, à la fin de leurs enums ; `Appel::Page` est une lecture.
+- Le module `page` : `LocauxFil` (l'écran et ses marges sûres, les champs, les choix, les maintenus appuyés, les croix, le retenu, les capacités), `PageFil` (un arbre en flux, chaque nœud après son parent, relu strictement : un parent qui ne précède pas son enfant ou n'est pas un conteneur ne se décode pas), `NoeudPage`, `SorteNoeudPage` (`Colonne`, `Rangee`, `Grille`, **`Pile`**, `Texte`, `Image` avec sa **`teinte`**, `CompteARebours`, `Bouton` avec son `Declencheur`, `Maintenu`, `Croix` en quatre ou huit `Directions`, `Champ` avec son `Clavier`, `Choix` balayable ou non), `TenuPage`, `StylePage`, `TaillePage`, `Direction8`, `Envoi`, `EcranTelephone`, `Marges`, et **`valider_page`** (256 nœuds, 16 étages, clés uniques parmi les frères, textes de 1 Kio, 64 options, 12 colonnes, de 8 à 512 px, images et polices déclarées, gestes et tenu sous `limites.geste`, retenu sous 1 Kio ; toutes ces bornes sont choisies).
+- La scène : `SorteNoeud::Composant { boite: Option<Rect>, composant }` ; `ComposantVuFil::Modale { fermer, panneau }` ; `ComposantVuFil::Lien { nom, ressource, fichier }`.
+- Les entrées et les réponses : `Composant::Fichiers { geste, selecteur: Option<Cle>, fichiers }` ; `Reponse::Rendu(Result<ImageRendue, EchecDemande>)`, `ImageRendue { octets, non_dessinees }`. `Telecharger` ne change pas (un `&[u8]` s'écrit déjà d'un bloc, les mêmes octets qu'un `Vec<u8>`).
+
+**`jeu`** : `Jeu::page(vue: &Recue<VueTelephone>, l: &Locaux<'_>, p: &mut Page<Self>)`, une page vide par défaut ; `Recue` (`montre`, `pas`, `confirmee`, toujours `Oui`) ; `Locaux` (`ecran`, `texte::<L>` nettoyé par `Texte::nettoyer`, `choix`, `appuye`, `direction`, `retenu`, `capacites`) ; `Page` (`colonne`, `rangee`, `grille`, `pile`, `texte`, `image`, `image_teintee`, `compte_a_rebours`, `bouton`, `maintenu`, `croix`, `champ`, `choix`, `tenir` — qui calcule la valeur relâchée par `Tenu::relache` —, `retenir`) ; `ChampPage` ; `Scene::composant_dans(cle, boite, c)`, `Scene::composant` restant sans boîte ; `ComposantVu::Modale::panneau`, `ComposantVu::Lien::fichier` ; le prélude. **`jeu::colle`** traite `Page` comme `Valider`, sans enveloppe : il décode la `MontreFil`, puis la vue du jeu, appelle `Jeu::page`, rend la `PageFil` ; un jeu sans téléphone rend `Illisible` sans être appelé.
+
+**`partie`** : `valider_scene` refuse un champ de plus d'une ligne (`DefautScene::ChampMultiligne`) et vérifie dans le repère la boîte d'un composant et le panneau d'une modale (`dans_le_repere`) ; des fichiers qui nomment leur sélecteur ne passent que par lui (`None` : par tout sélecteur, comme avant) ; `ComposantArrivee::Fichiers::selecteur`, `ReponseArrivee::Rendu(Result<(Vec<u8>, u32), _>)` ; `VERSION_GARDE` = 3 (la garde garde ces deux types). `moteur-commun` : `TAILLE_MODULE_MAX` (4 Mio, choisi), `trace::NOMS` et `releve` nomment `Page`. `reecriture::Reecrit::taille_originale`, `moteur_wasmtime::ModuleCharge::taille_livree`. `salle` : la conversion des fichiers et du rendu suit, sans rien changer d'autre.
+
+**L'épreuve** :
+- **E21, « Pages »** (`epreuve/src/pages.rs`), dans `IdControle::DU_PLAN` et l'étape 4 du CONTRAT. La soirée note chaque vue qui part vers un téléphone (`VuesVues`, sans rien tirer de son hasard) ; après les soirées, au plus 256 vues distinctes (les plus petites empreintes FNV-1a) sont appelées en `Page` sur une instance nue (`Bonjour`, `Decrire`), avec des locaux vides puis trois tirés au hasard (écran, textes hostiles, choix hors des options, maintenus, croix, octets retenus, capacités, clés étrangères) ; chaque page doit passer `valider_page`, chaque geste et le tenu (et sa valeur relâchée) `Valider`. Sans objet pour un jeu sans téléphone. Le refus de la page vide d'un jeu à téléphones attend le lot 7.
+- **E19** juge chaque `Page` de E21 sur `BudgetsE19::page` = une lecture courante / `MARGE_TELEPHONE` (4, choisi) = 1 302 083 unités, coût fixe compris (`juger_les_pages`).
+- **E1** juge la taille du module livré contre `TAILLE_MODULE_MAX`.
+- Trois fautifs : **`module-trop-gros`** (E1 : une table de 4,15 Mio lue à chaque entrée, `build.rs` à 128 pages ; module livré de 4 813 717 octets), **`page-qui-panique`** (E21 : la page indexe un tableau de dix par l'option choisie, sans la borner ; seuls des locaux tirés au hasard la font paniquer), **`page-qui-envoie-un-geste-invalide`** (E21 : un bouton dont le geste, 300 octets bruts, dépasse `limites.geste`). Le socle des fautifs a une page (prénom, « Prêt », taper et choisir un chiffre, résultat) et un variant de geste de plus, `GesteTel::Octets`, qu'il ignore.
+
+**Les pages** : `devine` (le prénom, l'attente, le carrousel des chiffres dont le choix est le curseur tenu, le résultat) ; le socle des fautifs ; `ardoise` n'a pas de téléphone (`Page` y est illisible, testé).
+
+**Le carrousel de Sidequest** : `pile` et `teinte` retenues, tranchées sur son cahier (§ 6.1) ; l'agent de Sidequest n'a pas pu être joint (voir les écarts).
+
+**Tier list**, adapté dans son dépôt, sans changer son comportement : `panneau` = le voile entier (`vue.rs`), son champ d'étiquette en `Lignes::Une`, `Composant::Fichiers { geste, fichiers: f, .. }` et `o.octets` du rendu (`lib.rs`), ses tests (motifs à champs de `SorteNoeud::Composant`, `selecteur: None`, `ImageRendue`), `BESOINS-COMMUN.md` (§ 7, § 8). Son `Cargo.lock` ne change pas.
+
+**L'exemple `epreuve/examples/cout_d_un_noeud.rs`** : le carburant d'un nœud de scène sur `ardoise`.
+
+Documents : PHASE-3 (§ 2.10, § 6, § 8.3, ligne du lot 6), MESURES-PHASE-3 (« Lot 6 »), BESOINS-DES-JEUX (besoin 24, changements d'API, « Ce qui n'est pas fait »), CHANGELOG (« Phase 3, lot 6 »), `crates/README.md`, `AGENTS.md`.
+
+### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **`SorteNoeud::Composant { boite: Option<Rect>, … }`**, pas `boite: Rect` : `Scene::composant`, qui doit rester ce qu'il est (§ 6), ne connaît pas de boîte.
+2. **Tier list cassait en deux points de plus** que `panneau` et `..` : un `Champ` en `Lignes::Libre` (refusé désormais) et la lecture de `Reponse::Rendu(Ok(_))` ; ses tests filtraient `SorteNoeud::Composant(_)`. Adaptés de même.
+3. **`partie::VERSION_GARDE` monte à 3** : la garde du cœur garde `ComposantArrivee::Fichiers` et `ReponseArrivee::Rendu` ; leurs octets figés sont réécrits à la main (`tests/coeur/forme_garde.rs`), avec la seconde lecture.
+4. **Le vocabulaire du carrousel n'est pas « tranché avec l'agent de Sidequest »** : l'agent du lot 6 n'a aucun canal vers lui. Tranché sur le cahier de Sidequest, à confirmer au lot 7 (§ 2.10).
+5. **`page-qui-envoie-un-geste-invalide`** fait échouer E21 par la taille du geste (`valider_page`), pas par `Valider` : l'API typée de `Page` ne sait pas produire un geste que `Valider` refuse. Le contrôle par `Valider` reste, pour un jeu dont la forme serait plus stricte au décodage qu'à l'encodage.
+6. **Des fichiers sans sélecteur (`None`) passent par tout sélecteur**, comme avant l'ABI 4 ; le contrôle de `depot_partout` et `collage` vient avec la page de l'écran (lot 11). Le bot de l'épreuve envoie `None`.
+7. **Le code du § 2.10** : `Page<J>` sans durée de vie ; `compte_a_rebours` prend un `CompteARebours` ; `Page::image_teintee` ; `ChampPage<'_, G>`. `VersAppareil::Ressource` n'est pas écrit (lots 10a et 12).
+
+### Les tests qui le tiennent
+
+- `jeu-abi`, `tests/abi` : `forme_figee` réécrit à la main pour l'ABI 4 (cinq cas nouveaux : `Appel::Page`, `Retour::Page`, `SceneFil::Composant`, `EntreeFil::Ecran::Composant::Fichiers`, `EntreeFil::Reponse::Rendu`), passé du premier coup ; `le_corpus_couvre_chaque_variant` (22 appels, 18 retours) ; `chaque_appel_a_sa_sorte` ; `abi_est_celle_des_octets_figes` ; `strict` (le variant 0x16 inconnu) ; `seconde_lecture_de_la_page` (proptest : `Appel::Page` relu sans `jeu_abi`, sans postcard) ; `page.rs` : `une_page_vide_et_une_page_complete_sont_valides`, `le_decodage_refuse_un_parent_qui_ne_contient_rien_ou_vient_apres`, `les_bornes_de_la_page_se_nomment_rem57`, `chaque_noeud_porte_ses_bornes_rem57`, `des_octets_au_hasard_ne_font_jamais_paniquer_la_page_rem64`, `retirer_la_derniere_feuille_garde_la_page_valide`.
+- `partie`, `tests/coeur` : `la_boite_d_un_composant_et_le_panneau_d_une_modale_sont_dans_le_repere`, `un_champ_de_plus_d_une_ligne_est_refuse`, `des_fichiers_qui_nomment_leur_selecteur_ne_passent_que_par_lui`, `les_octets_de_chaque_variant_sont_figes` (version 3), `les_octets_de_la_garde_sont_figes`.
+- `devine`, `tests/regles.rs` : `la_page_se_lit_depuis_la_vue_et_les_locaux` (par la colle, sans état créé : le prénom sale part nettoyé, le choix du carrousel devient le curseur tenu, une vue illisible rend `Illisible`) ; `ardoise`, `tests/colle.rs` : `la_page_d_un_jeu_sans_telephone_est_illisible`.
+- `epreuve` : `budgets::tests::une_page_trop_lourde_pour_un_telephone_echoue`, `les_budgets_se_derivent_du_temps_d_une_image` (`page` = 1 302 083) ; `pages::tests::les_vues_gardees_sont_les_plus_petites_empreintes` ; `tests/epreuve` : `module_trop_gros_echoue_e1`, `page_qui_panique_echoue_e21`, `page_qui_envoie_un_geste_invalide_echoue_e21`, et chaque fautif d'avant toujours en échec de son seul contrôle avec E21 au plan (plan court) ; `devine_passe_tout`, `le_socle_sain_passe_tout` (E21 réussi).
+- `moteur-commun`, `instantane` : octets inchangés sous la version 3.
+- Tier list : ses 90 tests, adaptés (`partie.rs`, `soiree_fichiers.rs`, `commun/mod.rs`).
+
+**Les contrôles négatifs** de ce lot sont les trois fautifs, chacun rouge sur son seul contrôle (`module-trop-gros` : E1 ; `page-qui-panique` et `page-qui-envoie-un-geste-invalide` : E21), sur le plan court, par leur module et leur copie native. Les tests nouveaux de `jeu-abi` et de `partie` portent leurs cas refusés en eux-mêmes ; aucune mutation du code n'a été faite pour les faire rougir (pas de `controles.py` à ce lot).
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-6/` (hors dépôt), chaque dossier avec `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (pour le commun et chaque jeu : `HEAD`, sha256 de `git diff HEAD`, de `git diff HEAD` hors des `.md`, et des fichiers non suivis). Toutes les preuves finales, lancées à la suite par `target/travail/lot-6/final.sh`, ont la même empreinte du code au départ et à la fin : commun à `320b9b1`, `diff HEAD` hors `.md` `f994361797d8d5bb`, non suivis (12) `ef13dc5b315a9914` ; Tier list à `5ec845c`, hors `.md` `355061048ec3b646` ; Punchline (`dd6d4f0`) et Sidequest (`6e7219c`) propres. Seuls des `.md` ont changé après (LOTS, PHASE-3, MESURES). Les empreintes des modules éprouvés sont dans `target/preuves/lot-6/modules.txt` (sha256 du `.wasm`, et le BLAKE3 de chaque rapport).
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `cout-noeud-avant` | `lourd bash -c 'cargo build -p ardoise-module --target wasm32-unknown-unknown --profile module && … cargo run --release -p epreuve --example cout_d_un_noeud -- ardoise-avant.wasm'`, avant tout changement (l'exemple seul, non suivi, puis reformaté par `cargo fmt` sans changer ce qu'il fait) | code 0 ; module `a77e81f5…` ; un `Rect` 2 395 en médiane |
+| `construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve --example cout_d_un_noeud` | code 0 |
+| `cout-noeud-apres` | `lourd target/release/examples/cout_d_un_noeud ardoise-apres.wasm` | code 0 ; module `036799a4…` ; un `Rect` 2 395 en médiane |
+| `court-sidequest` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/sidequest --court --json …` | **code 0**, comme la référence ; E21 réussi (1 024 évaluations : 256 vues sur 8 019 distinctes, page vide) ; 136 s ; module `0f4df7a2…` |
+| `court-punchline` | même commande, `../games/punchline` | **code 1, E2 seul** (« une fin, mais aucune autre après la nouvelle partie »), comme la référence ; E21 réussi (1 024 ; 256 vues sur 15 896) ; 44 s ; module `f7ab5c4a…` |
+| `court-tier-list` | même commande, `../games/tier-list` | **code 1, E15 seul** (octets vivants de 201 670 à 213 975, les nombres mêmes de la référence) ; E21 sans objet (« le jeu n'a pas de téléphone ») ; 66 s ; module `5e9cd937…` |
+| `devine-standard` | `lourd /usr/bin/time -l target/release/soiree-epreuve crates/exemples/devine --json …` (plan standard, depuis ses sources) | **code 0** ; E21 réussi (216 évaluations : 32 vues distinctes, pages de 4 nœuds au plus) ; 64 s ; module `2c2b3ca6…` |
+| `fmt` | `cargo fmt --all --check` | rien à reformater |
+| `clippy-commun` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p liaison -p salle -p partie -p jeu -p jeu-abi --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `clippy-web` | dans `web/` : `cargo clippy --workspace --all-targets -- -D warnings`, puis pour `wasm32-unknown-unknown` | code 0 |
+| `jeux-clippy` | dans chaque jeu : `cargo clippy --workspace --all-targets -- -D warnings` et `cargo fmt --all --check` | code 0 : **les trois jeux compilent**, Tier list compris |
+| `tier-list-tests` | dans Tier list : `cargo test --workspace` | code 0 |
+| `test-workspace` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 643 réussis**, 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 598 s ; 1,96 Go résidents au plus ; charge 3,53 au départ, 2,86 à la fin |
+
+Le plan court des trois jeux rend la référence du § 7 de PHASE-3 (« Le plan court ou le plan standard ») : Sidequest 0, Punchline 1 par E2 seul, Tier list 1 par E15 seul, avec les mêmes constats ; E21 s'y ajoute, réussi ou sans objet. La référence n'est donc pas relevée à nouveau. E20 n'est pas relancé : le lot ne touche ni le relevé ni le banc (§ 7, ligne du lot 6 : le plan court et le plan standard de `devine` suffisent).
+
+### Les mesures
+
+- **Le coût d'un nœud de scène** (carburant, pas une mesure de temps) : un `Rect` d'`ardoise` 2 395 unités en médiane avant (ABI 3) comme après (ABI 4) ; la vue entière d'`ardoise` 61 102 → 62 535 (+2,3 %, une fois par scène). MESURES-PHASE-3, « Lot 6 ». Le chiffre de RESTE-PHASE-2 (4 500 à 4 800) est celui de la phase 1.
+- **Le coût d'une page** (carburant, E19) : `devine` 12 156 en médiane, au plus 29 823 ; la page vide de Sidequest au plus 26 749 ; celle de Punchline jusqu'à **722 971** (99ᵉ centile 707 303) — c'est le décodage de la vue de Punchline dans la colle, la page étant vide —, soit, avec son coût fixe de 155 800, 67 % du budget d'une page (1 302 083) avant que Punchline n'écrive la sienne au lot 7.
+- Les durées des commandes ci-dessus sont celles de commandes sous une charge de 1,8 à 3,5 : pas des mesures. Mémoire attendue au § 7 : « 3 à 4 Go » (estimé) ; mesurée : 1,96 Go résidents au plus pour `cargo test --workspace`, de 0,78 à 0,93 Go pour une épreuve.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Le refus de la page vide** (E21) et la règle F8 de E1 : au lot 7, avec les pages des jeux.
+- **`VersAppareil::Ressource`**, l'envoi des polices et des images aux téléphones : lots 10a et 12.
+- **L'agent de Sidequest n'a pas été consulté** sur `pile` et `teinte` (écart 4).
+- **Aucune mutation pour les tests nouveaux** de `jeu-abi` et de `partie` (voir plus haut) ; les fautifs sont les contrôles négatifs des règles de l'épreuve.
+- **Le plan standard des 38 fautifs** (`--ignored plan_standard`) n'est pas relancé : le § 7 ne le demande pas à ce lot ; le plan court les tient tous.
+- **Le sélecteur nommé n'est pas encore éprouvé dans les soirées** : le bot de l'écran ne dit pas d'où viennent ses fichiers (`ComposantBot::Fichiers`), l'épreuve envoie `None`. Si Tier list veut que ses bots disent leur sélecteur (lot 7), `ComposantBotFil::Fichiers` devra le porter (une ABI de plus, ou un ajout à la fin).
+
+### Ce que le lot suivant doit savoir
+
+- Un jeu se recompile : un module de l'ABI 3 est refusé (« le moteur de 4 à 4 »). Tout `.wasm` gardé d'un lot précédent (captures, `dist/`) est périmé.
+- La page d'un jeu se teste par la colle sans état créé (`devine/tests/regles.rs`, `la_page_se_lit_depuis_la_vue_et_les_locaux`) ; E21 la juge dans wasmtime sur les vues réelles des soirées. Le décodage de la vue compte dans le carburant de `Page` : Punchline en paie déjà jusqu'à 723 000 unités pour une page vide.
+- E21 n'est pas dans `DES_SOIREES` : une panne déclarée non constatée ne le rend pas « pas exécuté ». Pour armer le refus de la page vide (lot 7), il suffit de regarder, dans `pages::eprouver`, si chaque page valide est vide alors que le jeu a des téléphones.
+- `partie::VERSION_GARDE` vaut 3 ; une garde de la version 2 ne se relit plus.
+- `moteur_commun::TAILLE_MODULE_MAX` est la borne que le Worker de l'écran appliquera au chargement (lot 10a) : la relire, ne pas la recopier.

@@ -793,17 +793,24 @@ fn les_actions_admises_sont_celles_de_la_scene() {
         nom: String::from("b"),
         action: vec![1],
     });
-    let champ = seule(SorteNoeud::Composant(jeu_abi::ComposantVuFil::Champ {
-        limite: 4,
-        unite: Unite::PointsDeCode,
-        lignes: jeu_abi::Lignes::Une,
-        valeur: String::new(),
-        exemple: String::new(),
-        fin: Some(vec![2]),
-    }));
-    let modale = seule(SorteNoeud::Composant(jeu_abi::ComposantVuFil::Modale {
-        fermer: vec![3],
-    }));
+    let champ = seule(SorteNoeud::Composant {
+        boite: None,
+        composant: jeu_abi::ComposantVuFil::Champ {
+            limite: 4,
+            unite: Unite::PointsDeCode,
+            lignes: jeu_abi::Lignes::Une,
+            valeur: String::new(),
+            exemple: String::new(),
+            fin: Some(vec![2]),
+        },
+    });
+    let modale = seule(SorteNoeud::Composant {
+        boite: None,
+        composant: jeu_abi::ComposantVuFil::Modale {
+            fermer: vec![3],
+            panneau: rect0,
+        },
+    });
     let mut raccourci = SceneFil::vide();
     raccourci.raccourcis.push(jeu_abi::RaccourciFil {
         touche: jeu_abi::CodeTouche::new("Enter"),
@@ -820,6 +827,14 @@ fn les_actions_admises_sont_celles_de_la_scene() {
                 "action {a}, attendue {bonne}"
             );
         }
+    }
+}
+
+/// Un composant sans boîte, placé par son groupe (`Scene::composant`).
+fn sans_boite(composant: jeu_abi::ComposantVuFil) -> SorteNoeud {
+    SorteNoeud::Composant {
+        boite: None,
+        composant,
     }
 }
 
@@ -840,7 +855,7 @@ fn les_composants_admis_sont_ceux_de_la_scene() {
     s.noeuds.push(noeud(
         2,
         None,
-        SorteNoeud::Composant(jeu_abi::ComposantVuFil::Deplacables {
+        sans_boite(jeu_abi::ComposantVuFil::Deplacables {
             zones: vec![jeu_abi::ZoneVu {
                 cle: Cle::du_fil(30),
                 objets: vec![Cle::du_fil(31)],
@@ -855,7 +870,7 @@ fn les_composants_admis_sont_ceux_de_la_scene() {
     s.noeuds.push(noeud(
         3,
         None,
-        SorteNoeud::Composant(jeu_abi::ComposantVuFil::Selecteur {
+        sans_boite(jeu_abi::ComposantVuFil::Selecteur {
             genres: Vec::new(),
             multiple: Oui::Non,
             depot_partout: Oui::Non,
@@ -904,6 +919,7 @@ fn les_composants_admis_sont_ceux_de_la_scene() {
     let fichiers = |tailles: &[u64]| {
         EcranArrivee::Composant(ComposantArrivee::Fichiers {
             geste: jeu_abi::IdGeste::du_fil(0),
+            selecteur: None,
             fichiers: tailles
                 .iter()
                 .map(|t| jeu_abi::FichierRecu {
@@ -925,6 +941,70 @@ fn les_composants_admis_sont_ceux_de_la_scene() {
         regles::admise_par_la_scene(&s, &fichiers(&[1, 1])),
         Oui::Non,
         "un seul s'il n'est pas multiple"
+    );
+}
+
+/// ABI 4 (Tier list, BESOINS-COMMUN § 8) : des fichiers qui nomment leur sélecteur ne
+/// passent que par lui ; un dépôt ou un collage (`None`), par n'importe lequel.
+#[test]
+fn des_fichiers_qui_nomment_leur_selecteur_ne_passent_que_par_lui() {
+    use partie::{ComposantArrivee, EcranArrivee};
+    let selecteur = |cle: u64| {
+        noeud(
+            cle,
+            None,
+            SorteNoeud::Composant {
+                boite: None,
+                composant: jeu_abi::ComposantVuFil::Selecteur {
+                    genres: Vec::new(),
+                    multiple: Oui::Oui,
+                    depot_partout: Oui::Non,
+                    collage: Oui::Non,
+                    taille_max: 100,
+                },
+            },
+        )
+    };
+    let mut s = SceneFil::vide();
+    s.noeuds.push(selecteur(3));
+    s.noeuds.push(noeud(
+        2,
+        None,
+        SorteNoeud::Qr {
+            boite: jeu_abi::Rect {
+                x: jeu_abi::Fixe::unites(0),
+                y: jeu_abi::Fixe::unites(0),
+                l: jeu_abi::Fixe::unites(1),
+                h: jeu_abi::Fixe::unites(1),
+            },
+        },
+    ));
+    let fichiers = |sel: Option<u64>| {
+        EcranArrivee::Composant(ComposantArrivee::Fichiers {
+            geste: jeu_abi::IdGeste::du_fil(0),
+            selecteur: sel.map(Cle::du_fil),
+            fichiers: vec![jeu_abi::FichierRecu {
+                id: jeu_abi::IdFichier::du_fil(0),
+                nom: jeu_abi::TexteCourt::new("f"),
+                genre: jeu_abi::TexteCourt::new("image/png"),
+                taille: 100,
+            }],
+        })
+    };
+    assert_eq!(regles::admise_par_la_scene(&s, &fichiers(None)), Oui::Oui);
+    assert_eq!(
+        regles::admise_par_la_scene(&s, &fichiers(Some(3))),
+        Oui::Oui
+    );
+    assert_eq!(
+        regles::admise_par_la_scene(&s, &fichiers(Some(2))),
+        Oui::Non,
+        "le nœud 2 n'est pas un sélecteur"
+    );
+    assert_eq!(
+        regles::admise_par_la_scene(&s, &fichiers(Some(99))),
+        Oui::Non,
+        "aucun sélecteur de cette clé"
     );
 }
 
@@ -953,6 +1033,7 @@ fn une_scene_vide_n_admet_rien() {
         })),
         EcranArrivee::Composant(ComposantArrivee::Fichiers {
             geste: jeu_abi::IdGeste::du_fil(0),
+            selecteur: None,
             fichiers: Vec::new(),
         }),
     ];
@@ -1100,6 +1181,70 @@ fn scene_hors_du_repere_refusee() {
     let page = jeu_abi::FormeEcran::Page { largeur_max: 40 };
     let s = scene_de(vec![rect_en(1, None, 0, 5000, 40, 1)]);
     assert_eq!(regles::valider_scene(&s, &page, &[], &[]), Ok(()));
+}
+
+/// ABI 4 (PHASE-3, § 6) : la boîte d'un composant et le panneau d'une modale tiennent
+/// dans le repère comme un texte ; un composant sans boîte n'en a pas à vérifier.
+#[test]
+fn la_boite_d_un_composant_et_le_panneau_d_une_modale_sont_dans_le_repere() {
+    let r = |x: i32| jeu_abi::Rect {
+        x: jeu_abi::Fixe::unites(x),
+        y: jeu_abi::Fixe::unites(0),
+        l: jeu_abi::Fixe::unites(1),
+        h: jeu_abi::Fixe::unites(1),
+    };
+    let modale = |boite: Option<jeu_abi::Rect>, panneau| {
+        scene_de(vec![noeud(
+            1,
+            None,
+            SorteNoeud::Composant {
+                boite,
+                composant: jeu_abi::ComposantVuFil::Modale {
+                    fermer: vec![1],
+                    panneau,
+                },
+            },
+        )])
+    };
+    assert_eq!(valider(&modale(None, r(0))), Ok(()));
+    assert_eq!(valider(&modale(Some(r(2)), r(3))), Ok(()));
+    let dehors = Err(regles::DefautScene::HorsDuRepere {
+        cle: Cle::du_fil(1),
+    });
+    assert_eq!(valider(&modale(Some(r(40)), r(3))), dehors);
+    assert_eq!(valider(&modale(None, r(40))), dehors);
+}
+
+/// ABI 4, besoin 17 des jeux : un champ n'a qu'une ligne ; une vue qui en demande plus
+/// est invalide.
+#[test]
+fn un_champ_de_plus_d_une_ligne_est_refuse() {
+    let champ = |lignes| {
+        scene_de(vec![noeud(
+            1,
+            None,
+            SorteNoeud::Composant {
+                boite: None,
+                composant: jeu_abi::ComposantVuFil::Champ {
+                    limite: 4,
+                    unite: Unite::PointsDeCode,
+                    lignes,
+                    valeur: String::new(),
+                    exemple: String::new(),
+                    fin: None,
+                },
+            },
+        )])
+    };
+    assert_eq!(valider(&champ(jeu_abi::Lignes::Une)), Ok(()));
+    for l in [jeu_abi::Lignes::AuPlus(2), jeu_abi::Lignes::Libre] {
+        assert_eq!(
+            valider(&champ(l)),
+            Err(regles::DefautScene::ChampMultiligne {
+                cle: Cle::du_fil(1)
+            })
+        );
+    }
 }
 
 /// § 6.1 : profondeur et nombre de nœuds bornés.

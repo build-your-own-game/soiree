@@ -35,8 +35,8 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use jeu_abi::{
     ABI, Appareil, Appel, AttenteFil, Bonjour, Cle, ComposantBotFil, ConstatFil, CoupFil, Duree,
     EcranFil, EntreeFil, ErreurFil, EtatFil, FichierBotFil, HeureMurale, IdDemande, IdGeste,
-    Illisible, Instant, IssueFil, MontreFil, Oui, Pas, Presence, QuandFil, RegardFil, Retour,
-    SorteAppel, SorteOctets, StyleFil, TenuFil, Validation, VueFil,
+    Illisible, Instant, IssueFil, LocauxFil, MontreFil, Oui, PageFil, Pas, Presence, QuandFil,
+    RegardFil, Retour, SorteAppel, SorteOctets, StyleFil, TenuFil, Validation, VueFil,
 };
 
 use crate::cache::{Ecrivain, Liseur, forme};
@@ -45,7 +45,8 @@ use crate::etape::{
 };
 use crate::forme::{Etat, Forme};
 use crate::hasard::Hasard;
-use crate::scene::Scene;
+use crate::page::{Locaux, Page, Recue};
+use crate::scene::{Montre, Scene};
 use crate::secret::{Autorite, Regard, Secret};
 use crate::temps::Maintenant;
 use crate::traits::{
@@ -844,7 +845,38 @@ fn executer<J: Jeu + Epreuve>(
             };
             rendre(sortie, &Retour::Hypothese(tient))
         }
+        Appel::Page {
+            montre,
+            pas,
+            locaux,
+        } => {
+            let p = page::<J>(montre, pas, &locaux)?;
+            rendre(sortie, &Retour::Page(p))
+        }
     }
+}
+
+/// La page du téléphone (ABI 4 ; PHASE-3, § 2.10) : une lecture sans état, comme
+/// `Valider`, qui ne lit que ses arguments ; le téléphone ne crée jamais d'état. Un jeu
+/// sans téléphone n'a pas de page : l'appel est illisible, et le jeu n'est pas appelé.
+fn page<J: Jeu>(montre: &[u8], pas: Pas, locaux: &LocauxFil<'_>) -> Result<PageFil, ErreurFil> {
+    if let crate::Applicable::SansObjet(_) = J::DECLARATION.telephones {
+        return Err(erreur(Illisible::Valeur));
+    }
+    let m: MontreFil<'_> = jeu_abi::decoder(montre)?;
+    let vue: J::VueTelephone = jeu_abi::decoder(m.vue)?;
+    let recue = Recue {
+        montre: Montre {
+            vue,
+            effets: m.effets,
+            reglages: m.reglages,
+        },
+        pas,
+        confirmee: Oui::Oui,
+    };
+    let mut p = Page::<J>::new();
+    J::page(&recue, &Locaux::du_fil(locaux), &mut p);
+    Ok(p.fil())
 }
 
 fn enveloppe_relue<J: Jeu>(

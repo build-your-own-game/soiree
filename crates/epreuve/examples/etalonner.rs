@@ -88,6 +88,7 @@ const fn nom(a: &Appel<'_>) -> &'static str {
         Appel::Memoire => "Memoire",
         Appel::Proprietes => "Proprietes",
         Appel::Hypothese { .. } => "Hypothese",
+        Appel::Page { .. } => "Page",
     }
 }
 

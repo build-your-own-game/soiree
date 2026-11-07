@@ -148,6 +148,8 @@ pub struct Reecrit {
     pub octets: Vec<u8>,
     /// BLAKE3 des octets livrés, avant réécriture : la version du jeu (§ 3.8, OUT-37).
     pub empreinte_originale: [u8; 32],
+    /// La taille des octets livrés, avant réécriture (PHASE-3, lot 6 : E1 la borne).
+    pub taille_originale: u64,
     /// BLAKE3 des octets réécrits. Avec [`VERSION`], l'identité du module réécrit.
     pub empreinte: [u8; 32],
     /// Ce que le module peut faire, constaté sur ses octets.
@@ -315,6 +317,7 @@ fn reecrire_et_mesurer(
     })?;
     Ok(Reecrit {
         empreinte_originale: *blake3::hash(original).as_bytes(),
+        taille_originale: u64::try_from(original.len()).unwrap_or(u64::MAX),
         empreinte: *blake3::hash(&m).as_bytes(),
         octets: m,
         constat: examen.constat,

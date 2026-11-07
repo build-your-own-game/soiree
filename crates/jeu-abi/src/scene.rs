@@ -246,7 +246,7 @@ fn verifier_structure(noeuds: &[NoeudFil]) -> Result<(), HorsBornes> {
                 | SorteNoeud::Bouton { .. }
                 | SorteNoeud::CompteARebours { .. }
                 | SorteNoeud::Qr { .. }
-                | SorteNoeud::Composant(_)
+                | SorteNoeud::Composant { .. }
                 | SorteNoeud::Avertissements { .. }
                 | SorteNoeud::Surface { .. },
             ) => {
@@ -386,7 +386,16 @@ pub enum SorteNoeud {
         boite: Rect,
     },
     /// Un composant riche : champ, objets déplaçables, sélecteur de fichiers…
-    Composant(ComposantVuFil),
+    ///
+    /// ABI 4 : sa boîte. `None` : le composant n'a ni position ni taille, et son
+    /// groupe le place, comme avant l'ABI 4 (`Scene::composant`) ; `Some` : il occupe
+    /// cette boîte (`Scene::composant_dans`), que le cœur vérifie dans le repère.
+    Composant {
+        /// Où, s'il le dit.
+        boite: Option<Rect>,
+        /// Le composant.
+        composant: ComposantVuFil,
+    },
     /// Où le commun écrit ses avertissements, dont les refus de l'écran (TL-71).
     Avertissements {
         /// Où.
@@ -552,6 +561,10 @@ pub enum ClavierBrut {
 }
 
 /// Un composant riche de la scène, sur le fil : ses actions sont encodées.
+///
+/// ABI 4 : `Champ.lignes` reste, pour le multiligne à venir, mais le cœur n'admet plus
+/// que `Lignes::Une` (une vue qui en demande plus est invalide) : aucun `Texte<L>` ne
+/// tient plus d'une ligne (besoin 17 des jeux, PHASE-3, § 6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ComposantVuFil {
     /// Un champ de texte, qui reste un vrai élément du navigateur (TL-33, PUN-40).
@@ -612,6 +625,8 @@ pub enum ComposantVuFil {
     Modale {
         /// L'action envoyée à sa fermeture, encodée.
         fermer: Vec<u8>,
+        /// ABI 4 : le panneau de la fenêtre ; un clic hors de lui la ferme.
+        panneau: Rect,
     },
     /// Un lien de téléchargement d'une ressource.
     Lien {
@@ -619,6 +634,8 @@ pub enum ComposantVuFil {
         nom: TexteCourt,
         /// La ressource.
         ressource: Cle,
+        /// ABI 4 : le nom du fichier téléchargé.
+        fichier: TexteCourt,
     },
 }
 

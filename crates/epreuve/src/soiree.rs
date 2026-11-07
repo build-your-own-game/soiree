@@ -219,6 +219,8 @@ pub(crate) struct Bilan {
     pub(crate) memoire: Vec<Echantillon>,
     pub(crate) regards: Vec<RegardFil>,
     pub(crate) echantillons: Vec<(SorteOctets, Vec<u8>)>,
+    /// E21 : les vues parties vers les téléphones, distinctes.
+    pub(crate) vues_telephones: crate::pages::VuesVues,
     pub(crate) abandon: Option<String>,
     pub(crate) pas_joues: u64,
     pub(crate) arrivees: u64,
@@ -313,6 +315,9 @@ pub(crate) struct Soiree<'m> {
     derniere_phase: Option<u16>,
     appareils: Vec<u64>,
     echantillons: Vec<(SorteOctets, Vec<u8>)>,
+    /// E21 : les vues parties vers les téléphones, distinctes. Les noter ne tire rien :
+    /// la soirée joue la même chose avec ou sans.
+    vues_telephones: crate::pages::VuesVues,
     vus_pour_echantillon: u64,
     stop: Option<String>,
     arrivees: u64,
@@ -497,6 +502,7 @@ impl<'m> Soiree<'m> {
             derniere_phase: None,
             appareils,
             echantillons: Vec::new(),
+            vues_telephones: crate::pages::VuesVues::default(),
             vus_pour_echantillon: 0,
             stop: None,
             arrivees: 0,
@@ -1444,7 +1450,7 @@ impl<'m> Soiree<'m> {
                     DemandeArrivee::Image { .. } => {
                         ReponseArrivee::Image(Err(EchecDemande::Refuse))
                     }
-                    DemandeArrivee::Rendu { .. } => ReponseArrivee::Rendu(Ok(b"PNG".to_vec())),
+                    DemandeArrivee::Rendu { .. } => ReponseArrivee::Rendu(Ok((b"PNG".to_vec(), 0))),
                     DemandeArrivee::Lire { .. } => ReponseArrivee::Lu(Err(EchecDemande::Illisible)),
                     DemandeArrivee::Telecharger { .. } => ReponseArrivee::Fait(Ok(())),
                     // Une ligne sur dix échoue : un échec revient comme une réponse (SQ-78).
@@ -1755,8 +1761,11 @@ impl<'m> Soiree<'m> {
                         })
                         .collect();
                     self.prochain_geste_ecran = self.prochain_geste_ecran.saturating_add(1);
+                    // Le bot ne dit pas d'où viennent ses fichiers : un dépôt (ABI 4,
+                    // `selecteur: None`), que tout sélecteur de la scène admet.
                     EcranArrivee::Composant(ComposantArrivee::Fichiers {
                         geste: jeu_abi::IdGeste::du_fil((1 << 60) | self.prochain_geste_ecran),
+                        selecteur: None,
                         fichiers,
                     })
                 }
@@ -2090,6 +2099,7 @@ impl<'m> Soiree<'m> {
                         && v.octets != t.envoyee
                         && t.lien.recoit()
                     {
+                        self.vues_telephones.noter(v.pas.numero(), &v.octets);
                         t.envoyee.clone_from(&v.octets);
                         let livre_a = t.livraison_de_vue(pas);
                         t.vues.push(VueEnRoute {
@@ -2678,6 +2688,7 @@ impl<'m> Soiree<'m> {
             memoire: self.memoire,
             regards,
             echantillons: self.echantillons,
+            vues_telephones: self.vues_telephones,
             abandon: self.stop,
             pas_joues: self.pas,
             arrivees: self.arrivees,

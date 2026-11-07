@@ -211,6 +211,10 @@ pub enum GesteTel {
     Choisir(u8),
     /// Se dire prêt, au salon.
     Pret,
+    /// Des octets bruts, qu'aucune page honnête n'envoie : le jeu les ignore. Seul le
+    /// fautif `page-qui-envoie-un-geste-invalide` en met un sur sa page, au-delà de
+    /// `limites.geste` (E21, lot 6).
+    Octets(Vec<u8>),
 }
 
 /// Ce qu'envoie l'écran.
@@ -251,6 +255,34 @@ pub enum VueTel {
         /// Ses points.
         points: u32,
     },
+}
+
+/// Les clés de la page du téléphone, et les options de son choix.
+mod page {
+    use jeu::prelude::Cle;
+
+    pub(crate) const COLONNE: Cle = Cle::nommee("page");
+    pub(crate) const TITRE: Cle = Cle::nommee("titre");
+    pub(crate) const PRENOM: Cle = Cle::nommee("prénom");
+    pub(crate) const REJOINDRE: Cle = Cle::nommee("rejoindre");
+    pub(crate) const PRET: Cle = Cle::nommee("prêt");
+    pub(crate) const TAPER: Cle = Cle::nommee("taper");
+    pub(crate) const CHOIX: Cle = Cle::nommee("choix");
+    pub(crate) const CHOISIR: Cle = Cle::nommee("choisir");
+    pub(crate) const DE_PLUS: Cle = Cle::nommee("de plus");
+    /// Les dix chiffres du choix, chacun par la clé de son numéro.
+    pub(crate) const CHIFFRES: [(Cle, &str); 10] = [
+        (Cle::numero(0), "0"),
+        (Cle::numero(1), "1"),
+        (Cle::numero(2), "2"),
+        (Cle::numero(3), "3"),
+        (Cle::numero(4), "4"),
+        (Cle::numero(5), "5"),
+        (Cle::numero(6), "6"),
+        (Cle::numero(7), "7"),
+        (Cle::numero(8), "8"),
+        (Cle::numero(9), "9"),
+    ];
 }
 
 const fn rect(x: i32, y: i32, l: i32, h: i32) -> Rect {
@@ -737,9 +769,90 @@ impl<D: Defaut> Jeu for Socle<D> {
                     ..
                 },
             )
+            | Entree::Geste(Geste {
+                geste: GesteTel::Octets(_),
+                ..
+            })
             | Entree::Tenu(_)
             | Entree::Manette(_) => avant.ignorer(),
         }
+    }
+
+    /// La page du téléphone (PHASE-3, § 2.10, lot 6) : le prénom, « Prêt », les tapes
+    /// et le choix d'un chiffre, le résultat. Deux défauts la touchent : le chiffre
+    /// choisi (`PageQuiPanique`) et un bouton de plus (`PageQuiEnvoieUnGesteInvalide`).
+    fn page(vue: &Recue<VueTel>, l: &Locaux<'_>, p: &mut Page<Self>) {
+        p.colonne(page::COLONNE, |p| {
+            match &vue.montre.vue {
+                VueTel::Prenom => {
+                    p.texte(page::TITRE, "Ton prénom ?", StylePage::ORDINAIRE);
+                    let prenom = l
+                        .texte::<Prenom>(page::PRENOM)
+                        .unwrap_or_else(|| Texte::nettoyer(""));
+                    p.champ(
+                        page::PRENOM,
+                        ChampPage {
+                            clavier: Clavier::Prenom,
+                            entree: Some(GesteTel::Rejoindre(prenom.clone())),
+                            ..ChampPage::de::<Prenom>()
+                        },
+                    );
+                    p.bouton(
+                        page::REJOINDRE,
+                        "C'est moi",
+                        GesteTel::Rejoindre(prenom),
+                        Declencheur::Relache,
+                        StylePage::ORDINAIRE,
+                    );
+                }
+                VueTel::Attends => {
+                    p.texte(page::TITRE, "Au salon", StylePage::ORDINAIRE);
+                    p.bouton(
+                        page::PRET,
+                        "Prêt",
+                        GesteTel::Pret,
+                        Declencheur::Relache,
+                        StylePage::ORDINAIRE,
+                    );
+                }
+                VueTel::Tape { points, .. } => {
+                    p.texte(
+                        page::TITRE,
+                        &alloc::format!("{points} points"),
+                        StylePage::ORDINAIRE,
+                    );
+                    p.bouton(
+                        page::TAPER,
+                        "Tape !",
+                        GesteTel::Taper,
+                        Declencheur::Contact,
+                        StylePage::ORDINAIRE,
+                    );
+                    p.choix(page::CHOIX, &page::CHIFFRES, Oui::Non);
+                    p.bouton(
+                        page::CHOISIR,
+                        "Choisir",
+                        GesteTel::Choisir(D::chiffre_de_la_page(l.choix(page::CHOIX))),
+                        Declencheur::Relache,
+                        StylePage::ORDINAIRE,
+                    );
+                }
+                VueTel::Resultat { points } => p.texte(
+                    page::TITRE,
+                    &alloc::format!("Fini : {points} points"),
+                    StylePage::ORDINAIRE,
+                ),
+            }
+            if let Some(g) = D::geste_de_la_page() {
+                p.bouton(
+                    page::DE_PLUS,
+                    "Envoyer",
+                    g,
+                    Declencheur::Relache,
+                    StylePage::ORDINAIRE,
+                );
+            }
+        });
     }
 
     fn vue_ecran(&self, r: &Regard, s: &mut Scene<ActionEcran>) {

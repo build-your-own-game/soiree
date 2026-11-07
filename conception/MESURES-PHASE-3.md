@@ -630,6 +630,21 @@ Commande : `target/release/soiree-banc soiree-native ../games/sidequest/target/w
 
 Relue après la vérification (2026-11-06, de 23 h 00 à 23 h 10, GMT, même commande avec `--travail`, le relais à sa garde d'un fichier par numéro, charge 1,73 au départ et 3,09 à la fin) : **153 fils**, **14 736 Kio** au plus ; à 8 téléphones (Punchline) : 27 fils, 15 696 Kio (preuves : `target/preuves/lot-5/correction/soiree-native-sidequest-71/`, `soiree-native-punchline/`).
 
+## Lot 6 : le coût d'un nœud de scène, avant et après l'ABI 4
+
+Le carburant compte les instructions du module réécrit (sous `ReglagesMoteur::PHASE_3`) : il est le même sur toute machine, à tout moment ; ce n'est pas une mesure de temps, et elle n'a pas besoin d'une machine calme. Mesuré le 2026-11-06 (avant, 23 h 27 GMT, sur l'arbre du commun à `320b9b1`, propre) et le 2026-11-07 (après, 00 h 00 GMT, sur l'arbre final du lot 6), MacBook Apple M5, rustc 1.99.1, par `epreuve/examples/cout_d_un_noeud.rs` : la vue de l'écran d'`ardoise` (`Regarder`), lue après chaque trait écrit ; chaque trait est un `Rect`, et l'écart d'un trait au suivant est le coût d'un nœud (sa clé `Cle::de(&("trait", i))`, sa copie, son encodage, celui de la réponse). Le premier trait ajoute aussi le bouton « Annuler » et ne compte pas.
+
+| | Module `ardoise` (sha256) | Vue sans trait | Un `Rect`, du 2ᵉ au 24ᵉ trait : médiane ; moyenne ; de … à … |
+|---|---|---|---|
+| Avant (ABI 3) | `a77e81f5…` | 61 102 | 2 395 ; 2 451 ; 2 373 à 2 989 |
+| Après (ABI 4) | `036799a4…` | 62 535 | 2 395 ; 2 455 ; 2 342 à 3 051 |
+
+L'ABI 4 ne change pas le coût d'un nœud (même médiane) ; la vue entière d'`ardoise` coûte 1 433 unités de plus (2,3 %), une fois par scène : `SorteNoeud` a grandi (la boîte d'un composant), et `Scene` porte un nœud de secours de cette taille. Le chiffre de RESTE-PHASE-2 (point 12 : « de 4 500 à 4 800 unités ») date de la phase 1 et du compte par fonction : un rectangle coûte aujourd'hui environ 2 400 unités ; trois écarts dépassent nettement la médiane, aux 4ᵉ, 15ᵉ et 20ᵉ traits, avant (2 721, 2 989, 2 755) comme après (2 743, 3 051, 2 768) ; leur cause n'est pas cherchée ici. Le réduire attend les budgets (question 4).
+
+Commande : `cargo build -p ardoise-module --target wasm32-unknown-unknown --profile module`, puis `target/hote/lourd cargo run --release -p epreuve --example cout_d_un_noeud -- <ardoise_module.wasm>` (preuves : `target/preuves/lot-6/cout-noeud-avant/`, `cout-noeud-apres/`).
+
+**Le coût d'une page** (carburant, relevé par E19 sur les `Page` que E21 appelle, 2026-11-07, plan court des jeux, plan standard de `devine`) : `devine`, 128 pages, 12 156 en médiane, au plus 29 823 ; la page vide de Sidequest (1 024 pages) au plus 26 749 ; la page vide de Punchline (1 024 pages) 32 039 en médiane, 707 303 au 99ᵉ centile, au plus 722 971 : le décodage de la vue de Punchline dans la colle. Avec son coût fixe (155 800), Punchline prend déjà 67 % du budget d'une page (1 302 083, une lecture divisée par une marge de téléphone de 4, choisie) avant d'écrire la sienne. Commande : `target/release/soiree-epreuve <jeu> --court` (preuves : `target/preuves/lot-6/court-*/`, `devine-standard/`).
+
 ## Ce que ces mesures ne disent pas
 
 - **L'ordinateur de la soirée.** Toutes les durées sont celles d'un M5 récent. Le CONTRAT ne décrit pas encore l'ordinateur de la soirée (« Le matériel : à renseigner ») ; le banc se relance sur lui tel quel (README).

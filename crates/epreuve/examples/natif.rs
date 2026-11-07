@@ -59,6 +59,11 @@ fn copie_native(nom: &str) -> Option<Box<dyn FabriqueDynamique>> {
         "pire-cas-trop-lourd" => Box::new(FabriqueNative::<jeux::PireCasTropLourd>::new()),
         "fin-trop-lourde" => Box::new(FabriqueNative::<jeux::FinTropLourde>::new()),
         "zones-lourdes" => Box::new(FabriqueNative::<jeux::ZonesLourdes>::new()),
+        "module-trop-gros" => Box::new(FabriqueNative::<jeux::ModuleTropGros>::new()),
+        "page-qui-panique" => Box::new(FabriqueNative::<jeux::PageQuiPanique>::new()),
+        "page-qui-envoie-un-geste-invalide" => {
+            Box::new(FabriqueNative::<jeux::PageQuiEnvoieUnGesteInvalide>::new())
+        }
         _ => return None,
     })
 }

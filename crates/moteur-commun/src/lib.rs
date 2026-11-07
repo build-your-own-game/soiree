@@ -86,6 +86,14 @@ pub use protocole::{
 use alloc::string::String;
 use partie::{CausePanne, PanneOutil};
 
+/// La taille la plus grande d'un module livré, avant réécriture : 4 Mio, **choisi**
+/// (PHASE-3, § 2.8 ; les modules des jeux font de 227 à 780 ko, mesure 4 de la phase
+/// 1). Sa seule définition : le Worker de l'écran refuse au chargement un module plus
+/// gros (lot 10a), et l'épreuve le fait échouer à E1, pour qu'un module éprouvé ne soit
+/// jamais refusé le soir même (lot 6). M4, au lot 12, mesure ce qu'un téléphone en
+/// télécharge et en compile.
+pub const TAILLE_MODULE_MAX: u64 = 4 * 1024 * 1024;
+
 fn interne(quoi: impl Into<String>) -> PanneOutil {
     PanneOutil::new(CausePanne::Interne, quoi)
 }

@@ -50,6 +50,7 @@ mod etape;
 pub mod fichiers;
 mod forme;
 mod hasard;
+mod page;
 mod scene;
 mod secret;
 mod temps;
@@ -71,6 +72,7 @@ pub use hasard::Hasard;
 /// 30);`) au lieu de deviner la période de l'épreuve.
 pub use jeu_abi::PERIODE_HYPOTHESE;
 pub use jeu_derive::{Variantes, etat, message};
+pub use page::{ChampPage, Locaux, Page, Recue};
 pub use scene::{ComposantVu, CompteARebours, Definitif, Montre, Noeud, Scene};
 pub use secret::{Absent, Autorite, Lecteurs, Qui, Regard, Secret};
 pub use temps::{Echeance, Maintenant, Reveil};
@@ -103,23 +105,24 @@ pub mod essai {
 pub mod prelude {
     pub use crate::{
         Absent, Appareils, Applicable, Apres, Asset, Attente, Aucun, Autorite, Avant, Bot,
-        Changement, CleTexte, ComposantBot, ComposantVu, CompteARebours, Constat, Construction,
-        Coupure, Creation, DeEcran, Declaration, Definitif, Demande, Demandes, Echeance, Encrable,
-        Encre, Entree, Epreuve, Etat, FichierBot, Geste, Hasard, Issue, Jeu, Lecteurs, Limite,
-        Maintenant, Message, Montre, Noeud, Partage, Parts, Pause, Phase, Proprietes, Quand, Qui,
-        Raison, Regard, ReglesTenu, Reveil, Scene, Secret, Sorties, Style, Telephones, Temps, Tenu,
-        Texte, Variantes, Verif,
+        ChampPage, Changement, CleTexte, ComposantBot, ComposantVu, CompteARebours, Constat,
+        Construction, Coupure, Creation, DeEcran, Declaration, Definitif, Demande, Demandes,
+        Echeance, Encrable, Encre, Entree, Epreuve, Etat, FichierBot, Geste, Hasard, Issue, Jeu,
+        Lecteurs, Limite, Locaux, Maintenant, Message, Montre, Noeud, Page, Partage, Parts, Pause,
+        Phase, Proprietes, Quand, Qui, Raison, Recue, Regard, ReglesTenu, Reveil, Scene, Secret,
+        Sorties, Style, Telephones, Temps, Tenu, Texte, Variantes, Verif,
     };
     pub use jeu_abi::{
         Absence, Accueil, Alignement, Animation, Appareil, Appui, Axe, Axe2, Borne, Bouton,
-        Capacite, Capacites, CauseDepart, CauseTenu, ClavierBrut, Cle, CodeTouche, Composant,
-        Coupe, Courbe, Cumul, Deplace, Duree, Echantillonnage, EchecDemande, Effet, FichierRecu,
-        FinSaisie, Fini, Fixe, Flux, FormatImage, FormeEcran, GenrePointeur, HeureMurale,
-        IdDemande, IdEffet, IdFichier, IdGeste, Instant, Lignes, Limites, Manette, Mecanique, Mods,
-        Orientation, Oui, PAS_PAR_SECONDE, PERIODE_HYPOTHESE, Pas, PhasePointeur, PhaseTouche,
-        Places, Pointeur, Presence, Prevision, Rect, Reglages, Repartition, Reponse, Rgba,
-        RoleAppareil, Sensation, Signal, Son, SorteAsset, StyleTexte, Taille, Tenue, TexteCourt,
-        Touche, Unite, Vibration, Visuel, Voulues, ZoneVu,
+        Capacite, Capacites, CauseDepart, CauseTenu, Clavier, ClavierBrut, Cle, CodeTouche,
+        Composant, Coupe, Courbe, Cumul, Declencheur, Deplace, Direction8, Directions, Duree,
+        Echantillonnage, EchecDemande, EcranTelephone, Effet, Envoi, FichierRecu, FinSaisie, Fini,
+        Fixe, Flux, FormatImage, FormeEcran, GenrePointeur, HeureMurale, IdDemande, IdEffet,
+        IdFichier, IdGeste, ImageRendue, Instant, Lignes, Limites, Manette, Marges, Mecanique,
+        Mods, Orientation, Oui, PAS_PAR_SECONDE, PERIODE_HYPOTHESE, Pas, PhasePointeur,
+        PhaseTouche, Places, Pointeur, Presence, Prevision, Rect, Reglages, Repartition, Reponse,
+        Rgba, RoleAppareil, Sensation, Signal, Son, SorteAsset, StylePage, StyleTexte, Taille,
+        TaillePage, Tenue, TexteCourt, Touche, Unite, Vibration, Visuel, Voulues, ZoneVu,
     };
 }
 

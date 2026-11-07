@@ -7,13 +7,15 @@
 
 use jeu_abi::{
     Accueil, Appareil, Appel, ApplicableFil, AssetFil, AttenteFil, Bonjour, Capacites, CauseDepart,
-    CauseTenu, Cle, CodeTouche, Composant, ConstatFil, CoupFil, DeclarationFil, DemandeFil, Duree,
-    EchecDemande, EcranFil, Effet, EntreeFil, ErreurFil, FinSaisie, Fixe, FormeEcran,
-    GenrePointeur, IdEffet, IdFichier, Illisible, Instant, IssueFil, Limites, Manette, Mecanique,
-    Mods, MontreFil, NoeudFil, Oui, Pas, PauseFil, PhasePointeur, PhaseTouche, Places, Pointeur,
-    Presence, QuandFil, Rect, RegardFil, Reglages, ReglesTenuFil, Repartition, Reponse, Retour,
-    ReveilFil, Rgba, RoleAppareil, SceneFil, Sensation, SorteAsset, SorteNoeud, SorteOctets,
-    SortieFil, StyleFil, TelephonesFil, TenuFil, Tenue, TexteCourt, Touche, Validation, Vibration,
+    CauseTenu, Cle, CodeTouche, Composant, ComposantVuFil, ConstatFil, CoupFil, DeclarationFil,
+    Declencheur, DemandeFil, Direction8, Duree, EchecDemande, EcranFil, EcranTelephone, Effet,
+    EntreeFil, ErreurFil, FichierRecu, FinSaisie, Fixe, FormeEcran, GenrePointeur, IdEffet,
+    IdFichier, IdGeste, Illisible, ImageRendue, Instant, IssueFil, Limites, LocauxFil, Manette,
+    Marges, Mecanique, Mods, MontreFil, NoeudFil, NoeudPage, Orientation, Oui, PageFil, Pas,
+    PauseFil, PhasePointeur, PhaseTouche, Places, Pointeur, Presence, QuandFil, Rect, RegardFil,
+    Reglages, ReglesTenuFil, Repartition, Reponse, Retour, ReveilFil, Rgba, RoleAppareil, SceneFil,
+    Sensation, SorteAsset, SorteNoeud, SorteNoeudPage, SorteOctets, SortieFil, StyleFil, StylePage,
+    TaillePage, TelephonesFil, TenuFil, TenuPage, Tenue, TexteCourt, Touche, Validation, Vibration,
     Voulues, VueFil, decoder, encoder,
 };
 
@@ -274,6 +276,45 @@ pub fn corpus() -> Vec<Cas> {
             Appel::Hypothese { appareil: 300 },
             "14 AC 02",
         ),
+        // ABI 4 : la page du téléphone, à la fin d'`Appel`.
+        cas(
+            "Appel::Page",
+            Message::Appel(Appel::Page {
+                montre: &[1, 2],
+                pas: Pas::du_fil(300),
+                locaux: LocauxFil {
+                    ecran: EcranTelephone {
+                        largeur: 360,
+                        hauteur: 640,
+                        marges: Marges {
+                            haut: 1,
+                            droite: 0,
+                            bas: 2,
+                            gauche: 0,
+                        },
+                        orientation: Orientation::PaysageDroite,
+                    },
+                    champs: vec![(Cle::du_fil(1), "é")],
+                    choix: vec![(Cle::du_fil(2), 3)],
+                    appuyes: vec![Cle::du_fil(4)],
+                    croix: vec![(Cle::du_fil(5), Direction8::HautGauche)],
+                    retenu: Some(&[9]),
+                    capacites: Capacites::AUCUNE,
+                },
+            }),
+            // Capacités, à la fin : six Non(NonSupportee), Portrait, pas de prénom.
+            format!(
+                "{}{}00 00",
+                concat!(
+                    "15 02 01 02 AC 02 ",          // montre [1, 2], pas 300
+                    "E8 02 80 05 01 00 02 00 03 ", // 360 × 640, marges 1 0 2 0, PaysageDroite
+                    "01 01 02 C3 A9 ",             // champs [(1, « é »)]
+                    "01 02 03 01 04 ",             // choix [(2, 3)], appuyés [4]
+                    "01 05 08 01 01 09 ",          // croix [(5, HautGauche)], retenu [9]
+                ),
+                "01 00 ".repeat(6)
+            ),
+        ),
         // --- Retour ---
         r(
             "Retour::Bonjour",
@@ -430,6 +471,52 @@ pub fn corpus() -> Vec<Cas> {
             "0F 00 D8 04 01 03 6E 6F 6E 03 01 02 6F 6B",
         ),
         r("Retour::Hypothese", Retour::Hypothese(Oui::Non), "10 01"),
+        // ABI 4 : la page, à la fin de `Retour`.
+        r(
+            "Retour::Page",
+            Retour::Page(PageFil {
+                noeuds: vec![
+                    NoeudPage {
+                        cle: Cle::du_fil(1),
+                        parent: None,
+                        sorte: SorteNoeudPage::Pile,
+                    },
+                    NoeudPage {
+                        cle: Cle::du_fil(2),
+                        parent: Some(0),
+                        sorte: SorteNoeudPage::Image {
+                            image: Cle::du_fil(3),
+                            hauteur: TaillePage::Hauteur(50),
+                            teinte: Some(Rgba(1, 2, 3, 4)),
+                        },
+                    },
+                    NoeudPage {
+                        cle: Cle::du_fil(4),
+                        parent: Some(0),
+                        sorte: SorteNoeudPage::Bouton {
+                            nom: String::from("A"),
+                            geste: vec![7],
+                            quand: Declencheur::Contact,
+                            style: StylePage::ORDINAIRE,
+                        },
+                    },
+                ],
+                tenu: Some(TenuPage {
+                    octets: vec![1],
+                    relache: Some(vec![0]),
+                }),
+                retenir: None,
+            }),
+            concat!(
+                "11 03 ",                               // trois nœuds
+                "01 00 03 ",                            // clé 1, racine, Pile
+                "02 01 00 05 03 01 32 01 01 02 03 04 ", // clé 2, parent 0, Image 3, 50 %, teinte
+                "04 01 00 07 01 41 01 07 00 ", // clé 4, parent 0, Bouton « A », geste [7], Contact
+                "00 00 14 00 00 00 ", // style : police 0, Px(20), sans couleur ni fond, Debut
+                "01 01 01 01 01 00 ", // tenu [1], relâché [0]
+                "00"                  // rien à retenir
+            ),
+        ),
         // --- EntreeFil ---
         e(
             "EntreeFil::Temps",
@@ -489,6 +576,24 @@ pub fn corpus() -> Vec<Cas> {
             format!("01 03 00 01 02 C3 A9 01 {Q}"),
         ),
         e(
+            "EntreeFil::Ecran::Composant::Fichiers",
+            EntreeFil::Ecran {
+                quoi: EcranFil::Composant(Composant::Fichiers {
+                    geste: IdGeste::du_fil(5),
+                    selecteur: Some(Cle::du_fil(6)),
+                    fichiers: vec![FichierRecu {
+                        id: IdFichier::du_fil(7),
+                        nom: TexteCourt::new("a"),
+                        genre: TexteCourt::new("b"),
+                        taille: 300,
+                    }],
+                }),
+                quand: QUAND,
+            },
+            // ABI 4 : le sélecteur (Some, clé 6) entre le geste et les fichiers.
+            format!("01 03 02 05 01 06 01 07 01 61 01 62 AC 02 {Q}"),
+        ),
+        e(
             "EntreeFil::Geste",
             EntreeFil::Geste {
                 de: 3,
@@ -544,6 +649,18 @@ pub fn corpus() -> Vec<Cas> {
                 reponse: Reponse::Fait(Ok(())),
             },
             "06 05 03 00".to_owned(),
+        ),
+        e(
+            "EntreeFil::Reponse::Rendu",
+            EntreeFil::Reponse {
+                id: 2,
+                reponse: Reponse::Rendu(Ok(ImageRendue {
+                    octets: &[0x89],
+                    non_dessinees: 3,
+                })),
+            },
+            // ABI 4 : l'image, puis les images non dessinées.
+            "06 02 01 00 01 89 03".to_owned(),
         ),
         e(
             "EntreeFil::Reponse::Lu",
@@ -610,6 +727,61 @@ pub fn corpus() -> Vec<Cas> {
                 "02 01 00 00 00 00 80 04 80 04 FF FF FF FF ", // clé 2, parent 0, Rect 1 × 1 blanc
                 "01 01 01 00 00 FF ",                         // sans modificateur, opaque
                 "00 00 00"                                    // ni raccourci, ni clavier, ni effet
+            )
+            .to_owned(),
+        ),
+        // ABI 4 : la boîte d'un composant, le panneau d'une modale, le fichier d'un lien.
+        cas(
+            "SceneFil::Composant",
+            Message::Scene(SceneFil {
+                fond: None,
+                noeuds: vec![
+                    NoeudFil::simple(
+                        Cle::du_fil(1),
+                        None,
+                        SorteNoeud::Composant {
+                            boite: Some(Rect {
+                                x: Fixe::ZERO,
+                                y: Fixe::ZERO,
+                                l: Fixe::unites(1),
+                                h: Fixe::unites(1),
+                            }),
+                            composant: ComposantVuFil::Modale {
+                                fermer: vec![2],
+                                panneau: Rect {
+                                    x: Fixe::ZERO,
+                                    y: Fixe::ZERO,
+                                    l: Fixe::unites(1),
+                                    h: Fixe::unites(1),
+                                },
+                            },
+                        },
+                    ),
+                    NoeudFil::simple(
+                        Cle::du_fil(3),
+                        None,
+                        SorteNoeud::Composant {
+                            boite: None,
+                            composant: ComposantVuFil::Lien {
+                                nom: TexteCourt::new("n"),
+                                ressource: Cle::du_fil(4),
+                                fichier: TexteCourt::new("f"),
+                            },
+                        },
+                    ),
+                ],
+                raccourcis: vec![],
+                clavier_brut: jeu_abi::ClavierBrut::Non,
+                effets: vec![],
+            }),
+            concat!(
+                "00 02 ",                         // sans fond, deux nœuds
+                "01 00 07 01 00 00 80 04 80 04 ", // clé 1, racine, Composant, boîte 1 × 1
+                "04 01 02 00 00 80 04 80 04 ",    // Modale, fermer [2], panneau 1 × 1
+                "01 01 01 00 00 FF ",             // sans modificateur, opaque
+                "03 00 07 00 05 01 6E 04 01 66 ", // clé 3, racine, Composant sans boîte, Lien
+                "01 01 01 00 00 FF ",             // sans modificateur, opaque
+                "00 00 00"                        // ni raccourci, ni clavier, ni effet
             )
             .to_owned(),
         ),

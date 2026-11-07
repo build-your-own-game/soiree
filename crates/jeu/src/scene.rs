@@ -35,7 +35,7 @@ pub enum CompteARebours {
 }
 
 impl CompteARebours {
-    const fn fil(self) -> CompteAReboursFil {
+    pub(crate) const fn fil(self) -> CompteAReboursFil {
         match self {
             CompteARebours::Court { echeance } => CompteAReboursFil::Court {
                 echeance: echeance.pas(),
@@ -106,6 +106,8 @@ pub enum ComposantVu<A> {
     Modale {
         /// L'action envoyée à sa fermeture.
         fermer: A,
+        /// Le panneau de la fenêtre ; un clic hors de lui la ferme (ABI 4).
+        panneau: Rect,
     },
     /// Un lien de téléchargement d'une ressource.
     Lien {
@@ -113,6 +115,8 @@ pub enum ComposantVu<A> {
         nom: TexteCourt,
         /// La ressource.
         ressource: Cle,
+        /// Le nom du fichier téléchargé (ABI 4).
+        fichier: TexteCourt,
     },
 }
 
@@ -168,6 +172,79 @@ fn encoder_action<A: Message>(a: &A) -> Vec<u8> {
         o.clear();
     }
     o
+}
+
+/// La forme sur le fil d'un composant : ses actions encodées.
+fn composant_fil<A: Message>(c: ComposantVu<A>) -> ComposantVuFil {
+    match c {
+        ComposantVu::Champ {
+            limite,
+            unite,
+            lignes,
+            valeur,
+            exemple,
+            fin,
+        } => ComposantVuFil::Champ {
+            limite,
+            unite,
+            lignes,
+            valeur,
+            exemple,
+            fin: fin.as_ref().map(encoder_action),
+        },
+        ComposantVu::EnPlace {
+            limite,
+            unite,
+            valeur,
+            style,
+        } => ComposantVuFil::EnPlace {
+            limite,
+            unite,
+            valeur,
+            style,
+        },
+        ComposantVu::Deplacables {
+            zones,
+            poubelle,
+            seuil,
+            bord,
+            vitesse_max,
+            plafond_reveil,
+        } => ComposantVuFil::Deplacables {
+            zones,
+            poubelle,
+            seuil,
+            bord,
+            vitesse_max,
+            plafond_reveil,
+        },
+        ComposantVu::Selecteur {
+            genres,
+            multiple,
+            depot_partout,
+            collage,
+            taille_max,
+        } => ComposantVuFil::Selecteur {
+            genres,
+            multiple,
+            depot_partout,
+            collage,
+            taille_max,
+        },
+        ComposantVu::Modale { fermer, panneau } => ComposantVuFil::Modale {
+            fermer: encoder_action(&fermer),
+            panneau,
+        },
+        ComposantVu::Lien {
+            nom,
+            ressource,
+            fichier,
+        } => ComposantVuFil::Lien {
+            nom,
+            ressource,
+            fichier,
+        },
+    }
 }
 
 /// La scène de l'écran, que le jeu remplit dans `vue_ecran`.
@@ -340,69 +417,27 @@ impl<A: Message> Scene<A> {
         self.ajouter(cle, SorteNoeud::Qr { boite })
     }
 
-    /// Un composant riche.
+    /// Un composant riche, sans boîte : son groupe le place, comme avant l'ABI 4.
     pub fn composant(&mut self, cle: Cle, c: ComposantVu<A>) -> &mut Noeud {
-        let fil = match c {
-            ComposantVu::Champ {
-                limite,
-                unite,
-                lignes,
-                valeur,
-                exemple,
-                fin,
-            } => ComposantVuFil::Champ {
-                limite,
-                unite,
-                lignes,
-                valeur,
-                exemple,
-                fin: fin.as_ref().map(encoder_action),
+        self.ajouter(
+            cle,
+            SorteNoeud::Composant {
+                boite: None,
+                composant: composant_fil(c),
             },
-            ComposantVu::EnPlace {
-                limite,
-                unite,
-                valeur,
-                style,
-            } => ComposantVuFil::EnPlace {
-                limite,
-                unite,
-                valeur,
-                style,
+        )
+    }
+
+    /// Un composant riche dans cette boîte (ABI 4), que le cœur vérifie dans le repère
+    /// comme celle d'un texte (Tier list, BESOINS-COMMUN § 7 ; le chat de Sidequest).
+    pub fn composant_dans(&mut self, cle: Cle, boite: Rect, c: ComposantVu<A>) -> &mut Noeud {
+        self.ajouter(
+            cle,
+            SorteNoeud::Composant {
+                boite: Some(boite),
+                composant: composant_fil(c),
             },
-            ComposantVu::Deplacables {
-                zones,
-                poubelle,
-                seuil,
-                bord,
-                vitesse_max,
-                plafond_reveil,
-            } => ComposantVuFil::Deplacables {
-                zones,
-                poubelle,
-                seuil,
-                bord,
-                vitesse_max,
-                plafond_reveil,
-            },
-            ComposantVu::Selecteur {
-                genres,
-                multiple,
-                depot_partout,
-                collage,
-                taille_max,
-            } => ComposantVuFil::Selecteur {
-                genres,
-                multiple,
-                depot_partout,
-                collage,
-                taille_max,
-            },
-            ComposantVu::Modale { fermer } => ComposantVuFil::Modale {
-                fermer: encoder_action(&fermer),
-            },
-            ComposantVu::Lien { nom, ressource } => ComposantVuFil::Lien { nom, ressource },
-        };
-        self.ajouter(cle, SorteNoeud::Composant(fil))
+        )
     }
 
     /// Où le commun écrit ses avertissements, dont les refus de l'écran (TL-71).

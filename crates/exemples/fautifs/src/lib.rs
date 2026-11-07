@@ -89,4 +89,10 @@ pub mod jeux {
     pub type ZonesLourdes = Socle<defauts::ZonesLourdes>;
     /// E16 : des pires cas plus légers que l'écran d'une soirée.
     pub type PireCasTropLeger = Socle<defauts::PireCasTropLeger>;
+    /// E1 : un module livré au-delà de `TAILLE_MODULE_MAX` (lot 6).
+    pub type ModuleTropGros = Socle<defauts::ModuleTropGros>;
+    /// E21 : une page qui panique sur une option hors de son choix (lot 6).
+    pub type PageQuiPanique = Socle<defauts::PageQuiPanique>;
+    /// E21 : une page dont un bouton porte un geste trop gros (lot 6).
+    pub type PageQuiEnvoieUnGesteInvalide = Socle<defauts::PageQuiEnvoieUnGesteInvalide>;
 }

@@ -332,6 +332,7 @@ fn arrivees_de_l_ecran_et_du_commun_figees() -> Vec<(&'static str, ArriveePlacee
             "ComposantArrivee::Fichiers",
             composant(ComposantArrivee::Fichiers {
                 geste: IdGeste::du_fil(6),
+                selecteur: Some(Cle::du_fil(8)),
                 fichiers: vec![FichierRecu {
                     id: IdFichier::du_fil(1),
                     nom: TexteCourt::new("a"),
@@ -357,7 +358,7 @@ fn arrivees_de_l_ecran_et_du_commun_figees() -> Vec<(&'static str, ArriveePlacee
         ),
         (
             "ReponseArrivee::Rendu",
-            reponse(ReponseArrivee::Rendu(Err(EchecDemande::Refuse))),
+            reponse(ReponseArrivee::Rendu(Ok((vec![1], 2)))),
         ),
         (
             "ReponseArrivee::Lu",
@@ -507,16 +508,17 @@ fn octets_arrivee(nom: &str) -> Vec<u8> {
         "ComposantArrivee::Saisie" => vec![1, 3, 3, 0, 4, 2, b'a', b'b', 1],
         // Écran ; Ecran (3), Composant (3), Deplace (1) : Annule (2), objet 5.
         "ComposantArrivee::Deplace" => vec![1, 3, 3, 1, 2, 5],
-        // Écran ; Ecran (3), Composant (3), Fichiers (2) : geste 6, un fichier :
-        // identité 1, nom « a », genre « b », taille 10.
-        "ComposantArrivee::Fichiers" => vec![1, 3, 3, 2, 6, 1, 1, 1, b'a', 1, b'b', 10],
+        // Écran ; Ecran (3), Composant (3), Fichiers (2) : geste 6, sélecteur Some (1)
+        // 8 (version 3), un fichier : identité 1, nom « a », genre « b », taille 10.
+        "ComposantArrivee::Fichiers" => vec![1, 3, 3, 2, 6, 1, 8, 1, 1, 1, b'a', 1, b'b', 10],
         // Appareil 0 ; Presence (4), Arrivee (0) : appareil 7, téléphone (0), aucune
         // capacité.
         "QuoiPlace::Presence" => cat(&[&[2, 0, 4, 0, 7, 0], &octets_capacites_aucunes()]),
         // Commun ; Reponse (5) : demande 9, Image (0), Ok (0) [1].
         "ReponseArrivee::Image" => vec![0, 5, 9, 0, 0, 1, 1],
-        // Commun ; Reponse (5) : demande 9, Rendu (1), Err (1) Refuse (2).
-        "ReponseArrivee::Rendu" => vec![0, 5, 9, 1, 1, 2],
+        // Commun ; Reponse (5) : demande 9, Rendu (1), Ok (0) [1], puis deux images non
+        // dessinées (version 3).
+        "ReponseArrivee::Rendu" => vec![0, 5, 9, 1, 0, 1, 1, 2],
         // Commun ; Reponse (5) : demande 9, Lu (2), Ok (0), aucun octet.
         "ReponseArrivee::Lu" => vec![0, 5, 9, 2, 0, 0],
         // Commun ; Reponse (5) : demande 9, Fait (3), Ok (0).
@@ -646,8 +648,8 @@ fn octets_point(pt: &Point) -> Vec<u8> {
 #[test]
 fn les_octets_de_chaque_variant_sont_figes() {
     assert_eq!(
-        VERSION_GARDE, 2,
-        "les octets de ce fichier sont ceux de la version 2 (ceux de partie n'ont pas changé depuis la 1)"
+        VERSION_GARDE, 3,
+        "les octets de ce fichier sont ceux de la version 3 (lot 6 : le sélecteur des fichiers et les images non dessinées d'un rendu ; le reste n'a pas changé depuis la 1)"
     );
     let mut ecarts = Vec::new();
     let mut comparer = |nom: &str, ligne: Ligne, attendu: Vec<u8>| {
@@ -986,8 +988,20 @@ impl Lecteur<'_> {
                     self.abi(&abi(fin));
                 }
                 (1, ComposantArrivee::Deplace(d)) => self.abi(&abi(d)),
-                (2, ComposantArrivee::Fichiers { geste, fichiers }) => {
+                (
+                    2,
+                    ComposantArrivee::Fichiers {
+                        geste,
+                        selecteur,
+                        fichiers,
+                    },
+                ) => {
                     assert_eq!(self.varint(), geste.fil());
+                    match (self.varint(), selecteur) {
+                        (0, None) => {}
+                        (1, Some(c)) => assert_eq!(self.varint(), c.fil()),
+                        (autre, s) => panic!("sélecteur {autre} pour {s:?}"),
+                    }
                     assert_eq!(self.varint(), u64::try_from(fichiers.len()).unwrap());
                     for f in fichiers {
                         self.abi(&abi(f));
@@ -1007,11 +1021,18 @@ impl Lecteur<'_> {
             (autre, r) => panic!("résultat {autre} pour {r:?}"),
         };
         match (self.varint(), r) {
-            (0, ReponseArrivee::Image(x))
-            | (1, ReponseArrivee::Rendu(x))
-            | (2, ReponseArrivee::Lu(x)) => {
+            (0, ReponseArrivee::Image(x)) | (2, ReponseArrivee::Lu(x)) => {
                 resultat(self, x.as_deref());
             }
+            // Version 3 : l'image, puis les images non dessinées.
+            (1, ReponseArrivee::Rendu(x)) => match (self.varint(), x) {
+                (0, Ok((o, n))) => {
+                    assert_eq!(self.tranche(), o.as_slice());
+                    assert_eq!(self.varint(), u64::from(*n));
+                }
+                (1, Err(e)) => self.abi(&abi(e)),
+                (autre, x) => panic!("résultat {autre} pour {x:?}"),
+            },
             (3, ReponseArrivee::Fait(x)) => match (self.varint(), x) {
                 (0, Ok(())) => {}
                 (1, Err(e)) => self.abi(&abi(e)),

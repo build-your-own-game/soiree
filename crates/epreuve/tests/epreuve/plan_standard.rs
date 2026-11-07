@@ -73,6 +73,12 @@ fn jeu(nom: &str) -> (Box<dyn FabriqueDynamique>, Option<IdControle>) {
         "pire-cas-trop-lourd" => (n!(jeux::PireCasTropLourd), Some(IdControle::E19)),
         "fin-trop-lourde" => (n!(jeux::FinTropLourde), Some(IdControle::E19)),
         "zones-lourdes" => (n!(jeux::ZonesLourdes), Some(IdControle::E19)),
+        "module-trop-gros" => (n!(jeux::ModuleTropGros), Some(IdControle::E1)),
+        "page-qui-panique" => (n!(jeux::PageQuiPanique), Some(IdControle::E21)),
+        "page-qui-envoie-un-geste-invalide" => (
+            n!(jeux::PageQuiEnvoieUnGesteInvalide),
+            Some(IdControle::E21),
+        ),
         autre => panic!("jeu sans attendu : {autre}"),
     }
 }
