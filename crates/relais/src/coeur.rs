@@ -116,6 +116,15 @@ pub enum OpGarde {
         /// Le plus vieux numéro gardé.
         avant: u64,
     },
+    /// Ajouter une ligne à la fin d'un flux de résultats (la demande `Ligne` d'un jeu, lot
+    /// 11) : le nom est valide (`liaison::flux_valide`), la ligne tient dans
+    /// `liaison::LIGNE_MAX`.
+    AjouterLigne {
+        /// Le flux.
+        flux: String,
+        /// La ligne.
+        ligne: Vec<u8>,
+    },
 }
 
 /// Ce que la garde a fait sur disque.
@@ -131,6 +140,12 @@ pub enum Fait {
     Absente(Case),
     /// Les cases d'avant sont effacées.
     Efface,
+    /// La ligne est ajoutée à son flux, et synchronisée.
+    LigneAjoutee,
+    /// La ligne n'est pas ajoutée : son flux est plein (`garde::FLUX_MAX`), la salle a déjà
+    /// tous ses flux (`garde::FLUX_PAR_SALLE`), ou le disque a échoué. Rien ne part à la
+    /// garde et son lien reste : une ligne de résultats n'arrête pas la partie (lot 11).
+    LigneIgnoree,
     /// L'opération est refusée : la garde est pleine, ou le disque a échoué.
     Refus(RefusRelais),
 }
@@ -703,8 +718,8 @@ impl<P: Preuves> Coeur<P> {
             }
             VersRelais::Echo { t_envoi_us } => self.echo(lien, t_envoi_us, maintenant_us),
             VersRelais::AuRevoir => self.fermer_lien(lien, CauseFermeture::AuRevoir),
-            // Les lignes des flux viennent avec la demande `Ligne` (lot 11) ; le reste
-            // n'est pas de ce rôle.
+            // Les lignes des flux viennent par la garde (lot 11) ; le reste n'est pas de
+            // ce rôle.
             VersRelais::AjouterLigne { .. }
             | VersRelais::Bonjour { .. }
             | VersRelais::Trame { .. }
@@ -734,6 +749,15 @@ impl<P: Preuves> Coeur<P> {
             VersRelais::Lister => Some(OpGarde::Lister),
             VersRelais::Lire { case } => Some(OpGarde::Lire { case }),
             VersRelais::Effacer { avant } => Some(OpGarde::Effacer { avant }),
+            // Une ligne d'un flux : un nom qui ne ferait pas un nom de fichier, une ligne
+            // trop longue ou qui contient un saut de ligne, sont ignorés sans couper la
+            // garde (lot 11).
+            VersRelais::AjouterLigne { flux, ligne } => (liaison::flux_valide(flux)
+                && liaison::ligne_valide(ligne))
+            .then(|| OpGarde::AjouterLigne {
+                flux: String::from(flux),
+                ligne: ligne.to_vec(),
+            }),
             VersRelais::Echo { t_envoi_us } => {
                 self.echo(lien, t_envoi_us, maintenant_us);
                 None
@@ -746,7 +770,6 @@ impl<P: Preuves> Coeur<P> {
             | VersRelais::Vers { .. }
             | VersRelais::Trame { .. }
             | VersRelais::Couper { .. }
-            | VersRelais::AjouterLigne { .. }
             | VersRelais::Limites { .. } => None,
         };
         if let Some(op) = op
@@ -824,7 +847,7 @@ impl<P: Preuves> Coeur<P> {
                     octets: &octets,
                 },
             ),
-            Fait::Absente(_) | Fait::Efface => {}
+            Fait::Absente(_) | Fait::Efface | Fait::LigneAjoutee | Fait::LigneIgnoree => {}
             Fait::Refus(r) => self.refuser(lien, r),
         }
     }

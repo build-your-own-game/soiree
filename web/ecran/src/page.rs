@@ -5,8 +5,10 @@
 //! (P36), pose les marques F8 (SAL-162). En mode banc, elle écrit sur sa console ce que le
 //! banc juge (`banc …`), et lui offre ses crochets (`window.__banc`).
 //!
-//! Le démarrage, les composants, les entrées du jeu, le son, le plein écran et le QR
-//! viennent aux lots 10b à 13 : ici, l'écran du commun se réduit à un bandeau de texte.
+//! Les entrées du jeu, les composants posés sur la toile, la page qui défile et les
+//! demandes du jeu sont dans `interaction` (lot 11). Le démarrage, le son, le plein écran
+//! et le QR viennent aux lots 10b à 13 : ici, l'écran du commun se réduit à un bandeau de
+//! texte.
 
 #![expect(
     clippy::cast_possible_truncation,
@@ -17,13 +19,12 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::Write as _;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use jeu_abi::{IdGeste, Oui};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
 use salle::chien::{Chien, Decision, TIC_MS};
 use salle::ecran::{CommandeEcran, DeLaPage, PanneSalle, VersPage};
-use salle::simulation::reponse_par_defaut;
 use wasm_bindgen::prelude::{Closure, wasm_bindgen};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -32,17 +33,18 @@ use web_sys::{
     WorkerOptions, WorkerType,
 };
 
-use crate::toile::{ChoixMoteur, Ecran, maintenant_ms, texte_d_erreur};
+use crate::interaction::{self, Interaction};
+use crate::toile::{ChoixMoteur, Ecran, decoder_image, maintenant_ms, texte_d_erreur};
 
 /// Un redessin au plus tous les 250 ms sans scène neuve : les comptes à rebours (choisi).
 const REDESSIN_MS: f64 = 250.0;
 
 /// L'état de la page.
-struct Page {
+pub(crate) struct Page {
     /// Le nom de cet onglet, pour le banc.
     onglet: String,
-    fenetre: Window,
-    document: Document,
+    pub(crate) fenetre: Window,
+    pub(crate) document: Document,
     banc: bool,
     module: Option<[u8; 32]>,
     script: String,
@@ -52,15 +54,19 @@ struct Page {
     pret: bool,
     ecarter: Option<IdGeste>,
     chien: Chien,
-    ecran: Option<Ecran>,
-    dessin: Dessin,
+    pub(crate) ecran: Option<Ecran>,
+    pub(crate) dessin: Dessin,
     bandeau: Element,
     /// Le bandeau propose-t-il de reprendre ?
     proposition: Proposition,
     relances: u64,
+    /// La toile.
+    pub(crate) toile: Option<HtmlCanvasElement>,
+    /// Les entrées de l'écran et les demandes du jeu (lot 11).
+    pub(crate) jeu: Interaction,
 }
 
-type Etat = Rc<RefCell<Page>>;
+pub(crate) type Etat = Rc<RefCell<Page>>;
 
 /// Ce que le bandeau propose.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -71,13 +77,13 @@ enum Proposition {
 }
 
 /// Ce qui attend d'être dessiné.
-struct Dessin {
+pub(crate) struct Dessin {
     /// Les scènes et les ressources, à passer à l'écran une à une.
     file: VecDeque<Vec<u8>>,
     /// La file est-elle en train de passer ?
     occupe: bool,
     /// Une scène neuve attend son dessin.
-    sale: bool,
+    pub(crate) sale: bool,
     dernier_ms: f64,
 }
 
@@ -86,7 +92,7 @@ type ChaqueImage = Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>;
 
 /// Une ligne pour le banc, sur la console : `banc <onglet> <json>`. L'onglet est un nom
 /// tiré à l'ouverture de la page : le banc distingue ainsi deux onglets de l'écran.
-fn banc(p: &Page, json: &str) {
+pub(crate) fn banc(p: &Page, json: &str) {
     if p.banc {
         web_sys::console::log_1(&JsValue::from_str(&format!("banc {} {json}", p.onglet)));
     }
@@ -112,7 +118,7 @@ fn lire_hexa(t: &str) -> Option<[u8; 32]> {
 }
 
 /// Une chaîne JSON.
-fn chaine(s: &str) -> String {
+pub(crate) fn chaine(s: &str) -> String {
     let mut o = String::from("\"");
     for c in s.chars() {
         match c {
@@ -129,7 +135,7 @@ fn chaine(s: &str) -> String {
 }
 
 /// L'heure absolue de la page, `performance.timeOrigin + performance.now()`, en µs.
-fn heure_us(f: &Window) -> u64 {
+pub(crate) fn heure_us(f: &Window) -> u64 {
     let t = f
         .performance()
         .map_or(0.0, |p| (p.time_origin() + p.now()) * 1000.0);
@@ -154,7 +160,7 @@ fn dire(p: &Page, texte: Option<&str>) {
     );
 }
 
-fn poster(p: &Page, m: &DeLaPage<'_>) {
+pub(crate) fn poster(p: &Page, m: &DeLaPage<'_>) {
     let (Some(w), Ok(o)) = (p.worker.as_ref(), m.encoder()) else {
         return;
     };
@@ -173,6 +179,10 @@ pub fn demarrer_la_page(script: String) {
     });
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "la page se monte ici d'un bloc, dans l'ordre où ses parties dépendent l'une de l'autre"
+)]
 async fn demarrer(script: String) -> Result<(), String> {
     let fenetre = web_sys::window().ok_or("pas de fenêtre")?;
     let document = fenetre.document().ok_or("pas de document")?;
@@ -206,8 +216,27 @@ async fn demarrer(script: String) -> Result<(), String> {
     } else {
         ChoixMoteur::Auto
     };
+    // Le banc seulement (la page les ignore hors du banc) : les bots arrêtés, et l'option
+    // de test du contrôle négatif du scénario `ecran` (lot 11).
+    let sans_bots = au_banc && parametre("bots").as_deref() == Some("non");
+    let activation_perdue = au_banc && parametre("fautif").as_deref() == Some("activation-perdue");
     let (toile, bandeau) = la_toile_et_le_bandeau(&fenetre, &document, &corps)?;
-    let mut ecran = Ecran::creer(toile, choix).await?;
+    // Ce que les écouteurs appellent : la page, dès qu'elle existe.
+    let soi: Rc<RefCell<Weak<RefCell<Page>>>> = Rc::new(RefCell::new(Weak::new()));
+    let s2 = Rc::clone(&soi);
+    let traiter: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(e) = s2.borrow().upgrade() {
+            interaction::traiter(&e);
+        }
+    });
+    let jeu = Interaction::new(
+        &fenetre,
+        &document,
+        &corps,
+        &traiter,
+        (sans_bots, activation_perdue),
+    )?;
+    let mut ecran = Ecran::creer(toile.clone(), choix).await?;
     let ceder = ceder(&fenetre);
     ecran.chauffer(ceder.as_ref().unchecked_ref()).await?;
     drop(ceder);
@@ -234,7 +263,11 @@ async fn demarrer(script: String) -> Result<(), String> {
         bandeau,
         proposition: Proposition::Rien,
         relances: 0,
+        toile: Some(toile),
+        jeu,
     }));
+    *soi.borrow_mut() = Rc::downgrade(&etat);
+    interaction::regler_la_taille(&mut etat.borrow_mut());
     if Reflect::get(&document, &JsValue::from_str("wasDiscarded"))
         .ok()
         .and_then(|v| v.as_bool())
@@ -287,7 +320,18 @@ fn la_toile_et_le_bandeau(
         .unwrap_or(720.0) as u32;
     toile.set_width(largeur.max(1));
     toile.set_height(hauteur.max(1));
-    style(&toile, &[("display", "block")]);
+    // Fixe, sous la page qui défile (`FormeEcran::Page`, lot 11) : le rendu dessine le
+    // défilement.
+    style(
+        &toile,
+        &[
+            ("display", "block"),
+            ("position", "fixed"),
+            ("left", "0"),
+            ("top", "0"),
+            ("z-index", "0"),
+        ],
+    );
     corps.append_child(&toile).map_err(|e| texte_d_erreur(&e))?;
     let bandeau = document
         .create_element("div")
@@ -303,6 +347,7 @@ fn la_toile_et_le_bandeau(
             ("background", "rgba(0,0,0,0.8)"),
             ("font-size", "24px"),
             ("display", "none"),
+            ("z-index", "2"),
         ],
     );
     corps
@@ -408,6 +453,9 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
                 &DeLaPage::Commande(CommandeEcran::Reprendre { ecarter: Some(e) }),
             );
         }
+        if p.jeu.sans_bots {
+            poster(&p, &DeLaPage::Commande(CommandeEcran::Bots(Oui::Non)));
+        }
     }
     match m {
         VersPage::Scene { .. } | VersPage::Ressource { .. } => {
@@ -426,12 +474,7 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
             drop(p);
             traiter_la_file(etat);
         }
-        VersPage::Demande { id, quoi } => {
-            // Les demandes du jeu (rendu, image, lecture, téléchargement) viennent avec
-            // l'écran (lot 11) : la page répond comme la soirée en mémoire.
-            let quoi = reponse_par_defaut(&quoi);
-            poster(&p, &DeLaPage::Reponse { id, quoi });
-        }
+        VersPage::Demande { id, quoi } => interaction::demande(etat, &mut p, id, &quoi),
         VersPage::Panne(r) => sur_panne(&mut p, &r),
         VersPage::Accueil {
             salle,
@@ -522,7 +565,8 @@ fn exporter_la_cle(p: &Page, g: &[u8; 32]) {
 }
 
 /// Les scènes et les ressources passent à l'écran une à une, dans l'ordre : décoder une
-/// image est asynchrone.
+/// image est asynchrone, et se fait sans tenir l'écran (le dessin continue pendant ce
+/// temps, lot 11).
 fn traiter_la_file(etat: &Etat) {
     let mut p = etat.borrow_mut();
     if p.dessin.occupe || p.dessin.file.is_empty() {
@@ -533,30 +577,56 @@ fn traiter_la_file(etat: &Etat) {
     let e = Rc::clone(etat);
     spawn_local(async move {
         loop {
-            let (suivant, ecran) = {
+            let suivant = {
                 let mut p = e.borrow_mut();
                 let Some(o) = p.dessin.file.pop_front() else {
                     p.dessin.occupe = false;
                     return;
                 };
-                (o, p.ecran.take())
+                o
             };
-            let Some(mut ecran) = ecran else {
-                e.borrow_mut().dessin.occupe = false;
-                return;
+            let image = {
+                let mut p = e.borrow_mut();
+                let Some(ecran) = p.ecran.as_mut() else {
+                    p.dessin.occupe = false;
+                    return;
+                };
+                if let Ok(VersPage::Jeu { forme, .. }) = VersPage::decoder(&suivant) {
+                    ecran.nouveau_jeu(forme);
+                    p.jeu.ressources.clear();
+                    continue;
+                }
+                match ecran.recevoir_sans_attendre(&suivant) {
+                    Ok(crate::messages::Recu::Scene { .. }) => {
+                        interaction::geometrie(&mut p);
+                        p.dessin.sale = true;
+                        None
+                    }
+                    Ok(crate::messages::Recu::Police(cle)) => {
+                        if let Ok(VersPage::Ressource { octets, .. }) = VersPage::decoder(&suivant)
+                        {
+                            interaction::police_recue(&mut p, cle.fil(), octets);
+                        }
+                        None
+                    }
+                    Ok(crate::messages::Recu::Image { cle, octets }) => {
+                        interaction::image_recue(&mut p, cle.fil(), &octets);
+                        Some((cle, octets))
+                    }
+                    Ok(crate::messages::Recu::Laisse(_)) => None,
+                    Err(x) => {
+                        web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}")));
+                        None
+                    }
+                }
             };
-            if let Ok(VersPage::Jeu { forme, .. }) = VersPage::decoder(&suivant) {
-                ecran.nouveau_jeu(forme);
-                e.borrow_mut().ecran = Some(ecran);
-                continue;
-            }
-            let r = ecran.recevoir(&suivant).await;
-            let mut p = e.borrow_mut();
-            p.ecran = Some(ecran);
-            match r {
-                Ok(crate::messages::Recu::Scene { .. }) => p.dessin.sale = true,
-                Ok(_) => {}
-                Err(x) => web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}"))),
+            if let Some((cle, octets)) = image {
+                let decodee = decoder_image(&octets).await;
+                let mut p = e.borrow_mut();
+                if let Some(ecran) = p.ecran.as_mut() {
+                    ecran.poser_image(cle, decodee);
+                }
+                p.dessin.sale = true;
             }
         }
     });
@@ -568,7 +638,11 @@ fn image(etat: &Etat) {
     let s = Rc::clone(&suivante);
     let e = Rc::clone(etat);
     *suivante.borrow_mut() = Some(Closure::new(move |_: f64| {
+        // Les événements restés dans la file (venus pendant que la page tenait son état).
+        interaction::traiter(&e);
         let mut p = e.borrow_mut();
+        interaction::compter_l_image(&mut p);
+        interaction::defiler_au_bord(&mut p);
         let t_us = heure_us(&p.fenetre);
         poster(
             &p,
@@ -579,6 +653,9 @@ fn image(etat: &Etat) {
         );
         let maintenant = maintenant_ms();
         let du = p.dessin.sale || maintenant - p.dessin.dernier_ms >= REDESSIN_MS;
+        if du {
+            interaction::avant_de_dessiner(&mut p);
+        }
         if du && let Some(ecran) = p.ecran.as_mut() {
             if ecran.scene().is_some()
                 && let Err(x) = ecran.dessiner()
@@ -760,6 +837,13 @@ fn crochets(etat: &Etat) -> Result<(), String> {
     });
     poser("pas", pas.as_ref())?;
     pas.forget();
+    // Le lot 11 : ce que la page montre et où (les boutons, les composants, les zones et
+    // les objets du glisser, la modale), en pixels du document, en JSON.
+    let e = Rc::clone(etat);
+    let composants =
+        Closure::<dyn FnMut() -> String>::new(move || interaction::composants_au_banc(&e.borrow()));
+    poser("composants", composants.as_ref())?;
+    composants.forget();
     let p = etat.borrow();
     Reflect::set(&p.fenetre, &JsValue::from_str("__banc"), &o)
         .map(|_| ())

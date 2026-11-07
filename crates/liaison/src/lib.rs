@@ -56,6 +56,28 @@ pub const PROTOCOLE_RELAIS: u16 = 1;
 /// gêne.
 pub const TRAME_MAX: u32 = 256 * 1024;
 
+/// La plus longue ligne d'un flux de résultats (`VersRelais::AjouterLigne`, la demande
+/// `Ligne` d'un jeu), en octets : 64 Kio (choisi, lot 11). Le relais refuse une ligne plus
+/// longue, sans couper le lien.
+pub const LIGNE_MAX: usize = 64 * 1024;
+
+/// Une ligne qu'un flux accepte : au plus [`LIGNE_MAX`] octets, et aucun saut de ligne
+/// (`\n`), qui la couperait en deux dans le fichier du flux, une ligne par ligne. L'autorité
+/// refuse au jeu une ligne qui ne l'est pas ; le relais l'ignore, sans couper le lien.
+pub fn ligne_valide(ligne: &[u8]) -> bool {
+    ligne.len() <= LIGNE_MAX && !ligne.contains(&b'\n')
+}
+
+/// Un nom de flux que le relais accepte, comme nom de fichier sur son disque : de 1 à 64
+/// caractères, lettres ASCII minuscules, chiffres, `-` et `_` (lot 11). Rien qui sorte du
+/// dossier de la salle (`..`, `/`), rien qu'un système de fichiers lise autrement.
+pub fn flux_valide(nom: &str) -> bool {
+    (1..=64).contains(&nom.len())
+        && nom
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-' || c == b'_')
+}
+
 /// L'intervalle des battements, dans les deux sens, en millisecondes (SAL-43).
 pub const BATTEMENT_MS: u32 = 250;
 

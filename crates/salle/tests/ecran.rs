@@ -73,6 +73,7 @@ fn nom_commande(c: CommandeEcran) -> &'static str {
         CommandeEcran::ExporterLaCle => "CommandeEcran::ExporterLaCle",
         CommandeEcran::Figer => "CommandeEcran::Figer",
         CommandeEcran::Retarder { .. } => "CommandeEcran::Retarder",
+        CommandeEcran::Bots(_) => "CommandeEcran::Bots",
     }
 }
 
@@ -118,6 +119,7 @@ const TOUS_LES_VARIANTS: &[&str] = &[
     "CommandeEcran::ExporterLaCle",
     "CommandeEcran::Figer",
     "CommandeEcran::Retarder",
+    "CommandeEcran::Bots",
     "PanneSalle::Outil",
     "PanneSalle::Garde",
     "PanneSalle::Relais",
@@ -350,6 +352,7 @@ fn de_la_page_figes() -> Vec<(DeLaPage<'static>, &'static str)> {
             DeLaPage::Commande(CommandeEcran::Retarder { ms: 150, fois: 3 }),
             "0406960103",
         ),
+        (DeLaPage::Commande(CommandeEcran::Bots(Oui::Non)), "040701"),
         (
             DeLaPage::Demarrer {
                 banc: Oui::Oui,
@@ -439,7 +442,7 @@ fn les_octets_figes_couvrent_chaque_variant() {
 
 #[test]
 fn le_protocole_de_l_ecran_est_fige() {
-    assert_eq!(PROTOCOLE, 2);
+    assert_eq!(PROTOCOLE, 3);
 }
 
 /// SAL-118 : un octet de trop, ou un de moins, est un refus.
@@ -724,6 +727,7 @@ impl<'a> Lecteur<'a> {
                     ms: self.u32(),
                     fois: self.u32(),
                 },
+                7 => CommandeEcran::Bots(self.oui()),
                 v => panic!("CommandeEcran {v}"),
             }),
             5 => DeLaPage::Demarrer {
@@ -788,4 +792,57 @@ proptest! {
         let _: Result<VersPage, _> = VersPage::decoder(&o);
         let _: Result<DeLaPage, _> = DeLaPage::decoder(&o);
     }
+}
+
+/// Lot 11 : les ressources qu'une scène cite, que l'autorité envoie à la page avant elle
+/// quand la page ne les a pas (une image reçue en partie, TL-14, n'est pas un asset
+/// déclaré) : l'image de chaque nœud `Image`, la ressource de chaque `Lien`, une fois.
+#[test]
+fn les_images_citees_par_une_scene() {
+    use jeu_abi::{
+        Cle, ComposantVuFil, Echantillonnage, Fixe, NoeudFil, Rect, Rgba, SceneFil, SorteNoeud,
+        TexteCourt,
+    };
+    let r = Rect {
+        x: Fixe::ZERO,
+        y: Fixe::ZERO,
+        l: Fixe::unites(10),
+        h: Fixe::unites(10),
+    };
+    let mut s = SceneFil::vide();
+    for (c, image) in [(1, 70), (2, 71), (3, 70)] {
+        s.noeuds.push(NoeudFil::simple(
+            Cle::du_fil(c),
+            None,
+            SorteNoeud::Image {
+                r,
+                image: Cle::du_fil(image),
+                ech: Echantillonnage::Lisse,
+            },
+        ));
+    }
+    s.noeuds.push(NoeudFil::simple(
+        Cle::du_fil(4),
+        None,
+        SorteNoeud::Rect {
+            r,
+            couleur: Rgba::BLANC,
+        },
+    ));
+    s.noeuds.push(NoeudFil::simple(
+        Cle::du_fil(5),
+        None,
+        SorteNoeud::Composant {
+            boite: Some(r),
+            composant: ComposantVuFil::Lien {
+                nom: TexteCourt::new("Download"),
+                ressource: Cle::du_fil(72),
+                fichier: TexteCourt::new("tierlist.png"),
+            },
+        },
+    ));
+    assert_eq!(
+        salle::ecran::images_citees(&s),
+        BTreeSet::from([70u64, 71, 72])
+    );
 }

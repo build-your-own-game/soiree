@@ -374,3 +374,102 @@ fn l_enregistrement_note_tout_ce_que_le_relais_voit() {
     assert!(!complet);
     assert_eq!(coupees.len(), notes.len() - 1);
 }
+
+/// La demande `Ligne` d'un jeu (lot 11) : l'autorité donne la ligne à sa garde
+/// (`AjouterLigne`), et le relais l'ajoute à la fin de son flux, sur disque, dans l'ordre ;
+/// un nom qui ne ferait pas un nom de fichier, une ligne au-delà de `LIGNE_MAX`, une ligne
+/// qui contient un saut de ligne, sont ignorés sans couper la garde.
+#[test]
+fn une_ligne_d_un_flux_s_ajoute_sur_disque_par_la_garde() {
+    let r = reglages("flux", Banc::Oui);
+    let racine = r.garde.clone();
+    let relais = coque::lancer(&r).unwrap();
+    let (mut _a, _, mut g) = autorite(relais.port(), PREUVE);
+    let trop_longue = vec![b'x'; liaison::LIGNE_MAX + 1];
+    for (flux, ligne) in [
+        ("resultats", &b"manche 1 : 3 points"[..]),
+        ("../resultats", b"hors du dossier"),
+        ("Resultats", b"une capitale"),
+        ("resultats", &trop_longue),
+        ("resultats", b"deux\nlignes"),
+        ("resultats", b"manche 2 : 5 points"),
+    ] {
+        g.message(&VersRelais::AjouterLigne { flux, ligne });
+    }
+    // Les opérations de la garde se font dans l'ordre : la liste revient après elles.
+    g.message(&VersRelais::Lister);
+    assert_eq!(g.du_relais(UN_PEU), Some(DuRelais::Cases(Vec::new())));
+    let d = Dossier::ouvrir(&racine).unwrap();
+    assert_eq!(
+        std::fs::read(d.fichier_du_flux(SALLE, "resultats")).unwrap(),
+        b"manche 1 : 3 points\nmanche 2 : 5 points\n"
+    );
+    let flux = racine.join("ABCD0123").join("flux");
+    let mut noms: Vec<String> = std::fs::read_dir(&flux)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    noms.sort();
+    assert_eq!(noms, ["resultats"]);
+    assert!(!racine.join("ABCD0123").join("resultats").exists());
+    assert_eq!(
+        d.faire(
+            SALLE,
+            &OpGarde::AjouterLigne {
+                flux: String::from("a/b"),
+                ligne: b"non".to_vec()
+            }
+        ),
+        Fait::LigneIgnoree
+    );
+    relais.arreter();
+}
+
+/// Les bornes du disque d'un flux (correction du lot 11) : une ligne qui ferait passer son
+/// flux au-delà de `FLUX_MAX`, ou la ligne d'un flux de plus que `FLUX_PAR_SALLE`, est
+/// ignorée **sans couper la garde** : la liste revient après elle, et l'autorité ne
+/// s'arrête pas (avant, `GardePleine` coupait le lien de la garde, et toute la partie
+/// s'arrêtait). Une ligne qui tient s'écrit toujours.
+#[test]
+fn un_flux_plein_ou_de_trop_ignore_la_ligne_sans_couper_la_garde() {
+    use relais::garde::{FLUX_MAX, FLUX_PAR_SALLE};
+    let r = reglages("flux-plein", Banc::Oui);
+    let racine = r.garde.clone();
+    let relais = coque::lancer(&r).unwrap();
+    let (mut _a, _, mut g) = autorite(relais.port(), PREUVE);
+    // Le flux « plein » à 10 octets de sa borne, et assez d'autres pour la salle entière.
+    let flux = racine.join("ABCD0123").join("flux");
+    std::fs::create_dir_all(&flux).unwrap();
+    let presque = usize::try_from(FLUX_MAX).unwrap() - 10;
+    std::fs::write(flux.join("plein"), vec![b'x'; presque]).unwrap();
+    for k in 1..FLUX_PAR_SALLE {
+        std::fs::write(flux.join(format!("f{k}")), b"").unwrap();
+    }
+    for (nom, ligne) in [
+        // 9 octets et le saut de ligne : la borne exactement, écrite.
+        ("plein", &b"123456789"[..]),
+        // Un octet de plus que la borne : ignorée.
+        ("plein", b"1"),
+        // Un flux de plus que la salle n'en tient : ignorée.
+        ("de-trop", b"rien"),
+        // Un flux qui existe : écrite.
+        ("f1", b"encore"),
+    ] {
+        g.message(&VersRelais::AjouterLigne { flux: nom, ligne });
+    }
+    g.message(&VersRelais::Lister);
+    assert_eq!(g.du_relais(UN_PEU), Some(DuRelais::Cases(Vec::new())));
+    let plein = std::fs::read(flux.join("plein")).unwrap();
+    assert_eq!(plein.len() as u64, FLUX_MAX);
+    assert!(plein.ends_with(b"123456789\n"));
+    assert!(!flux.join("de-trop").exists());
+    assert_eq!(std::fs::read(flux.join("f1")).unwrap(), b"encore\n");
+    // La garde est toujours celle de la salle : une case s'écrit encore.
+    let case = Case::Journal(1);
+    g.message(&VersRelais::Ecrire {
+        case,
+        octets: b"une case",
+    });
+    assert_eq!(g.du_relais(UN_PEU), Some(DuRelais::Ecrit { case }));
+    relais.arreter();
+}

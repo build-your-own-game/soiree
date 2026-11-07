@@ -204,3 +204,58 @@ fn un_quad_monte_au_dessus_d_un_texte_qu_il_recouvre() {
     assert_eq!(couches, [0, 0, 0, 1, 1]);
     assert_eq!(l.couches, 2);
 }
+
+/// TL-47 (lot 11) : pendant un glisser, l'objet tenu reste à sa place à 20 %, une copie à
+/// 80 % suit le pointeur, par-dessus tout, et la marque de la place visée se dessine ;
+/// sans glisser, rien de cela.
+#[test]
+fn un_glisser_dessine_l_objet_attenue_sa_copie_et_la_marque_tl47() {
+    let blanc = Rgba(255, 255, 255, 255);
+    let s = scene(
+        Rgba::NOIR,
+        vec![
+            noeud(
+                1,
+                None,
+                SorteNoeud::Rect {
+                    r: rect(0, 0, 10, 10),
+                    couleur: blanc,
+                },
+            ),
+            noeud(
+                2,
+                None,
+                SorteNoeud::Rect {
+                    r: rect(20, 0, 10, 10),
+                    couleur: blanc,
+                },
+            ),
+        ],
+    );
+    let cadre = Cadre::new(100, 100, forme(100, 100));
+    let repos = mettre_a_plat(&s, &cadre, &Contexte::au_repos());
+    assert_eq!(repos.elements.len(), 2);
+    let contexte = Contexte {
+        glisser: Some(rendu::liste::GlisserVu {
+            objet: Cle::du_fil(1),
+            decalage: (50.0, 40.0),
+            marque: Some([30.0, 0.0, 32.0, 10.0]),
+        }),
+        ..Contexte::au_repos()
+    };
+    let l = mettre_a_plat(&s, &cadre, &contexte);
+    assert_eq!(l.elements.len(), 4, "{l:?}");
+    let alpha = |k: usize| match &l.elements[k].sorte {
+        Sorte::Quad { couleur, .. } => couleur[3],
+        Sorte::Texte { opacite, .. } => *opacite,
+    };
+    // L'objet à sa place, atténué ; l'autre, intact.
+    assert_eq!(l.elements[0].boite, [0.0, 0.0, 10.0, 10.0]);
+    assert!((alpha(0) - rendu::liste::OPACITE_DE_L_OBJET_TENU).abs() < 1e-6);
+    assert!((alpha(1) - 1.0).abs() < 1e-6);
+    // La marque, puis la copie, à la fin de l'ordre du peintre.
+    assert_eq!(l.elements[2].boite, [30.0, 0.0, 32.0, 10.0]);
+    assert_eq!(l.elements[3].boite, [50.0, 40.0, 60.0, 50.0]);
+    assert!((alpha(3) - rendu::liste::OPACITE_DE_LA_COPIE).abs() < 1e-6);
+    assert!(l.elements[3].couche >= l.elements[1].couche);
+}

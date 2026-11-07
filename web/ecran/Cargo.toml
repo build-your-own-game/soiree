@@ -24,6 +24,11 @@ jeu-abi.workspace = true
 liaison.workspace = true
 # Les polices de la télé, validées comme E1 les valide (P22).
 mise-en-page.workspace = true
+# La longueur d'un texte dans l'unité d'un champ, comme le cœur la compte (TL-27, lot 11).
+partie.workspace = true
+# Couper une saisie entre deux graphèmes (TL-28, lot 11) ; la version du commun, déjà
+# dans ce workspace par `partie`.
+unicode-segmentation.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
@@ -32,6 +37,11 @@ js-sys.workspace = true
 web-sys = { workspace = true, features = [
     "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "ErrorEvent", "KeyboardEvent",
     "Location", "HtmlElement", "CssStyleDeclaration", "Node", "Event", "EventTarget",
+    # Au lot 11 : les composants posés sur la toile, le pointeur, les fichiers choisis,
+    # déposés ou collés, les polices du DOM, les demandes du jeu.
+    "HtmlInputElement", "HtmlAnchorElement", "File", "FileList", "DataTransfer", "DragEvent",
+    "ClipboardEvent", "PointerEvent", "MouseEvent", "InputEvent", "FontFace", "FontFaceSet",
+    "ImageEncodeOptions", "Blob",
 ] }
 wasm-bindgen-futures.workspace = true
 

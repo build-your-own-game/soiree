@@ -9,14 +9,28 @@
 //!   fini, la relecture des pixels, la reprise quand le GPU est perdu ;
 //! - `page` (dans le navigateur seulement, lot 10a) : la page reliée au Worker de
 //!   l'autorité, son chien de garde, ses relances, F8, « Remplacée », les crochets du
-//!   banc (`demarrer_la_page`, que `web/demarrage.js` appelle).
+//!   banc (`demarrer_la_page`, que `web/demarrage.js` appelle) ;
+//! - au lot 11, sans navigateur : [`deplacables`] (le glisser, TL-36 à TL-47), [`saisie`]
+//!   (les champs, TL-27 à TL-34), [`cibles`] (le bouton d'un clic, la modale, le
+//!   raccourci d'une touche) ; dans le navigateur : `composants` (les éléments du DOM
+//!   posés sur la toile : `Champ`, `EnPlace`, `Selecteur`, `Lien`), `demandes` (`Rendu`,
+//!   `Image`, `Lire`, `Telecharger`), et la page qui défile (`FormeEcran::Page`).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod cibles;
+#[cfg(target_arch = "wasm32")]
+mod composants;
+#[cfg(target_arch = "wasm32")]
+mod demandes;
+pub mod deplacables;
+#[cfg(target_arch = "wasm32")]
+mod interaction;
 pub mod messages;
 #[cfg(target_arch = "wasm32")]
 mod page;
+pub mod saisie;
 #[cfg(target_arch = "wasm32")]
 mod toile;
 

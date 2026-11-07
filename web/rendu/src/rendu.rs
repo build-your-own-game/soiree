@@ -464,6 +464,11 @@ impl Rendu {
         self.images.insert(cle.fil(), image);
     }
 
+    /// Le rendu a-t-il cette image (posée, et décodée) ?
+    pub fn a_l_image(&self, cle: Cle) -> bool {
+        self.gpu.images.contains_key(&cle.fil())
+    }
+
     /// Oublie toutes les images.
     pub fn oublier_images(&mut self) {
         self.images.clear();

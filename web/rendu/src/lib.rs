@@ -36,7 +36,10 @@ pub mod qr;
 pub mod rendu;
 
 pub use cadre::{Affine, Cadre};
-pub use liste::{Contexte, Element, Fautif, Liste, Sorte, mettre_a_plat};
+pub use liste::{
+    Boite, Contexte, Element, Fautif, GlisserVu, Liste, Sorte, boite_en_pixels, boites,
+    mettre_a_plat, transformation_des_enfants,
+};
 pub use rendu::{Dessin, FORMAT, IMAGE_ABSENTE, ImageRgba, Relecture, Rendu, TexteDessine};
 
 pub use glyphon;

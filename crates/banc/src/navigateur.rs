@@ -17,7 +17,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use crate::chrome::Chrome;
+use crate::chrome::{Chrome, GesteSouris};
 use crate::firefox::Firefox;
 use crate::horloge::{maintenant, reste};
 use crate::safari::Safari;
@@ -187,6 +187,65 @@ impl Lance {
         match self {
             Lance::Chrome(c) => c.touche_f8(onglet),
             Lance::Firefox(f) => f.touche_f8(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
+    /// Donne à l'onglet une fenêtre de `largeur` × `hauteur` pixels CSS (lot 11).
+    pub fn fenetre(&mut self, onglet: usize, largeur: u32, hauteur: u32) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.fenetre(onglet, largeur, hauteur),
+            Lance::Firefox(f) => f.fenetre(onglet, largeur, hauteur),
+            Lance::Safari(_) => Err(String::from("Safari : pas de taille par le banc")),
+        }
+    }
+
+    /// Le dossier où vont ses téléchargements (lot 11).
+    pub fn telechargements(&self) -> Result<PathBuf, String> {
+        match self {
+            Lance::Chrome(c) => Ok(c.telechargements()),
+            Lance::Firefox(f) => Ok(f.telechargements()),
+            Lance::Safari(_) => Err(String::from("Safari : pas de téléchargement par le banc")),
+        }
+    }
+
+    /// Donne des fichiers à un `<input type=file>` de l'onglet (lot 11).
+    pub fn fichiers(
+        &mut self,
+        onglet: usize,
+        selecteur: &str,
+        fichiers: &[PathBuf],
+    ) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.fichiers(onglet, selecteur, fichiers),
+            Lance::Firefox(f) => f.fichiers(onglet, selecteur, fichiers),
+            Lance::Safari(_) => Err(String::from("Safari : pas de fichiers par le banc")),
+        }
+    }
+
+    /// Joue des gestes de la souris dans l'onglet, en pixels de la fenêtre (lot 11).
+    pub fn souris(&mut self, onglet: usize, gestes: &[GesteSouris]) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.souris(onglet, gestes),
+            Lance::Firefox(f) => f.souris(onglet, gestes),
+            Lance::Safari(_) => Err(String::from("Safari : pas de souris par le banc")),
+        }
+    }
+
+    /// Tape un texte dans l'élément qui a le focus (lot 11).
+    pub fn texte(&mut self, onglet: usize, texte: &str) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.texte(onglet, texte),
+            Lance::Firefox(f) => f.texte(onglet, texte),
+            Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
+    /// Appuie sur une touche nommée (`Enter`, `Escape`, `Tab`, lot 11).
+    pub fn touche(&mut self, onglet: usize, code: &str) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.touche(onglet, code),
+            Lance::Firefox(f) => f.touche(onglet, code),
             Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
         }
     }

@@ -39,7 +39,7 @@
 //! les joue par le vrai chemin (PHASE-3, § 8.1). Les coups du bot de l'écran entrent
 //! comme des entrées de l'écran, sans page : la page n'existe qu'au lot 10a.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jeu_abi::{
     Appareil, Capacites, CauseDepart, ComposantBotFil, ComposantFil, CoupFil, DemandeFil, EcranFil,
@@ -62,6 +62,7 @@ use crate::chiffre::{
 };
 use crate::ecran::{
     AppareilVu, CommandeEcran, DeLaPage, EtatSalle, PanneSalle, RapportPanne, VersPage,
+    images_citees,
 };
 use crate::fil::{
     LimitesSalle, PROTOCOLE, RefusSalle, VersAppareil, VersAutorite, protocole_d_un_bonjour,
@@ -254,6 +255,9 @@ struct EnJeu<F: Fabrique> {
     a_ecrire: bool,
     /// D'où la partie vient.
     venue: Venue,
+    /// Les ressources que la page a reçues : les assets déclarés (que la coque envoie à
+    /// l'entrée en jeu), puis les images citées par une scène (lot 11).
+    ressources: BTreeSet<u64>,
 }
 
 /// Où en est un lien d'appareil.
@@ -363,6 +367,33 @@ pub struct Autorite<F: Fabrique, H: Hasard> {
     chrono: Option<fn() -> f64>,
     /// Les durées du dernier tour, si `chrono` est donnée.
     durees: DureesDuTour,
+    /// Le banc seulement : les coups des bots joués (`CommandeEcran::Bots`, lot 11).
+    bots: Oui,
+    /// Ce qu'a coûté le dernier point écrit (M3, lot 11), si `chrono` est donnée.
+    mesure_du_point: Option<MesurePoint>,
+    /// Le point en train de se sceller, mesuré.
+    point_en_mesure: Option<MesurePoint>,
+}
+
+/// Ce qu'a coûté un point de reprise, en millisecondes de l'horloge de la coque (M3, lot
+/// 11) : le banc seulement. Rien de ce qu'elle mesure ne va à la partie ni à la garde.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MesurePoint {
+    /// Le pas du point.
+    pub pas: u64,
+    /// La taille de sa case scellée, en octets : l'instantané hors des zones, l'état du
+    /// cœur et le registre, chiffrés.
+    pub octets: u64,
+    /// L'instantané (`Partie::point`), dans le tour qui prend le point.
+    pub instantane: f64,
+    /// L'encodage et le début du scellement, dans ce même tour.
+    pub encoder: f64,
+    /// Le scellement des tranches, sur les réveils suivants, en tout.
+    pub sceller: f64,
+    /// Les réveils qui ont scellé une tranche.
+    pub tranches: u32,
+    /// La plus longue tranche.
+    pub tranche_max: f64,
 }
 
 /// Les durées du dernier réveil, en millisecondes, quand la coque a donné une horloge
@@ -441,6 +472,9 @@ where
             retard_ms: 0,
             chrono: None,
             durees: DureesDuTour::default(),
+            bots: Oui::Oui,
+            mesure_du_point: None,
+            point_en_mesure: None,
         };
         let preuve = a.cles.garde.preuve();
         a.vers_relais(&VersRelais::Bonjour {
@@ -460,6 +494,11 @@ where
     /// seulement. Rien de ce qu'elle rend ne décide de quoi que ce soit.
     pub const fn chronometrer(&mut self, chrono: fn() -> f64) {
         self.chrono = Some(chrono);
+    }
+
+    /// Ce qu'a coûté le dernier point écrit en entier (M3), si une horloge a été donnée.
+    pub const fn mesure_du_point(&self) -> Option<MesurePoint> {
+        self.mesure_du_point
     }
 
     /// Les durées du dernier réveil (zéro sans horloge).
@@ -1538,6 +1577,11 @@ where
                 }
             }
             DeLaPage::Commande(CommandeEcran::Marque) => self.marquer(),
+            DeLaPage::Commande(CommandeEcran::Bots(o)) => {
+                if self.reglages.banc == Oui::Oui {
+                    self.bots = o;
+                }
+            }
             DeLaPage::Commande(CommandeEcran::ExporterLaCle) => {
                 let g = *self.cles.garde.octets();
                 self.vers_page(&VersPage::Cle(g));
@@ -1596,11 +1640,11 @@ where
             Ok(a) => a,
             Err(p) => return self.arreter(Arret::Panne(p)),
         };
-        self.traiter(&avancee);
+        self.traiter(t_us, &avancee);
         let avance = self.heure_du_chrono();
         self.vues(t_us, avant);
         let vu = self.heure_du_chrono();
-        if self.reglages.banc == Oui::Oui {
+        if self.reglages.banc == Oui::Oui && self.bots == Oui::Oui {
             self.banc(t_us);
         }
         self.echos_et_silences(t_us);
@@ -1621,21 +1665,83 @@ where
         }
     }
 
-    fn traiter(&mut self, a: &Avancee) {
+    fn traiter(&mut self, t_us: u64, a: &Avancee) {
         for (appareil, octets) in &a.avis {
             if let Some(lien) = self.fiche(*appareil).and_then(|f| f.lien) {
                 self.envoyer(lien, Classe::Fiable, &VersAppareil::Avis { octets });
             }
         }
         for (id, d) in &a.lancer {
-            let quoi = demande_fil(d);
-            self.vers_page(&VersPage::Demande { id: *id, quoi });
+            match d {
+                // Une ligne d'un flux : l'autorité la donne elle-même au relais, qui
+                // l'écrit sur son disque (§ 2.7, `AjouterLigne`), et la dit faite. Le
+                // relais n'accuse pas une ligne : une autorité tuée avant de répondre la
+                // relance, et la ligne peut s'écrire deux fois (lot 11). Une ligne que le
+                // relais ignorerait (un nom de flux invalide, une ligne trop longue ou
+                // coupée d'un saut de ligne) est refusée au jeu, et ne part pas.
+                DemandeArrivee::Ligne { flux, octets } => {
+                    let reponse = reponse_a_la_ligne(flux.nom(), octets);
+                    if reponse.is_ok() {
+                        self.vers_garde(&VersRelais::AjouterLigne {
+                            flux: flux.nom(),
+                            ligne: octets,
+                        });
+                    }
+                    let _: Option<Placement> = self.arriver(
+                        t_us,
+                        Arrivee::Reponse {
+                            id: *id,
+                            reponse: ReponseArrivee::Fait(reponse),
+                        },
+                    );
+                }
+                DemandeArrivee::Rendu { scene, .. } => {
+                    // Les images que le rendu cite partent avant lui : la page n'a que
+                    // celles qu'une scène de l'écran a déjà citées.
+                    let cles = images_citees(scene);
+                    self.envoyer_les_ressources(&cles);
+                    let quoi = demande_fil(d);
+                    self.vers_page(&VersPage::Demande { id: *id, quoi });
+                }
+                DemandeArrivee::Image { .. }
+                | DemandeArrivee::Lire { .. }
+                | DemandeArrivee::Telecharger { .. } => {
+                    let quoi = demande_fil(d);
+                    self.vers_page(&VersPage::Demande { id: *id, quoi });
+                }
+            }
         }
         for appareil in a.oublier.iter().chain(&a.retirer) {
             // Il reviendra comme un neuf : une arrivée, et non un retour.
             if let Some(f) = self.fiche(*appareil) {
                 f.annonce = None;
             }
+        }
+    }
+
+    /// Envoie à la page les octets des images citées qu'elle n'a pas encore, demandés au
+    /// jeu (`Ressources`) ; une image que le jeu n'a pas (encore) se redemandera à la
+    /// scène suivante qui la cite.
+    fn envoyer_les_ressources(&mut self, cles: &BTreeSet<u64>) {
+        let Some(j) = self.jeu() else {
+            return;
+        };
+        let manquantes: Vec<u64> = cles.difference(&j.ressources).copied().collect();
+        if manquantes.is_empty() {
+            return;
+        }
+        let lues = match j.partie.ressources(&manquantes) {
+            Ok(l) => l,
+            Err(p) => return self.arreter(Arret::Panne(p)),
+        };
+        for (cle, octets) in lues {
+            if let Some(j) = self.jeu() {
+                let _: bool = j.ressources.insert(cle);
+            }
+            self.vers_page(&VersPage::Ressource {
+                cle,
+                octets: &octets,
+            });
         }
     }
 
@@ -1684,6 +1790,12 @@ where
                     j.scene_pas = v.pas;
                     j.scene_depuis = definitif;
                     let t = t_us;
+                    // Les images que la scène cite et que la page n'a pas encore (celles
+                    // que le jeu a reçues en partie : TL-14, l'image exportée) partent
+                    // avant elle, une fois chacune (lot 11).
+                    if let Ok(scene) = decoder::<jeu_abi::SceneFil>(&v.octets) {
+                        self.envoyer_les_ressources(&images_citees(&scene));
+                    }
                     self.vers_page(&VersPage::Scene {
                         pas: v.pas,
                         t_us: t,
@@ -1878,7 +1990,18 @@ where
         // Un point se scelle : une tranche par réveil, et rien d'autre ne s'écrit avant
         // qu'il soit fini et envoyé.
         if let Some((p, _)) = j.point_en_cours.as_mut() {
-            if p.avancer(tranche) {
+            let fini = p.avancer(tranche);
+            if self.chrono.is_some()
+                && let Some(m) = self.point_en_mesure.as_mut()
+            {
+                let duree = self.chrono.map_or(0.0, |c| c()) - debut;
+                m.sceller += duree;
+                m.tranches = m.tranches.saturating_add(1);
+                if duree > m.tranche_max {
+                    m.tranche_max = duree;
+                }
+            }
+            if fini {
                 self.finir_le_point();
             }
             if self.chrono.is_some() {
@@ -1916,7 +2039,7 @@ where
             return;
         };
         match j.partie.finir_le_pas() {
-            Ok(a) => self.traiter(&a),
+            Ok(a) => self.traiter(t_us, &a),
             Err(p) => return self.arreter(Arret::Panne(p)),
         }
         self.ecrire_le_journal(t_us);
@@ -2030,6 +2153,12 @@ where
             self.durees.instantane = pris - debut;
             self.durees.sceller = self.heure_du_chrono() - pris;
             self.durees.point = true;
+            self.point_en_mesure = Some(MesurePoint {
+                pas: point.pas().numero(),
+                instantane: self.durees.instantane,
+                encoder: self.durees.sceller,
+                ..MesurePoint::default()
+            });
         }
         // À l'ouverture, le point s'écrit tout de suite ; en partie, il se scelle une
         // tranche par réveil, à partir du suivant (`garder`), pour que ce tour, qui a déjà
@@ -2052,6 +2181,10 @@ where
             Ok((case, octets)) => {
                 j.indice_du_point = indice;
                 self.comptes.points = self.comptes.points.saturating_add(1);
+                if let Some(mut m) = self.point_en_mesure.take() {
+                    m.octets = u64::try_from(octets.len()).unwrap_or(u64::MAX);
+                    self.mesure_du_point = Some(m);
+                }
                 self.vers_garde(&VersRelais::Ecrire {
                     case,
                     octets: &octets,
@@ -2099,6 +2232,12 @@ impl<F: Fabrique> EnJeu<F> {
     ) -> EnJeu<F> {
         let horloge = Horloge::de(&ouverture);
         let definitif = partie.definitif();
+        let ressources = partie
+            .declaration()
+            .assets
+            .iter()
+            .map(|a| a.cle.fil())
+            .collect();
         EnJeu {
             partie,
             horloge,
@@ -2121,6 +2260,7 @@ impl<F: Fabrique> EnJeu<F> {
             ecartes: Vec::new(),
             a_ecrire: false,
             venue: Venue::Neuve,
+            ressources,
         }
     }
 }
@@ -2252,5 +2392,23 @@ fn demande_fil(d: &DemandeArrivee) -> DemandeFil<'_> {
             flux: *flux,
             octets,
         },
+    }
+}
+
+/// La réponse de l'autorité à une demande `Ligne`, avant de la donner à sa garde (lot 11) :
+/// `Ok` si le relais l'écrira ; `TropGros` au-delà de `liaison::LIGNE_MAX` ; `Refuse` pour
+/// un nom de flux qui ne ferait pas un nom de fichier (`liaison::flux_valide`) ou une ligne
+/// qui contient un saut de ligne. Une ligne refusée ne part pas au relais.
+///
+/// Un flux plein (`relais::FLUX_MAX`) ou une salle qui a déjà tous ses flux, l'autorité ne
+/// le sait pas : le relais ignore alors la ligne, sans couper la garde, et le jeu l'a crue
+/// écrite.
+pub fn reponse_a_la_ligne(flux: &str, ligne: &[u8]) -> Result<(), jeu_abi::EchecDemande> {
+    if ligne.len() > liaison::LIGNE_MAX {
+        Err(jeu_abi::EchecDemande::TropGros)
+    } else if !liaison::flux_valide(flux) || !liaison::ligne_valide(ligne) {
+        Err(jeu_abi::EchecDemande::Refuse)
+    } else {
+        Ok(())
     }
 }

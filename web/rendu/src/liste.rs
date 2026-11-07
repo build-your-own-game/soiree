@@ -49,7 +49,30 @@ pub struct Contexte {
     pub fond_par_defaut: Rgba,
     /// Un défaut voulu, pour un contrôle négatif.
     pub fautif: Option<Fautif>,
+    /// Un objet que le composant `Deplacables` fait glisser (lot 11), s'il y en a un.
+    pub glisser: Option<GlisserVu>,
 }
+
+/// Ce que le rendu dessine d'un glisser (TL-47, lot 11) : l'objet reste à sa place, à
+/// 20 % ; une copie à 80 % suit le pointeur ; une marque dit où il tombera. Le jeu ne
+/// déplace pas l'objet pendant le glisser (Tier list ignore `Survol`) : la marque le dit à
+/// sa place.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlisserVu {
+    /// L'objet, par sa clé : les éléments du nœud qui la porte.
+    pub objet: Cle,
+    /// Le décalage de la copie, en pixels de la toile.
+    pub decalage: (f32, f32),
+    /// La marque de la place visée, en pixels de la toile, s'il y en a une.
+    pub marque: Option<Boite>,
+}
+
+/// L'opacité de l'objet tenu, à sa place (CAHIER de Tier list, 4.7).
+pub const OPACITE_DE_L_OBJET_TENU: f32 = 0.2;
+/// L'opacité de la copie qui suit le pointeur (CAHIER de Tier list, 4.7).
+pub const OPACITE_DE_LA_COPIE: f32 = 0.8;
+/// La couleur de la marque de la place visée (choisie : du blanc, opaque).
+pub const MARQUE: Rgba = Rgba(255, 255, 255, 255);
 
 impl Contexte {
     /// Au repos, au pas 0, sans QR code, sur fond noir, sans défaut.
@@ -60,6 +83,7 @@ impl Contexte {
             adresse_qr: None,
             fond_par_defaut: Rgba::NOIR,
             fautif: None,
+            glisser: None,
         }
     }
 }
@@ -241,6 +265,7 @@ pub fn mettre_a_plat(scene: &SceneFil, cadre: &Cadre, contexte: &Contexte) -> Li
     };
     let mut herites: Vec<Herite> = Vec::with_capacity(scene.noeuds.len());
     let mut elements = Vec::new();
+    let mut copies = Vec::new();
     for (i, n) in scene.noeuds.iter().enumerate() {
         let h = n
             .parent
@@ -248,13 +273,42 @@ pub fn mettre_a_plat(scene: &SceneFil, cadre: &Cadre, contexte: &Contexte) -> Li
             .copied()
             .unwrap_or(racine);
         let indice = u32::try_from(i).unwrap_or(u32::MAX);
+        let avant = elements.len();
         let transmis = if oublie == Some(i) {
             h
         } else {
             poser(n, indice, h, contexte, &mut elements)
         };
+        if let Some(g) = contexte.glisser.as_ref().filter(|g| g.objet == n.cle) {
+            for e in elements.get_mut(avant..).unwrap_or(&mut []) {
+                let mut copie = e.clone();
+                attenuer(e, OPACITE_DE_L_OBJET_TENU);
+                attenuer(&mut copie, OPACITE_DE_LA_COPIE);
+                let (dx, dy) = g.decalage;
+                copie.boite = [
+                    copie.boite[0] + dx,
+                    copie.boite[1] + dy,
+                    copie.boite[2] + dx,
+                    copie.boite[3] + dy,
+                ];
+                copies.push(copie);
+            }
+        }
         herites.push(transmis);
     }
+    // La marque de la place visée, puis la copie, par-dessus tout.
+    if let Some(m) = contexte.glisser.as_ref().and_then(|g| g.marque) {
+        elements.push(Element {
+            noeud: u32::MAX,
+            boite: arrondie(m),
+            sorte: Sorte::Quad {
+                couleur: premultipliee(MARQUE, 1.0),
+                image: None,
+            },
+            couche: 0,
+        });
+    }
+    elements.extend(copies);
     let couches = coucher(&mut elements);
     Liste {
         fond: scene.fond.unwrap_or(contexte.fond_par_defaut),
@@ -262,6 +316,94 @@ pub fn mettre_a_plat(scene: &SceneFil, cadre: &Cadre, contexte: &Contexte) -> Li
         couches,
         noeuds: u32::try_from(scene.noeuds.len()).unwrap_or(u32::MAX),
     }
+}
+
+/// Multiplie l'opacité d'un élément.
+fn attenuer(e: &mut Element, facteur: f32) {
+    match &mut e.sorte {
+        Sorte::Quad { couleur, .. } => {
+            for c in couleur.iter_mut() {
+                *c *= facteur;
+            }
+        }
+        Sorte::Texte { opacite, .. } => *opacite *= facteur,
+    }
+}
+
+/// La boîte de chaque nœud de la scène, en pixels de la toile, dans l'ordre de la liste
+/// (lot 11) : celle d'une feuille qui en a une (rectangle, image, texte, bouton, compte à
+/// rebours, QR, composant posé dans sa boîte, avertissements, surface), animation lue au
+/// même instant que le dessin ; `None` pour un groupe, un sous-arbre définitif, un
+/// composant sans boîte. L'écran s'en sert pour poser ses éléments du DOM, trouver le
+/// bouton sous le pointeur, et les zones et les objets d'un glisser.
+pub fn boites(scene: &SceneFil, cadre: &Cadre, contexte: &Contexte) -> Vec<Option<Boite>> {
+    let racine = Herite {
+        affine: cadre.transformation(),
+        opacite: 1.0,
+    };
+    let mut herites: Vec<Herite> = Vec::with_capacity(scene.noeuds.len());
+    let mut boites = Vec::with_capacity(scene.noeuds.len());
+    for n in &scene.noeuds {
+        let h = n
+            .parent
+            .and_then(|p| herites.get(usize::try_from(p).ok()?))
+            .copied()
+            .unwrap_or(racine);
+        let r = match &n.sorte {
+            SorteNoeud::Rect { r, .. }
+            | SorteNoeud::Image { r, .. }
+            | SorteNoeud::Surface { r } => Some(*r),
+            SorteNoeud::Texte { boite, .. }
+            | SorteNoeud::Bouton { boite, .. }
+            | SorteNoeud::CompteARebours { boite, .. }
+            | SorteNoeud::Qr { boite }
+            | SorteNoeud::Avertissements { boite } => Some(*boite),
+            SorteNoeud::Composant { boite, .. } => *boite,
+            SorteNoeud::Groupe { .. } | SorteNoeud::Definitif => None,
+        };
+        boites.push(r.map(|r| {
+            let (transfo, _) = feuille(&h, n, r, contexte.maintenant);
+            en_pixels(&transfo, r, n.pixel_entier)
+        }));
+        herites.push(transmis(n, h, contexte.maintenant));
+    }
+    boites
+}
+
+/// La transformation qu'un nœud transmet à ses enfants, depuis la racine du cadre : pour
+/// porter dans le repère de la toile une boîte d'un composant (le panneau d'une modale).
+pub fn transformation_des_enfants(
+    scene: &SceneFil,
+    noeud: usize,
+    cadre: &Cadre,
+    contexte: &Contexte,
+) -> Affine {
+    let mut chaine = Vec::new();
+    let mut i = Some(noeud);
+    while let Some(k) = i {
+        chaine.push(k);
+        i = scene
+            .noeuds
+            .get(k)
+            .and_then(|n| n.parent)
+            .and_then(|p| usize::try_from(p).ok());
+    }
+    let mut h = Herite {
+        affine: cadre.transformation(),
+        opacite: 1.0,
+    };
+    // Les ancêtres seuls : le nœud lui-même est une feuille, qui transmet ce qu'il reçoit.
+    for k in chaine.iter().skip(1).rev() {
+        if let Some(n) = scene.noeuds.get(*k) {
+            h = transmis(n, h, contexte.maintenant);
+        }
+    }
+    h.affine
+}
+
+/// Une boîte du repère, en pixels, par une transformation (le panneau d'une modale).
+pub fn boite_en_pixels(affine: &Affine, r: Rect) -> Boite {
+    en_pixels(affine, r, Oui::Non)
 }
 
 /// Ce qu'un groupe ou un sous-arbre définitif transmet à ses enfants : son décalage, son

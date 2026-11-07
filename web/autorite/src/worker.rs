@@ -188,6 +188,8 @@ struct Coque {
     dernier_pas_ms: f64,
     /// Le banc : les points écrits quand le pire moment a été rapporté.
     pire_rapporte: Option<u64>,
+    /// Le banc : le pas du dernier point dont le coût a été rapporté (M3, lot 11).
+    point_rapporte: Option<u64>,
 }
 
 type Etat = Rc<RefCell<Coque>>;
@@ -294,6 +296,7 @@ pub fn demarrer_le_worker() {
         par_minuterie: 0,
         dernier_pas_ms: 0.0,
         pire_rapporte: None,
+        point_rapporte: None,
     }));
     let pour_la_page = Rc::clone(&etat);
     let surmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |m: MessageEvent| {
@@ -378,7 +381,8 @@ fn de_la_page(etat: &Etat, octets: &[u8]) {
             | CommandeEcran::NouvelleSoiree
             | CommandeEcran::Reprendre { .. }
             | CommandeEcran::Marque
-            | CommandeEcran::ExporterLaCle,
+            | CommandeEcran::ExporterLaCle
+            | CommandeEcran::Bots(_),
         ) => {
             let mut coque = etat.borrow_mut();
             let heure = heure_us(&coque.global);
@@ -907,15 +911,33 @@ fn vider(etat: &Etat) {
     let arretee = autorite.arret().is_some();
     let en_jeu = autorite.partie().is_some();
     let garde_a_jour = autorite.garde_a_jour();
+    let point = autorite.mesure_du_point();
     if let Some(l) = coque.temps_reel.as_mut() {
         for o in sorties.temps_reel {
             l.envoyer(o);
         }
     }
+    let debut_envoi = maintenant_ms(&global);
+    let octets_garde: usize = sorties.garde.iter().map(Vec::len).sum();
     if let Some(l) = coque.garde.as_mut() {
         for o in sorties.garde {
             l.envoyer(o);
         }
+    }
+    let envoi_ms = maintenant_ms(&global) - debut_envoi;
+    // M3 (lot 11) : un point fini vient d'être scellé et donné à la garde ; ce qu'il a
+    // coûté, et l'envoi de ses trames sur la WebSocket de la garde (sa mise en file : le
+    // navigateur envoie ensuite sans le fil du Worker).
+    if coque.banc
+        && let Some(m) = point
+        && coque.point_rapporte != Some(m.pas)
+    {
+        coque.point_rapporte = Some(m.pas);
+        let json = format!(
+            "{{\"quoi\":\"point\",\"pas\":{},\"octets\":{},\"instantane_ms\":{:.2},\"encoder_ms\":{:.2},\"sceller_ms\":{:.2},\"tranches\":{},\"tranche_max_ms\":{:.2},\"envoi_ms\":{envoi_ms:.2},\"octets_envoyes\":{octets_garde}}}",
+            m.pas, m.octets, m.instantane, m.encoder, m.sceller, m.tranches, m.tranche_max
+        );
+        poster(&global, &VersPage::Banc(&json));
     }
     for o in &sorties.page {
         poster_octets(&global, o);

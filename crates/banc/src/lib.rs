@@ -5,7 +5,7 @@
 //! page lui envoie (`POST /banc/rapport`). Il ne retente jamais une mesure (OUT-91), et
 //! ne joue qu'un scénario à la fois, jamais à côté d'une compilation (OUT-89, OUT-115).
 //!
-//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b, 3c, 5, 9 et 10a)
+//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b, 3c, 5, 9, 10a et 11)
 //!
 //! - [`web`] : la règle « mêmes lints » du second workspace, `web/` (P31) ;
 //! - [`serveur`] : un petit serveur HTTP sur la boucle locale, qui sert des fichiers et
@@ -34,7 +34,11 @@
 //!   (lot 10a), la vraie autorité dans le Worker d'un navigateur, ses reprises jugées
 //!   contre wasmtime, et M12 ;
 //! - [`rejouer_garde`] : `soiree-banc rejouer-garde` (lot 10a), la garde d'une soirée
-//!   rejouée jusqu'à chaque marque F8.
+//!   rejouée jusqu'à chaque marque F8 ;
+//! - [`ecran`] : `soiree-banc ecran tier-list` (lot 11), Tier list jouée sur la télé par
+//!   les vraies entrées du navigateur : import, glisser, édition en place, rechargement,
+//!   export et sauvegarde captés, restauration, plateau plein (M3, M8), et son contrôle
+//!   négatif.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -43,6 +47,7 @@ pub mod bidi;
 pub mod cdp;
 pub mod chrome;
 pub mod dessin;
+pub mod ecran;
 pub mod etalonner;
 pub mod firefox;
 mod horloge;

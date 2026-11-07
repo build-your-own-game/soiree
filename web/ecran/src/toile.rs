@@ -177,6 +177,12 @@ pub struct Ecran {
     perdu: Arc<AtomicBool>,
     erreurs: Erreurs,
     illisibles: Vec<String>,
+    /// Pour `FormeEcran::Page` : des pixels par unité (le rapport de pixels de
+    /// l'appareil, lot 11).
+    pub echelle_page: f32,
+    /// Pour `FormeEcran::Page` : les unités défilées en haut (le défilement du
+    /// navigateur, lot 11).
+    pub defilement: f32,
 }
 
 impl Ecran {
@@ -216,6 +222,8 @@ impl Ecran {
             perdu,
             erreurs,
             illisibles: Vec::new(),
+            echelle_page: 1.0,
+            defilement: 0.0,
         })
     }
 
@@ -326,9 +334,45 @@ impl Ecran {
         self.forme = forme;
     }
 
-    /// Le cadre : la toile, à sa taille en pixels, et la forme.
+    /// Le cadre : la toile, à sa taille en pixels, la forme, et pour une page, l'échelle
+    /// et le défilement.
     pub fn cadre(&self) -> Cadre {
-        Cadre::new(self.toile.width(), self.toile.height(), self.forme)
+        Cadre {
+            echelle_page: self.echelle_page,
+            defilement: self.defilement,
+            ..Cadre::new(self.toile.width(), self.toile.height(), self.forme)
+        }
+    }
+
+    /// Le cadre de la page à son haut, sans défilement : les boîtes des éléments du DOM
+    /// posés sur la toile, en pixels du document fois le rapport de pixels (lot 11).
+    pub fn cadre_fixe(&self) -> Cadre {
+        Cadre {
+            defilement: 0.0,
+            ..self.cadre()
+        }
+    }
+
+    /// La forme de l'écran du jeu.
+    pub fn forme(&self) -> FormeEcran {
+        self.forme
+    }
+
+    /// Donne à la toile une taille en pixels (la fenêtre a changé, lot 11).
+    pub fn regler_taille(&mut self, largeur: u32, hauteur: u32) {
+        self.toile.set_width(largeur.max(1));
+        self.toile.set_height(hauteur.max(1));
+    }
+
+    /// Le rendu a-t-il cette image (posée, et décodée) ?
+    pub fn a_l_image(&self, cle: Cle) -> bool {
+        self.rendu.a_l_image(cle)
+    }
+
+    /// Le plus grand côté d'une texture sur cet appareil : un rendu hors écran se dessine
+    /// par bandes qui y tiennent (lot 11).
+    pub fn cote_max(&self) -> u32 {
+        self.appareil.appareil.limits().max_texture_dimension_2d
     }
 
     /// Le rendu.
@@ -344,6 +388,18 @@ impl Ecran {
     /// Reçoit un message du Worker : une scène se garde (et son pas sert aux comptes à
     /// rebours), une police s'ajoute au rendu, une image se décode et se pose.
     pub async fn recevoir(&mut self, octets: &[u8]) -> Result<Recu, String> {
+        let r = self.recevoir_sans_attendre(octets)?;
+        if let Recu::Image { cle, octets } = &r {
+            let image = decoder_image(octets).await;
+            self.poser_image(*cle, image);
+        }
+        Ok(r)
+    }
+
+    /// [`Ecran::recevoir`], sans décoder une image : la page la décode sans tenir l'écran
+    /// (le dessin continue pendant ce temps), puis la pose par [`Ecran::poser_image`]
+    /// (lot 11).
+    pub fn recevoir_sans_attendre(&mut self, octets: &[u8]) -> Result<Recu, String> {
         let r = recevoir(octets, &mut self.polices)?;
         match &r {
             Recu::Scene { pas, scene } => {
@@ -351,15 +407,30 @@ impl Ecran {
                 self.scene = Some(scene.clone());
             }
             Recu::Police(_) => self.rendu.poser_polices(self.polices.clone()),
-            // Une image que le navigateur ne décode pas n'arrête rien : elle se dessine
-            // comme une image absente, et se dit.
-            Recu::Image { cle, octets } => match decoder_image(octets).await {
-                Ok(image) => self.rendu.poser_image(*cle, image),
-                Err(e) => self.illisibles.push(format!("{:016x} : {e}", cle.fil())),
-            },
-            Recu::Laisse(_) => {}
+            Recu::Image { .. } | Recu::Laisse(_) => {}
         }
         Ok(r)
+    }
+
+    /// Pose une image décodée ; une image que le navigateur ne décode pas n'arrête rien :
+    /// elle se dessine comme une image absente, et se dit.
+    pub fn poser_image(&mut self, cle: Cle, image: Result<ImageRgba, String>) {
+        match image {
+            Ok(image) => self.rendu.poser_image(cle, image),
+            Err(e) => self.illisibles.push(format!("{:016x} : {e}", cle.fil())),
+        }
+    }
+
+    /// Dessine une scène dans la cible du rendu, hors de la toile, et lance sa relecture
+    /// (une bande d'un rendu hors écran, la demande `Rendu`, lot 11). La toile n'est pas
+    /// touchée ; sa prochaine image refait la cible à sa taille.
+    pub fn dessiner_hors_ecran(
+        &mut self,
+        scene: &SceneFil,
+        cadre: &Cadre,
+    ) -> Result<Relecture, String> {
+        let _: Dessin = self.rendu.dessiner(scene, cadre, &Contexte::au_repos())?;
+        self.rendu.relire()
     }
 
     /// Dessine la dernière scène, la copie sur la toile et la présente. Rend ce qui a été
@@ -466,7 +537,7 @@ impl Ecran {
 
 /// Ces octets sont-ils un SVG ? (`<svg` ou `<?xml` au début, après d'éventuels blancs
 /// et une marque d'ordre des octets.)
-fn est_un_svg(octets: &[u8]) -> bool {
+pub fn est_un_svg(octets: &[u8]) -> bool {
     let debut: Vec<u8> = octets
         .iter()
         .skip_while(|c| matches!(c, b' ' | b'\t' | b'\r' | b'\n' | 0xef | 0xbb | 0xbf))
@@ -503,7 +574,7 @@ fn pixels(
 
 /// Décode une image par le navigateur (P23) : un SVG par un élément `<img>`, tout autre
 /// format par `createImageBitmap` ; puis ses pixels.
-async fn decoder_image(octets: &[u8]) -> Result<ImageRgba, String> {
+pub async fn decoder_image(octets: &[u8]) -> Result<ImageRgba, String> {
     let fenetre = web_sys::window().ok_or_else(|| String::from("pas de fenêtre"))?;
     let tableau = js_sys::Array::of1(&Uint8Array::from(octets));
     if est_un_svg(octets) {
