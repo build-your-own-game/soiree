@@ -37,6 +37,7 @@ use tungstenite::{Bytes, Message};
 
 use crate::admission::{Admission, Pair};
 use crate::adresses::{self, Interface};
+use crate::aide::{Aide, PareFeu};
 use crate::coeur::{CASE_MAX, Coeur, Fait, OpGarde, Provenance, RoleAdmis, Sortie};
 use crate::enregistrement::{Enregistreur, Sens};
 use crate::file::{Envoi, FileSortante};
@@ -94,6 +95,12 @@ pub struct Reglages {
     pub paquet: Option<Paquet>,
     /// `--jeux` : les modules livrés, lus au lancement (lot 10a).
     pub jeux: Jeux,
+    /// **Le banc seulement** (avec `banc`, jamais en soirée ; aucune option du binaire ne
+    /// le pose) : une adresse annoncée aux téléphones **sans y écouter**, pour que l'écran
+    /// montre un QR et que l'aide se joue sans rien ouvrir sur le Wi-Fi (lot 10b, scénario
+    /// `aide`). Elle échappe au refus d'une adresse qu'on n'écoute pas (SAL-77) : c'est
+    /// pourquoi elle n'existe qu'au banc. Une adresse de documentation (`192.0.2.0/24`).
+    pub annonce_du_banc: Option<IpAddr>,
 }
 
 impl Reglages {
@@ -109,6 +116,7 @@ impl Reglages {
             page: None,
             paquet: None,
             jeux: Jeux::default(),
+            annonce_du_banc: None,
         }
     }
 }
@@ -207,6 +215,73 @@ struct Partage {
     prochain: AtomicU32,
     salles: Sender<Evenement>,
     arret: AtomicBool,
+    /// L'aide du jour J (lot 10b) : les pages de téléphone venues du réseau, et leurs
+    /// liens.
+    aide: Mutex<Aide>,
+    /// Le pare-feu, lu à la première demande de l'aide puis au plus toutes les
+    /// [`PARE_FEU_RELU_US`] : l'heure de la lecture, et ce qu'il dit.
+    pare_feu: Mutex<Option<(u64, PareFeu)>>,
+}
+
+/// Le pare-feu se relit au plus toutes les 10 s (choisi) : l'hôte peut l'autoriser pendant
+/// la soirée, et l'aide doit alors se taire.
+const PARE_FEU_RELU_US: u64 = 10_000_000;
+
+/// L'outil du pare-feu de macOS, qui lit son état sans droits (SAL-95, REM-150).
+const SOCKETFILTERFW: &str = "/usr/libexec/ApplicationFirewall/socketfilterfw";
+
+/// Ce que le pare-feu de macOS dit du binaire qui tourne (`crate::aide`). Seules des
+/// lectures : le relais ne change jamais un réglage de la machine.
+fn lire_le_pare_feu() -> PareFeu {
+    if !cfg!(target_os = "macos") {
+        return PareFeu::Inconnu(String::from("pas macOS"));
+    }
+    let lire = |option: &str| -> Result<String, String> {
+        std::process::Command::new(SOCKETFILTERFW)
+            .arg(option)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .map_err(|e| format!("{SOCKETFILTERFW} {option} : {e}"))
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    let executable = match std::env::current_exe().and_then(std::fs::canonicalize) {
+        Ok(e) => e.display().to_string(),
+        Err(e) => return PareFeu::Inconnu(format!("le chemin du relais : {e}")),
+    };
+    match (
+        lire("--getglobalstate"),
+        lire("--getblockall"),
+        lire("--listapps"),
+    ) {
+        (Ok(g), Ok(b), Ok(a)) => crate::aide::juger_le_pare_feu(&g, &b, &a, &executable),
+        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => PareFeu::Inconnu(e),
+    }
+}
+
+/// Le JSON de `GET /aide`.
+fn aide_en_json(p: &Partage) -> String {
+    let t = maintenant_us();
+    let pare_feu = {
+        let mut cache = p.pare_feu.lock().ok();
+        let frais = cache
+            .as_deref()
+            .and_then(Option::as_ref)
+            .filter(|(quand, _)| t.saturating_sub(*quand) < PARE_FEU_RELU_US)
+            .map(|(_, pf)| pf.clone());
+        frais.unwrap_or_else(|| {
+            let lu = lire_le_pare_feu();
+            if let Some(c) = cache.as_deref_mut() {
+                *c = Some((t, lu.clone()));
+            }
+            lu
+        })
+    };
+    let n = p.contexte.annoncees.len();
+    p.aide.lock().map_or_else(
+        |_| Aide::new().json(t, n, &pare_feu),
+        |a| a.json(t, n, &pare_feu),
+    )
 }
 
 /// Un relais lancé.
@@ -308,13 +383,45 @@ fn page_de(r: &Reglages) -> Vec<u8> {
     })
 }
 
+/// Écoute chaque adresse annoncée du réseau local, au port de la boucle (SAL-77 : une
+/// adresse qu'on n'écoute pas ne s'annonce pas).
+fn ecouter_les_annoncees(
+    annoncees: &[IpAddr],
+    port: u16,
+) -> Result<Vec<TcpListener>, ErreurLancement> {
+    annoncees
+        .iter()
+        .map(|ip| {
+            TcpListener::bind(SocketAddr::new(*ip, port)).map_err(|e| {
+                ErreurLancement(format!(
+                    "{} : le relais n'y écoute pas ({e}) ; il ne l'annoncera pas (SAL-77)",
+                    http::hote(*ip, port)
+                ))
+            })
+        })
+        .collect()
+}
+
+/// L'adresse que le relais du banc annonce sans l'écouter (`Reglages::annonce_du_banc`),
+/// refusée hors du banc.
+fn annonce_du_banc(r: &Reglages) -> Result<Option<IpAddr>, ErreurLancement> {
+    match (r.annonce_du_banc, r.banc) {
+        (Some(ip), Banc::Oui) => Ok(Some(ip)),
+        (Some(_), Banc::Non) => Err(ErreurLancement(String::from(
+            "une adresse annoncée sans écoute n'existe qu'au banc",
+        ))),
+        (None, _) => Ok(None),
+    }
+}
+
 /// Lance le relais.
 pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
     let interfaces = match r.interfaces.clone() {
         Some(i) => i,
         None => adresses::interfaces().map_err(ErreurLancement)?,
     };
-    let annoncees = adresses::choisir(&interfaces, r.adresse).map_err(ErreurLancement)?;
+    let mut annoncees = adresses::choisir(&interfaces, r.adresse).map_err(ErreurLancement)?;
+    let annoncee_sans_ecoute = annonce_du_banc(r)?;
     let dossier = Dossier::ouvrir(&r.garde).map_err(|e| {
         ErreurLancement(format!(
             "le dossier de la garde {} : {e}",
@@ -335,15 +442,8 @@ pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
         .map_err(|e| ErreurLancement(format!("127.0.0.1 : {e}")))?
         .port();
     let mut ecoutes = vec![boucle4, boucle6];
-    for ip in &annoncees {
-        let l = TcpListener::bind(SocketAddr::new(*ip, port)).map_err(|e| {
-            ErreurLancement(format!(
-                "{} : le relais n'y écoute pas ({e}) ; il ne l'annoncera pas (SAL-77)",
-                http::hote(*ip, port)
-            ))
-        })?;
-        ecoutes.push(l);
-    }
+    ecoutes.extend(ecouter_les_annoncees(&annoncees, port)?);
+    annoncees.extend(annoncee_sans_ecoute);
     let adresses_annoncees: Vec<AdresseAnnoncee> = annoncees
         .iter()
         .map(|ip| AdresseAnnoncee {
@@ -366,6 +466,8 @@ pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
         prochain: AtomicU32::new(0),
         salles: vers_salles.clone(),
         arret: AtomicBool::new(false),
+        aide: Mutex::new(Aide::new()),
+        pare_feu: Mutex::new(None),
     });
     let mut fils = Vec::new();
     // La garde sur disque, un seul fil, dans l'ordre.
@@ -499,6 +601,21 @@ fn repondre(flux: &mut TcpStream, octets: &[u8]) {
     let _: io::Result<()> = flux.shutdown(Shutdown::Both);
 }
 
+/// La page d'un téléphone (`GET /s/<salle>`), à qui parle d'un `Host` permis ; l'aide
+/// note celle qui vient du réseau (lot 10b).
+fn page_d_un_telephone(pair: IpAddr, r: &http::Requete, p: &Partage) -> Vec<u8> {
+    let c = &p.contexte;
+    if !http::publique_permise(pair, r, c) {
+        return http::erreur("403 Forbidden");
+    }
+    if let Some(ip) = http::page_du_reseau(pair, r, c)
+        && let Ok(mut a) = p.aide.lock()
+    {
+        a.page(ip, maintenant_us());
+    }
+    http::page(&p.page, Isolement::Non)
+}
+
 fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
     let _: io::Result<()> = flux.set_nodelay(true);
     let Some((r, reste)) = lire_la_requete(&mut flux) else {
@@ -539,12 +656,19 @@ fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
                 repondre(&mut flux, &http::erreur("403 Forbidden"));
             }
         }
-        Route::Telephone(_) => {
-            if http::publique_permise(pair.ip(), &r, c) {
-                repondre(&mut flux, &http::page(&p.page, Isolement::Non));
+        Route::Telephone(_) => repondre(&mut flux, &page_d_un_telephone(pair.ip(), &r, p)),
+        Route::Aide => {
+            let reponse = if http::boucle_locale_permise(pair.ip(), &r, c) {
+                http::reponse(
+                    "200 OK",
+                    "application/json",
+                    aide_en_json(p).as_bytes(),
+                    &[("Cache-Control", "no-store")],
+                )
             } else {
-                repondre(&mut flux, &http::erreur("403 Forbidden"));
-            }
+                http::erreur("403 Forbidden")
+            };
+            repondre(&mut flux, &reponse);
         }
         Route::Salle => {
             if !http::boucle_locale_permise(pair.ip(), &r, c) {
@@ -573,6 +697,11 @@ fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
             let Some(accepte) = http::accepter_websocket(&r) else {
                 return repondre(&mut flux, &http::erreur("400 Bad Request"));
             };
+            if provenance == Provenance::Reseau
+                && let Ok(mut a) = p.aide.lock()
+            {
+                a.lien(pair.ip(), maintenant_us());
+            }
             if flux.write_all(&accepte).is_err() {
                 return;
             }

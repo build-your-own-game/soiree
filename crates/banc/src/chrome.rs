@@ -221,6 +221,36 @@ impl Chrome {
         Ok(())
     }
 
+    /// Appuie sur Échap, par la chaîne d'entrées du navigateur (lot 10b, P38).
+    pub fn touche_echap(&mut self, onglet: usize) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        for sorte in ["rawKeyDown", "keyUp"] {
+            self.cdp.envoyer(
+                "Input.dispatchKeyEvent",
+                &json!({ "type": sorte, "key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27 }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Un clic gauche en `(x, y)`, pixels de la fenêtre, par la chaîne d'entrées du
+    /// navigateur (`Input.dispatchMouseEvent`) : un vrai geste, qui permet le plein écran et
+    /// le son (lot 10b).
+    pub fn cliquer(&mut self, onglet: usize, x: f64, y: f64) -> Result<(), String> {
+        let s = self.session_de(onglet)?;
+        for sorte in ["mouseMoved", "mousePressed", "mouseReleased"] {
+            self.cdp.envoyer(
+                "Input.dispatchMouseEvent",
+                &json!({ "type": sorte, "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1 }),
+                Some(&s),
+                DELAI,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Un onglet neuf, attaché, sa console et ses exceptions écoutées, mené à `url`.
     fn onglet(&mut self, url: &str) -> Result<(String, String), String> {
         let cible = self.cdp.envoyer(

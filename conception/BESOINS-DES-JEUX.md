@@ -337,6 +337,17 @@ L'épreuve gagne E21, « Pages », et E19 juge chaque page sur une lecture divis
 
 **Dans Punchline et Sidequest**, rien ne casse : leur page reste vide jusqu'au lot 7, et E21 ne refuse pas encore la page vide.
 
+## 25. Échap en plein écran — dit aux agents de Punchline et de Tier list (phase 3, lot 10b, P38)
+
+**Le constat.** Punchline (« Annuler (Échap) », CAHIER, l. 248 et 309) et Tier list (fermer la fenêtre, annuler un glisser, CAHIER, l. 37, 38, 134 et 268) portent un raccourci Échap. Depuis le lot 10b, la télé se met en plein écran au geste « Jouer » ; en plein écran, le navigateur garde Échap pour en sortir. Décidé dans `PHASE-3.md`, P38 et § 2.9 ; posé au mainteneur (question 21).
+
+**La réponse du commun**, rien à changer dans un jeu :
+- **Dans Chrome**, l'écran demande `navigator.keyboard.lock(["Escape"])` en entrant en plein écran : Échap arrive au jeu comme hors du plein écran (l'action du raccourci), et un appui long sur Échap sort du plein écran. Constaté le 2026-11-07 dans Chrome 156 sans interface (`soiree-banc aide`, Tier list : l'action Échap placée par l'autorité, le plein écran resté).
+- **Dans Firefox et Safari**, sans cette API, le premier Échap sort du plein écran **sans arriver au jeu**, et l'écran du commun montre « Plein écran quitté — cliquer pour revenir » ; le jeu ne reçoit rien de ce changement. La règle de la page est tenue par un test natif (`ecran::clavier`). Constaté le 2026-11-07 dans Firefox 158 avec sa fenêtre (`soiree-banc aide --avec-interface`, Tier list) : Échap sort du plein écran, rien n'arrive au jeu, le voile s'affiche, et son clic rend le plein écran ; c'était le plein écran de Firefox dans sa fenêtre, pas celui de macOS (un bureau à part), que le banc n'a pas pu garder. Safari n'est pas piloté (`LOTS-PHASE-3.md`, « Lot 10b » et sa correction).
+- Pendant que l'écran de démarrage ou « Cliquer pour reprendre » couvre le jeu, aucune touche ne va au jeu, sauf F8 au commun. « Plein écran quitté » ne fait que le dire : le jeu reçoit ses touches.
+
+**Ce que chaque agent peut en tirer** : hors de Chrome, un geste qui ne s'annule que par Échap s'annule au second Échap (le premier rend le plein écran au navigateur ; le second, hors du plein écran, arrive au jeu), puis un clic sur le voile rend le plein écran. Un jeu qui veut mieux peut offrir le même geste par un bouton de sa scène ; ce n'est pas exigé.
+
 ## Les changements d'API, précisément
 
 Aucun changement n'est une rupture de type pour un jeu qui compile aujourd'hui : chaque ajout est une fonction ou une méthode nouvelle, ou une méthode cachée avec un corps par défaut. Les ruptures de sens sont marquées.

@@ -2,7 +2,8 @@
 //! Chrome par CDP ([`crate::chrome`]), Firefox par `WebDriver` `BiDi`
 //! ([`crate::firefox`]), Safari par `safaridriver` ([`crate::safari`]).
 //!
-//! Chrome et Firefox partent sans interface, sur un profil neuf sous
+//! Chrome et Firefox partent sans interface (Firefox avec sa fenêtre sur demande,
+//! [`Interface`]), sur un profil neuf sous
 //! `target/banc/profils/`, effacé à la fermeture ; le banc lit l'adresse de leur
 //! protocole sur leur sortie d'erreur, ouvre une page, écoute sa console et ses
 //! exceptions, puis les ferme (au plus 10 s, puis il les tue). Safari ouvre une vraie
@@ -68,6 +69,18 @@ impl Navigateur {
     }
 }
 
+/// Avec ou sans fenêtre (lot 10b, après la vérification) : Firefox sans interface refuse
+/// le plein écran à un vrai clic du banc ; avec sa fenêtre, il le donne. Chrome reste
+/// toujours sans interface (Keyboard Lock y suffit), Safari a toujours la sienne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Interface {
+    /// Sans fenêtre (`--headless`) : le défaut de chaque scénario.
+    #[default]
+    Sans,
+    /// Firefox avec sa fenêtre, sur l'écran de l'hôte (`soiree-banc aide --avec-interface`).
+    Avec,
+}
+
 /// Un navigateur lancé.
 pub enum Lance {
     /// Chrome.
@@ -88,10 +101,23 @@ impl Lance {
         executable: Option<&Path>,
         profils: &Path,
     ) -> Result<Lance, String> {
+        Lance::lancer_avec(n, executable, profils, Interface::Sans)
+    }
+
+    /// Comme [`Lance::lancer`], Firefox avec sa fenêtre si `interface` le demande ;
+    /// Chrome et Safari n'en changent pas ([`Interface`]).
+    pub fn lancer_avec(
+        n: Navigateur,
+        executable: Option<&Path>,
+        profils: &Path,
+        interface: Interface,
+    ) -> Result<Lance, String> {
         let exe = executable.map_or_else(|| n.executable(), Path::to_path_buf);
         match n {
             Navigateur::Chrome => Chrome::lancer(&exe, profils).map(Lance::Chrome),
-            Navigateur::Firefox => Firefox::lancer(&exe, profils).map(Lance::Firefox),
+            Navigateur::Firefox => {
+                Firefox::lancer_avec(&exe, profils, interface).map(Lance::Firefox)
+            }
             Navigateur::Safari => Safari::lancer(&exe).map(Lance::Safari),
         }
     }
@@ -188,6 +214,24 @@ impl Lance {
             Lance::Chrome(c) => c.touche_f8(onglet),
             Lance::Firefox(f) => f.touche_f8(onglet),
             Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
+    /// Appuie sur Échap dans l'onglet, par la chaîne d'entrées du navigateur (lot 10b).
+    pub fn touche_echap(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.touche_echap(onglet),
+            Lance::Firefox(f) => f.touche_echap(onglet),
+            Lance::Safari(_) => Err(String::from("Safari : pas de clavier par le banc")),
+        }
+    }
+
+    /// Clique en `(x, y)`, pixels de la fenêtre, par la chaîne d'entrées (lot 10b).
+    pub fn cliquer(&mut self, onglet: usize, x: f64, y: f64) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.cliquer(onglet, x, y),
+            Lance::Firefox(f) => f.cliquer(onglet, x, y),
+            Lance::Safari(_) => Err(String::from("Safari : pas de pointeur par le banc")),
         }
     }
 

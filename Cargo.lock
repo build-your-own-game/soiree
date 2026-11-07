@@ -97,6 +97,7 @@ dependencies = [
  "moteur-commun",
  "moteur-wasmtime",
  "partie",
+ "reecriture",
  "relais",
  "salle",
  "serde_json",

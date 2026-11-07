@@ -692,7 +692,47 @@ async fn le_module(
     let charge = moteur_navigateur::charger(&octets, &reecriture::Reglages::PHASE_3)
         .map_err(|r| format!("le module est refusé au chargement : {r:?}"))?;
     poster(global, &VersPage::Chargement(Oui::Non));
+    verifier_le_rapport(global, module, &charge).await?;
     Ok((charge, telecharge))
+}
+
+/// § 2.8, point 2 (lot 10b) : **l'empreinte réécrite contre le rapport d'épreuve** du
+/// module (`GET /jeux/<empreinte>.json`, que `soiree-epreuve --catalogue` écrit sur un code
+/// 0) : la réécriture de ce Worker doit donner, octet pour octet, le module que l'épreuve a
+/// joué (la même `reecriture::VERSION`, les mêmes réglages `PHASE_3`). Un écart est une
+/// panne de l'outil. Un module sans rapport (`404`) n'est joué que par `soiree-relais jouer
+/// --non-eprouve`, et l'écran l'affiche « NON ÉPROUVÉ » (P17).
+async fn verifier_le_rapport(
+    global: &DedicatedWorkerGlobalScope,
+    module: &[u8; 32],
+    charge: &ModuleCharge,
+) -> Result<(), String> {
+    let url = format!("/jeux/{}.json", hexa(module));
+    let (statut, corps) = charger(global, &url).await?;
+    match statut {
+        404 => return Ok(()),
+        200 => {}
+        autre => return Err(format!("{url} : {autre}")),
+    }
+    let texte = String::from_utf8(corps).map_err(|_| format!("{url} : pas de l'UTF-8"))?;
+    let rapport = js_sys::JSON::parse(&texte)
+        .map_err(|e| format!("{url} : JSON illisible : {}", self::texte(&e)))?;
+    let champ = |nom: &str| js_sys::Reflect::get(&rapport, &JsValue::from_str(nom)).ok();
+    let version = champ("reecriture").and_then(|v| v.as_f64());
+    if version != Some(f64::from(reecriture::VERSION)) {
+        return Err(format!(
+            "{url} : le rapport est d'une autre réécriture ({version:?}, ce commun : {}) : l'épreuve est à refaire",
+            reecriture::VERSION
+        ));
+    }
+    let attendue = champ("reecrite").and_then(|v| v.as_string());
+    let obtenue = hexa(&charge.reecrit().empreinte);
+    if attendue.as_deref() != Some(obtenue.as_str()) {
+        return Err(format!(
+            "{url} : l'empreinte réécrite dans ce navigateur ({obtenue}) n'est pas celle du rapport d'épreuve ({attendue:?}) (§ 2.8)"
+        ));
+    }
+    Ok(())
 }
 
 async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), String> {
@@ -1032,7 +1072,7 @@ fn rapport_d_etat(etat: &Etat) {
     let pas = autorite.partie().map(|p| p.definitif().numero());
     let (par_image, par_minuterie) = (coque.par_image, coque.par_minuterie);
     let json = format!(
-        "{{\"quoi\":\"etat\",\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"arret\":{}}}",
+        "{{\"quoi\":\"etat\",\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"ecran\":{},\"arret\":{}}}",
         nombre(pas),
         nombre(depuis),
         nombre(dernier),
@@ -1041,6 +1081,7 @@ fn rapport_d_etat(etat: &Etat) {
         comptes.gestes_places,
         comptes.marques,
         comptes.gestes_ecartes,
+        comptes.entrees_ecran,
         arret.map_or_else(|| String::from("null"), |r| chaine(&r)),
     );
     drop(coque);

@@ -145,12 +145,61 @@ fn controles_en_echec(texte: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Le catalogue après le plan standard de `sain` (lot 10b) : son module et son rapport,
+/// sous l'empreinte du module éprouvé ; et `--construire` rend la même empreinte, par la
+/// même compilation.
+fn le_catalogue_tient_sain(catalogue: &Path, rapport_json: &str, sain: &Path) {
+    let empreinte = rapport_json
+        .split("\"module\": \"")
+        .nth(1)
+        .and_then(|r| r.get(..64))
+        .expect("l'empreinte du module au rapport")
+        .to_owned();
+    let module =
+        std::fs::read(catalogue.join(format!("{empreinte}.wasm"))).expect("le module au catalogue");
+    assert_eq!(blake3::hash(&module).to_hex().as_str(), empreinte);
+    let rapport = std::fs::read_to_string(catalogue.join(format!("{empreinte}.json")))
+        .expect("le rapport au catalogue");
+    for attendu in [
+        format!("\"empreinte\": \"{empreinte}\""),
+        String::from("\"reecrite\": \""),
+        String::from("\"reecriture\": "),
+        String::from("\"nom\": \"standard\""),
+        String::from("\"date\": \"20"),
+        String::from("\"joueurs_max\": "),
+        String::from("\"code\": 0"),
+    ] {
+        assert!(rapport.contains(&attendu), "{attendu} :\n{rapport}");
+    }
+    let construit = Command::new(env!("CARGO_BIN_EXE_soiree-epreuve"))
+        .arg("--construire")
+        .arg(sain)
+        .arg("--cible")
+        .arg(racine().join("target/verif-sources"))
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("lancer soiree-epreuve --construire");
+    assert_eq!(construit.status.code(), Some(0));
+    let ligne = String::from_utf8_lossy(&construit.stdout);
+    assert!(ligne.starts_with(&format!("{empreinte} ")), "{ligne}");
+    // Le chemin que `soiree-relais jouer` lit (`relais::jouer::lire_construit`) : les
+    // octets de ce fichier ont bien cette empreinte.
+    let chemin = ligne
+        .trim()
+        .split_once(' ')
+        .map(|(_, c)| PathBuf::from(c))
+        .expect("<empreinte> <chemin>");
+    let construits = std::fs::read(&chemin).expect("le module construit");
+    assert_eq!(blake3::hash(&construits).to_hex().as_str(), empreinte);
+}
+
 /// RESTE-PHASE-2, point 1 (CONTRAT : un contrôle sait échouer, « et lui seul » ;
 /// OUT-27, HIS-03, SAL-168) : depuis leurs sources, qui est le chemin qui fait foi, le
 /// socle sain rend 0, et un fautif sans `static` ne fait échouer que son contrôle.
 /// Tant que la crate `fautifs` tenait les `static` de cinq défauts, la règle « rien
 /// hors de l'état », qui lit toute crate du jeu, faisait échouer l'étape 1 à tous :
-/// `sain` rendait 1. Sur le plan court : son succès n'est pas celui du plan standard.
+/// `sain` rendait 1. Sur le plan court : son succès n'est pas celui du plan standard (et
+/// ne va pas au catalogue) ; le plan standard de `sain`, joué ensuite, l'y dépose.
 #[test]
 fn sain_et_un_fautif_sans_static_depuis_leurs_sources() {
     let d = std::env::temp_dir().join(format!("soiree-sain-{}", std::process::id()));
@@ -158,7 +207,16 @@ fn sain_et_un_fautif_sans_static_depuis_leurs_sources() {
     let modules = racine().join("crates/exemples/fautifs/modules");
 
     let json = d.join("sain.json");
-    let sortie = eprouver(&modules.join("sain"), &["--court"], &json);
+    // Lot 10b (P17) : le catalogue, que `soiree-relais jouer` lit, ne reçoit qu'un code 0
+    // du plan standard ; *après la vérification du lot 10b*, un code 0 du plan court n'y
+    // va pas (il « ne garantit pas le résultat d'un jeu », PHASE-3, § 7).
+    let catalogue = d.join("catalogue");
+    let catalogue_texte = catalogue.display().to_string();
+    let sortie = eprouver(
+        &modules.join("sain"),
+        &["--court", "--catalogue", &catalogue_texte],
+        &json,
+    );
     let texte = String::from_utf8_lossy(&sortie.stdout);
     assert_eq!(
         sortie.status.code(),
@@ -178,10 +236,38 @@ fn sain_et_un_fautif_sans_static_depuis_leurs_sources() {
     assert_eq!(controles_en_echec(&texte), Vec::<&str>::new(), "{texte}");
     let j = std::fs::read_to_string(&json).expect("le rapport JSON");
     assert!(j.contains("\"jeu\": \"fautifs::jeux::Sain\""), "{j}");
+    assert!(
+        texte.contains("code 0 sur le plan court : rien ne va au catalogue"),
+        "{texte}"
+    );
+    assert!(
+        !catalogue.exists(),
+        "un code 0 du plan court est allé au catalogue"
+    );
+    // Le plan standard : le module et son rapport vont au catalogue.
+    let sortie = eprouver(
+        &modules.join("sain"),
+        &["--catalogue", &catalogue_texte],
+        &json,
+    );
+    let texte = String::from_utf8_lossy(&sortie.stdout);
+    assert_eq!(
+        sortie.status.code(),
+        Some(0),
+        "{texte}\n{}",
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    assert!(texte.contains("Catalogue : "), "{texte}");
+    let j = std::fs::read_to_string(&json).expect("le rapport JSON");
+    le_catalogue_tient_sain(&catalogue, &j, &modules.join("sain"));
 
     // E4 : deux points par tape. L'étape 1 est faite ; seul E4 échoue.
     let json = d.join("invariant-viole.json");
-    let sortie = eprouver(&modules.join("invariant-viole"), &["--court"], &json);
+    let sortie = eprouver(
+        &modules.join("invariant-viole"),
+        &["--court", "--catalogue", &catalogue_texte],
+        &json,
+    );
     let texte = String::from_utf8_lossy(&sortie.stdout);
     assert_eq!(
         sortie.status.code(),
@@ -193,6 +279,16 @@ fn sain_et_un_fautif_sans_static_depuis_leurs_sources() {
     assert!(texte.contains("rien hors de l'état : faite"), "{texte}");
     assert_eq!(controles_en_echec(&texte), ["E4"], "{texte}");
     assert!(!texte.contains("panne de l'outil —"), "{texte}");
+    // Un code 1 ne va pas au catalogue : il n'y a toujours que `sain`. Le refus dit le
+    // code d'abord : le plan court seul ne suffit pas à l'expliquer (après la vérification
+    // du lot 10b, un contrôle négatif l'a montré : un catalogue qui prenait un code 1 du
+    // plan standard passait ce test).
+    assert!(
+        texte.contains("code 1 : rien ne va au catalogue"),
+        "{texte}"
+    );
+    let entrees = std::fs::read_dir(&catalogue).expect("le catalogue").count();
+    assert_eq!(entrees, 2, "seuls le module et le rapport de sain");
     std::fs::remove_dir_all(&d).expect("nettoyer");
 }
 

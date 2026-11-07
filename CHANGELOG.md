@@ -21,6 +21,23 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 10b : le démarrage et le jour J
+
+Le jour de la soirée a sa commande et son écran (`conception/PHASE-3.md`, § 2.5, § 2.8, § 2.9 et lot 10b ; `conception/LOTS-PHASE-3.md`, « Lot 10b »). L'ABI ne change pas, ni rien de ce que l'épreuve joue ou juge : les modules gardent leur empreinte, et leurs rapports leurs contrôles.
+
+- **`soiree-epreuve <jeu> --catalogue <dossier>`** : sur un code 0 du plan standard seulement (un code 0 du plan court ou d'un plan réglé n'éprouve pas un module, et n'y va pas ; E20 n'est pas exigé), le module et son rapport (`<empreinte>.wasm`, `<empreinte>.json` : empreinte livrée, empreinte réécrite et version de la réécriture, date, plan, nom, places, verdict) vont au catalogue. **`soiree-epreuve --construire <jeu>`** compile le module comme l'étape 1 (la même invocation de cargo) et écrit `<empreinte> <chemin>`.
+- **`soiree-relais jouer [<jeu>]`** : le module construit, son rapport cherché par empreinte (`$HOME/.soiree/catalogue` par défaut, `--catalogue`), **refusé sans rapport** (on ne joue qu'un module éprouvé ; le relais refuse au lancement un rapport qui ne dit pas un code 0 du plan standard, et un module construit qui n'a pas les octets que le catalogue garde sous son empreinte), joué avec `--non-eprouve` (l'écran affiche alors « NON ÉPROUVÉ » en permanence), le paquet de la page construit, le relais lancé, l'écran ouvert. **`soiree-relais preparer`** construit le paquet de la page (le banc aussi, par la même fonction ; son empreinte est désormais un FNV-1a de 128 bits).
+- **L'écran de démarrage**, une scène du commun : les jeux du catalogue, le QR, l'adresse, la salle, les téléphones reliés, l'aide ; « Jouer » est le geste du plein écran, du son et du verrou d'écran. Un onglet rechargé montre « Cliquer pour reprendre ».
+- **L'aide** : « Pas de réseau », « Un téléphone a ouvert la page mais n'a pas pu se relier », « Certains Wi-Fi isolent les appareils » (aucun téléphone une minute après le QR), « Autorise soiree-relais » (le pare-feu de macOS, lu sans droits). Le relais gagne `GET /aide` et `GET /jeux/<empreinte>.json` (boucle locale).
+- **Le clavier va au jeu** : les raccourcis de la dernière scène (leur action) et le clavier brut ; **Échap en plein écran** (P38) arrive au jeu dans Chrome (Keyboard Lock), et ailleurs sort du plein écran sans arriver au jeu, l'écran du commun le disant (constaté dans Chrome 156 et dans Firefox 158 avec sa fenêtre, dans le plein écran de Firefox et non celui de macOS ; Safari n'est pas constaté).
+- **Le son** : les quatre signaux synthétisés, les sons déclarés décodés au geste ; un effet tombé avant le geste est compté perdu, une identité ne rejoue jamais.
+- **Le Worker vérifie l'empreinte réécrite** du module contre son rapport d'épreuve, et le QR des jeux porte enfin l'adresse de la salle.
+- `salle::autorite::Comptes::entrees_ecran` ; le banc gagne `soiree-banc aide` (`--avec-interface` : Firefox avec sa fenêtre, seul moyen d'y avoir le plein écran au clic du banc) et ses pilotes, le clic et Échap.
+
+#### Passer à cette version
+
+Rien à faire pour un jeu : son API ne change pas. Pour jouer : `soiree-epreuve <jeu> --catalogue ~/.soiree/catalogue` (le plan standard : pas de `--court`), puis `soiree-relais jouer <jeu>` (P35). Un jeu dont un geste ne s'annule que par Échap le voit annulé au second Échap hors de Chrome (`conception/BESOINS-DES-JEUX.md`, besoin 25).
+
 ### Phase 3, lot 10a : l'autorité dans le navigateur, et la reprise
 
 La partie qui fait foi tourne enfin dans le navigateur de l'ordinateur de la soirée (`conception/PHASE-3.md`, § 2.3, § 2.4 et lot 10a ; `conception/LOTS-PHASE-3.md`, « Lot 10a »). Une crate nouvelle dans `web/` : `autorite`, le Worker ; `ecran` devient la page qui le lance et le garde ; `web/demarrage.js`, le seul JavaScript écrit à la main, charge l'un ou l'autre. Le relais sert le paquet de la page et les modules livrés. L'ABI ne change pas, ni rien de ce que l'épreuve joue ou juge : les modules gardent leur empreinte.

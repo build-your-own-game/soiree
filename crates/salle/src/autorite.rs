@@ -219,6 +219,9 @@ pub struct Comptes {
     pub gestes_ecartes: u64,
     /// Les marques F8 posées (SAL-162, lot 10a).
     pub marques: u64,
+    /// Les entrées de l'écran (clavier, pointeur, actions) que la partie a placées : le
+    /// banc y voit qu'Échap est arrivé au jeu en plein écran (P38, lot 10b).
+    pub entrees_ecran: u64,
 }
 
 /// Une partie de la salle : ce qui ne change pas de forme entre ouvrir et reprendre.
@@ -1516,7 +1519,11 @@ where
         match m {
             DeLaPage::Ecran { quoi, vu, .. } => {
                 let quoi = ecran_possede(&quoi);
-                let _: Option<Placement> = self.arriver(t_us, Arrivee::Ecran { quoi, vu });
+                if let Some(Placement::Place { .. }) =
+                    self.arriver(t_us, Arrivee::Ecran { quoi, vu })
+                {
+                    self.comptes.entrees_ecran = self.comptes.entrees_ecran.saturating_add(1);
+                }
             }
             DeLaPage::Image { .. } => self.reveiller(t_us),
             DeLaPage::Reponse { id, quoi } => {

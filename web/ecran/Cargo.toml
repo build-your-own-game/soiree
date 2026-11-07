@@ -29,9 +29,14 @@ mise-en-page.workspace = true
 wasm-bindgen.workspace = true
 js-sys.workspace = true
 # La toile, et, au lot 10a, le Worker de l'autorité, le clavier, le bandeau du commun.
+# Au lot 10b : le son (`AudioContext`, un oscillateur et un gain par signal, les sons
+# déclarés décodés), le clic (`MouseEvent`), `sessionStorage` (« Cliquer pour reprendre »).
 web-sys = { workspace = true, features = [
     "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "ErrorEvent", "KeyboardEvent",
     "Location", "HtmlElement", "CssStyleDeclaration", "Node", "Event", "EventTarget",
+    "MouseEvent", "Storage", "AudioContext", "BaseAudioContext", "AudioContextState",
+    "AudioNode", "AudioParam", "AudioDestinationNode", "OscillatorNode", "OscillatorType",
+    "AudioScheduledSourceNode", "GainNode", "AudioBuffer", "AudioBufferSourceNode",
 ] }
 wasm-bindgen-futures.workspace = true
 

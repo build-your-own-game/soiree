@@ -4,11 +4,24 @@
 //! soiree-epreuve <dossier du jeu> [--module CRATE] [--cible DOSSIER] [options du plan]
 //! soiree-epreuve --wasm <module.wasm> [options du plan]
 //! soiree-epreuve <module.wasm> [options du plan]
+//! soiree-epreuve --construire <dossier du jeu> [--module CRATE] [--cible DOSSIER]
 //!
 //! options du plan : [--graine HEX] [--soirees N] [--duree S] [--memoire S]
 //!                   [--controles E1,E2,…] [--court] [--json CHEMIN]
 //!                   [--navigateurs chrome,firefox,safari] [--moteur-fautif N]
+//!                   [--catalogue DOSSIER]
 //! ```
+//!
+//! `--catalogue DOSSIER` (PHASE-3, § 2.8, P17 ; lot 10b) : sur un **code 0 seulement**, le
+//! module livré et son rapport vont au catalogue (`<empreinte>.wasm`, `<empreinte>.json`),
+//! que `soiree-relais jouer` lit ([`crate::catalogue`]). Un module seul (`--wasm`) n'a
+//! jamais le code 0 : il n'y va jamais.
+//!
+//! `--construire <dossier>` (lot 10b) ne fait que la compilation du module de l'étape 1,
+//! par la même fonction (la même invocation de cargo : une même source ne donne les mêmes
+//! octets que par le même chemin de compilation), et écrit sur la sortie standard
+//! `<empreinte BLAKE3> <chemin du module>` ; code 0, ou 1 si le module ne se construit
+//! pas (`crate::sources::construire`).
 //!
 //! `--navigateurs` ajoute E20 au plan (PHASE-3, § 8.3, lot 3b) : un contrôle long, que
 //! le plan par défaut ne joue pas. L'épreuve lance alors `soiree-banc rejouer`, qu'elle
@@ -47,7 +60,7 @@ use crate::plan::{CommunFautif, IdControle, Navigateur, Plan};
 use crate::rapport::Rapport;
 use crate::sources::{self, Prepare};
 
-const USAGE: &str = "usage : soiree-epreuve <dossier du jeu> [--module CRATE] [--cible DOSSIER] | --wasm <module.wasm> ; [--graine HEX] [--soirees N] [--duree S] [--memoire S] [--controles E1,E2,…] [--court] [--json CHEMIN] [--navigateurs chrome,firefox] [--moteur-fautif N]";
+const USAGE: &str = "usage : soiree-epreuve <dossier du jeu> [--module CRATE] [--cible DOSSIER] | --wasm <module.wasm> ; [--graine HEX] [--soirees N] [--duree S] [--memoire S] [--controles E1,E2,…] [--court] [--json CHEMIN] [--navigateurs chrome,firefox] [--moteur-fautif N] [--catalogue DOSSIER]\n        soiree-epreuve --construire <dossier du jeu> [--module CRATE] [--cible DOSSIER]";
 
 /// D'où vient le module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +80,8 @@ struct Demande {
     /// Le constat de l'étape 1, écrit par `soiree-epreuve <dossier>` pour la copie
     /// native qu'il lance.
     constat: Option<PathBuf>,
+    /// `--catalogue` : où déposer le module et son rapport, sur un code 0 (lot 10b).
+    catalogue: Option<PathBuf>,
 }
 
 fn graine(hex: &str) -> Option<[u8; 32]> {
@@ -98,6 +113,7 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
     let mut module = None;
     let mut cible = None;
     let mut constat = None;
+    let mut catalogue = None;
     let mut plan = Plan::standard([0x5e; 32]);
     let mut json = None;
     let mut court = false;
@@ -107,7 +123,7 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
             "--court" => court = true,
             "--graine" | "--soirees" | "--duree" | "--memoire" | "--controles" | "--json"
             | "--wasm" | "--module" | "--cible" | "--sources" | "--navigateurs"
-            | "--moteur-fautif" => {
+            | "--moteur-fautif" | "--catalogue" => {
                 let v = args
                     .next()
                     .ok_or_else(|| format!("{a} attend une valeur"))?;
@@ -148,6 +164,7 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
             "--module" => module = Some(v),
             "--cible" => cible = Some(PathBuf::from(v)),
             "--sources" => constat = Some(PathBuf::from(v)),
+            "--catalogue" => catalogue = Some(PathBuf::from(v)),
             "--navigateurs" => plan.navigateurs = navigateurs(&v)?,
             "--moteur-fautif" => {
                 plan.commun_fautif = Some(CommunFautif::FausserApres(
@@ -185,6 +202,7 @@ fn lire(args: impl IntoIterator<Item = String>) -> Result<Demande, String> {
         plan,
         json,
         constat,
+        catalogue,
     })
 }
 
@@ -242,6 +260,7 @@ fn eprouver_le_module(
     plan: &Plan,
     compilation: Option<Compilation>,
     json: &PathBuf,
+    catalogue: Option<&PathBuf>,
 ) -> u8 {
     let octets = match std::fs::read(module) {
         Ok(o) => o,
@@ -259,7 +278,14 @@ fn eprouver_le_module(
     };
     let mut rapport = crate::eprouver_octets(&moteur, &octets, natif, plan);
     rapport.compilation = compilation;
-    rendre(&rapport, json)
+    let code = rendre(&rapport, json);
+    if let Some(dossier) = catalogue {
+        match crate::catalogue::deposer(dossier, &moteur, &octets, &rapport) {
+            Ok(ecrits) => println!("Catalogue : {ecrits}"),
+            Err(e) => println!("Catalogue : {e}"),
+        }
+    }
+    code
 }
 
 /// Lance l'épreuve depuis une ligne de commande (sans le nom du programme), avec la
@@ -268,6 +294,10 @@ pub fn ligne_de_commande(
     args: impl IntoIterator<Item = String>,
     natif: Option<&mut dyn FabriqueDynamique>,
 ) -> u8 {
+    let args: Vec<String> = args.into_iter().collect();
+    if args.first().map(String::as_str) == Some("--construire") {
+        return construire(args.get(1..).unwrap_or(&[]));
+    }
     let d = match lire(args) {
         Ok(d) => d,
         Err(e) => {
@@ -294,7 +324,14 @@ pub fn ligne_de_commande(
             let json = d
                 .json
                 .unwrap_or_else(|| module.with_extension("epreuve.json"));
-            eprouver_le_module(&module, natif, &d.plan, compilation, &json)
+            eprouver_le_module(
+                &module,
+                natif,
+                &d.plan,
+                compilation,
+                &json,
+                d.catalogue.as_ref(),
+            )
         }
         Source::Dossier(_) if natif.is_some() => {
             eprintln!(
@@ -302,12 +339,59 @@ pub fn ligne_de_commande(
             );
             64
         }
-        Source::Dossier(demande) => depuis_les_sources(&demande, &d.plan, d.json),
+        Source::Dossier(demande) => {
+            depuis_les_sources(&demande, &d.plan, d.json, d.catalogue.as_ref())
+        }
+    }
+}
+
+/// `soiree-epreuve --construire <dossier> [--module CRATE] [--cible DOSSIER]` : la
+/// compilation du module de l'étape 1, et `<empreinte> <chemin>` sur la sortie standard.
+fn construire(args: &[String]) -> u8 {
+    let mut i = args.iter();
+    let (mut dossier, mut module, mut cible) = (None, None, None);
+    while let Some(a) = i.next() {
+        match a.as_str() {
+            "--module" => module = i.next().cloned(),
+            "--cible" => cible = i.next().map(PathBuf::from),
+            _ if a.starts_with("--") || dossier.is_some() => {
+                eprintln!("{USAGE}");
+                return 64;
+            }
+            _ => dossier = Some(PathBuf::from(a)),
+        }
+    }
+    let Some(dossier) = dossier else {
+        eprintln!("{USAGE}");
+        return 64;
+    };
+    eprintln!(
+        "soiree-epreuve --construire : le module de {} (la compilation de l'étape 1)…",
+        dossier.display()
+    );
+    match sources::construire(&sources::Demande {
+        dossier,
+        module,
+        cible,
+    }) {
+        Ok((wasm, empreinte)) => {
+            println!("{} {}", crate::rapport::hex(&empreinte), wasm.display());
+            0
+        }
+        Err(e) => {
+            eprintln!("soiree-epreuve --construire : {e}");
+            1
+        }
     }
 }
 
 /// `soiree-epreuve <dossier>` : l'étape 1, puis l'épreuve par la copie native compilée.
-fn depuis_les_sources(demande: &sources::Demande, plan: &Plan, json: Option<PathBuf>) -> u8 {
+fn depuis_les_sources(
+    demande: &sources::Demande,
+    plan: &Plan,
+    json: Option<PathBuf>,
+    catalogue: Option<&PathBuf>,
+) -> u8 {
     println!(
         "Étape 1 : le jeu de {} se compile depuis ses sources…",
         demande.dossier.display()
@@ -332,7 +416,7 @@ fn depuis_les_sources(demande: &sources::Demande, plan: &Plan, json: Option<Path
             ..
         } => {
             let json = json.unwrap_or_else(|| wasm.with_extension("epreuve.json"));
-            eprouver_le_module(&wasm, None, plan, Some(compilation), &json)
+            eprouver_le_module(&wasm, None, plan, Some(compilation), &json, catalogue)
         }
         Prepare::Pret {
             wasm,
@@ -353,14 +437,17 @@ fn depuis_les_sources(demande: &sources::Demande, plan: &Plan, json: Option<Path
             {
                 copie.env("SOIREE_BANC", b);
             }
-            let statut = copie
+            copie
                 .arg(&wasm)
                 .arg("--sources")
                 .arg(&constat)
                 .args(options_du_plan(plan))
                 .arg("--json")
-                .arg(&json)
-                .status();
+                .arg(&json);
+            if let Some(c) = catalogue {
+                copie.arg("--catalogue").arg(c);
+            }
+            let statut = copie.status();
             match statut {
                 Ok(s) => s.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(2),
                 Err(e) => {
@@ -442,6 +529,16 @@ mod tests {
         assert!(matches!(d.source, Source::Dossier(s) if s.module.as_deref() == Some("x")));
         assert!(lire(["m.wasm", "--module", "x"].map(String::from)).is_err());
         assert!(lire([ici, String::from("--sources"), String::from("c")]).is_err());
+    }
+
+    /// `--catalogue` (lot 10b) se lit, et ne change pas le plan transmis à la copie native.
+    #[test]
+    fn le_catalogue_se_lit() {
+        let d =
+            lire(["m.wasm", "--court", "--catalogue", "cat"].map(String::from)).expect("lisible");
+        assert_eq!(d.catalogue.as_deref().and_then(|c| c.to_str()), Some("cat"));
+        assert!(!options_du_plan(&d.plan).contains(&String::from("--catalogue")));
+        assert!(lire(["m.wasm", "--catalogue"].map(String::from)).is_err());
     }
 
     #[test]
