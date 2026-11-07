@@ -153,6 +153,129 @@ pub fn ecarts(commun: &Path, web: &Path) -> Vec<String> {
     e
 }
 
+/// Les crates tierces dont `krate`, une crate du commun, dépend pour de bon : ses
+/// `[dependencies]`, et celles des crates du commun qu'elle y nomme, en descendant ; ni
+/// ses dépendances de développement, ni celles des autres (un `Cargo.lock` ne les
+/// distingue pas : il faut les manifestes).
+pub fn dependances_tierces(soiree: &Path, krate: &str) -> Result<Vec<String>, String> {
+    let espace = lire(&soiree.join("Cargo.toml"))?;
+    let locales = sous(&espace, &["workspace", "dependencies"])
+        .and_then(Value::as_table)
+        .cloned()
+        .unwrap_or_default();
+    let chemin = |nom: &str| {
+        locales
+            .get(nom)
+            .and_then(|v| v.get("path"))
+            .and_then(Value::as_str)
+            .map(|p| soiree.join(p))
+    };
+    let mut tierces = Vec::new();
+    let mut vues = Vec::new();
+    let mut a_voir = vec![String::from(krate)];
+    while let Some(k) = a_voir.pop() {
+        if vues.contains(&k) {
+            continue;
+        }
+        let dossier = chemin(&k).ok_or_else(|| format!("{k} n'est pas une crate du commun"))?;
+        let manifeste = lire(&dossier.join("Cargo.toml"))?;
+        for nom in manifeste
+            .get("dependencies")
+            .and_then(Value::as_table)
+            .into_iter()
+            .flat_map(|t| t.keys())
+        {
+            if chemin(nom).is_some() {
+                a_voir.push(nom.clone());
+            } else if !tierces.contains(nom) {
+                tierces.push(nom.clone());
+            }
+        }
+        vues.push(k);
+    }
+    Ok(tierces)
+}
+
+/// La télé dessine ce que l'épreuve mesure, par le même code (PHASE-3, § 2.9, lot 9) :
+/// chaque paquet que tirent les crates tierces `racines` (celles de `mise-en-page`, par
+/// [`dependances_tierces`]) dans le `Cargo.lock` du commun, s'il est aussi dans celui de
+/// `web/`, doit y être à la même version. Rend les écarts, un par paquet.
+/// `lock_commun` et `lock_web` sont les textes des deux `Cargo.lock`. Ce que la règle ne
+/// voit pas : les fonctionnalités (`web/` donne à `cosmic-text` `swash` et `fontconfig`,
+/// que `glyphon` demande ; ni l'une ni l'autre ne touche à la mise en forme : `swash`
+/// dessine les glyphes, `fontconfig` lit les polices du système, que la mesure ne lit
+/// jamais).
+pub fn ecarts_de_versions(lock_commun: &str, lock_web: &str, racines: &[String]) -> Vec<String> {
+    let lire_lock = |texte: &str| -> Result<Vec<(String, String, Vec<String>)>, String> {
+        let t = texte.parse::<Table>().map_err(|e| e.to_string())?;
+        let mut paquets = Vec::new();
+        for p in t
+            .get("package")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let champ = |c: &str| p.get(c).and_then(Value::as_str).unwrap_or_default();
+            let deps = p
+                .get("dependencies")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+            paquets.push((
+                String::from(champ("name")),
+                String::from(champ("version")),
+                deps,
+            ));
+        }
+        Ok(paquets)
+    };
+    let (commun, web) = match (lire_lock(lock_commun), lire_lock(lock_web)) {
+        (Ok(c), Ok(w)) => (c, w),
+        (Err(e), _) | (_, Err(e)) => return vec![format!("Cargo.lock illisible : {e}")],
+    };
+    // Une dépendance s'écrit « nom » ou « nom version », suivi peut-être de sa source.
+    let trouver = |dep: &str| {
+        let mut mots = dep.split(' ');
+        let nom = mots.next().unwrap_or_default();
+        let version = mots.next();
+        commun
+            .iter()
+            .find(|(n, v, _)| n == nom && version.is_none_or(|x| x == v))
+    };
+    let mut vus: Vec<(String, String)> = Vec::new();
+    let mut a_voir: Vec<String> = racines.to_vec();
+    while let Some(dep) = a_voir.pop() {
+        let Some((n, v, deps)) = trouver(&dep) else {
+            continue;
+        };
+        if vus.iter().any(|(m, w)| m == n && w == v) {
+            continue;
+        }
+        vus.push((n.clone(), v.clone()));
+        a_voir.extend(deps.iter().cloned());
+    }
+    let mut ecarts = Vec::new();
+    for (n, v) in &vus {
+        let ailleurs: Vec<&str> = web
+            .iter()
+            .filter(|(m, _, _)| m == n)
+            .map(|(_, w, _)| w.as_str())
+            .collect();
+        // Absent de `web/` : rien de lui n'y est compilé (une dépendance optionnelle
+        // qu'un autre membre du commun active, comme `embedded-io` sous `postcard`).
+        if !ailleurs.is_empty() && !ailleurs.contains(&v.as_str()) {
+            ecarts.push(format!(
+                "{n} est à {} dans web/, à {v} dans le commun",
+                ailleurs.join(", ")
+            ));
+        }
+    }
+    ecarts
+}
+
 #[cfg(test)]
 mod tests {
     use toml::Table;

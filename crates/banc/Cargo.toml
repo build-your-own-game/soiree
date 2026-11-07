@@ -29,7 +29,13 @@ moteur-wasmtime.workspace = true
 # La déclaration du jeu (ses téléphones, sa redite) et les types du fil ; aussi, en test,
 # la sorte d'un appel, pour écrire la trace d'une capture d'essai (`etalonner::tests`).
 jeu-abi.workspace = true
-# L'empreinte du module joué, au rapport.
+# `dessin` (lot 9) : les pires cas construits sur une instance nue, comme E16 (le trait
+# `Fabrique`, les images qu'une scène cite).
+partie.workspace = true
+# `dessin` : l'agencement natif de chaque texte, que la télé doit dessiner au bit près,
+# le style du nom d'un bouton et le texte d'un compte à rebours.
+mise-en-page.workspace = true
+# L'empreinte du module joué, au rapport ; celle de chaque agencement (`dessin`).
 blake3.workspace = true
 # Les pilotes de Chrome et de Firefox : CDP et WebDriver BiDi sont des WebSocket.
 tungstenite.workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "rendu"
+description = "Le dessin de la scène de la télé sur le GPU : rectangles, textes, images, QR code ; Metal en natif pour les tests, WebGPU ou WebGL2 dans le navigateur."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+jeu-abi.workspace = true
+mise-en-page.workspace = true
+wgpu.workspace = true
+glyphon.workspace = true
+qrcodegen.workspace = true
+
+[dev-dependencies]
+naga.workspace = true
+rqrr.workspace = true
+pollster.workspace = true
+
+[lints]
+workspace = true

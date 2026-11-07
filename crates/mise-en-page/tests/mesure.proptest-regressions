@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc da6db3386873be66db048a1155b09d93265043b16912d38b0346a9ce0f644daf # shrinks to texte = "!", l = 1, h = 2, s = StyleTexte { police: Cle(0), taille: Fixe(Fixe(32)), couleur: Rgba(255, 255, 255, 255), alignement: Debut, lignes: Libre, coupe: Mots }
+cc 7013fdcc5d300735e3e7407e282c26ed7c423add88b11d651a41bd1e47fdd0b9 # shrinks to texte = "", l = 0, h = 0, s = StyleTexte { police: Cle(0), taille: Fixe(Fixe(32)), couleur: Rgba(255, 255, 255, 255), alignement: Debut, lignes: Une, coupe: Mots }

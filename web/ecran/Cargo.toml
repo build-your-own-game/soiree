@@ -1,0 +1,39 @@
+[package]
+name = "ecran"
+description = "La page de la télé : elle reçoit la scène du Worker et la dessine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Le dessin de la scène.
+rendu.workspace = true
+# Les messages du Worker à la page (`salle::ecran`), une définition pour les deux côtés.
+salle.workspace = true
+# La scène, la forme de l'écran, les clés.
+jeu-abi.workspace = true
+# Les polices de la télé, validées comme E1 les valide (P22).
+mise-en-page.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+web-sys.workspace = true
+wasm-bindgen-futures.workspace = true
+
+[dev-dependencies]
+# Le banc compare l'agencement de chaque texte dessiné à celui du natif par le BLAKE3 de
+# ses octets canoniques ; la version du commun.
+blake3.workspace = true
+
+# Le scénario `dessin` du banc dans un vrai navigateur (PHASE-3, lot 9) : une
+# bibliothèque WebAssembly que `wasm-bindgen` relie à la page `dessin.html` du banc.
+[[example]]
+name = "dessin-banc"
+path = "examples/dessin_banc.rs"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true

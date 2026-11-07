@@ -1889,3 +1889,154 @@ Les épreuves du lot 8 au plan standard (les trois jeux, les deux fautifs) ne so
 - `sha2` 0.10.9 est une dépendance de test du commun (`mise-en-page`) ; une épreuve depuis les sources de Tier list ne la voit pas (dépendance de test seulement).
 - Les contrôles négatifs du lot 8 sont maintenant `target/travail/lot-8-correction/controles.py` (neuf mutations ; il reprend les huit de `target/travail/lot-8/controles.py`).
 - PHASE-3 a une question 28 (la police d'emoji).
+
+## Lot 9 — Le rendu
+
+Fait le 2026-11-07, de 04 h 50 à 06 h 30 environ (GMT), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1, Chrome 156.0.8078.80, Firefox 158.0.1). Chaque commande cargo, chaque scénario du banc, les contrôles négatifs et la mesure sont passés par le portillon (`target/hote/lourd`) ; seuls des `cargo check`, `cargo clippy` de quelques secondes sur une crate et des `cargo fmt` s'en sont passés. Un scénario du banc à la fois, jamais à côté d'une compilation ; chaque navigateur lancé a été fermé par le banc (aucun ne reste, vérifié). Rien n'est commité. **Seul le commun est modifié** ; Punchline (`f84b86f`), Sidequest (`229199b`) et Tier list (`9827f39`) sont restés propres (aucune compilation d'un jeu depuis ses sources : le plan court s'est joué sur leurs modules, `--wasm`).
+
+### Ce qui est fait
+
+**`web/rendu`** (nouvelle) : le dessin de la scène sur `wgpu` 30.0.1, Metal en natif, WebGPU ou WebGL2 dans le navigateur.
+- `cadre` : la zone sûre et l'échelle entière de `FormeEcran::Scene` (HIS-46, PUN-51, SQ-52), la page de `FormeEcran::Page` (une unité par pixel de l'appareil, le contenu centré, un défilement).
+- `liste` : la scène mise à plat en pixels, sans GPU : les groupes décalent, l'opacité se multiplie, `pixel_entier` pose l'origine sur un pixel, les bords d'un rectangle tombent sur un pixel entier ; un `Bouton` est un fond et un nom dans le style du commun, un `CompteARebours` un texte, un `Qr` des modules ; les composants, les avertissements, les surfaces et les sous-arbres définitifs ne dessinent rien ici. Les animations se lisent à un instant ou au repos (le sens des courbes, posé au mainteneur : question 29). Les éléments se rangent en **couches** (quads puis textes dans une couche ; un quad monte au-dessus d'un texte antérieur qu'il recouvre), pour garder l'ordre du peintre sans un tirage par nœud. L'option de test `Fautif::OublierUnNoeud` oublie le dernier `Rect`.
+- `gpu` : `Quad` et `Cible`, `#[repr(C)]`, leurs octets écrits champ par champ aux décalages d'`offset_of!` (ni `unsafe` ni `bytemuck`), et leur programme `quads.wgsl`.
+- `qr` : `qrcodegen` 1.8.0, un fond blanc, des modules noirs (une suite de modules d'une ligne en un quad), la zone calme de quatre modules.
+- `rendu` : `Rendu` dessine dans sa propre texture (`Rgba8Unorm`), les quads d'un seul programme (une couleur prémultipliée, une image d'un pixel blanc pour un rectangle) et les textes de `glyphon` 0.12.0, chacun d'après l'agencement de `mise-en-page` et le tampon qu'elle en donne ; la relecture des pixels (`Relecture`) ; `recreer` après la perte du GPU (polices et images gardées en mémoire) ; `quand_fini` (`onSubmittedWorkDone`).
+
+**`web/ecran`** (nouvelle) : `messages` (un `salle::ecran::VersPage` : la scène, une police validée comme E1, ou une image ; natif) et, dans le navigateur, `Ecran` : l'instance (WebGPU détecté, sinon WebGL2 ; WebGL2 forcé sur demande), la surface dans un format sans sRGB, la texture du rendu copiée sur la toile (`TextureBlitter`), la présentation, le travail du GPU fini daté par `performance.now()`, les erreurs du GPU gardées (`on_uncaptured_error`), la perte (`device.lost`) et la reprise, une image de démarrage qui compile les programmes, les images par `createImageBitmap` ou, pour un SVG, un `<img>`, lues par une toile hors écran (une image illisible se dessine comme absente). L'exemple `dessin-banc` est la page du scénario.
+
+**`mise-en-page`** (commun) : `MiseEnPage::tampon`, `verifier_tampon`, `systeme`, `Agencement::octets_canoniques` ; les modules `bouton` (le style du nom d'un bouton, que le commun dessine) et `compte` (le texte d'un compte à rebours). Rien de ce que l'épreuve mesure ne change.
+
+**`banc`** (commun) : le scénario `soiree-banc dessin` (`dessin.rs`, `pages/dessin.html`), décrit au § 8.2 de PHASE-3 (*écrit au lot 9*) ; la trace de CDP de Chrome (`Chrome::tracer`, `fin_de_trace`) ; `Lance::chrome` ; `machine::construire_de` (la construction d'un exemple d'une autre crate de `web/`) ; la règle des mêmes versions de la mesure (`web::dependances_tierces`, `web::ecarts_de_versions`) ; le banc dépend en plus de `partie` et `mise-en-page`.
+
+**Dépendances** (`web/Cargo.toml`, chacune avec sa raison) : `wgpu` 30.0.1 (`std`, `wgsl`, `metal`, `webgpu`, `webgl`), `glyphon` 0.12.0, `qrcodegen` 1.8.0, `web-sys` 0.3.106 (des fonctionnalités de plus), `wasm-bindgen-futures` 0.4.79 ; pour les essais, `naga` 30.0.1 (`wgsl-in`), `rqrr` 0.11.0, `pollster` 1.0.1, `blake3` 1.8.7. Chacune des 140 crates entrées au `Cargo.lock` de `web/` a sa date vérifiée sur crates.io (`target/travail/lot-9/dates-web.txt`) : toutes publiées avant le 2026-10-24, sauf `log` 0.4.35 (2026-10-30), gardée parce que c'est celle du `Cargo.lock` du commun (même code que la mesure) ; `cc`, `smallvec`, `unicode-script` et `yazi` ramenées aux versions du commun (`cargo update --precise`). Aucune dépendance nouvelle au `Cargo.lock` du commun (le banc gagne deux arêtes vers des crates du commun).
+
+Documents : PHASE-3 (§ 2.2 lignes `rendu` et `ecran`, § 2.9 *écrit au lot 9*, § 7 ligne du lot, § 8.2 ligne `dessin`, question 29 nouvelle, § 9.3 point 12, les deux annexes), MESURES-PHASE-3 (« Lot 9 »), CHANGELOG (« Phase 3, lot 9 »), `crates/README.md` (`mise-en-page`, `banc`, le graphe, les deux crates de `web/`, un constat de plus), `AGENTS.md` (`web/` et ses crates, le rendu sur Metal, `soiree-banc dessin`).
+
+### Les écarts à PHASE-3, corrigés dans PHASE-3
+
+1. **Le sens des courbes d'animation n'est écrit nulle part** (INTERFACE, § 2.9, ne nomme que les variants) ; le rendu doit pourtant dessiner « au repos ». Décidé provisoirement d'après le seul usage (le saut de Sidequest) : `Rebond` revient à son départ (§ 2.9 *écrit au lot 9* ; question 29).
+2. **Les images déclarées de Sidequest et de Tier list sont des SVG**, que `createImageBitmap` ne lit pas : P23 le prévoyait (« un SVG par un élément `<img>` »), c'est fait ; les pixels passent par une toile hors écran (une copie par le processeur, que P23 ne prévoyait pas).
+3. **Une image de démarrage** : sans elle, la première image de Punchline prenait 85 ms dans Chrome en WebGL2 (la compilation paresseuse des programmes), au-delà du budget. Elle est hors jeu ; la reprise après la perte du GPU, elle, ne chauffe rien : son coût compte dans « l'image revenue ».
+4. **Les styles du nom d'un bouton et du texte d'un compte à rebours** vivent dans `mise-en-page` (et non dans `rendu`) pour que E16 puisse les mesurer un jour avec la même définition ; E16 ne les mesure toujours pas (le faire change ce que l'épreuve juge).
+5. **Le banc ne recopie pas le cadre** : les points à relire sont dans le repère de la scène, et c'est la page qui les porte en pixels par le cadre du rendu (que les tests natifs vérifient au pixel près).
+
+### Les tests qui le tiennent
+
+- `web/rendu/tests/pixels.rs` (12, sur Metal) : `les_rectangles_et_les_groupes_tombent_au_pixel_pres` et `la_zone_sure_et_l_echelle_entiere_placent_la_scene` (chaque pixel exact), `l_opacite_se_melange_a_deux_pres`, `une_page_se_centre_et_defile`, `une_image_se_dessine_au_plus_proche` (et une image absente en gris), `un_texte_se_dessine_dans_sa_boite_et_porte_son_agencement`, `un_glyphe_absent_se_dessine_comme_une_boite_et_se_compte`, `un_bouton_a_le_fond_et_le_nom_du_commun`, `au_repos_une_animation_est_a_son_arrivee_sauf_le_rebond`, `l_oubli_d_un_noeud_se_voit_aux_pixels` (le contrôle négatif, en natif), `apres_la_perte_du_gpu_l_image_revient`, `un_compte_a_rebours_se_forme_depuis_le_pas`.
+- `web/rendu/tests/wgsl.rs` (3) : le WGSL lu par `naga`, comparé à `Cible` (taille, décalages) et à `Quad` (emplacement, type et décalage de chaque attribut, pas des instances) ; `tests/qr.rs` (3) : `le_qr_dessine_se_relit_et_rend_l_adresse_sal191` (relu par `rqrr` à 1 280 × 720 et à 320 × 180) ; `tests/liste.rs` (4) : le cadre, `pixel_entier_pose_l_origine_sur_un_pixel_sq52`, l'opacité, les couches.
+- `web/ecran/tests/messages.rs` (2).
+- `crates/mise-en-page/tests/mesure.rs` (4 de plus, 17 en tout) : `le_tampon_du_dessin_porte_l_agencement` (proptest, 128 cas ; son cas minimal, un texte vide, gardé dans `mesure.proptest-regressions`), `un_tampon_d_un_autre_texte_est_refuse`, `les_octets_canoniques_distinguent_au_bit_pres`, `le_nom_d_un_bouton_tient_dans_sa_boite`.
+- `crates/banc/tests/dessin.rs` (7) : `les_points_relus_evitent_ce_qui_recouvre_et_ce_qui_s_anime_out30_out32`, `un_texte_qui_deborde_couvre_tout`, `les_agencements_attendus_comprennent_boutons_et_comptes`, `un_rapport_fidele_reussit`, `chaque_ecart_fait_echouer_le_rapport` (un agencement, un pixel à 3 près, une image de 33,5 ms, une erreur du GPU, une perte non reprise, un tampon ; 2 près encore juste ; WebGL2 forcé mais WebGPU rapporté), `le_controle_negatif_doit_voir_l_oubli_et_rien_d_autre`, `la_trace_compte_les_images_perdues` ; `crates/banc/tests/web.rs` (2 de plus) : `la_mesure_des_textes_a_les_memes_versions_des_deux_cotes` et son témoin `une_autre_version_de_cosmic_text_se_voit`.
+- **Les contrôles négatifs** (`target/travail/lot-9/controles.py`, huit mutations, chacune rouge pour la raison attendue, la source remise ensuite) : deux emplacements du WGSL intervertis ; le décalage d'un groupe ignoré ; l'option qui oublie un nœud désarmée ; le QR d'une autre adresse ; un tampon façonné plus large que l'agencement ; la tolérance relevée à 3 ; le budget ignoré jusqu'à 66 ms ; les versions non comparées. Au premier passage, la tolérance relevée n'était pas vue (le test changeait un canal de 203 où l'on attendait 0) : le test a été rendu exact (trois de plus sur un canal), rien n'est affaibli.
+- **Le scénario et son contrôle négatif** : `soiree-banc dessin` (plus bas).
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-9/*/` (hors dépôt ; `commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, `empreinte-fin.txt` ; scripts `target/travail/lot-9/preuve.sh` et `empreinte.sh`), lancées à la suite par `target/travail/lot-9/final.sh` de 06 h 05 min 02 s à 06 h 19 min 54 s (`final.log`). Les quinze preuves ont la même empreinte du commun au départ et à la fin : `cc207c1`, `diff HEAD` hors `.md` `cb658af3bf88bbcc`, non suivis (24) `13401830208cd254` ; seuls des `.md` ont changé pendant. Punchline, Sidequest et Tier list sans aucune modification.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `controles` | `lourd python3 -I target/travail/lot-9/controles.py` | code 0 : les huit mutations rouges ; 19 s |
+| `fmt`, `fmt-web` | `cargo fmt --all --check` (le commun, puis `web/`) | code 0 |
+| `clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p mise-en-page -p liaison -p salle -p partie -p jeu -p jeu-abi -p moteur-commun --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `clippy-web` | `lourd sh -c "cd web && cargo clippy --workspace --all-targets -- -D warnings"` | code 0 |
+| `clippy-web-wasm32` | `lourd sh -c "cd web && cargo clippy --workspace --target wasm32-unknown-unknown --lib --examples -- -D warnings"` | code 0 |
+| `tests-web` | `lourd sh -c "cd web && /usr/bin/time -l cargo test --workspace --no-fail-fast"` | **code 0 : 33 réussis**, 0 échec (dont les 22 du rendu sur Metal) ; 49 s ; 0,83 Go |
+| `construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0 |
+| `court-punchline`, `-sidequest`, `-tier-list` | `lourd target/release/soiree-epreuve --wasm <module du lot 7> --court --json …` | code 1 chacun, **la référence du lot 8** : Punchline E2 (même constat) et E16, Sidequest E16 seul, Tier list E16 seul (E20 pas exécuté, comme au lot 8) ; comparés aux rapports `court-*` du lot 8 par `target/travail/lot-9/compare.py` (`comparaison.txt`) : chaque contrôle de même issue, et de même détail sauf E9 et E14, où le lot 9, sans les sources, n'a pas de copie native ; modules au même sha256 (`module.txt`) |
+| `construire-banc` | `lourd sh -c "cargo build -p banc --bin soiree-banc && cd web && cargo build -p ecran --example dessin-banc --target wasm32-unknown-unknown --release && wasm-bindgen …"` | code 0 ; paquet `1201a6f5…` (`paquet.txt`) |
+| `dessin` | `lourd --calme target/debug/soiree-banc dessin <les trois modules> --navigateurs chrome,firefox,safari --fois 5 --sans-construire --sortie target/preuves/lot-9/dessin.json` | **code 0** : Chrome WebGPU, Chrome WebGL2 forcé, Firefox (WebGL2) par défaut et forcé, tous réussis ; les deux contrôles négatifs réussis (l'oubli se voit à 2 pixels de Punchline, rien d'autre ne change) ; Safari pas exécuté (« You must enable 'Allow remote automation'… ») ; 25 s ; M8 dans `dessin/m8.txt` |
+| `tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 674 réussis**, 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 559 s ; 1,87 Go |
+
+Dans chaque passage réussi du scénario : 2 104 textes des pires cas (158, 445, 1 501) et 1 000 de la charge agencés au bit près comme en natif, chaque tampon conforme ; 104 points relus à 2 près (51 chez Punchline, 51 chez Sidequest, 2 chez Tier list, plus 8 de la charge), aucun hors de la toile ; 81 images de Tier list que le navigateur ne décode pas, dessinées comme absentes (constat, pas un écart : un en-tête PNG et des zéros) ; la perte du GPU reprise après chaque jeu, les mêmes pixels relus après. Le plan standard n'est pas exigé à ce lot (§ 7 : le lot ne change rien de ce que l'épreuve joue ou juge, ni `jeu` ni `jeu-abi`) ; E20 n'est pas relancé (ni le relevé, ni le rejeu, ni les modules ne changent).
+
+### Les mesures
+
+M8 (`MESURES-PHASE-3.md`, « Lot 9 ») : aucune image de pire cas au-delà de 33 ms (au plus 15,63 ms dans Chrome, 23,96 ms dans Firefox) ; le coût d'un nœud dessiné, 2 µs dans Chrome, 3,3 µs dans Firefox ; les images perdues de la trace de Chrome (0 à 1 en WebGPU, 64 en WebGL2 forcé) ; la perte du GPU reprise en 3 à 23 ms. Charge de 1,48 au départ, 4,14 à la fin (les navigateurs). Compilations (pas des mesures) : `rendu` et `ecran` natifs 49 s et 1,00 Go, `wasm32` 28 s et 0,70 Go ; `cargo test --workspace` 1,87 Go au plus, `web/` 0,83 Go.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Safari** : pas exécuté, `safaridriver` refuse la session tant que l'hôte n'autorise pas l'automatisation à distance (on ne touche pas à ce réglage).
+- **La police d'emoji monochrome** : toujours pas livrée (question 28, aucune décision de l'hôte) ; PHASE-3 la voulait au plus tard ce lot. Un emoji se dessine comme une boîte, compté.
+- **E16 ne mesure ni les noms des boutons ni les comptes à rebours**, bien que leur style soit fixé : le faire change ce que l'épreuve juge (plan standard des trois jeux, et sans doute de nouveaux débordements à corriger au lot 7b). À décider avec le lot 7b.
+- **Le contrôle négatif ne se voit que chez Punchline** : chez Sidequest et Tier list, aucun point du dernier `Rect` n'a sous lui une couleur connue et différente. Tier list n'a que deux points relus (sa page est couverte d'un `EnPlace` de 1 100 × 1 125 et de textes) ; il en aura de plus utiles quand ses composants seront dessinés (lot 11).
+- **Les 64 images perdues de Chrome en WebGL2** ne sont pas expliquées (§ Mesures) ; le lot 13 dessinera au rythme de l'écran.
+- **Le rendu des composants** (`Champ`, `EnPlace`, `Modale`, `Selecteur`, `Lien`, `Deplacables`), les avertissements du commun, le glisser entre deux pas, le défilement réel de `FormeEcran::Page`, les demandes `Rendu`/`Image` : aux lots 10b à 13, comme prévu.
+- **WebGPU dans Firefox** : non joué, Firefox 158 sans interface ne l'expose pas ici.
+
+### Ce que le lot suivant doit savoir
+
+- La page de la télé est `web/ecran::Ecran` : `creer`, `chauffer` (avant le premier jeu), `recevoir` (un `VersPage` encodé), `regler_forme`, `dessiner`, `quand_fini`, `relire`, `perdu`, `reprendre`. Elle ne fait encore rien des autres messages du Worker (`Recu::Laisse`). Le lot 10a la relie au Worker.
+- Le rendu prend un `Contexte` : le pas (comptes à rebours), l'instant (animations ; `None` au repos), l'adresse du QR, le fond par défaut. La télé doit passer l'adresse réellement jointe.
+- `soiree-banc dessin` refuse de jouer si `mise-en-page` ou ce qu'elle tire n'ont pas les mêmes versions dans les deux `Cargo.lock` : toute mise à jour d'une dépendance de `web/` doit s'y plier (`cargo update -p <crate> --precise <version du commun>`).
+- `log` 0.4.35, au `Cargo.lock` du commun et de `web/`, a été publiée moins de deux semaines avant le lot ; elle était déjà au commun, et n'est pas changée ici.
+- Les erreurs du GPU se lisent par `Ecran::erreurs_gpu` ; une panique dans la page se dit sur la console (le crochet de l'exemple `dessin-banc`), que le banc relaie.
+- Les outils de travail hors dépôt : `target/travail/lot-9/stats` (ce que contiennent les pires cas), `sondes` (la place des nœuds d'une scène préparée), `m8.py`, `compare.py`, `controles.py`.
+
+## Lot 9, correction après la vérification
+
+Fait le 2026-11-07, de 06 h 25 à 06 h 55 environ (GMT), sur la même machine (Chrome 156.0.8078.80, Firefox 158.0.1). Chaque commande cargo, chaque scénario du banc et les contrôles négatifs sont passés par le portillon ; seuls des `cargo check`, `cargo clippy -p banc` de quelques secondes et des `cargo fmt` s'en sont passés. Un scénario à la fois, jamais à côté d'une compilation ; chaque navigateur a été fermé par le banc (aucun ne reste, vérifié par `pgrep`). Rien n'est commité. Seuls le commun (`crates/banc`, `web/rendu`, `web/ecran`, des `.md`) est modifié ; Punchline (`f84b86f`), Sidequest (`229199b`) et Tier list (`9827f39`) sont restés propres.
+
+### Les constats, et ce qui en est fait
+
+1. **[important] La police d'emoji monochrome n'est pas livrée.** Vérifié, exact. **Pas corrigé** : elle attend toujours la décision de l'hôte (question 28 : fournir une police libre, ou autoriser son téléchargement), et aucun téléchargement ne se fait sans son accord. Un emoji se mesure et se dessine comme une boîte, compté (`un_glyphe_absent_se_dessine_comme_une_boite_et_se_compte`). Reste dans « non fait ».
+2. **[important] Le contrôle négatif et les pixels relus sont maigres.** Vérifié, exact. **Corrigé en partie.** L'option de test oubliait toujours le dernier `Rect` de la scène, que seul Punchline relisait sur une couleur connue. Désormais :
+   - `rendu::Fautif::OublierLeNoeud(n)` remplace `Fautif::OublierUnNoeud` : le rendu oublie le nœud `n`, sans rien changer de ce qu'il transmet à ses enfants (testé : `l_oubli_d_un_noeud_se_voit_aux_pixels` oublie aussi un enfant d'un groupe, et le reste du groupe reste à sa place).
+   - Le banc choisit ce nœud dans chaque scène (`banc::dessin::noeud_a_oublier`). C'est le dernier `Rect` relu dont le point a dessous une couleur connue et différente ; s'il n'y en a pas, le dernier `Rect`. Pour cela, `sondes` cherche dans chaque rectangle un point libre qui voit l'oubli avant de prendre le premier point libre. Le manifeste porte ce nœud (`oublie`), et la page `dessin-banc` le passe au rendu scène par scène.
+   - Résultat : l'oubli se voit chez **Punchline (3 points) et Sidequest (1 point)**, dans Chrome comme dans Firefox ; rien d'autre ne change.
+   - **Tier list n'a toujours que 2 points relus, et aucun qui voie l'oubli.** Dans ses quatre pires cas, chaque `Rect` est recouvert par un composant (26 `EnPlace`, dont un de 1 100 × 1 125, des `Modale`, `Deplacables`, `Selecteur`), un texte, une image ou un bouton venu après lui. Le banc tient un composant pour couvrant, parce qu'on ne sait pas encore ce qu'il dessinera (lot 11). Sous le contrôle négatif, l'un de ses deux points change (1 exact sur 2) : c'est celui du dernier `Rect`, qui a dessous une couleur inconnue, et ce n'est pas compté comme une preuve. « Quelques pixels relus aux endroits prévus » ne tient donc, pour Tier list, que sur ces deux points.
+   - Le scénario échoue toujours si aucun jeu ne voit l'oubli, ou si un jeu qui a un point sensible ne le voit pas.
+3. **[mineur] Le juge laissait passer un rapport incomplet.** Vérifié, exact. **Corrigé** (`juger_sondes`, `juger_durees`). Ces cas sont maintenant des échecs : moins de points rapportés que demandés, un point rapporté hors de la toile (`null` : le banc ne choisit que des points visibles), moins de durées d'image que `--fois`. Pour juger ce dernier cas, `juger` prend désormais le nombre d'images demandées. Chacun de ces cas est tenu par un cas de plus de `chaque_ecart_fait_echouer_le_rapport` et par une mutation.
+4. **[mineur] Une assertion tautologique dans `tests/qr.rs`.** Vérifié, exact. **Corrigé.** Le test s'appelle désormais `les_modules_ont_la_forme_d_un_qr_code` et vérifie la structure d'un QR code (ISO/CEI 18004) :
+   - un côté de 17 + 4 v, les trois motifs de position exacts (7 × 7) et aucun dans le coin bas droit ;
+   - les séparateurs blancs, les deux lignes de synchronisation, le module toujours noir ;
+   - une autre adresse donne d'autres modules.
+   Le contenu reste tenu par la relecture de `rqrr`.
+5. **[mineur] `?rendu=webgl2` dans PHASE-3.** Vérifié, exact (la page et le banc lisent `?moteur=`). **Corrigé** dans PHASE-3 (§ 7, ligne du lot 9 ; § 8.2, ligne `dessin`) et dans la documentation de `ecran::ChoixMoteur::WebGl2`.
+6. **[mineur] « 0 d'écart dans Chrome et Firefox » n'était pas prouvé.** Vérifié, exact : le banc jugeait à 2 près sans compter les points exacts. **Corrigé** : le banc compte les points relus exactement (`Lecture::exactes`, dans la ligne de chaque jeu). Dans la preuve `dessin`, chaque passage sans défaut a ses 112 points exacts, à 0 près (Chrome WebGPU, Chrome WebGL2, Firefox WebGL2 par défaut et forcé). L'annexe de PHASE-3 le dit maintenant, avec la preuve, et rappelle que la tolérance de 2 est un juge, pas une mesure.
+7. **[mineur] « image illisible : {} ».** Vérifié, exact. **Corrigé** : `ecran::texte_d_erreur` donne le nom et le message d'une erreur, ce que `JSON.stringify` perd pour une `DOMException`. La page `dessin-banc` s'en sert aussi. On lit désormais : « image illisible : InvalidStateError : The source image could not be decoded. » (Chrome), « … The image could not be decoded » (Firefox).
+8. **[mineur] Le plan court sur les modules et non depuis les sources.** Vérifié, et accepté tel quel, comme le vérificateur le juge : les modules ont le même sha256 qu'aux lots 7 et 8 (relu, `construire-banc/modules.txt`), et `mise-en-page` n'est dans le `Cargo.lock` d'aucun jeu. **Pas relancé** : la correction ne touche ni l'épreuve ni ce qu'elle compile. `epreuve` ne dépend pas de `banc`, et ni `mise-en-page` ni rien de ce qu'elle tire ne change. Les rapports `court-*` du lot 9 valent toujours.
+9. **[mineur] `log` 0.4.35.** Vérifié, accepté tel quel : la règle des mêmes versions l'exige, et elle était déjà au `Cargo.lock` du commun. Aucun `Cargo.lock` ne change dans cette correction.
+
+### Les tests qui la tiennent
+
+- `crates/banc/tests/dessin.rs` (8, un de plus) : `le_noeud_oublie_est_le_dernier_dont_l_oubli_se_voit` (nouveau : un dernier `Rect` posé sur un texte ne voit pas l'oubli, le contrôle négatif oublie le précédent) ; `chaque_ecart_fait_echouer_le_rapport` (trois cas de plus : un point non rapporté, un point hors de la toile, une durée manquante).
+- `web/rendu/tests/pixels.rs` : `l_oubli_d_un_noeud_se_voit_aux_pixels` (le nœud nommé ; l'oubli d'un enfant de groupe) ; `web/rendu/tests/qr.rs` : `les_modules_ont_la_forme_d_un_qr_code` (remplace `les_modules_sont_ceux_du_code`).
+- **Les contrôles négatifs** (`target/travail/lot-9-correction/controles.py`) : les huit du lot, dont `oubli-desarme` réécrit pour `OublierLeNoeud`, et cinq de plus :
+  - `points-manquants-acceptes`, `hors-de-la-toile-accepte`, `durees-manquantes-acceptees` : `chaque_ecart_fait_echouer_le_rapport` rougit ;
+  - `oubli-du-dernier-rect-seulement` (le choix du nœud ramené au dernier `Rect`) : `le_noeud_oublie_est_le_dernier_dont_l_oubli_se_voit` rougit ;
+  - `qr-inverse` : `les_modules_ont_la_forme_d_un_qr_code` rougit.
+  Les treize rougissent pour la raison attendue, et chaque source est remise.
+
+### Les preuves de la correction
+
+Dans `target/preuves/lot-9-correction/*/` (hors dépôt ; `commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, `empreinte-fin.txt`). Elles ont été lancées à la suite par `target/travail/lot-9-correction/final.sh` à partir de 06 h 37 min 00 s (`final.log`). Chaque preuve a la même empreinte du commun au départ et à la fin : `cc207c1`, `diff HEAD` hors `.md` `cb658af3bf88bbcc` (la même qu'au lot 9 : tout ce que la correction change hors des `.md` est encore non suivi), non suivis (24) `2adbe9fc57f87bc7`. Seuls des `.md` ont changé pendant. Punchline, Sidequest et Tier list n'ont aucune modification.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `controles` | `lourd python3 -I target/travail/lot-9-correction/controles.py` | code 0 : 13 mutations sur 13 rouges ; 37 s |
+| `fmt`, `fmt-web` | `cargo fmt --all --check` (le commun, puis `web/`) | code 0 |
+| `clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `clippy-wasm32` | `lourd cargo clippy -p mise-en-page -p liaison -p salle -p partie -p jeu -p jeu-abi -p moteur-commun --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `clippy-web`, `clippy-web-wasm32` | `lourd sh -c "cd web && cargo clippy --workspace --all-targets -- -D warnings"`, puis `--target wasm32-unknown-unknown --lib --examples` | code 0, code 0 |
+| `tests-web` | `lourd sh -c "cd web && /usr/bin/time -l cargo test --workspace --no-fail-fast"` | **code 0 : 33 réussis**, 0 échec (12 pixels, 3 qr, 3 wgsl, 4 liste, 2 messages, 9 moteur-navigateur) |
+| `construire-banc` | comme au lot 9 | code 0 ; paquet `1bbfed48…` (`paquet.txt`) ; modules `82669f77…`, `62043526…`, `84315a1b…` (`modules.txt`), ceux des lots 7 à 9 |
+| `dessin` | `lourd --calme target/debug/soiree-banc dessin <les trois modules> --navigateurs chrome,firefox,safari --fois 5 --sans-construire --sortie target/preuves/lot-9-correction/dessin.json` | **code 0** : six passages réussis. Chrome WebGPU (pire image de pire cas 13,0 ms), Chrome WebGL2 forcé (15,5 ms), Firefox WebGL2 par défaut (20,0 ms) et forcé (22,3 ms). Chaque passage sans défaut a ses 112 points exacts, à 0 près, et 0 hors de la toile. Les deux contrôles négatifs voient l'oubli chez Punchline (3 pixels) et Sidequest (1), rien d'autre ne change. Safari pas exécuté (« You must enable 'Allow remote automation'… »). 18 s ; charge 2,99 au départ, 2,79 à la fin |
+| `tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 675 réussis** (674 au lot 9, plus `le_noeud_oublie_est_le_dernier_dont_l_oubli_se_voit`), 0 échec, 1 ignoré (`plan_standard`, déjà ignoré) ; 372 s ; 1,00 Go résidents au plus ; charge 2,79 puis 3,05 |
+
+Les durées du scénario ne remplacent pas M8 : la mesure du lot 9 (`MESURES-PHASE-3.md`, « Lot 9 ») tient, et la correction ne change ni le rendu ni ce que la page mesure. L'essai fait avant les preuves (`target/travail/lot-9-correction/essai.txt`, sous une charge de 3,47) n'est pas une mesure.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **La police d'emoji monochrome** : attend la décision de l'hôte (question 28).
+- **Tier list : 2 points relus, aucun ne voit l'oubli** (constat 2). Il faut d'abord savoir ce que ses composants dessinent (lot 11). Le banc pourra alors cesser de les tenir pour couvrants là où ils ne dessinent rien sur la toile.
+- **Safari** : pas exécuté (réglage de l'hôte, non touché).
+- Le reste de la section « Lot 9 » tient toujours : E16 ne mesure ni les noms des boutons ni les comptes à rebours ; les images perdues de Chrome en WebGL2 ne sont pas expliquées ; WebGPU dans Firefox n'est pas joué ; le plan standard et E20 ne sont pas relancés.
+
+### Ce que le lot suivant doit savoir
+
+- L'option de test du rendu est `Fautif::OublierLeNoeud(indice)` ; `banc::dessin::juger` prend le nombre d'images par scène (`fois`).
+- `ecran::texte_d_erreur` met en texte une valeur levée par la page ; à employer pour toute erreur JavaScript qu'on rapporte.
+- Les contrôles négatifs du lot 9 sont maintenant `target/travail/lot-9-correction/controles.py` (treize mutations).

@@ -28,6 +28,10 @@ pub struct Chrome {
     pub version: String,
     /// La page ouverte, s'il y en a une : son `sessionId`.
     session: Option<String>,
+    /// Les événements de la trace (`Tracing.dataCollected`), gardés à part de la console.
+    trace: Vec<Json>,
+    /// La trace est-elle finie (`Tracing.tracingComplete`) ?
+    trace_finie: bool,
 }
 
 /// L'adresse CDP que Chrome écrit sur sa sortie d'erreur.
@@ -76,6 +80,8 @@ impl Chrome {
             cdp: Cdp::ouvrir(&adresse)?,
             version: String::new(),
             session: None,
+            trace: Vec::new(),
+            trace_finie: false,
         };
         let v = chrome
             .cdp
@@ -128,12 +134,52 @@ impl Chrome {
     /// Écoute la page au plus `delai`, et rend ce que sa console et ses exceptions ont dit.
     pub fn ecouter(&mut self, delai: Duration) -> Result<Vec<String>, String> {
         self.cdp.ecouter(delai)?;
-        Ok(self
-            .cdp
-            .evenements()
-            .iter()
-            .filter_map(ligne_d_evenement)
-            .collect())
+        let mut lignes = Vec::new();
+        for e in self.cdp.evenements() {
+            match e.get("method").and_then(Json::as_str) {
+                Some("Tracing.dataCollected") => {
+                    if let Some(v) = e.pointer("/params/value").and_then(Json::as_array) {
+                        self.trace.extend(v.iter().cloned());
+                    }
+                }
+                Some("Tracing.tracingComplete") => self.trace_finie = true,
+                _ => lignes.extend(ligne_d_evenement(&e)),
+            }
+        }
+        Ok(lignes)
+    }
+
+    /// Commence une trace du navigateur (`Tracing.start`), dans ces catégories, ses
+    /// événements rapportés au fil de l'eau.
+    pub fn tracer(&mut self, categories: &[&str]) -> Result<(), String> {
+        self.trace.clear();
+        self.trace_finie = false;
+        self.cdp
+            .envoyer(
+                "Tracing.start",
+                &json!({
+                    "transferMode": "ReportEvents",
+                    "traceConfig": { "includedCategories": categories, "recordMode": "recordAsMuchAsPossible" },
+                }),
+                None,
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Finit la trace (`Tracing.end`) et rend ses événements, au plus `delai` après.
+    pub fn fin_de_trace(&mut self, delai: Duration) -> Result<Vec<Json>, String> {
+        self.cdp.envoyer("Tracing.end", &json!({}), None, DELAI)?;
+        let echeance = crate::horloge::maintenant()
+            .checked_add(delai)
+            .ok_or_else(|| String::from("délai"))?;
+        while !self.trace_finie {
+            if crate::horloge::reste(echeance).is_zero() {
+                return Err(format!("la trace n'a pas fini en {delai:?}"));
+            }
+            let _: Vec<String> = self.ecouter(Duration::from_millis(200))?;
+        }
+        Ok(std::mem::take(&mut self.trace))
     }
 
     /// Ferme Chrome (`Browser.close`, puis au plus 10 s avant de le tuer) et efface son

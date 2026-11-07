@@ -21,6 +21,21 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 9 : le rendu
+
+La télé dessine enfin la scène (`conception/PHASE-3.md`, § 2.9 et lot 9 ; `conception/LOTS-PHASE-3.md`, « Lot 9 »). Deux crates nouvelles dans `web/` : `rendu` (le dessin sur `wgpu` 30, Metal en natif pour ses tests, WebGPU ou WebGL2 dans le navigateur, les textes par `glyphon` 0.12) et `ecran` (la page de la télé, qui reçoit la scène du Worker et la dessine). Le banc gagne le scénario `dessin`. L'ABI ne change pas, ni rien de ce que l'épreuve joue ou juge : les modules gardent leur empreinte.
+
+- **La télé dessine exactement ce que l'épreuve mesure.** Chaque texte se dessine d'après l'agencement de `mise-en-page`, par le tampon qu'elle en donne (`MiseEnPage::tampon`), dans les mêmes polices : la télé ne coupe ni ne mesure jamais elle-même. Constaté sur les pires cas des trois jeux dans Chrome (WebGPU et WebGL2) et Firefox (WebGL2) : chacun des 2 104 textes des pires cas (et les 1 000 d'une scène synthétique) agencé comme en natif, au bit près (`Agencement::octets_canoniques`). Le `Cargo.lock` de `web/` tient aux versions du commun ce que `mise-en-page` tire, et le banc le vérifie.
+- **Ce que le commun dessine lui-même** : le nom d'un `Bouton`, sur un fond gris très sombre, en blanc, au centre, à la plus grande taille qui tient (`mise_en_page::bouton`) ; le texte d'un `CompteARebours`, en secondes arrondies au-dessus, `m:ss` dès une minute (`mise_en_page::compte`) ; le QR code de l'adresse, noir sur blanc avec sa marge de quatre modules ; une image absente ou que le navigateur ne décode pas, en gris. E16 ne mesure toujours ni les noms des boutons ni les comptes à rebours.
+- **Les animations au repos** : un nœud est à son visuel d'arrivée, sauf sous `Courbe::Rebond`, qui revient à son départ (un saut, comme celui de Sidequest ; le sens des courbes est posé au mainteneur, `PHASE-3.md`, question 29).
+- **Les images** : un SVG se décode par un élément `<img>`, tout autre format par `createImageBitmap`.
+- **Aucune image de pire cas au-delà de 33 ms de travail du GPU fini**, mesuré dans Chrome et Firefox (`MESURES-PHASE-3.md`, « Lot 9 »).
+- **Après la vérification du lot 9** (`LOTS-PHASE-3.md`, « Lot 9, correction ») : le banc juge plus strictement le scénario `dessin` (un point demandé qui manque au rapport, ou rapporté hors de la toile, ou une durée d'image qui manque, est un échec ; les points relus exactement, à 0 près, sont comptés) ; le contrôle négatif oublie, dans chaque scène, le nœud que le banc choisit pour que l'oubli se voie (`Fautif::OublierLeNoeud`, qui remplace `Fautif::OublierUnNoeud`) : il se voit désormais chez Punchline et Sidequest ; une image que le navigateur ne décode pas dit sa cause (`ecran::texte_d_erreur`). La police d'emoji monochrome n'est toujours pas livrée (`PHASE-3.md`, question 28).
+
+#### Passer à cette version
+
+Rien à faire : l'API d'un jeu ne change pas. Si ton jeu se sert de `Courbe::Rebond`, sache qu'il revient à son départ ; si tes images sont des SVG, elles se dessinent dans la télé.
+
 ### Phase 3, lot 8 : la mesure des textes
 
 Le commun mesure enfin les textes de la scène (`conception/PHASE-3.md`, § 2.9, P21, P22 et lot 8 ; `conception/LOTS-PHASE-3.md`, « Lot 8 »). Une crate nouvelle, `mise-en-page`, sur `cosmic-text` 0.19 (sans GPU ni polices du système) ; l'épreuve s'en sert pour E1 et E16, la télé la dessinera au lot 9. L'ABI ne change pas : les modules gardent leur empreinte.

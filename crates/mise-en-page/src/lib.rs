@@ -22,6 +22,8 @@
 #![deny(missing_docs)]
 
 pub mod agencement;
+pub mod bouton;
+pub mod compte;
 mod polices;
 
 pub use agencement::{

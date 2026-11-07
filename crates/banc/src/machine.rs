@@ -96,11 +96,20 @@ fn lancer(c: &mut Command, quoi: &str) -> Result<String, String> {
 /// `wasm32-unknown-unknown`, en une commande, puis la colle de chacun dans `paquet`
 /// (`wasm-bindgen --target web`, à la version de la crate : REM-156).
 pub(crate) fn construire(web: &Path, paquet: &Path, exemples: &[&str]) -> Result<(), String> {
+    construire_de(web, paquet, "moteur-navigateur", exemples)
+}
+
+/// Construit les exemples `exemples` de la crate `crate_web` de `web/`, puis leur colle
+/// dans `paquet`, comme [`construire`] (lot 9 : `ecran`).
+pub(crate) fn construire_de(
+    web: &Path,
+    paquet: &Path,
+    crate_web: &str,
+    exemples: &[&str],
+) -> Result<(), String> {
     let cible = web.join("target");
     let mut cargo = Command::new("cargo");
-    cargo
-        .current_dir(web)
-        .args(["build", "-p", "moteur-navigateur"]);
+    cargo.current_dir(web).args(["build", "-p", crate_web]);
     for e in exemples {
         cargo.args(["--example", e]);
     }

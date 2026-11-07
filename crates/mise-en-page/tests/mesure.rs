@@ -513,3 +513,96 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
+
+    /// La télé dessine exactement l'agencement mesuré (PHASE-3, § 2.9, lot 9) : le tampon
+    /// qu'elle donne à `glyphon` porte, glyphe par glyphe et au bit près, les lignes de
+    /// l'agencement, quel que soit le texte, la boîte ou le style.
+    #[test]
+    fn le_tampon_du_dessin_porte_l_agencement(
+        texte in "([a-zA-ZéÉçœ' ,.?!:;0-9]|W|中|👍🏽|e\u{301}|\n){0,60}",
+        l in 0_i32..60,
+        h in 0_i32..20,
+        s in un_style(),
+    ) {
+        let mut m = mise_en_page();
+        let b = boite(l, h);
+        let a = m.agencer(&texte, b, &s);
+        let tampon = m.tampon(&a, b, &s);
+        prop_assert_eq!(m.verifier_tampon(&a, &tampon), Ok(()));
+    }
+}
+
+#[test]
+fn un_tampon_d_un_autre_texte_est_refuse() {
+    let mut m = mise_en_page();
+    let s = style(fixe(10), Lignes::Libre, Coupe::Mots, Alignement::Centre);
+    let a = m.agencer("Bonjour à tous", boite(200, 40), &s);
+    let b = m.agencer("Bonjour à tout", boite(200, 40), &s);
+    let tampon = m.tampon(&b, boite(200, 40), &s);
+    assert!(m.verifier_tampon(&a, &tampon).is_err());
+    // Une autre boîte déplace les glyphes centrés : l'écart se voit aussi.
+    let tampon = m.tampon(&a, boite(201, 40), &s);
+    assert!(m.verifier_tampon(&a, &tampon).is_err());
+}
+
+#[test]
+fn les_octets_canoniques_distinguent_au_bit_pres() {
+    let mut mep = mise_en_page();
+    let st = style(fixe(10), Lignes::Libre, Coupe::Mots, Alignement::Debut);
+    let a = mep.agencer("Égalité : 12 points", boite(200, 40), &st);
+    assert_eq!(
+        a.octets_canoniques(),
+        mise_en_page()
+            .agencer("Égalité : 12 points", boite(200, 40), &st)
+            .octets_canoniques()
+    );
+    let mut b = a.clone();
+    let glyphe = &mut b.lignes[0].glyphes[3];
+    glyphe.x = f32::from_bits(glyphe.x.to_bits() ^ 1);
+    assert_ne!(a.octets_canoniques(), b.octets_canoniques());
+    let mut c = a.clone();
+    c.absents += 1;
+    assert_ne!(a.octets_canoniques(), c.octets_canoniques());
+}
+
+#[test]
+fn le_nom_d_un_bouton_tient_dans_sa_boite() {
+    use mise_en_page::bouton::{boite_du_nom, style_du_nom};
+    let b = Rect {
+        x: Fixe::unites(10),
+        y: Fixe::unites(20),
+        l: Fixe::unites(200),
+        h: Fixe::unites(50),
+    };
+    let n = boite_du_nom(b);
+    assert_eq!(
+        (n.x, n.y, n.l, n.h),
+        (
+            Fixe::unites(20),
+            Fixe::unites(30),
+            Fixe::unites(180),
+            Fixe::unites(30)
+        )
+    );
+    let s = style_du_nom(b);
+    let a = mise_en_page().agencer("Valider", n, &s);
+    assert_eq!(a.tient, Tient::Oui);
+    // Une ligne pleine : la taille la plus grande, 5/6 de la boîte du nom (à 1/256
+    // près : 25 × 1,2 n'est pas exactement 30 en flottant).
+    assert!(
+        a.taille.brut() >= Fixe::unites(25).brut() - 1 && a.taille <= Fixe::unites(25),
+        "{:?}",
+        a.taille
+    );
+    // Une boîte nulle ne panique pas.
+    let vide = Rect {
+        x: Fixe::ZERO,
+        y: Fixe::ZERO,
+        l: Fixe::ZERO,
+        h: Fixe::ZERO,
+    };
+    let _: Agencement = mise_en_page().agencer("x", boite_du_nom(vide), &style_du_nom(vide));
+}

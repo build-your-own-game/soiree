@@ -16,6 +16,8 @@
 resolver = "3"
 members = [
     "moteur-navigateur",
+    "rendu",
+    "ecran",
 ]
 # Le témoin de la règle « mêmes lints » : une crate aux lints différents, que la règle
 # doit refuser. Il n'est pas membre, et ne se compile jamais.
@@ -34,6 +36,11 @@ jeu-abi = { path = "../crates/jeu-abi", version = "0.1.0" }
 partie = { path = "../crates/partie", version = "0.1.0" }
 reecriture = { path = "../crates/reecriture", version = "0.1.0" }
 moteur-commun = { path = "../crates/moteur-commun", version = "0.1.0" }
+mise-en-page = { path = "../crates/mise-en-page", version = "0.1.0" }
+liaison = { path = "../crates/liaison", version = "0.1.0" }
+salle = { path = "../crates/salle", version = "0.1.0" }
+# Les crates de ce workspace.
+rendu = { path = "rendu", version = "0.1.0" }
 
 # Les dépendances tierces, chacune avec sa raison.
 
@@ -52,7 +59,46 @@ js-sys = { version = "0.3.106", default-features = false, features = ["std"] }
 # lue comme un nombre ne se distingue pas d'un `i32`. La version que lit la réécriture.
 wasmparser = "0.245.1"
 
+# Le GPU de la télé (PHASE-3, § 2.9) : WebGPU quand le navigateur l'expose, WebGL2
+# sinon, Metal en natif pour les tests ; le CONTRAT le cite (« Le code tiers »). 30.0.1
+# (2026-08-22), la plus récente publiée depuis plus de deux semaines, celle que
+# `glyphon` 0.12 demande. Sans ses fonctionnalités par défaut : ni Vulkan, ni DX12, ni
+# GLES en natif (la machine de l'hôte est un Mac), ni `parking_lot`.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "metal", "webgpu", "webgl"] }
+# Le texte sur `wgpu` : l'atlas des glyphes que `cosmic-text` façonne et que `swash`
+# dessine, et qui tient sur WebGL2. 0.12.0 (2026-07-09), la dernière ; elle demande
+# `cosmic-text` 0.19, celle de `mise-en-page` : la télé dessine ce que l'épreuve mesure.
+glyphon = "0.12.0"
+# Les modules du QR code de l'adresse (SAL-191), petit et sans dépendance. 1.8.0
+# (2022-04-17), la dernière.
+qrcodegen = "1.8.0"
+# Les API du navigateur que la page de la télé touche : la toile, la fenêtre, l'horloge.
+# La version publiée avec `wasm-bindgen` 0.2.129, comme `js-sys`.
+web-sys = { version = "0.3.106", default-features = false, features = [
+    "std", "Window", "Document", "Element", "HtmlCanvasElement", "Performance", "Blob",
+    "BlobPropertyBag", "ImageBitmap", "OffscreenCanvas", "OffscreenCanvasRenderingContext2d",
+    "ImageData", "Response", "Navigator", "HtmlImageElement", "Url", "console",
+] }
+# L'adaptateur, l'appareil et la relecture des pixels sont asynchrones dans le
+# navigateur : une `Promise` de la page. La version publiée avec `wasm-bindgen` 0.2.129.
+wasm-bindgen-futures = "0.4.79"
+
 # Pour les essais seulement.
+# Le banc compare l'agencement de chaque texte que la télé dessine à celui du natif par
+# le BLAKE3 de ses octets canoniques (l'exemple `dessin-banc` de `ecran`). La version du
+# commun, déjà dans ce workspace par `moteur-commun`.
+blake3 = "1.8.7"
+# Lire les WGSL du rendu et comparer tailles et décalages de leurs structures à celles,
+# `#[repr(C)]`, que le rendu envoie au GPU (CONTRAT, « Les types de bout en bout ») ;
+# juge, non livré. La version que `wgpu` 30.0.1 tire.
+naga = { version = "30.0.1", default-features = false, features = ["wgsl-in"] }
+# Relire le QR dessiné et retrouver l'adresse ; juge, non livré (CONTRAT, « Le code
+# tiers »). 0.11.0 (2026-09-02), la plus récente publiée depuis plus de deux semaines.
+rqrr = { version = "0.11.0", default-features = false }
+# Attendre l'adaptateur et l'appareil de `wgpu` en natif, dans les tests du rendu
+# (Metal) : leurs demandes sont des `Future`. 1.0.1 (2026-07-10).
+pollster = "1.0.1"
+
 # Les petits modules écrits à la main des essais de `Machine`, assemblés dans la page.
 # La version de la famille de wasmparser 0.245, comme dans le commun.
 wat = "~1.245.1"

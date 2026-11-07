@@ -418,6 +418,55 @@ fn couper(paragraphe: &str, chasses: &Chasses, coupe: Coupe, largeur: f32) -> Ve
     lignes
 }
 
+/// L'alignement de `cosmic-text` pour un alignement de la scène.
+const fn alignement_de(a: Alignement) -> Align {
+    match a {
+        Alignement::Debut => Align::Left,
+        Alignement::Centre => Align::Center,
+        Alignement::Fin => Align::Right,
+    }
+}
+
+impl Agencement {
+    /// L'agencement en octets, sans rien perdre : chaque flottant par ses bits, dans
+    /// l'ordre des champs. Deux agencements sont égaux, au bit près, si et seulement si
+    /// leurs octets le sont : la télé (`wasm32`) et l'épreuve (natif) se comparent par
+    /// eux, glyphe par glyphe, sans aucune tolérance (PHASE-3, lot 9).
+    pub fn octets_canoniques(&self) -> Vec<u8> {
+        let mut o = Vec::new();
+        let compte = |o: &mut Vec<u8>, n: usize| {
+            o.extend_from_slice(&u64::try_from(n).unwrap_or(u64::MAX).to_le_bytes());
+        };
+        compte(&mut o, self.texte.len());
+        o.extend_from_slice(self.texte.as_bytes());
+        o.extend_from_slice(&self.taille.brut().to_le_bytes());
+        o.extend_from_slice(&self.interligne.to_bits().to_le_bytes());
+        compte(&mut o, self.lignes.len());
+        for l in &self.lignes {
+            for f in [l.gauche, l.largeur, l.haut] {
+                o.extend_from_slice(&f.to_bits().to_le_bytes());
+            }
+            compte(&mut o, l.glyphes.len());
+            for g in &l.glyphes {
+                o.extend_from_slice(&g.police.fil().to_le_bytes());
+                o.extend_from_slice(&g.glyphe.to_le_bytes());
+                o.extend_from_slice(&g.x.to_bits().to_le_bytes());
+                o.extend_from_slice(&g.chasse.to_bits().to_le_bytes());
+            }
+        }
+        match &self.tient {
+            Tient::Oui => o.push(0),
+            Tient::Non(d) => {
+                o.push(1);
+                o.extend_from_slice(format!("{d:?}").as_bytes());
+            }
+        }
+        o.extend_from_slice(&self.absents.to_le_bytes());
+        o.push(u8::from(self.police_inconnue == Oui::Oui));
+        o
+    }
+}
+
 impl MiseEnPage {
     /// Une mise en page sur ces polices, et aucune autre.
     pub fn new(polices: &Polices) -> MiseEnPage {
@@ -535,6 +584,71 @@ impl MiseEnPage {
                 meilleur
             }
         }
+    }
+
+    /// Le tampon de `cosmic-text` que la télé dessine pour un agencement de ce texte, dans
+    /// cette boîte et ce style : le texte agencé, façonné sans coupe automatique, à la
+    /// taille et à l'interligne retenus, dans la police du style et les mêmes polices de
+    /// repli, exactement comme la mesure l'a fait (PHASE-3, § 2.9, lot 9). Ses lignes
+    /// commencent en haut du tampon : la télé le pose à `boite.y + lignes[0].haut`.
+    /// [`MiseEnPage::verifier_tampon`] dit qu'il porte les glyphes de l'agencement.
+    pub fn tampon(&mut self, agencement: &Agencement, boite: Rect, style: &StyleTexte) -> Buffer {
+        let (designation, _) = self.designation(style.police);
+        let designation = designation.cloned();
+        self.faconner(
+            &agencement.texte,
+            unites(agencement.taille),
+            Some(unites(boite.l)),
+            Some(alignement_de(style.alignement)),
+            designation.as_ref(),
+        )
+    }
+
+    /// Le tampon porte-t-il, glyphe par glyphe et au bit près, les lignes de
+    /// l'agencement (police, numéro, position, chasse ; bord, largeur, haut de chaque
+    /// ligne) ? `Err` dit le premier écart. La télé le vérifie dans le banc (lot 9).
+    pub fn verifier_tampon(&self, agencement: &Agencement, tampon: &Buffer) -> Result<(), String> {
+        let haut0 = agencement.lignes.first().map_or(0.0, |l| l.haut);
+        let (lignes, _) = self.placer(tampon, haut0, agencement.interligne);
+        // Un texte vide, ou fait d'espaces, n'a aucune ligne agencée : la télé ne le
+        // dessine pas, et son tampon ne doit porter aucun glyphe.
+        if agencement.texte.is_empty() {
+            return match lignes.iter().map(|l| l.glyphes.len()).sum::<usize>() {
+                0 => Ok(()),
+                n => Err(format!("{n} glyphes dessinés pour un texte vide")),
+            };
+        }
+        if lignes.len() != agencement.lignes.len() {
+            return Err(format!(
+                "{} lignes dessinées, {} agencées",
+                lignes.len(),
+                agencement.lignes.len()
+            ));
+        }
+        for (i, (d, a)) in lignes.iter().zip(&agencement.lignes).enumerate() {
+            let memes = d.gauche.to_bits() == a.gauche.to_bits()
+                && d.largeur.to_bits() == a.largeur.to_bits()
+                && d.haut.to_bits() == a.haut.to_bits()
+                && d.glyphes.len() == a.glyphes.len()
+                && d.glyphes.iter().zip(&a.glyphes).all(|(x, y)| {
+                    x.police == y.police
+                        && x.glyphe == y.glyphe
+                        && x.x.to_bits() == y.x.to_bits()
+                        && x.chasse.to_bits() == y.chasse.to_bits()
+                });
+            if !memes {
+                return Err(format!(
+                    "la ligne {i} diffère : dessinée {d:?}, agencée {a:?}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Les polices de la mesure, que `glyphon` lit pour dessiner les glyphes du
+    /// [`MiseEnPage::tampon`] : les mêmes, et aucune autre.
+    pub fn systeme(&mut self) -> &mut FontSystem {
+        &mut self.systeme
     }
 
     /// Façonne des lignes sans les couper, à une taille : un passage par ligne.
@@ -656,16 +770,11 @@ impl MiseEnPage {
         }
         let lignes = self.lignes(prepare, taille_u, largeur, style, designation.as_ref());
         let texte = lignes.join("\n");
-        let alignement = match style.alignement {
-            Alignement::Debut => Align::Left,
-            Alignement::Centre => Align::Center,
-            Alignement::Fin => Align::Right,
-        };
         let tampon = self.faconner(
             &texte,
             taille_u,
             Some(largeur),
-            Some(alignement),
+            Some(alignement_de(style.alignement)),
             designation.as_ref(),
         );
         let compte = lignes.len();

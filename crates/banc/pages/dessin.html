@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Banc : le dessin de la télé</title>
+<style>html, body { margin: 0; background: #000; } canvas { display: block; }</style>
+<!--
+  La page de `soiree-banc dessin` (PHASE-3, lot 9). Elle charge l'exemple `dessin-banc`
+  de `web/ecran` par sa colle `wasm-bindgen`, lui donne le manifeste que le banc a écrit
+  (`/dessin/manifeste.json`), la toile et une façon de rendre la main à la page entre
+  deux tours du GPU, et envoie ce qu'il rend à `POST /banc/rapport`. `?moteur=` (auto,
+  webgl2), `?fautif=` (oublier-un-noeud) et `?perte=` (1 : détruire l'appareil après
+  chaque jeu) choisissent le passage. Elle ne juge rien : le banc juge.
+-->
+<canvas id="tele" width="1280" height="720"></canvas>
+<script type="module">
+const q = new URLSearchParams(location.search);
+// Rendre la main à la page sans l'attente minimale d'un `setTimeout` : une tâche de
+// `MessageChannel`.
+const canal = new MessageChannel();
+const enAttente = [];
+canal.port1.onmessage = () => { const r = enAttente.shift(); if (r) r(); };
+const ceder = () => new Promise((r) => { enAttente.push(r); canal.port2.postMessage(0); });
+let rapport;
+try {
+  const manifeste = await (await fetch("/dessin/manifeste.json")).json();
+  manifeste.moteur = q.get("moteur") ?? "auto";
+  manifeste.fautif = q.get("fautif") ?? "";
+  manifeste.perte = q.get("perte") === "1";
+  const colle = await import("/paquet/dessin_banc.js");
+  await colle.default();
+  const toile = document.getElementById("tele");
+  rapport = JSON.parse(await colle.dessiner_le_banc(manifeste, toile, ceder));
+} catch (e) {
+  rapport = { erreur: String(e && e.stack ? e.stack : e) };
+}
+rapport.suite = "dessin";
+rapport.agent = navigator.userAgent;
+rapport.moteur_demande = q.get("moteur") ?? "auto";
+rapport.fautif = q.get("fautif") ?? "";
+await fetch("/banc/rapport?suite=dessin", { method: "POST", body: JSON.stringify(rapport) });
+document.title = "rapport envoyé";
+</script>

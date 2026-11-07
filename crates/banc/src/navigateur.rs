@@ -124,6 +124,14 @@ impl Lance {
         }
     }
 
+    /// Chrome, s'il l'est : ce que CDP seul permet (la trace).
+    pub fn chrome(&mut self) -> Option<&mut Chrome> {
+        match self {
+            Lance::Chrome(c) => Some(c),
+            Lance::Firefox(_) | Lance::Safari(_) => None,
+        }
+    }
+
     /// Le ferme, et efface son profil.
     pub fn fermer(self) {
         match self {

@@ -9,6 +9,8 @@
 //!                       [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire]
 //!                       [--fautif fausser-apres:<n>]
 //! soiree-banc regles-web
+//! soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>]
+//!                    [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]
 //! soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes]
 //!                           [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne]
 //!                           [--travail <dossier>] [--calme S]
@@ -17,7 +19,11 @@
 //! `machine` : les essais de `Machine` (lot 3a). `rejouer` : E20, que `soiree-epreuve
 //! --navigateurs` lance sur le dossier qu'il écrit (lot 3b, `banc::rejouer`).
 //! `etalonner` : M1, M10 et M9 dans chaque navigateur (lot 3c, `banc::etalonner`), sur
-//! la capture du harnais (`mesures/navigateur/README.md`). `soiree-native` : une soirée
+//! la capture du harnais (`mesures/navigateur/README.md`). `dessin` : les pires cas de chaque module dessinés par la télé, dans chaque
+//! navigateur, avec WebGL2 forcé, la perte du GPU et le contrôle négatif (lot 9,
+//! `banc::dessin`) ; code 0 si tout tient, 1 au moindre écart, 2 si rien n'a pu jouer
+//! (Safari sans l'automatisation à distance est « pas exécuté » sans changer le code).
+//! `soiree-native` : une soirée
 //! par le vrai relais (le binaire `soiree-relais` à côté de celui-ci, `SOIREE_RELAIS`, ou
 //! `--relais`), l'autorité et des téléphones natifs, sous pannes (lot 5,
 //! `banc::soiree_native`) ; code 0 si tout tient, 1 sinon, 2 si l'outil n'a pas pu jouer.
@@ -43,6 +49,7 @@ use std::process::ExitCode;
 
 use std::time::Duration;
 
+use banc::dessin;
 use banc::etalonner;
 use banc::machine::{self, Arret, Options};
 use banc::navigateur::Navigateur;
@@ -52,7 +59,7 @@ use banc::soiree_native;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]"
     );
     ExitCode::from(2)
 }
@@ -434,6 +441,125 @@ fn soiree_native(args: &[String]) -> ExitCode {
     }
 }
 
+fn afficher_un_passage(p: &dessin::Passage) {
+    let quoi = if p.sorte.fautif.is_empty() {
+        format!("moteur {}", p.sorte.moteur)
+    } else {
+        format!(
+            "contrôle négatif « {} » (moteur {})",
+            p.sorte.fautif, p.sorte.moteur
+        )
+    };
+    println!("\n== {} {} — {quoi}", p.navigateur.nom(), p.version);
+    for c in &p.constats {
+        println!("  {c}");
+    }
+    if let Some(t) = &p.trace {
+        println!("  trace de Chrome (images de la composition, à constater) : {t}");
+    }
+    for c in &p.console {
+        println!("  page : {c}");
+    }
+    match &p.verdict {
+        Ok(v) => println!("verdict : réussi — {v}"),
+        Err(e) if e.starts_with("pas exécuté") => println!("verdict : {e}"),
+        Err(e) => println!("verdict : échec — {e}"),
+    }
+}
+
+fn dessin_(args: &[String]) -> ExitCode {
+    let mut o = dessin::Options::default();
+    let mut sortie = None;
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        match a.as_str() {
+            "--sans-construire" => o.construire = false,
+            "--sans-charge" => o.charge = jeu_abi::Oui::Non,
+            "--navigateurs" => match i.next().map(|n| Navigateur::liste(n)) {
+                Some(Ok(n)) => o.navigateurs = n,
+                Some(Err(e)) => {
+                    eprintln!("{e}");
+                    return usage();
+                }
+                None => return usage(),
+            },
+            "--fois" => match i.next().and_then(|d| d.parse::<u32>().ok()) {
+                Some(n) if n > 0 => o.fois = n,
+                _ => return usage(),
+            },
+            "--sortie" => match i.next() {
+                Some(s) => sortie = Some(PathBuf::from(s)),
+                None => return usage(),
+            },
+            "--delai" => match i.next().and_then(|d| d.parse::<u64>().ok()) {
+                Some(s) => o.delai = Duration::from_secs(s),
+                None => return usage(),
+            },
+            _ if a.starts_with("--") => return usage(),
+            _ => o.modules.push(PathBuf::from(a)),
+        }
+    }
+    let (jeux, passages) = match dessin::jouer(&o) {
+        Ok(x) => x,
+        Err(Arret::Echec(e)) => {
+            println!("dessin : échec\n{e}");
+            return ExitCode::from(1);
+        }
+        Err(Arret::PasExecute(e)) => {
+            println!("dessin : pas exécuté\n{e}");
+            return ExitCode::from(2);
+        }
+    };
+    for j in &jeux {
+        println!(
+            "jeu {} ({}) : {} scènes, {} points à relire, {} textes",
+            j.nom,
+            if j.empreinte.is_empty() {
+                "synthétique"
+            } else {
+                j.empreinte.as_str()
+            },
+            j.scenes.len(),
+            j.scenes.iter().map(|s| s.sondes.len()).sum::<usize>(),
+            j.scenes.iter().map(|s| s.agencements.len()).sum::<usize>(),
+        );
+    }
+    let (mut reussis, mut echecs, mut non): (u32, u32, u32) = (0, 0, 0);
+    let mut sorties = Vec::new();
+    for p in &passages {
+        afficher_un_passage(p);
+        match &p.verdict {
+            Ok(_) => reussis = reussis.saturating_add(1),
+            Err(e) if e.starts_with("pas exécuté") => non = non.saturating_add(1),
+            Err(_) => echecs = echecs.saturating_add(1),
+        }
+        sorties.push(serde_json::json!({
+            "navigateur": p.navigateur.nom(),
+            "version": p.version,
+            "moteur_demande": p.sorte.moteur,
+            "fautif": p.sorte.fautif,
+            "verdict": match &p.verdict { Ok(v) => serde_json::json!({ "reussi": v }), Err(e) => serde_json::json!({ "echec": e }) },
+            "constats": p.constats,
+            "trace": p.trace,
+            "console": p.console,
+            "rapport": p.rapport,
+        }));
+    }
+    if let Some(s) = &sortie
+        && let Err(e) = std::fs::write(s, serde_json::Value::from(sorties).to_string())
+    {
+        eprintln!("{} : {e}", s.display());
+    }
+    println!("\ndessin : {reussis} réussi(s), {echecs} échec(s), {non} pas exécuté(s)");
+    if echecs > 0 {
+        ExitCode::from(1)
+    } else if reussis == 0 {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
@@ -442,6 +568,7 @@ fn main() -> ExitCode {
         Some((c, reste)) if c == "etalonner" => etalonner_(reste),
         Some((c, reste)) if c == "regles-web" && reste.is_empty() => regles_web(),
         Some((c, reste)) if c == "soiree-native" => soiree_native(reste),
+        Some((c, reste)) if c == "dessin" => dessin_(reste),
         _ => usage(),
     }
 }

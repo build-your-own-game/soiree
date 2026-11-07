@@ -5,7 +5,7 @@
 //! page lui envoie (`POST /banc/rapport`). Il ne retente jamais une mesure (OUT-91), et
 //! ne joue qu'un scénario à la fois, jamais à côté d'une compilation (OUT-89, OUT-115).
 //!
-//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b et 3c)
+//! # Ce qu'il sait faire aujourd'hui (lots 3a, 3b, 3c, 5 et 9)
 //!
 //! - [`web`] : la règle « mêmes lints » du second workspace, `web/` (P31) ;
 //! - [`serveur`] : un petit serveur HTTP sur la boucle locale, qui sert des fichiers et
@@ -23,6 +23,9 @@
 //! - [`etalonner`] : le scénario `soiree-banc etalonner`, M1 (la trace de la capture du
 //!   harnais rejouée sur le protocole du commun, appel par appel), M10 (la boucle vide)
 //!   et la profondeur que tient chaque navigateur (M9) ;
+//! - [`dessin`] : le scénario `soiree-banc dessin` (lot 9), les pires cas de chaque jeu
+//!   dessinés par la télé (`web/ecran`) : agencements identiques au natif, pixels relus,
+//!   budget d'une image, WebGL2 forcé, perte du GPU, et son contrôle négatif ;
 //! - [`rapport`] : le jugement de ce qu'une page rapporte ;
 //! - [`soiree_native`] : le scénario `soiree-banc soiree-native` (lot 5), une soirée par
 //!   le vrai relais, l'autorité et des téléphones natifs, sous les pannes du
@@ -34,6 +37,7 @@
 pub mod bidi;
 pub mod cdp;
 pub mod chrome;
+pub mod dessin;
 pub mod etalonner;
 pub mod firefox;
 mod horloge;
