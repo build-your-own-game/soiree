@@ -8,8 +8,10 @@
 //! le plein écran, le son (SAL-174, SAL-175) et le verrou d'écran : la page reconnaît le
 //! clic sur lui ([`bouton_sous`]) et fait le reste dans le gestionnaire du clic.
 //!
-//! Changer de jeu (`CommandeEcran::ChangerDeJeu`) n'est pas encore écrit (lot 12) : la
-//! liste dit quel jeu la salle joue ; les autres s'y lisent.
+//! **Changer de jeu** (lot 12, fin) : chaque ligne de la liste est un bouton
+//! ([`ACTION_CHOISIR`] suivi de l'empreinte du module) ; le jeu choisi se marque, et
+//! « Jouer » le demande au Worker (`CommandeEcran::ChangerDeJeu`) s'il n'est pas celui que
+//! la salle joue. F9 remontre l'écran de démarrage par-dessus la partie, qui continue.
 
 use core::fmt::Write as _;
 
@@ -30,6 +32,24 @@ pub const FORME: FormeEcran = FormeEcran::Scene {
 
 /// L'action du bouton « Jouer » : une action du commun, jamais envoyée au jeu.
 pub const ACTION_JOUER: &[u8] = b"commun:jouer";
+
+/// Le début de l'action d'une ligne de la liste : suivi des 32 octets de l'empreinte du
+/// module, elle choisit ce jeu (lot 12, fin). Une action du commun, jamais envoyée au jeu.
+pub const ACTION_CHOISIR: &[u8] = b"commun:choisir:";
+
+/// L'empreinte du jeu que choisit une action de la liste, si c'en est une.
+pub fn jeu_choisi(action: &[u8]) -> Option<[u8; 32]> {
+    action
+        .strip_prefix(ACTION_CHOISIR)
+        .and_then(|e| <[u8; 32]>::try_from(e).ok())
+}
+
+/// L'action qui choisit le jeu `empreinte`.
+fn action_choisir(empreinte: &[u8; 32]) -> Vec<u8> {
+    let mut a = ACTION_CHOISIR.to_vec();
+    a.extend_from_slice(empreinte);
+    a
+}
 
 /// Les jeux montrés au plus ; au-delà, « et N autres ».
 pub const JEUX_MONTRES: usize = 6;
@@ -56,6 +76,8 @@ pub struct Demarrage {
     pub jeux: Vec<JeuAuCatalogue>,
     /// Le jeu que la salle joue (`VersPage::Jeu`).
     pub en_jeu: Option<[u8; 32]>,
+    /// Le jeu choisi dans la liste, s'il n'est pas celui que la salle joue (lot 12, fin).
+    pub choisi: Option<[u8; 32]>,
     /// Le code de salle.
     pub salle: Option<String>,
     /// L'adresse que les téléphones joignent, sans le fragment (qui ne s'affiche jamais en
@@ -151,6 +173,26 @@ fn liste_des_jeux(n: &mut Vec<NoeudFil>, d: &Demarrage) {
     for (k, j) in d.jeux.iter().take(JEUX_MONTRES).enumerate() {
         let rang = i32::try_from(k).unwrap_or(0);
         let y = 250_i32.saturating_add(rang.saturating_mul(85));
+        // La ligne entière choisit ce jeu ; ses textes se posent dessus.
+        n.push(NoeudFil::simple(
+            Cle::de(&("demarrage.choisir", k)),
+            None,
+            SorteNoeud::Bouton {
+                boite: rect(110, y, 1080, 74),
+                nom: String::new(),
+                action: action_choisir(&j.empreinte),
+            },
+        ));
+        if d.choisi == Some(j.empreinte) && d.en_jeu != Some(j.empreinte) {
+            n.push(NoeudFil::simple(
+                Cle::de(&("demarrage.choisi", k)),
+                None,
+                SorteNoeud::Rect {
+                    r: rect(80, y.saturating_add(8), 16, 54),
+                    couleur: AIDE,
+                },
+            ));
+        }
         if d.en_jeu == Some(j.empreinte) {
             n.push(NoeudFil::simple(
                 Cle::de(&("demarrage.en-jeu", k)),
@@ -294,7 +336,10 @@ pub fn textes(s: &SceneFil) -> Vec<&str> {
         .filter_map(|n| {
             if let SorteNoeud::Texte { texte, .. } = &n.sorte {
                 Some(texte.as_str())
-            } else if let SorteNoeud::Bouton { nom, .. } = &n.sorte {
+            } else if let SorteNoeud::Bouton { nom, .. } = &n.sorte
+                && !nom.is_empty()
+            {
+                // Les lignes de la liste sont des boutons sans nom (lot 12, fin).
                 Some(nom.as_str())
             } else {
                 None
@@ -344,6 +389,7 @@ mod tests {
         Demarrage {
             jeux,
             en_jeu: Some([1; 32]),
+            choisi: None,
             salle: Some(String::from("3FA9C2D1")),
             adresse: Some(String::from(
                 "http://[fd12:3456:789a:1::42]:7878/s/3FA9C2D1",
@@ -427,5 +473,36 @@ mod tests {
         assert_eq!(bouton_sous(&s, 300.0, 900.0), Some(ACTION_JOUER));
         assert_eq!(bouton_sous(&s, 79.0, 900.0), None);
         assert_eq!(bouton_sous(&s, 1500.0, 300.0), None);
+    }
+
+    /// Lot 12, fin : chaque ligne de la liste choisit son jeu, par son empreinte ; le jeu
+    /// choisi se marque s'il n'est pas celui que la salle joue.
+    #[test]
+    fn chaque_ligne_choisit_son_jeu() {
+        let mut d = pire_cas();
+        let s = scene(&d);
+        // La deuxième ligne (y de 335 à 409).
+        let a = bouton_sous(&s, 400.0, 370.0).unwrap();
+        assert_eq!(super::jeu_choisi(a), Some([1; 32]));
+        assert_eq!(super::jeu_choisi(ACTION_JOUER), None);
+        assert_eq!(
+            super::jeu_choisi(bouton_sous(&s, 400.0, 260.0).unwrap()),
+            Some([0; 32])
+        );
+        let marques = |s: &jeu_abi::SceneFil| {
+            s.noeuds
+                .iter()
+                .filter(|n| n.cle == jeu_abi::Cle::de(&("demarrage.choisi", 3_usize)))
+                .count()
+        };
+        assert_eq!(marques(&s), 0);
+        d.choisi = Some([3; 32]);
+        assert_eq!(marques(&scene(&d)), 1);
+        d.choisi = Some([1; 32]);
+        assert_eq!(
+            marques(&scene(&d)),
+            0,
+            "le jeu en cours ne se marque pas choisi"
+        );
     }
 }

@@ -883,3 +883,38 @@ Pour refaire : `target/hote/lourd --calme target/debug/soiree-banc soiree <tier_
 - Chaque reprise a la même forme que celle de wasmtime (six sur six, le banc le juge).
 - **Au plus 701 ms** dans Firefox (au lot 10a, corrigé : 536 ; avant : 601), **289 ms** dans Chrome (285 et 318) : toujours sous la seconde ; le troisième tour de Firefox est le plus long relevé pour Tier list, sur un seul tour au calme, et la différence n'est pas expliquée (le module se charge en autant de temps ; c'est la reprise du journal qui s'allonge).
 - **Ce que la mesure ne dit pas** : Tier list sur un plateau plein (les bots jouent un plateau presque vide, comme au lot 10a) ; Safari ; une autre machine.
+
+## Lot 12, fin : M4 de Punchline sur la page du téléphone, au calme
+
+Mesuré le 2026-11-08, de 01 h 10 min 06 s à 01 h 15 min 05 s (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), pages du téléphone dans **Chrome 156.0.8078.80** (sans interface, émulation tactile 390 × 844) et **Firefox 158.0.1** (sans interface, 360 × 640) ; Safari « pas exécuté ». Le code de la fin du lot 12 (`HEAD` `cda28f3`, la preuve `target/preuves/lot-12-fin/soiree-punchline-2/`, son empreinte dans `empreinte.txt`), le module de Punchline `82669f77…` (941 989 octets). **Charge** (le portillon, `--calme`) : 1,39 au départ, 1,91 à la fin, **2,77 au plus** : une mesure sur machine calme (la règle : un tour qui atteint 3 est écarté ; la preuve `soiree-punchline`, 3,06 au plus, l'est).
+
+Pour refaire : `target/hote/lourd --calme target/debug/soiree-banc soiree <punchline_module.wasm> --navigateurs chrome,firefox --pages chrome,firefox,safari --telephones 5 --sans-construire`. Même définition qu'au lot 12 : du module reçu entier à l'instance de la page prête (réécriture, compilation, `Bonjour`, `Decrire`), dit par la page.
+
+| Page | Passage (l'écran dans Chrome) | Passage (l'écran dans Firefox) |
+|---|---|---|
+| Chrome | 141,4 ms | 144,0 ms |
+| Firefox | 210,0 ms | 199,0 ms |
+
+- Pour Sidequest (738 744 octets), le lot 12 relevait 127,6 et 129,2 ms (Chrome), 172,0 et 185,0 ms (Firefox) : Punchline, 27 % plus gros, prend 11 % (Chrome) à 15 % (Firefox) de plus.
+- M7 n'est pas relevée : Punchline n'a pas de croix.
+- **Ce que la mesure ne dit pas** : un vrai téléphone (la page tourne sur l'ordinateur de l'hôte, émulée) ; Safari.
+
+Ce que les autres preuves de la fin du lot rapportent (M4 de Sidequest, M13 à 71 appareils, les allers-retours d'écho des natifs) a dépassé une charge de 3 : relevé dans `LOTS-PHASE-3.md`, « Lot 12, fin », pas revendiqué comme mesure.
+
+## Lot 12, fin, correction : M13 à 71 appareils, au calme
+
+Mesuré le 2026-11-08, de 03 h 55 min 22 s à 03 h 57 min 02 s (`m13-1`) puis de 03 h 57 min 19 s à 04 h 03 min 58 s (`m13-long`) (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2), l'écran dans **Chrome 156.0.8078.80** puis **Firefox 158.0.1** (sans interface), sur l'arbre de la correction de la fin du lot 12 (`HEAD` `cda28f3`, `git diff HEAD` hors `.md` `54fc4b33…`, modules des jeux inchangés : Sidequest `62043526…`). **71 téléphones natifs** par la page, **aucune page dans un navigateur** : c'est ce qui a rendu la mesure possible au calme, les scénarios des 71 appareils avec trois navigateurs (`soiree-71`, sa reprise à cette correction comprise : 3,18 au plus) dépassant toujours une charge de 3. **Règle de validité posée avant les tours** (`target/travail/lot-12-fin-corr/final-3.sh`) : un tour dont le portillon dit la charge la plus haute pendant à 3 ou plus est écarté et refait, au plus trois. Aucun n'a été écarté : `m13-1` charge 2,05 au départ, 1,96 à la fin, **2,64 au plus** ; `m13-long` (`--minutes 3`) 1,90, 1,95, **2,61 au plus**.
+
+Pour refaire : `target/hote/lourd --calme target/debug/soiree-banc soiree <sidequest_module.wasm> --navigateurs chrome,firefox --telephones 71 [--minutes 3] --sans-construire`. Même définition qu'à la correction du lot 12 : `DureesDuTour::vues + garde` par tour qui joue un pas, par cases de 0,1 ms (bornes par excès), sur le Worker qui a joué le plus de tours du passage ; 71 appareils accueillis au dernier rapport dans chaque passage.
+
+| Preuve | Écran | Tours | Part du commun : médiane | 99ᵉ centile | maximum | Le tour entier : médiane | 99ᵉ centile | maximum |
+|---|---|---|---|---|---|---|---|---|
+| `m13-1` | Chrome | 1 252 | 0,5 ms | 2,0 ms | 2,74 ms | 1,1 ms | 4,1 ms | 7,35 ms |
+| `m13-1` | Firefox | 1 247 | 0,7 ms | 2,9 ms | 3,70 ms | 1,5 ms | 5,9 ms | 24,40 ms |
+| `m13-long` | Chrome | 8 944 | 0,5 ms | 2,0 ms | 3,97 ms | 1,0 ms | 5,8 ms | 9,50 ms |
+| `m13-long` | Firefox | 9 008 | 0,8 ms | 2,4 ms | 6,08 ms | 1,2 ms | 6,6 ms | 10,92 ms |
+
+- **M13 tient** : au 99ᵉ centile, de 2,0 à 2,9 ms, sous les 4,17 ms (la moitié de la part d'image que E19 laisse au commun). Le maximum (6,08 ms dans Firefox) dépasse le seuil, que seul le 99ᵉ centile juge.
+- `m13-1` est court (la partie de Sidequest jusqu'à sa première phase terminale, environ 20 s de tours par passage) ; `m13-long` prolonge la partie de 180 s : c'est lui qui fait foi. Les deux disent la même chose.
+- Relevés à côté, pas mesurés au calme : `soiree-71` (trois navigateurs, 3,18 au plus) donne 1,9 et 2,3 ms au 99ᵉ centile, du même ordre.
+- **Ce que la mesure ne dit pas** : un vrai réseau Wi-Fi (le relais est sur la boucle locale) ; une machine de soirée moins rapide que le M5 ; Safari.

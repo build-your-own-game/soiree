@@ -171,6 +171,16 @@ pub enum Arret {
     Panne(PanneOutil),
 }
 
+/// Pourquoi un changement de jeu n'a pas eu lieu (§ 2.8, lot 12, fin). La partie d'avant
+/// continue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefusChangement {
+    /// Aucune partie en jeu : l'autorité démarre ou s'est arrêtée.
+    PasEnJeu,
+    /// La partie du nouveau jeu ne s'ouvre pas.
+    Ouverture(RefusOuverture),
+}
+
 /// D'où vient la partie d'une autorité.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Venue {
@@ -227,6 +237,8 @@ pub struct Comptes {
     /// Les morceaux du module et les ressources de la page envoyés aux appareils
     /// (`livraison`, lot 12).
     pub morceaux_livres: u64,
+    /// Les changements de jeu faits (`Autorite::changer_de_jeu`, lot 12, fin).
+    pub changements: u64,
 }
 
 /// Une partie de la salle : ce qui ne change pas de forme entre ouvrir et reprendre.
@@ -328,6 +340,19 @@ struct EnVol {
     numero: u64,
     id: IdGeste,
     case: Option<u64>,
+}
+
+impl<F: Fabrique> EnJeu<F> {
+    /// Le jeu a-t-il des téléphones ? Un jeu qui les dit sans objet (Tier list, `ardoise`)
+    /// ne reçoit pour eux ni présence, ni regard, ni bot : sa colle les dit illisibles, et
+    /// la partie s'arrêterait (lot 12, fin : depuis qu'une salle change de jeu, des
+    /// téléphones restent reliés à un jeu sans téléphone).
+    fn a_des_telephones(&self) -> bool {
+        matches!(
+            self.partie.declaration().telephones,
+            jeu_abi::ApplicableFil::Oui(_)
+        )
+    }
 }
 
 impl OngletVivant {
@@ -581,6 +606,115 @@ where
     pub fn livrer(&mut self, empreinte: [u8; 32], module: &[u8]) {
         self.livraison = Some(Livraison::new(empreinte, module));
         self.ressources_lues = false;
+    }
+
+    /// **Changer de jeu** (§ 2.8 ; lot 12, fin) : une commande du commun, jamais du jeu.
+    /// Le journal de la partie d'avant s'écrit à la garde jusqu'au bout de son dernier pas ;
+    /// puis une **partie neuve** du jeu de `fabrique` s'ouvre (une graine neuve ; son
+    /// premier pas suit le dernier de l'ancienne, pour que le pas que les téléphones
+    /// estiment ne recule jamais, PUN-39), avec les téléphones accueillis comme présents
+    /// (`Presence::Arrivee`) ; **sa chaîne de garde** part d'un point neuf, écrit tout de
+    /// suite au numéro suivant de la même suite (la garde n'a qu'une suite de numéros par
+    /// salle, et refuse une garde plus vieille) : une reprise relit ce point et ce qui le
+    /// suit, jamais l'ancien jeu, que `Effacer` emporte après lui. **Mêmes liens, même
+    /// registre** : les sessions chiffrées, les fiches, les derniers gestes de chaque onglet
+    /// (la numérotation des téléphones continue). Les marques F8 et les gestes écartés
+    /// sont ceux de l'ancienne partie : ils ne la suivent pas. Chaque téléphone accueilli
+    /// reçoit la vue entière du nouveau jeu, et, si [`Autorite::livrer`] a été appelé
+    /// avant avec son module, ce module et les ressources de sa page (P18). La coque
+    /// change d'écran (`VersPage::Jeu`) et garde le module dans son enregistrement.
+    ///
+    /// # Errors
+    ///
+    /// [`RefusChangement`] : aucune partie en jeu, ou la partie neuve ne s'ouvre pas ; la
+    /// partie d'avant continue alors, inchangée (son journal écrit).
+    pub fn changer_de_jeu(&mut self, t_us: u64, fabrique: F) -> Result<(), RefusChangement> {
+        if !matches!(self.phase, Phase::EnJeu(_)) {
+            return Err(RefusChangement::PasEnJeu);
+        }
+        self.ecrire_la_garde(t_us);
+        let mut graine = [0u8; 32];
+        self.hasard.remplir(&mut graine);
+        let point_tous_les = self.reglages.point_tous_les;
+        let Phase::EnJeu(j) = &mut self.phase else {
+            return Err(RefusChangement::PasEnJeu);
+        };
+        let ouverture = Ouverture {
+            graine,
+            pas: j.partie.definitif().numero().saturating_add(1),
+            heure: t_us / 1000,
+            salle: j.ouverture.salle,
+            budgets: BUDGETS_DE_SOIREE,
+            point_tous_les,
+        };
+        let partie =
+            Partie::ouvrir(fabrique, ouverture.clone()).map_err(RefusChangement::Ouverture)?;
+        let definitif = partie.definitif();
+        j.ressources = partie
+            .declaration()
+            .assets
+            .iter()
+            .map(|a| a.cle.fil())
+            .collect();
+        j.horloge = Horloge::de(&ouverture);
+        j.partie = partie;
+        j.ouverture = ouverture;
+        j.journal_ecrit = 0;
+        j.dernier_journal_us = 0;
+        j.dernier_point_pas = definitif.numero();
+        j.indice_du_point = 0;
+        j.point_en_cours = None;
+        j.scene = None;
+        j.scene_pas = definitif;
+        j.scene_depuis = definitif;
+        j.prochain_bot_ecran = 0;
+        j.marques.clear();
+        j.ecartes.clear();
+        j.a_ecrire = false;
+        j.venue = Venue::Neuve;
+        let livrer = self.livraison.is_some();
+        for etat in j.liens.values_mut() {
+            if let EtatLien::Chiffre {
+                accueil: Some(a), ..
+            } = etat
+            {
+                // La vue entière du nouveau jeu (SAL-28), et son module.
+                a.vue = None;
+                a.vue_depuis = definitif;
+                if livrer {
+                    a.envoi = Some(EnvoiEnCours::default());
+                }
+            }
+        }
+        let mut presents = Vec::new();
+        let telephones = j.a_des_telephones();
+        for f in &mut j.fiches {
+            f.prochain_bot = 0;
+            // Ce que l'ancienne partie savait ne vaut plus : chaque appareil est neuf pour
+            // la nouvelle ; ceux qui ont un lien y arrivent tout de suite.
+            f.annonce = None;
+            if f.lien.is_some() && telephones {
+                f.annonce = Some(Oui::Oui);
+                presents.push(Presence::Arrivee {
+                    appareil: f.appareil,
+                    role: RoleAppareil::Telephone,
+                    capacites: f.capacites,
+                });
+            }
+        }
+        // Les liens déjà ouverts restent (mêmes liens) : la limite ne descend pas sous eux.
+        let ouverts = u16::try_from(j.liens.len()).unwrap_or(u16::MAX);
+        let places = j.partie.declaration().places.appareils_max();
+        self.vers_relais(&VersRelais::Limites {
+            liens_max: places.saturating_add(LIENS_EN_PLUS).max(ouverts),
+        });
+        for p in presents {
+            let _: Option<Placement> = self.arriver(t_us, Arrivee::Presence(p));
+        }
+        self.comptes.changements = self.comptes.changements.saturating_add(1);
+        // Le premier point du nouveau jeu : sa chaîne de garde commence là.
+        self.ecrire_le_point(t_us, Oui::Oui);
+        Ok(())
     }
 
     /// Ce qu'il faut envoyer, depuis le dernier appel.
@@ -1107,6 +1241,10 @@ where
 
     fn arriver(&mut self, t_us: u64, a: Arrivee) -> Option<Placement> {
         let j = self.jeu()?;
+        // Un jeu sans téléphone n'en reçoit aucune présence (`EnJeu::a_des_telephones`).
+        if matches!(a, Arrivee::Presence(_)) && !j.a_des_telephones() {
+            return None;
+        }
         let recu = j.horloge.instant(t_us);
         match j.partie.arriver(a, recu) {
             Ok(p) => Some(p),
@@ -2006,6 +2144,11 @@ where
         if definitif == avant && !due && j.scene.is_some() {
             return;
         }
+        let accueillis = if j.a_des_telephones() {
+            accueillis
+        } else {
+            Vec::new()
+        };
         let mut regards = vec![RegardFil::Ecran];
         regards.extend(
             accueillis
@@ -2080,8 +2223,9 @@ where
         };
         let pas = j.partie.definitif().numero();
         let mut a_jouer = Vec::new();
+        let telephones = j.a_des_telephones();
         for f in &mut j.fiches {
-            let Some(lien) = f.lien else {
+            let Some(lien) = f.lien.filter(|_| telephones) else {
                 continue;
             };
             if pas < f.prochain_bot {

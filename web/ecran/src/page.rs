@@ -227,6 +227,14 @@ async fn demarrer(script: String) -> Result<(), String> {
     let sans_bots = au_banc && parametre(&fenetre, "bots").as_deref() == Some("non");
     let activation_perdue =
         au_banc && parametre(&fenetre, "fautif").as_deref() == Some("activation-perdue");
+    // Le banc seulement : le contrôle négatif du scénario `changer` (lot 12, fin) se dit au
+    // Worker par l'adresse de son script (il n'a pas celle de la page).
+    let script =
+        if au_banc && parametre(&fenetre, "fautif").as_deref() == Some("changer-sans-livrer") {
+            format!("{script}?fautif=changer-sans-livrer")
+        } else {
+            script
+        };
     let (toile, bandeau) = la_toile_et_le_bandeau(&fenetre, &document, &corps)?;
     // Ce que les écouteurs appellent : la page, dès qu'elle existe.
     let soi: Rc<RefCell<Weak<RefCell<Page>>>> = Rc::new(RefCell::new(Weak::new()));
@@ -818,7 +826,7 @@ fn battre(etat: &Etat) -> Result<(), String> {
 /// composition en cours et un champ qui a le focus (TL-32, TL-34), sauf pour F8, et
 /// annulé un glisser par Échap.
 pub(crate) fn touche(
-    p: &Page,
+    p: &mut Page,
     k: &KeyboardEvent,
     (code, mods): (&str, Mods),
     phase: PhaseTouche,
@@ -834,6 +842,13 @@ pub(crate) fn touche(
     let scene = p.ecran.as_ref().and_then(Ecran::scene);
     let decision = pour_le_jeu(scene, code, mods, phase, repetition, plein, p.systeme);
     match decision {
+        PourLeJeu::Demarrage => {
+            if phase == PhaseTouche::Enfoncee && repetition == Oui::Non {
+                k.prevent_default();
+                banc(p, "{\"quoi\":\"touche\",\"code\":\"F9\",\"au\":\"commun\"}");
+                commun::montrer_le_demarrage(p);
+            }
+        }
         PourLeJeu::Commun => {
             if phase == PhaseTouche::Enfoncee && repetition == Oui::Non {
                 k.prevent_default();
@@ -1033,9 +1048,11 @@ fn crochets(etat: &Etat) -> Result<(), String> {
     // Lot 10b : où cliquer (le bouton « Jouer », le voile), en pixels de la fenêtre, pour
     // que le banc clique par la vraie chaîne d'entrées ; et ce que l'écran du commun montre.
     let e = Rc::clone(etat);
-    let centre = Closure::<dyn FnMut() -> JsValue>::new(move || {
+    // Lot 12, fin : `centre("<empreinte>")` donne la ligne de ce jeu dans la liste.
+    let centre = Closure::<dyn FnMut(JsValue) -> JsValue>::new(move |jeu: JsValue| {
         let p = e.borrow();
-        commun::centre_pour_le_banc(&p, &p.toile).map_or(JsValue::NULL, |(x, y)| {
+        let jeu = jeu.as_string().and_then(|h| lire_hexa(&h));
+        commun::centre_pour_le_banc(&p, &p.toile, jeu).map_or(JsValue::NULL, |(x, y)| {
             JsValue::from(Array::of2(&JsValue::from_f64(x), &JsValue::from_f64(y)))
         })
     });

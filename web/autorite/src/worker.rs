@@ -194,6 +194,11 @@ struct Coque {
     m13: (RepartitionDuTour, RepartitionDuTour),
     /// Le banc : le pas du dernier point dont le coût a été rapporté (M3, lot 11).
     point_rapporte: Option<u64>,
+    /// Le module d'un changement de jeu en cours (lot 12, fin) : un seul à la fois.
+    change: Option<[u8; 32]>,
+    /// Le banc seulement : le contrôle négatif du scénario `changer` (le module nouveau
+    /// n'est pas livré aux téléphones), dit par l'adresse du script du Worker.
+    changer_sans_livrer: Oui,
 }
 
 type Etat = Rc<RefCell<Coque>>;
@@ -302,6 +307,8 @@ pub fn demarrer_le_worker() {
         pire_rapporte: None,
         m13: (RepartitionDuTour::default(), RepartitionDuTour::default()),
         point_rapporte: None,
+        change: None,
+        changer_sans_livrer: Oui::Non,
     }));
     let pour_la_page = Rc::clone(&etat);
     let surmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |m: MessageEvent| {
@@ -327,6 +334,17 @@ fn de_la_page(etat: &Etat, octets: &[u8]) {
             }
             coque.etape = Etape::Lance;
             coque.banc = banc == Oui::Oui;
+            coque.changer_sans_livrer = if coque.banc
+                && coque
+                    .global
+                    .location()
+                    .search()
+                    .contains("fautif=changer-sans-livrer")
+            {
+                Oui::Oui
+            } else {
+                Oui::Non
+            };
             drop(coque);
             let pour_lancer = Rc::clone(etat);
             spawn_local(async move {
@@ -378,12 +396,14 @@ fn de_la_page(etat: &Etat, octets: &[u8]) {
                 poster(&global, &VersPage::Banc(&json));
             }
         }
+        DeLaPage::Commande(CommandeEcran::ChangerDeJeu { module }) => {
+            demander_le_changement(etat, module);
+        }
         DeLaPage::Ecran { .. }
         | DeLaPage::Fichiers(_)
         | DeLaPage::Reponse { .. }
         | DeLaPage::Commande(
-            CommandeEcran::ChangerDeJeu { .. }
-            | CommandeEcran::NouvelleSoiree
+            CommandeEcran::NouvelleSoiree
             | CommandeEcran::Reprendre { .. }
             | CommandeEcran::Marque
             | CommandeEcran::ExporterLaCle
@@ -825,6 +845,94 @@ async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), Str
     Ok(())
 }
 
+/// `CommandeEcran::ChangerDeJeu` : un seul changement à la fois, en jeu, vers un autre
+/// module que celui de la salle (lot 12, fin).
+fn demander_le_changement(etat: &Etat, module: [u8; 32]) {
+    let mut coque = etat.borrow_mut();
+    let deja = coque.enregistrement.as_ref().map(|e| e.module) == Some(module);
+    if coque.etape != Etape::EnJeu || coque.change.is_some() || deja {
+        return;
+    }
+    coque.change = Some(module);
+    drop(coque);
+    let pour_changer = Rc::clone(etat);
+    spawn_local(async move {
+        let r = changer_de_jeu(&pour_changer, module).await;
+        let mut coque = pour_changer.borrow_mut();
+        coque.change = None;
+        let global = coque.global.clone();
+        let banc = coque.banc;
+        drop(coque);
+        if let Err(detail) = r {
+            // La partie d'avant continue : le jeu demandé ne se charge pas.
+            web_sys::console::error_1(&JsValue::from_str(&detail));
+            if banc {
+                let json = format!(
+                    "{{\"quoi\":\"change-refuse\",\"module\":\"{}\",\"detail\":{}}}",
+                    hexa(&module),
+                    chaine(&detail)
+                );
+                poster(&global, &VersPage::Banc(&json));
+            }
+        }
+    });
+}
+
+/// **Changer de jeu** sans rien relancer (§ 2.8 ; lot 12, fin) : le module du catalogue
+/// chargé comme au démarrage (téléchargé, son empreinte et sa taille vérifiées, réécrit,
+/// son rapport d'épreuve relu) ; l'autorité le livre aux téléphones et ouvre la partie neuve
+/// (`Autorite::changer_de_jeu`), dont le premier point part aussitôt à la garde ; l'écran
+/// change de jeu (`VersPage::Jeu`, puis les ressources du nouveau) ; l'enregistrement
+/// d'`IndexedDB` garde le nouveau module, pour qu'un rechargement le reprenne. La même
+/// page, le même Worker, les mêmes liens au relais.
+async fn changer_de_jeu(etat: &Etat, module: [u8; 32]) -> Result<(), String> {
+    let global = etat.borrow().global.clone();
+    let (charge, _, livre) = le_module(&global, &module).await?;
+    let pour_dire = global.clone();
+    let dire: Dire = Rc::new(move |id: Option<IdGeste>| poster(&pour_dire, &VersPage::EnCours(id)));
+    {
+        let mut coque = etat.borrow_mut();
+        let heure = heure_us(&global);
+        let sans_livrer = coque.changer_sans_livrer == Oui::Oui;
+        let autorite = coque
+            .autorite
+            .as_mut()
+            .ok_or_else(|| String::from("aucune autorité"))?;
+        if !sans_livrer {
+            autorite.livrer(module, &livre);
+        }
+        autorite
+            .changer_de_jeu(heure, FabriqueQuiDit::new(charge.fabrique(), dire))
+            .map_err(|r| format!("le changement de jeu est refusé : {r:?}"))?;
+    }
+    poster(
+        &global,
+        &VersPage::Jeu {
+            module,
+            forme: charge.declaration().ecran,
+        },
+    );
+    // Le premier point du nouveau jeu part à la garde avant que l'enregistrement ne le
+    // nomme : un Worker tué entre les deux reprendrait ce point avec l'ancien module, et
+    // s'arrêterait sur l'écart (une fenêtre de quelques millisecondes, dite dans PHASE-3).
+    vider(etat);
+    {
+        let mut coque = etat.borrow_mut();
+        if let Some(e) = coque.enregistrement.as_mut() {
+            e.module = module;
+            let e = e.clone();
+            if let Some(base) = coque.base.as_ref() {
+                let _: IdbRequest = ecrire_l_enregistrement(base, &e)?;
+            }
+        }
+    }
+    if etat.borrow().banc {
+        rapporter_la_forme(etat, "change");
+    }
+    entrer_en_jeu_sans_rapport(etat);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // La boucle
 // ---------------------------------------------------------------------------
@@ -1032,6 +1140,11 @@ fn entrer_en_jeu(etat: &Etat) {
     if banc {
         rapporter_la_forme(etat, "en-jeu");
     }
+    entrer_en_jeu_sans_rapport(etat);
+}
+
+/// Les polices et les images de l'écran du jeu en cours partent à la page (§ 2.9).
+fn entrer_en_jeu_sans_rapport(etat: &Etat) {
     let mut coque = etat.borrow_mut();
     let global = coque.global.clone();
     let Some(partie) = coque

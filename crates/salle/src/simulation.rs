@@ -601,6 +601,11 @@ pub struct Soiree<F: Fabrique, M: FnMut() -> F> {
     par_la_page: Option<usize>,
     /// La page de chaque téléphone, quand il passe par elle.
     pub joueurs: BTreeMap<usize, crate::page::JoueurDePage<F>>,
+    /// Les singes attendent le salon au complet (§ 8.1, lot 12, fin) : `Some(complet)`.
+    singe_attend_le_salon: Option<bool>,
+    /// Le jeu changé (`Soiree::changer_de_jeu`, lot 12, fin) : les fabriques de ses
+    /// instances, pour l'autorité relancée et les pages des téléphones.
+    jeu_change: Option<Box<dyn FnMut() -> F>>,
 }
 
 /// Ce qui voit les messages de l'autorité à la page.
@@ -674,6 +679,8 @@ where
             livraison: None,
             par_la_page: None,
             joueurs: BTreeMap::new(),
+            singe_attend_le_salon: None,
+            jeu_change: None,
         };
         s.lancer_l_autorite(None);
         s
@@ -695,6 +702,52 @@ where
     /// premiers jouent en plus au hasard, à graine. Demande [`Soiree::livrer_le_module`].
     pub fn par_la_page(&mut self, singes: usize) {
         self.par_la_page = Some(singes);
+    }
+
+    /// Change de jeu sans rien relancer (§ 2.8 ; lot 12, fin) : l'autorité livre `module`
+    /// aux téléphones et ouvre la partie neuve de `fabriquer`
+    /// ([`Autorite::changer_de_jeu`]). Ensuite, l'autorité relancée et les pages des
+    /// téléphones prennent leurs instances de `fabriquer`.
+    ///
+    /// # Errors
+    ///
+    /// Le refus de l'autorité (aucune partie en jeu, ou la partie neuve ne s'ouvre pas).
+    pub fn changer_de_jeu(
+        &mut self,
+        module: Vec<u8>,
+        mut fabriquer: impl FnMut() -> F + 'static,
+    ) -> Result<(), crate::autorite::RefusChangement> {
+        let e = *blake3::hash(&module).as_bytes();
+        let t = self.t_us;
+        let Some(a) = self.autorite.as_mut() else {
+            return Err(crate::autorite::RefusChangement::PasEnJeu);
+        };
+        a.livrer(e, &module);
+        let r = a.changer_de_jeu(t, fabriquer());
+        if r.is_ok() {
+            self.livraison = Some((e, module));
+            self.jeu_change = Some(Box::new(fabriquer));
+        } else if let Some((ancien, octets)) = &self.livraison {
+            a.livrer(*ancien, octets);
+        }
+        self.vider_l_autorite();
+        r
+    }
+
+    /// Une instance du jeu que la salle joue.
+    fn fabrique(&mut self) -> F {
+        match self.jeu_change.as_mut() {
+            Some(f) => f(),
+            None => (self.fabriquer)(),
+        }
+    }
+
+    /// Les singes de [`Soiree::par_la_page`] attendent que le salon soit au complet
+    /// ([`crate::page::salon_au_complet`] sur les téléphones qui ne sont pas des singes),
+    /// comme dans le scénario `soiree` du banc (§ 8.1, lot 12, fin). Sans cet appel, ils
+    /// jouent dès leur page posée.
+    pub const fn singe_attend_le_salon(&mut self) {
+        self.singe_attend_le_salon = Some(false);
     }
 
     /// La période de redite des tenus des téléphones à venir (P27).
@@ -738,7 +791,8 @@ where
         self.bouts.insert(tr, Bout::TempsReel);
         self.bouts.insert(garde, Bout::Garde);
         self.liens_autorite = Some((tr, garde));
-        let mut a = Autorite::demarrer((self.fabriquer)(), cles, self.reglages, hasard, dernier_n);
+        let f = self.fabrique();
+        let mut a = Autorite::demarrer(f, cles, self.reglages, hasard, dernier_n);
         for m in core::mem::take(&mut self.a_la_relance) {
             a.page(self.t_us, &m);
         }
@@ -1274,6 +1328,19 @@ where
             let local = t.saturating_add(tel.decalage_us);
             tel.appareil.reveiller(local);
             if let Some(singes) = self.par_la_page {
+                if self.singe_attend_le_salon == Some(false) {
+                    let complet = crate::page::salon_au_complet(
+                        self.telephones
+                            .iter()
+                            .skip(singes)
+                            .map(|t| t.appareil.accuse()),
+                    );
+                    self.singe_attend_le_salon = Some(complet);
+                }
+                let retenu = self.singe_attend_le_salon == Some(false);
+                let Some(tel) = self.telephones.get_mut(k) else {
+                    continue;
+                };
                 tel.appareil.coups_par_la_page();
                 let joueur = self.joueurs.entry(k).or_insert_with(|| {
                     if k < singes {
@@ -1282,12 +1349,19 @@ where
                         crate::page::JoueurDePage::default()
                     }
                 });
+                joueur.retenir_le_singe(if retenu { Oui::Oui } else { Oui::Non });
                 let fabriquer = &mut self.fabriquer;
+                let change = &mut self.jeu_change;
                 let attendue = self.livraison.as_ref().map(|(e, _)| *e);
                 joueur.jouer(
                     local,
                     &mut tel.appareil,
-                    |m| (attendue == Some(*blake3::hash(m).as_bytes())).then(fabriquer),
+                    |m| {
+                        (attendue == Some(*blake3::hash(m).as_bytes())).then(|| match change {
+                            Some(f) => f(),
+                            None => fabriquer(),
+                        })
+                    },
                     &mut self.hasard,
                 );
             }
@@ -1429,8 +1503,9 @@ where
         let dernier = a.dernier_ecrit();
         let p = a.partie_mut().ok_or("aucune partie")?;
         let vivante = forme_et_empreinte(p)?;
+        let f = self.fabrique();
         let reprise = reprendre_de_la_garde(
-            (self.fabriquer)(),
+            f,
             &self.cle_de_garde(),
             self.reglages.salle,
             &self.relais.cases(),
@@ -1583,6 +1658,8 @@ pub fn reponse_par_defaut<'a>(d: &DemandeFil<'_>) -> ReponseFil<'a> {
 /// Ce que dit la chaîne entière des cases d'une soirée.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Historique {
+    /// Les parties d'un autre jeu ouvertes en cours de soirée (lot 12, fin).
+    pub changements: u64,
     /// Les cases, et les points parmi elles.
     pub cases: u64,
     /// Les points.
@@ -1617,6 +1694,7 @@ pub fn verifier_l_historique<S: InstantaneGarde + Clone>(
     let mut h = Historique::default();
     let mut precedente = AVANT_LA_PREMIERE_CASE;
     let mut fin: Option<usize> = None;
+    let mut ouverture: Option<Vec<u8>> = None;
     for (rang, (case, octets)) in historique.iter().enumerate() {
         let attendu = u64::try_from(rang).unwrap_or(u64::MAX);
         if numero(*case) != attendu {
@@ -1639,8 +1717,17 @@ pub fn verifier_l_historique<S: InstantaneGarde + Clone>(
                 let indice = decoder_point::<S>(&c.point)
                     .map_err(|e| format!("le point {case:?} ne se relit pas : {e:?}"))?
                     .indice();
+                // Lot 12, fin : un point d'une autre ouverture que le point d'avant ouvre
+                // la partie d'un autre jeu (`Autorite::changer_de_jeu`) ; sa chaîne
+                // commence à lui, au début de son journal.
+                let neuve = ouverture.as_ref().is_some_and(|o| *o != c.ouverture);
+                if neuve {
+                    h.changements = h.changements.saturating_add(1);
+                }
+                ouverture = Some(c.ouverture.clone());
                 match fin {
                     None => fin = Some(indice),
+                    Some(_) if neuve && indice == 0 => fin = Some(0),
                     Some(f) if f == indice => {}
                     Some(f) => {
                         return Err(format!(

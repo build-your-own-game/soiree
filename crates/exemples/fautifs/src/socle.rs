@@ -270,6 +270,7 @@ mod page {
     pub(crate) const CHOIX: Cle = Cle::nommee("choix");
     pub(crate) const CHOISIR: Cle = Cle::nommee("choisir");
     pub(crate) const DE_PLUS: Cle = Cle::nommee("de plus");
+    pub(crate) const RECORD: Cle = Cle::nommee("record");
     /// Les dix chiffres du choix, chacun par la clé de son numéro.
     pub(crate) const CHIFFRES: [(Cle, &str); 10] = [
         (Cle::numero(0), "0"),
@@ -782,9 +783,10 @@ impl<D: Defaut> Jeu for Socle<D> {
     }
 
     /// La page du téléphone (PHASE-3, § 2.10, lot 6) : le prénom, « Prêt », les tapes
-    /// et le choix d'un chiffre, le résultat. Trois défauts la touchent : le chiffre
-    /// choisi (`PageQuiPanique`), un bouton de plus (`PageQuiEnvoieUnGesteInvalide`) et
-    /// la page par défaut, vide (`PageVide`, lot 7).
+    /// et le choix d'un chiffre, le résultat. Quatre défauts la touchent : le chiffre
+    /// choisi (`PageQuiPanique`), un bouton de plus (`PageQuiEnvoieUnGesteInvalide`),
+    /// la page par défaut, vide (`PageVide`, lot 7), et le record écrit à 512 px
+    /// (`PageQuiDeborde`, lot 12, fin).
     fn page(vue: &Recue<VueTel>, l: &Locaux<'_>, p: &mut Page<Self>) {
         if D::page_par_defaut() == Oui::Oui {
             // Ce que fait la méthode par défaut de `Jeu::page` : rien.
@@ -829,6 +831,16 @@ impl<D: Defaut> Jeu for Socle<D> {
                         &alloc::format!("{points} points"),
                         StylePage::ORDINAIRE,
                     );
+                    if D::record_sur_la_page() == Oui::Oui && *points >= 9_999 {
+                        p.texte(
+                            page::RECORD,
+                            "WWWWWWWWWWWW",
+                            StylePage {
+                                taille: TaillePage::Px(512),
+                                ..StylePage::ORDINAIRE
+                            },
+                        );
+                    }
                     p.bouton(
                         page::TAPER,
                         "Tape !",

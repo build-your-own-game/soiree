@@ -276,6 +276,8 @@ impl Chrome {
             "Enter" => ("Enter", 13),
             "Escape" => ("Escape", 27),
             "Tab" => ("Tab", 9),
+            // Lot 12, fin : F9, l'écran de démarrage du commun.
+            "F9" => ("F9", 120),
             autre => return Err(format!("touche inconnue du banc : {autre}")),
         };
         for sorte in ["rawKeyDown", "keyUp"] {

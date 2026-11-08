@@ -58,6 +58,9 @@ use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use jeu_abi::{ApplicableFil, Capacites};
@@ -117,6 +120,12 @@ pub struct Options {
     /// allers-retours d'écho des natifs ne doivent pas croître (*correction du lot 12* :
     /// « un téléphone qui rejoint Sidequest à 71 appareils ne retarde personne »).
     pub retardataires: bool,
+    /// `changer` : les autres jeux du catalogue, que la salle joue ensuite, l'un après
+    /// l'autre, depuis l'écran de démarrage (lot 12, fin).
+    pub autres_jeux: Vec<PathBuf>,
+    /// Un défaut voulu (`?fautif=…`, au banc seulement), pour le contrôle négatif d'un
+    /// scénario (`changer` : `changer-sans-livrer`).
+    pub fautif: Option<String>,
 }
 
 /// Un téléphone qui rejoint retarde les autres si la médiane ou le 99ᵉ centile de leurs
@@ -203,7 +212,7 @@ pub fn dernier_paquet(soiree: &Path) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 pub(crate) struct Telephone {
-    appareil: Appareil<Graine>,
+    pub(crate) appareil: Appareil<Graine>,
     ws: Option<Ws>,
     jeton: [u8; 32],
     revient: Option<Instant>,
@@ -227,15 +236,13 @@ pub(crate) struct Session {
     pub(crate) navigateur: Lance,
     pub(crate) lignes: Vec<Ligne>,
     pub(crate) autres: Vec<String>,
-    pub(crate) telephones: Vec<Telephone>,
+    /// Les téléphones natifs, sur leur propre fil (lot 12, fin).
+    pub(crate) natifs: Natifs,
     pub(crate) redite_us: Option<u64>,
     pub(crate) salle: Option<CodeSalle>,
     pub(crate) fragment: Option<Fragment>,
     pub(crate) depart: Instant,
     pub(crate) graine: u64,
-    /// Les téléphones natifs chargent le module reçu par cette fabrique, une fois son
-    /// BLAKE3 vérifié (lot 12 : ils passent par la page).
-    pub(crate) fabrique: Option<(FabriqueWasm, [u8; 32])>,
     /// Quand le relais du banc a été lancé : son horloge (celle de son enregistrement) part
     /// de là, à quelques millisecondes près.
     pub(crate) relais_lance: Instant,
@@ -247,9 +254,112 @@ pub(crate) struct Session {
     /// Les pages dans les navigateurs (lot 12).
     pub(crate) pages: Vec<crate::telephones::PageTel>,
     pub(crate) prochain_pilotage: Instant,
+}
+
+/// Un tour des téléphones natifs de plus de ce temps après le précédent est un silence noté
+/// (choisi : quinze pas).
+pub(crate) const SILENCE_NOTE: Duration = Duration::from_millis(250);
+
+/// Un silence des téléphones natifs au-delà de ce temps est une faute du banc (choisi : sous
+/// la coupure d'un téléphone, `salle::appareil::Appareil::coupe`, 1,5 s, après laquelle
+/// l'autorité peut le perdre).
+pub(crate) const SILENCE_MAX: Duration = Duration::from_secs(1);
+
+/// Un tour du fil des natifs relie au plus ce nombre de téléphones (choisi). Relier un
+/// téléphone (la connexion et la poignée WebSocket, bloquantes) coûte environ 23 ms : les
+/// 69 natifs de `soiree-71` reliés dans un seul tour taisaient tous les autres 1,6 à 1,7 s
+/// (relevé à la fin du lot 12, la première preuve `soiree-71`, au-delà de `SILENCE_MAX`).
+const RELIER_PAR_TOUR: usize = 4;
+
+/// Le fil des natifs dort ce temps entre deux tours (choisi).
+const SOMME_DES_NATIFS: Duration = Duration::from_millis(2);
+
+/// Ce que partagent le fil des téléphones natifs et celui du banc.
+pub(crate) struct Troupe {
+    pub(crate) telephones: Vec<Telephone>,
     /// Les allers-retours d'écho des téléphones natifs : (reçu à, durée), en microsecondes
     /// depuis `depart` (correction du lot 12).
     pub(crate) allers_retours: Vec<(u64, u64)>,
+    /// Les téléphones natifs chargent le module reçu par l'une de ces fabriques, celle
+    /// dont le BLAKE3 est le sien (lot 12 : ils passent par la page ; depuis la fin du lot,
+    /// une par jeu du catalogue, puisque la salle change de jeu).
+    pub(crate) fabriques: Vec<(FabriqueWasm, [u8; 32])>,
+    port: u16,
+    depart: Instant,
+    /// Les tours joués par le fil.
+    pub(crate) tours: u64,
+    /// Les silences de plus de [`SILENCE_NOTE`] : (début, durée), en millisecondes depuis
+    /// `depart`.
+    pub(crate) silences: Vec<(u64, u64)>,
+    dernier_tour: Option<Instant>,
+}
+
+/// Les téléphones natifs tournent **sur leur propre fil** (lot 12, fin). Avant, le fil du
+/// banc les faisait tourner entre deux lectures de la console : toute attente du banc les
+/// taisait. Dans `soiree-71`, l'essai d'une session Safari (`safaridriver`, 30 s avant de
+/// refuser) les a tus 30,3 s, et l'autorité, qui ne recevait plus leurs échos, a perdu
+/// leurs 69 liens (M13 : de 71 appareils accueillis à 2) ; chaque évaluation `BiDi` sur une
+/// page Firefox neuve retardait d'autant tous les échos à la fois.
+pub(crate) struct Natifs {
+    troupe: Arc<Mutex<Troupe>>,
+    arret: Arc<AtomicBool>,
+    fil: Option<JoinHandle<()>>,
+}
+
+impl Natifs {
+    /// Lance le fil, sans téléphone.
+    pub(crate) fn lancer(
+        port: u16,
+        depart: Instant,
+        fabriques: Vec<(FabriqueWasm, [u8; 32])>,
+    ) -> Natifs {
+        let troupe = Arc::new(Mutex::new(Troupe {
+            telephones: Vec::new(),
+            allers_retours: Vec::new(),
+            fabriques,
+            port,
+            depart,
+            tours: 0,
+            silences: Vec::new(),
+            dernier_tour: None,
+        }));
+        let arret = Arc::new(AtomicBool::new(false));
+        let (t, a) = (Arc::clone(&troupe), Arc::clone(&arret));
+        let fil = std::thread::Builder::new()
+            .name(String::from("natifs"))
+            .spawn(move || {
+                while !a.load(Ordering::Relaxed) {
+                    t.lock().unwrap_or_else(PoisonError::into_inner).tourner();
+                    std::thread::sleep(SOMME_DES_NATIFS);
+                }
+            })
+            .ok();
+        Natifs { troupe, arret, fil }
+    }
+
+    /// Les téléphones natifs, le temps d'y lire ou d'y ajouter : le fil attend.
+    pub(crate) fn troupe(&self) -> MutexGuard<'_, Troupe> {
+        self.troupe.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Arrête le fil, puis coupe chaque téléphone.
+    pub(crate) fn arreter(&mut self) {
+        self.arret.store(true, Ordering::Relaxed);
+        if let Some(f) = self.fil.take() {
+            let _: std::thread::Result<()> = f.join();
+        }
+        for t in &mut self.troupe().telephones {
+            if let Some(ws) = t.ws.take() {
+                ws.couper();
+            }
+        }
+    }
+}
+
+impl Drop for Natifs {
+    fn drop(&mut self) {
+        self.arreter();
+    }
 }
 
 fn heure_locale_us(depart: Instant) -> u64 {
@@ -257,16 +367,130 @@ fn heure_locale_us(depart: Instant) -> u64 {
     u64::try_from(maintenant().saturating_duration_since(depart).as_micros()).unwrap_or(u64::MAX)
 }
 
-impl Session {
-    fn adresse(&self) -> SocketAddr {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port)
+impl Troupe {
+    /// Note le tour qui commence, et le silence qui le précède s'il dépasse
+    /// [`SILENCE_NOTE`].
+    fn noter_le_tour(&mut self) {
+        let ici = maintenant();
+        if let Some(d) = self.dernier_tour
+            && ici.saturating_duration_since(d) > SILENCE_NOTE
+        {
+            let ms = |i: Instant| {
+                u64::try_from(i.saturating_duration_since(self.depart).as_millis())
+                    .unwrap_or(u64::MAX)
+            };
+            self.silences.push((
+                ms(d),
+                u64::try_from(ici.saturating_duration_since(d).as_millis()).unwrap_or(u64::MAX),
+            ));
+        }
+        self.dernier_tour = Some(ici);
+        self.tours = self.tours.saturating_add(1);
     }
 
+    /// Un tour : chaque téléphone lit ce qui lui arrive, se réveille à son pas, joue par
+    /// sa page, et envoie.
+    fn tourner(&mut self) {
+        let adresse = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port);
+        let local = heure_locale_us(self.depart);
+        self.noter_le_tour();
+        // § 8.1, le singe partage le salon (lot 12, fin) : le singe (le premier téléphone)
+        // ne joue rien tant que chaque autre natif n'a pas vu accuser un premier geste.
+        // Le dernier accusé d'un natif ne redescend pas (aucun ne recharge sa page) : le
+        // salon au complet le reste.
+        let salon_au_complet = salle::page::salon_au_complet(
+            self.telephones.iter().skip(1).map(|t| t.appareil.accuse()),
+        );
+        let mut a_relier = RELIER_PAR_TOUR;
+        for t in &mut self.telephones {
+            if t.ws.is_none() {
+                if a_relier > 0
+                    && t.revient.is_some_and(|r| maintenant() >= r)
+                    && !t.appareil.fini()
+                {
+                    a_relier = a_relier.saturating_sub(1);
+                    match Ws::relier(adresse, LECTURE_MAX) {
+                        Ok(ws) => {
+                            t.ws = Some(ws);
+                            t.revient = None;
+                            t.appareil.relier();
+                        }
+                        Err(_) => t.revient = maintenant().checked_add(Duration::from_millis(500)),
+                    }
+                }
+                if t.ws.is_none() {
+                    continue;
+                }
+            }
+            let mut perdu = false;
+            if let Some(ws) = t.ws.as_mut() {
+                loop {
+                    match ws.recevoir() {
+                        Ok(Some(o)) => {
+                            t.appareil.recevoir(local, &o);
+                            self.allers_retours
+                                .extend(t.appareil.prendre_les_allers_retours());
+                        }
+                        Ok(None) => break,
+                        Err(_) => {
+                            perdu = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if maintenant() >= t.prochain_reveil {
+                t.prochain_reveil = maintenant()
+                    .checked_add(Duration::from_micros(PAS_US))
+                    .unwrap_or_else(maintenant);
+                t.appareil.reveiller(local);
+                t.joueur.retenir_le_singe(if salon_au_complet {
+                    jeu_abi::Oui::Non
+                } else {
+                    jeu_abi::Oui::Oui
+                });
+                let fabriques = &self.fabriques;
+                t.joueur.jouer(
+                    local,
+                    &mut t.appareil,
+                    |m| {
+                        let e = blake3::hash(m);
+                        fabriques
+                            .iter()
+                            .find(|(_, x)| e.as_bytes() == x)
+                            .map(|(f, _)| f.clone())
+                    },
+                    &mut t.hasard,
+                );
+            }
+            for o in t.appareil.sorties() {
+                if let Some(ws) = t.ws.as_mut()
+                    && ws.envoyer(o).is_err()
+                {
+                    perdu = true;
+                }
+            }
+            if let Some(ws) = t.ws.as_mut()
+                && ws.vider().is_err()
+            {
+                perdu = true;
+            }
+            if perdu {
+                if let Some(ws) = t.ws.take() {
+                    ws.couper();
+                }
+                t.appareil.couper();
+                t.revient = maintenant().checked_add(Duration::from_secs(1));
+            }
+        }
+    }
+}
+
+impl Session {
     /// Lit la console de la page pendant `delai`, et fait tourner les téléphones.
     pub(crate) fn tourner(&mut self, delai: Duration) -> Result<(), String> {
         let fin = maintenant().checked_add(delai).ok_or("délai")?;
         loop {
-            self.telephones_tournent();
             if maintenant() >= self.prochain_pilotage && !self.pages.is_empty() {
                 self.prochain_pilotage = maintenant()
                     .checked_add(crate::telephones::PILOTAGE)
@@ -371,7 +595,7 @@ impl Session {
                 h,
             );
             appareil.coups_par_la_page();
-            self.telephones.push(Telephone {
+            self.natifs.troupe().telephones.push(Telephone {
                 appareil,
                 ws: None,
                 jeton,
@@ -388,89 +612,10 @@ impl Session {
         Ok(())
     }
 
-    fn telephones_tournent(&mut self) {
-        let adresse = self.adresse();
-        let local = heure_locale_us(self.depart);
-        for t in &mut self.telephones {
-            if t.ws.is_none() {
-                if t.revient.is_some_and(|r| maintenant() >= r) && !t.appareil.fini() {
-                    match Ws::relier(adresse, LECTURE_MAX) {
-                        Ok(ws) => {
-                            t.ws = Some(ws);
-                            t.revient = None;
-                            t.appareil.relier();
-                        }
-                        Err(_) => t.revient = maintenant().checked_add(Duration::from_millis(500)),
-                    }
-                }
-                if t.ws.is_none() {
-                    continue;
-                }
-            }
-            let mut perdu = false;
-            if let Some(ws) = t.ws.as_mut() {
-                loop {
-                    match ws.recevoir() {
-                        Ok(Some(o)) => {
-                            t.appareil.recevoir(local, &o);
-                            self.allers_retours
-                                .extend(t.appareil.prendre_les_allers_retours());
-                        }
-                        Ok(None) => break,
-                        Err(_) => {
-                            perdu = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if maintenant() >= t.prochain_reveil {
-                t.prochain_reveil = maintenant()
-                    .checked_add(Duration::from_micros(PAS_US))
-                    .unwrap_or_else(maintenant);
-                t.appareil.reveiller(local);
-                let fabrique = self.fabrique.as_ref();
-                t.joueur.jouer(
-                    local,
-                    &mut t.appareil,
-                    |m| {
-                        fabrique
-                            .filter(|(_, e)| blake3::hash(m).as_bytes() == e)
-                            .map(|(f, _)| f.clone())
-                    },
-                    &mut t.hasard,
-                );
-            }
-            for o in t.appareil.sorties() {
-                if let Some(ws) = t.ws.as_mut()
-                    && ws.envoyer(o).is_err()
-                {
-                    perdu = true;
-                }
-            }
-            if let Some(ws) = t.ws.as_mut()
-                && ws.vider().is_err()
-            {
-                perdu = true;
-            }
-            if perdu {
-                if let Some(ws) = t.ws.take() {
-                    ws.couper();
-                }
-                t.appareil.couper();
-                t.revient = maintenant().checked_add(Duration::from_secs(1));
-            }
-        }
-    }
-
     /// Le relais arrêté, les téléphones coupés, le navigateur fermé : la garde sur disque
     /// et l'enregistrement restent.
     pub(crate) fn fermer(mut self) {
-        for t in &mut self.telephones {
-            if let Some(ws) = t.ws.take() {
-                ws.couper();
-            }
-        }
+        self.natifs.arreter();
         for p in self.pages.drain(..) {
             p.fermer();
         }
@@ -481,7 +626,7 @@ impl Session {
     }
 
     /// Les cases de la garde sur disque.
-    fn garde_sur_disque(&self, salle: CodeSalle) -> Result<Chaine, String> {
+    pub(crate) fn garde_sur_disque(&self, salle: CodeSalle) -> Result<Chaine, String> {
         let d = relais::garde::Dossier::ouvrir(&self.garde).map_err(|e| format!("{e}"))?;
         let mut cases = Vec::new();
         for c in d.lister(salle).map_err(|e| format!("{e}"))? {
@@ -521,6 +666,21 @@ pub(crate) fn ouvrir(
     std::fs::create_dir_all(&jeux).map_err(|e| format!("{e}"))?;
     let empreinte = blake3::hash(module).to_hex();
     std::fs::write(jeux.join(format!("{empreinte}.wasm")), module).map_err(|e| format!("{e}"))?;
+    let mut fabriques: Vec<(FabriqueWasm, [u8; 32])> = charger_le_module(module)
+        .ok()
+        .map(|c| (c.fabrique(), *blake3::hash(module).as_bytes()))
+        .into_iter()
+        .collect();
+    // `changer` (lot 12, fin) : les autres jeux au catalogue du relais.
+    for autre in &o.autres_jeux {
+        let octets = std::fs::read(autre).map_err(|e| format!("{} : {e}", autre.display()))?;
+        let e = blake3::hash(&octets);
+        std::fs::write(jeux.join(format!("{}.wasm", e.to_hex())), &octets)
+            .map_err(|e| format!("{e}"))?;
+        if let Ok(c) = charger_le_module(&octets) {
+            fabriques.push((c.fabrique(), *e.as_bytes()));
+        }
+    }
     let garde = dossier.join("garde");
     let enregistrement = dossier.join("enregistrement.bin");
     let port = if std::net::TcpListener::bind(("127.0.0.1", PORT_DE_LA_SOIREE)).is_ok()
@@ -553,12 +713,17 @@ pub(crate) fn ouvrir(
             return Err(format!("pas exécuté : {e}"));
         }
     };
-    let url = format!("http://localhost:{port}/?jeu={empreinte}{requete}");
+    let fautif = o
+        .fautif
+        .as_ref()
+        .map_or_else(String::new, |f| format!("&fautif={f}"));
+    let url = format!("http://localhost:{port}/?jeu={empreinte}{requete}{fautif}");
     if let Err(e) = navigateur.ouvrir(&url) {
         navigateur.fermer();
         relais.arreter();
         return Err(e);
     }
+    let depart = maintenant();
     Ok(Session {
         relais: Some(relais),
         port,
@@ -567,20 +732,16 @@ pub(crate) fn ouvrir(
         navigateur,
         lignes: Vec::new(),
         autres: Vec::new(),
-        telephones: Vec::new(),
+        natifs: Natifs::lancer(port, depart, fabriques),
         redite_us,
         salle: None,
         fragment: None,
-        depart: maintenant(),
+        depart,
         graine: 1,
-        fabrique: charger_le_module(module)
-            .ok()
-            .map(|c| (c.fabrique(), *blake3::hash(module).as_bytes())),
         pages: Vec::new(),
         prochain_pilotage: maintenant(),
         relais_lance,
         relais_us0,
-        allers_retours: Vec::new(),
     })
 }
 
@@ -656,7 +817,7 @@ fn reprise(
     Ok(l)
 }
 
-fn hexa(o: &[u8; 32]) -> String {
+pub(crate) fn hexa(o: &[u8; 32]) -> String {
     blake3::Hash::from(*o).to_hex().to_string()
 }
 
@@ -738,6 +899,8 @@ fn juger(
             .map(|l| l.registre)
             .map_err(|e| format!("{e:?}"))?;
         let telephones: Vec<TelephoneAccuse> = s
+            .natifs
+            .troupe()
             .telephones
             .iter()
             .map(|t| TelephoneAccuse {
@@ -757,7 +920,7 @@ fn juger(
 
 /// Ce qui ne doit jamais apparaître : un arrêt du chien de garde, une panne de l'outil,
 /// une violation de la politique de contenu, une exception.
-fn controler_les_lignes(s: &Session, p: &mut Passage, attendues: &[&str]) {
+pub(crate) fn controler_les_lignes(s: &Session, p: &mut Passage, attendues: &[&str]) {
     for l in &s.lignes {
         match l.quoi() {
             "relance" | "commun-en-panne" => {
@@ -790,7 +953,7 @@ pub(crate) fn charger_le_module(module: &[u8]) -> Result<ModuleCharge, String> {
         .map_err(|e| format!("le module est refusé : {e}"))
 }
 
-fn telephones_et_redite(o: &Options, charge: &ModuleCharge) -> (usize, Option<u64>) {
+pub(crate) fn telephones_et_redite(o: &Options, charge: &ModuleCharge) -> (usize, Option<u64>) {
     let d = charge.declaration();
     let n = o.telephones.unwrap_or(match d.telephones {
         ApplicableFil::Oui(_) => usize::from(d.places.appareils_max()).min(6),
@@ -804,7 +967,11 @@ fn telephones_et_redite(o: &Options, charge: &ModuleCharge) -> (usize, Option<u6
 }
 
 /// La clé exportée par la page : la commande du diagnostic, puis la ligne `cle`.
-fn exporter_la_cle(s: &mut Session, onglet: usize, nom: &str) -> Result<CleDeGarde, String> {
+pub(crate) fn exporter_la_cle(
+    s: &mut Session,
+    onglet: usize,
+    nom: &str,
+) -> Result<CleDeGarde, String> {
     let depuis = s.lignes.len();
     s.evaluer(onglet, "window.__banc.exporter_la_cle(), true")?;
     let l = s.attendre(depuis, Duration::from_secs(20), "la clé exportée", |l| {
@@ -822,7 +989,7 @@ fn exporter_la_cle(s: &mut Session, onglet: usize, nom: &str) -> Result<CleDeGar
 }
 
 /// Fige la partie (banc) : sa garde écrite, puis sa forme canonique.
-fn figer(s: &mut Session, onglet: usize, nom: &str) -> Result<Ligne, String> {
+pub(crate) fn figer(s: &mut Session, onglet: usize, nom: &str) -> Result<Ligne, String> {
     let depuis = s.lignes.len();
     s.evaluer(onglet, "window.__banc.figer(), true")?;
     s.attendre(depuis, Duration::from_secs(60), "la partie figée", |l| {
@@ -1023,6 +1190,14 @@ fn soiree(
             ));
         }
         // Les marques F8, juste après un point, pour que la garde finale les rejoue.
+        // *Correction de la fin du lot 12* : les pilotes des pages s'arrêtent d'abord. Un
+        // toucher que Chrome n'accuse pas (« CDP Input.dispatchTouchEvent : pas de réponse
+        // en 20s ») tenait le fil du banc 20 s à chaque tour : les trois marques s'étaient
+        // posées à 20 s l'une de l'autre, la partie figée plus de deux points après la
+        // première, et la garde ne gardait plus le point d'où les rejouer.
+        for pg in &mut s.pages {
+            pg.arreter_le_pilote();
+        }
         let o0 = onglet0.clone();
         let depuis = s.lignes.len();
         s.attendre(
@@ -1170,7 +1345,11 @@ fn g_pour_les_pages(cle: &Result<CleDeGarde, String>) -> Option<[u8; 32]> {
 
 /// Ouvre une page du téléphone dans chaque navigateur de `--pages`, et attend que chacune
 /// soit accueillie, ait reçu le module par la connexion et posé une page (M4 relevé).
-fn ouvrir_les_pages(o: &Options, s: &mut Session, p: &mut Passage) -> Result<(), String> {
+pub(crate) fn ouvrir_les_pages(
+    o: &Options,
+    s: &mut Session,
+    p: &mut Passage,
+) -> Result<(), String> {
     if o.pages.is_empty() {
         return Ok(());
     }
@@ -1271,12 +1450,16 @@ fn ouvrir_les_pages_en_retard(o: &Options, s: &mut Session, p: &mut Passage) -> 
         .ok_or("délai")?;
     loop {
         s.tourner(Duration::from_millis(500))?;
-        let prets = s
-            .telephones
-            .iter()
-            .filter(|t| t.appareil.accueilli() && t.appareil.module().is_some())
-            .count();
-        if prets == s.telephones.len() {
+        let (prets, natifs) = {
+            let troupe = s.natifs.troupe();
+            let prets = troupe
+                .telephones
+                .iter()
+                .filter(|t| t.appareil.accueilli() && t.appareil.module().is_some())
+                .count();
+            (prets, troupe.telephones.len())
+        };
+        if prets == natifs {
             p.notes.push(format!(
                 "retardataires : les {prets} téléphones natifs accueillis, leur module reçu"
             ));
@@ -1284,8 +1467,7 @@ fn ouvrir_les_pages_en_retard(o: &Options, s: &mut Session, p: &mut Passage) -> 
         }
         if reste(fin).is_zero() {
             return Err(format!(
-                "retardataires : {prets} téléphones natifs sur {} accueillis avec leur module en 300 s",
-                s.telephones.len()
+                "retardataires : {prets} téléphones natifs sur {natifs} accueillis avec leur module en 300 s"
             ));
         }
     }
@@ -1341,25 +1523,28 @@ fn ouvrir_les_pages_en_retard(o: &Options, s: &mut Session, p: &mut Passage) -> 
             }
         }
         let fin_us = heure_locale_us(s.depart);
-        let avant: Vec<u64> = s
+        let troupe = s.natifs.troupe();
+        let avant: Vec<u64> = troupe
             .allers_retours
             .iter()
             .filter(|(t, _)| t.saturating_add(20_000_000) >= base_jusqu_a && *t < base_jusqu_a)
             .map(|(_, d)| *d)
             .collect();
-        let pendant: Vec<u64> = s
+        let pendant: Vec<u64> = troupe
             .allers_retours
             .iter()
             .filter(|(t, _)| *t >= debut && *t <= fin_us)
             .map(|(_, d)| *d)
             .collect();
+        let natifs = troupe.telephones.len();
+        drop(troupe);
         let (na, ma, ca, xa) = quantiles(avant);
         let (np, mp, cp, xp) = quantiles(pendant);
         let pg = s.pages.get(k).ok_or("pas de page")?;
         let texte = format!(
             "retardataire {} ({} téléphones natifs, {} pages) : module reçu en {:.0} ms ; allers-retours d'écho des natifs, 20 s avant : {na}, médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms ; pendant la livraison : {np}, médiane {:.1} ms, 99ᵉ centile {:.1} ms, maximum {:.1} ms ; M4 {}",
             pg.nom,
-            s.telephones.len(),
+            natifs,
             s.pages.len(),
             ms(fin_us.saturating_sub(debut)),
             ms(ma),
@@ -1495,29 +1680,38 @@ fn recharger_une_page_en_pleine_ecriture(s: &mut Session, p: &mut Passage) {
                     }
                     continue;
                 }
-                pg.lance.recharger(0)?;
-                let fin2 = maintenant()
-                    .checked_add(Duration::from_secs(60))
-                    .ok_or("délai")?;
-                loop {
-                    s.tourner(Duration::from_millis(300))?;
-                    let pg = s.pages.first_mut().ok_or("pas de page")?;
-                    if let Ok(e) = pg.etat_de(0) {
-                        let accuse = e.get("accuse").and_then(Json::as_u64).unwrap_or(0);
-                        if e.get("accueilli").and_then(Json::as_bool) == Some(true) && accuse >= n {
-                            pg.pilote = true;
-                            return Ok(format!(
-                                "page {} rechargée en pleine écriture, réseau gelé : le geste {n}, jamais parti avant le rechargement, est accusé après lui (accusé {accuse})",
-                                pg.nom
-                            ));
-                        }
-                    }
-                    if reste(fin2).is_zero() {
+                // Lot 12, fin : ce que la page a retenu (`Locaux::retenu`) survit au
+                // rechargement (`localStorage`, par salle et par jeu). *Correction de la fin
+                // du lot 12* : la page rechargée doit le tenir **du stockage**
+                // (`retenu_repris`, lu avant toute vue) ; une page qui le recalcule depuis la
+                // vue, comme la manette de Sidequest, le retrouverait sans stockage.
+                let e0 = pg.etat_de(0)?;
+                let retenu = e0.get("retenu").cloned().unwrap_or(Json::Null);
+                let cle_retenu = e0
+                    .get("retenu_cle")
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                if !retenu.is_null() {
+                    let garde = pg.lance.evaluer(
+                        0,
+                        &format!("localStorage.getItem({})", Json::from(cle_retenu.as_str())),
+                    )?;
+                    if garde != retenu {
                         return Err(format!(
-                            "page rechargée : le geste {n} n'est pas accusé en 60 s (geste perdu)"
+                            "page {} : le retenu {retenu} n'est pas gardé dans localStorage sous « {cle_retenu} » (on y lit {garde})",
+                            pg.nom
                         ));
                     }
                 }
+                let mut note = recharger_et_reprendre(s, n, &retenu)?;
+                // Le contrôle négatif du retenu : le stockage vidé de sa clé, la page
+                // rechargée ne doit rien reprendre ; sinon `retenu_repris` ne dirait pas le
+                // stockage, et le constat d'avant ne prouverait rien.
+                if !retenu.is_null() {
+                    note.push_str(&recharger_sans_le_retenu(s, &cle_retenu, &retenu)?);
+                }
+                return Ok(note);
             }
             if reste(fin).is_zero() {
                 return Err(String::from("page : aucune écriture en 120 s"));
@@ -1530,6 +1724,100 @@ fn recharger_une_page_en_pleine_ecriture(s: &mut Session, p: &mut Passage) {
     }
     if let Some(pg) = s.pages.first_mut() {
         pg.pilote = true;
+    }
+}
+
+/// La première page rechargée en pleine écriture : le geste `n`, jamais parti, doit être
+/// accusé après le rechargement, et ce qu'elle avait retenu (`retenu`, s'il y en a un)
+/// repris de `localStorage` avant toute vue. Rend ce qu'il a constaté.
+fn recharger_et_reprendre(s: &mut Session, n: u64, retenu: &Json) -> Result<String, String> {
+    let pg = s.pages.first_mut().ok_or("pas de page")?;
+    pg.lance.recharger(0)?;
+    let fin = maintenant()
+        .checked_add(Duration::from_secs(60))
+        .ok_or("délai")?;
+    loop {
+        s.tourner(Duration::from_millis(300))?;
+        let pg = s.pages.first_mut().ok_or("pas de page")?;
+        if let Ok(e) = pg.etat_de(0) {
+            let accuse = e.get("accuse").and_then(Json::as_u64).unwrap_or(0);
+            let repris = e.get("retenu_repris").cloned().unwrap_or(Json::Null);
+            if e.get("accueilli").and_then(Json::as_bool) == Some(true)
+                && accuse >= n
+                && (retenu.is_null() || repris == *retenu)
+            {
+                let r = if retenu.is_null() {
+                    String::from("rien de retenu avant (sans objet pour ce jeu)")
+                } else {
+                    format!(
+                        "ce que la page avait retenu ({retenu}), repris de localStorage avant toute vue"
+                    )
+                };
+                return Ok(format!(
+                    "page {} rechargée en pleine écriture, réseau gelé : le geste {n}, jamais parti avant le rechargement, est accusé après lui (accusé {accuse}) ; {r}",
+                    pg.nom
+                ));
+            }
+        }
+        if reste(fin).is_zero() {
+            let e = pg.etat_de(0).unwrap_or(Json::Null);
+            return Err(format!(
+                "page rechargée : en 60 s, le geste {n} n'est pas accusé (geste perdu), ou le retenu {retenu} n'est pas repris de localStorage ; état {e}"
+            ));
+        }
+    }
+}
+
+/// Le contrôle négatif du retenu (correction de la fin du lot 12) : la clé du retenu ôtée de
+/// `localStorage`, la première page rechargée ne doit rien en reprendre (`retenu_repris`
+/// nul), même si sa vue lui redonne le même retenu. Rend ce qu'il a constaté.
+fn recharger_sans_le_retenu(
+    s: &mut Session,
+    cle_retenu: &str,
+    retenu: &Json,
+) -> Result<String, String> {
+    let pg = s.pages.first_mut().ok_or("pas de page")?;
+    pg.lance.evaluer(
+        0,
+        &format!(
+            "localStorage.removeItem({}) === undefined",
+            Json::from(cle_retenu)
+        ),
+    )?;
+    pg.lance.recharger(0)?;
+    let fin = maintenant()
+        .checked_add(Duration::from_secs(60))
+        .ok_or("délai")?;
+    loop {
+        s.tourner(Duration::from_millis(300))?;
+        let pg = s.pages.first_mut().ok_or("pas de page")?;
+        if let Ok(e) = pg.etat_de(0)
+            && e.get("accueilli").and_then(Json::as_bool) == Some(true)
+            && e.get("noeuds").and_then(Json::as_u64).unwrap_or(0) > 0
+        {
+            let repris = e.get("retenu_repris").cloned().unwrap_or(Json::Null);
+            if !repris.is_null() {
+                return Err(format!(
+                    "CONTRÔLE NÉGATIF RATÉ : page {}, sa clé ôtée de localStorage, rechargée, dit encore avoir repris {repris}",
+                    pg.nom
+                ));
+            }
+            let apres = e.get("retenu").cloned().unwrap_or(Json::Null);
+            return Ok(format!(
+                " ; contrôle négatif : la clé ôtée de localStorage, la page rechargée n'a rien repris{}",
+                if apres == *retenu {
+                    " (sa vue lui redonne pourtant le même retenu : c'est le stockage qui se juge)"
+                } else {
+                    ""
+                }
+            ));
+        }
+        if reste(fin).is_zero() {
+            let e = pg.etat_de(0).unwrap_or(Json::Null);
+            return Err(format!(
+                "page rechargée sans son retenu : pas revenue en 60 s ; état {e}"
+            ));
+        }
     }
 }
 
@@ -1931,7 +2219,7 @@ fn juger_les_pages(s: &mut Session, p: &mut Passage, g: Option<[u8; 32]>) {
     if let Some(g) = g {
         aiguilles.push((String::from("G"), g.to_vec()));
     }
-    for (k, t) in s.telephones.iter().enumerate() {
+    for (k, t) in s.natifs.troupe().telephones.iter().enumerate() {
         aiguilles.push((format!("le jeton du téléphone natif {k}"), t.jeton.to_vec()));
     }
     // Les jetons des pages, lus dans leur `localStorage` (correction du lot 12) : en octets,
@@ -2168,11 +2456,13 @@ fn juger_les_pages(s: &mut Session, p: &mut Passage, g: Option<[u8; 32]>) {
 /// qui n'a envoyé aucun geste par la page de toute la soirée (au lot 12, cinq téléphones
 /// sur six de Sidequest n'en envoyaient aucun, leur `Rejoindre` sans chemin, sans que le
 /// scénario le voie).
-fn juger_les_natifs(s: &Session, p: &mut Passage) {
-    if s.telephones.is_empty() {
+pub(crate) fn juger_les_natifs(s: &Session, p: &mut Passage) {
+    let troupe = s.natifs.troupe();
+    juger_les_silences(&troupe, p);
+    if troupe.telephones.is_empty() {
         return;
     }
-    let natifs: Vec<String> = s
+    let natifs: Vec<String> = troupe
         .telephones
         .iter()
         .enumerate()
@@ -2190,7 +2480,7 @@ fn juger_les_natifs(s: &Session, p: &mut Passage) {
         "téléphones natifs par la page : {}",
         natifs.join(" ; ")
     ));
-    for (k, t) in s.telephones.iter().enumerate() {
+    for (k, t) in troupe.telephones.iter().enumerate() {
         let c = &t.joueur.comptes;
         if c.gestes_par_la_page == 0 && c.gestes_du_singe == 0 {
             p.fautes.push(format!(
@@ -2200,7 +2490,26 @@ fn juger_les_natifs(s: &Session, p: &mut Passage) {
     }
 }
 
-fn ecrire_les_lignes(dossier: &Path, lignes: &[Ligne], autres: &[String]) {
+/// Les silences des téléphones natifs (lot 12, fin) : notés au-delà de [`SILENCE_NOTE`],
+/// une faute au-delà de [`SILENCE_MAX`] : un natif que le banc ne sert plus est perdu par
+/// l'autorité, et ce que le scénario mesure (les échos, M13) ne mesure plus la salle.
+fn juger_les_silences(troupe: &Troupe, p: &mut Passage) {
+    let plus_long = troupe.silences.iter().map(|(_, d)| *d).max().unwrap_or(0);
+    p.notes.push(format!(
+        "fil des natifs : {} tours, {} silences de plus de {} ms, le plus long {plus_long} ms",
+        troupe.tours,
+        troupe.silences.len(),
+        SILENCE_NOTE.as_millis()
+    ));
+    let max = u64::try_from(SILENCE_MAX.as_millis()).unwrap_or(u64::MAX);
+    for (debut, duree) in troupe.silences.iter().filter(|(_, d)| *d > max) {
+        p.fautes.push(format!(
+            "les téléphones natifs sont restés {duree} ms sans être servis (à {debut} ms) : au-delà de {max} ms, l'autorité peut les perdre"
+        ));
+    }
+}
+
+pub(crate) fn ecrire_les_lignes(dossier: &Path, lignes: &[Ligne], autres: &[String]) {
     let mut t = String::new();
     for l in lignes {
         let _: core::fmt::Result = writeln!(t, "{:>8} {} {}", l.ms, l.onglet, l.json);
@@ -2633,7 +2942,9 @@ pub fn jouer(o: &Options, soiree_dir: &Path) -> Result<Vec<Passage>, String> {
     }
     for (n, passe) in tours {
         let n = &n;
-        let r = if o.m12 > 0 {
+        let r = if !o.autres_jeux.is_empty() {
+            crate::changer::changer(o, *n, &paquet, &module, &charge)
+        } else if o.m12 > 0 {
             m12(o, *n, &paquet, &module, &charge)
         } else if o.cache_s > 0 {
             arriere_plan(o, (*n, passe), &paquet, &module, &charge)
@@ -2730,6 +3041,43 @@ mod tests {
             json: serde_json::from_str(json).unwrap(),
             ms: 0,
         }
+    }
+
+    /// Lot 12, fin (`soiree-71`, M13 : de 71 appareils accueillis à 2) : les téléphones
+    /// natifs tournent sur leur propre fil, et continuent pendant que le fil du banc attend
+    /// (ici 300 ms ; là, `safaridriver` 30 s). Quand le fil du banc les faisait tourner
+    /// entre deux lectures de la console, ils ne jouaient aucun tour pendant ses attentes.
+    #[test]
+    fn les_natifs_tournent_pendant_que_le_banc_attend() {
+        let mut n = Natifs::lancer(port_libre().unwrap(), maintenant(), Vec::new());
+        let avant = n.troupe().tours;
+        std::thread::sleep(Duration::from_millis(300));
+        {
+            let t = n.troupe();
+            assert!(t.tours.saturating_sub(avant) >= 30, "{} tours", t.tours);
+            assert_eq!(t.silences, Vec::new());
+        }
+        n.arreter();
+        let fin = n.troupe().tours;
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(n.troupe().tours, fin, "le fil arrêté ne tourne plus");
+    }
+
+    /// Lot 12, fin : un silence des natifs au-delà de `SILENCE_MAX` est une faute qui dit
+    /// quand et combien ; en deçà, il est noté.
+    #[test]
+    fn un_long_silence_des_natifs_est_une_faute() {
+        let n = Natifs::lancer(port_libre().unwrap(), maintenant(), Vec::new());
+        let mut p = Passage::default();
+        n.troupe().silences = vec![(1_000, 300), (73_026, 30_287)];
+        juger_les_silences(&n.troupe(), &mut p);
+        assert_eq!(p.fautes.len(), 1, "{:?}", p.fautes);
+        assert!(p.fautes[0].contains("30287 ms") && p.fautes[0].contains("73026 ms"));
+        assert!(p.notes[0].contains("2 silences"), "{:?}", p.notes);
+        let mut p = Passage::default();
+        n.troupe().silences = vec![(1_000, 999)];
+        juger_les_silences(&n.troupe(), &mut p);
+        assert_eq!(p.fautes, Vec::<String>::new());
     }
 
     /// Correction du lot 12 (vérification, constat 8) : le saut d'une reprise se rattache

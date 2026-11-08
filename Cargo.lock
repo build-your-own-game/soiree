@@ -889,6 +889,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fautif-page-qui-deborde-module"
+version = "0.1.0"
+dependencies = [
+ "fautifs",
+ "jeu",
+]
+
+[[package]]
 name = "fautif-page-qui-envoie-un-geste-invalide-module"
 version = "0.1.0"
 dependencies = [

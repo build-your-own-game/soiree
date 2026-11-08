@@ -267,18 +267,16 @@ fn ouvrir(
         navigateur,
         lignes: Vec::new(),
         autres: Vec::new(),
-        telephones: Vec::new(),
+        natifs: crate::soiree::Natifs::lancer(port, maintenant(), Vec::new()),
         redite_us: None,
         salle: None,
         fragment: None,
         depart: maintenant(),
         graine: 1,
-        fabrique: None,
         pages: Vec::new(),
         prochain_pilotage: maintenant(),
         relais_lance: maintenant(),
         relais_us0: relais::horloge::maintenant_us(),
-        allers_retours: Vec::new(),
     })
 }
 

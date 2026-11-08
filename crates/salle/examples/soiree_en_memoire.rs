@@ -6,7 +6,7 @@
 //!
 //! ```sh
 //! cargo run --release -p salle --example soiree_en_memoire -- <module.wasm> \
-//!     [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page]
+//!     [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page] [--singe-attend]
 //! ```
 //!
 //! Avec `--par-la-page` (correction du lot 12), les téléphones reçoivent le module de
@@ -43,6 +43,8 @@ struct Demande {
     duree_s: u64,
     graines: Vec<u64>,
     par_la_page: bool,
+    /// Le singe attend le salon au complet (§ 8.1, fin du lot 12), comme dans le banc.
+    singe_attend: bool,
 }
 
 fn lire(args: &[String]) -> Result<Demande, String> {
@@ -52,6 +54,7 @@ fn lire(args: &[String]) -> Result<Demande, String> {
         duree_s: 120,
         graines: vec![1, 2, 3],
         par_la_page: false,
+        singe_attend: false,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -72,13 +75,14 @@ fn lire(args: &[String]) -> Result<Demande, String> {
                     .collect::<Result<_, _>>()?;
             }
             "--par-la-page" => d.par_la_page = true,
+            "--singe-attend" => d.singe_attend = true,
             m if d.module.is_empty() => d.module = String::from(m),
             autre => return Err(format!("argument inconnu : {autre}")),
         }
     }
     if d.module.is_empty() {
         return Err(String::from(
-            "usage : soiree_en_memoire <module.wasm> [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page]",
+            "usage : soiree_en_memoire <module.wasm> [--telephones N] [--duree S] [--graines 1,2,3] [--par-la-page] [--singe-attend]",
         ));
     }
     Ok(d)
@@ -225,6 +229,9 @@ fn main() -> ExitCode {
         if d.par_la_page {
             s.livrer_le_module(octets.clone());
             s.par_la_page(1);
+            if d.singe_attend {
+                s.singe_attend_le_salon();
+            }
         }
         let fautes = jouer_et_juger(&mut s, graine, telephones, d.duree_s);
         if fautes.is_empty() {

@@ -15,6 +15,8 @@
 //! - **les écrans du commun** ([`ecrans`]) : un seul message à la fois, qui nomme la vraie
 //!   cause (REM-69) ;
 //! - **l'adresse** ([`adresse`]) : la salle du chemin, le fragment du QR ;
+//! - **le retenu** ([`retenu`]) : sous quelle clé de `localStorage` la page garde ce
+//!   qu'elle a retenu, et quand l'écrire ;
 //! - **le style** ([`style`]) : le CSS d'un nœud, sans navigateur.
 //!
 //! Ce qui ne touche pas au navigateur se teste en natif ; le reste, par `soiree-banc`.
@@ -23,6 +25,7 @@
 
 pub mod adresse;
 pub mod ecrans;
+pub mod retenu;
 pub mod style;
 
 #[cfg(target_arch = "wasm32")]

@@ -103,4 +103,7 @@ pub mod jeux {
     pub type PoliceWoff2 = Socle<defauts::PoliceWoff2>;
     /// E16 : à 9 999 points, une phrase qui ne tient pas dans sa boîte (lot 8).
     pub type TexteQuiDeborde = Socle<defauts::TexteQuiDeborde>;
+    /// Le scénario `pages` du banc : à 9 999 points, la page du téléphone écrit le
+    /// prénom du record à 512 px, qui déborde de tout téléphone (lot 12, fin).
+    pub type PageQuiDeborde = Socle<defauts::PageQuiDeborde>;
 }

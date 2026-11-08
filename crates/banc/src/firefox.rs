@@ -367,6 +367,8 @@ impl Firefox {
             "Enter" => "\u{E007}",
             "Escape" => "\u{E00C}",
             "Tab" => "\u{E004}",
+            // Lot 12, fin : F9, l'écran de démarrage du commun (WebDriver : `\u{E039}`).
+            "F9" => "\u{E039}",
             autre => return Err(format!("touche inconnue du banc : {autre}")),
         };
         self.bidi

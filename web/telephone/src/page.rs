@@ -38,7 +38,7 @@ use web_sys::{
 
 use crate::adresse;
 use crate::ecrans::{self, Ecran};
-use crate::style;
+use crate::{retenu, style};
 
 /// Le réveil de la page : l'écho, la redite du tenu, la coupure, les comptes à rebours.
 const TIC_MS: i32 = 50;
@@ -171,6 +171,19 @@ struct Tel {
     appareil: Option<Appareil<HasardNavigateur>>,
     page: Option<Pagee>,
     panne_module: Option<String>,
+    /// L'empreinte du module dont la page est faite : un autre module reçu (la salle a
+    /// changé de jeu, lot 12, fin) refait la page.
+    module_de_la_page: Option<[u8; 32]>,
+    /// Les pages refaites sur un autre module.
+    changements: u32,
+    /// La clé de `localStorage` du retenu de cette salle et de ce jeu, et ce qui y est
+    /// gardé (lot 12, fin : `Locaux::retenu` survit au rechargement).
+    retenu: Option<(String, Option<Vec<u8>>)>,
+    /// Ce que `localStorage` a rendu du retenu quand la page s'est faite sur son module,
+    /// avant toute vue : ce qu'une page rechargée tient du stockage seul, et que le banc
+    /// compare à ce qu'elle avait retenu avant (correction de la fin du lot 12 : une page
+    /// qui recalcule son retenu depuis la vue le retrouverait sans stockage).
+    retenu_repris: Option<Vec<u8>>,
     ws: Option<WebSocket>,
     ws_ouvert: bool,
     /// La dernière fois que la page était accueillie, ou que sa WebSocket s'est ouverte.
@@ -203,6 +216,13 @@ struct Tel {
     /// d'un texte qui déborde (`__banc.deborder`, le contrôle négatif du scénario `pages`).
     gele_jusqu_a: f64,
     deborde: bool,
+    /// Le banc : la page de pire cas que le banc pose (scénario `pages`, lot 12, fin), sans
+    /// salle ni relais ; l'écran du commun ne la couvre pas.
+    pire_cas: bool,
+    /// Le banc : les octets que `__banc.morceau` a reçus, en attente de `__banc.pire_cas`.
+    morceaux: Vec<u8>,
+    /// Le banc : le pas de la dernière vue de pire cas posée.
+    pas_du_pire_cas: u64,
     /// Le banc : ce que la page a envoyé pendant un gel, retenu et non perdu (une
     /// WebSocket ouverte ne perd rien : TCP retient puis livre), parti au dégel sur la même
     /// connexion ; une connexion neuve l'oublie (il appartient à l'ancienne session).
@@ -548,6 +568,10 @@ fn demarrer() -> Result<(), String> {
         appareil,
         page: None,
         panne_module: None,
+        module_de_la_page: None,
+        changements: 0,
+        retenu: None,
+        retenu_repris: None,
         ws: None,
         ws_ouvert: false,
         ouvert_depuis_ms: 0.0,
@@ -578,6 +602,9 @@ fn demarrer() -> Result<(), String> {
         gele_jusqu_a: 0.0,
         retenues: Vec::new(),
         deborde: false,
+        pire_cas: false,
+        morceaux: Vec::new(),
+        pas_du_pire_cas: 0,
     }));
     ecouter(&etat, &corps)?;
     if banc {
@@ -775,12 +802,29 @@ fn apres(t: &mut Tel) {
 /// `Decrire` ; la page se pose dès qu'une vue est là. La période de redite du tenu vient
 /// de sa déclaration (P27).
 fn charger_le_module(t: &mut Tel) {
+    // La salle a changé de jeu (§ 2.8, lot 12, fin) : le module de la page n'est plus
+    // celui que l'appareil reçoit ou a reçu ; la page se refait sur le nouveau, ses
+    // ressources reprises du début.
+    let recu = t
+        .appareil
+        .as_ref()
+        .and_then(Appareil::module)
+        .map(|(e, _)| e);
+    if t.module_de_la_page.is_some() && recu != t.module_de_la_page {
+        t.page = None;
+        t.panne_module = None;
+        t.module_de_la_page = None;
+        t.ressources_vues = 0;
+        t.changements = t.changements.saturating_add(1);
+        t.a_poser = true;
+    }
     if t.page.is_some() || t.panne_module.is_some() {
         return;
     }
-    let Some((_, octets)) = t.appareil.as_ref().and_then(Appareil::module) else {
+    let Some((empreinte, octets)) = t.appareil.as_ref().and_then(Appareil::module) else {
         return;
     };
+    t.module_de_la_page = Some(empreinte);
     let octets = octets.to_vec();
     let debut = maintenant_ms(&t.fenetre);
     let charge = match moteur_navigateur::charger(&octets, &reecriture::Reglages::PHASE_3) {
@@ -810,11 +854,21 @@ fn charger_le_module(t: &mut Tel) {
         a.regler_la_redite(redite);
     }
     let ecran = l_ecran(&t.fenetre, &t.document);
-    t.page = Some(PageDuTelephone::new(
-        instance,
-        Locaux::new(ecran, t.capacites),
-        tenu.as_ref(),
-    ));
+    let mut page = PageDuTelephone::new(instance, Locaux::new(ecran, t.capacites), tenu.as_ref());
+    // Ce que la page avait retenu pour cette salle et ce jeu, avant un rechargement.
+    let cle = retenu::cle(
+        &t.fenetre.location().pathname().unwrap_or_default(),
+        &hexa(&empreinte),
+    );
+    let garde = stockage_local(&t.fenetre)
+        .and_then(|s| s.get_item(&cle).ok().flatten())
+        .and_then(|v| lire_hexa(&v));
+    if let Some(o) = &garde {
+        page.reprendre_le_retenu(o.clone());
+    }
+    t.retenu_repris.clone_from(&garde);
+    t.retenu = Some((cle, garde));
+    t.page = Some(page);
     if t.banc {
         let (n, ms) = t.m4.unwrap_or((0, 0.0));
         web_sys::console::log_1(&JsValue::from_str(&format!(
@@ -839,39 +893,45 @@ fn ressources(t: &mut Tel) {
     }
     t.ressources_vues = t.ressources_vues.saturating_add(nouvelles.len());
     for (cle, octets) in nouvelles {
-        let tete = octets.get(..4).unwrap_or_default();
-        let police = matches!(tete, [0, 1, 0, 0] | b"OTTO" | b"true");
-        if police {
-            if let Ok(ff) =
-                web_sys::FontFace::new_with_u8_array(&style::famille(Cle::du_fil(cle)), &octets)
-            {
-                let _: Result<(), JsValue> = t.document.fonts().add(&ff);
-                let _: Result<js_sys::Promise, JsValue> = ff.load();
-            }
-            continue;
-        }
-        let mime = if octets.starts_with(b"\x89PNG") {
-            "image/png"
-        } else if octets.starts_with(&[0xff, 0xd8]) {
-            "image/jpeg"
-        } else if octets.starts_with(b"GIF8") {
-            "image/gif"
-        } else if octets.starts_with(b"RIFF") {
-            "image/webp"
-        } else {
-            "image/svg+xml"
-        };
-        let tableau = js_sys::Array::new();
-        tableau.push(&js_sys::Uint8Array::from(octets.as_slice()));
-        let options = web_sys::BlobPropertyBag::new();
-        options.set_type(mime);
-        if let Ok(b) = web_sys::Blob::new_with_u8_array_sequence_and_options(&tableau, &options)
-            && let Ok(url) = web_sys::Url::create_object_url_with_blob(&b)
-        {
-            t.images.insert(cle, url);
-        }
+        ajouter_une_ressource(t, cle, &octets);
     }
     t.a_poser = true;
+}
+
+/// Une ressource de la page : une police (sfnt) par `FontFace`, une image en `Blob`. Le
+/// scénario `pages` du banc passe par ici aussi (`__banc.pire_cas`).
+fn ajouter_une_ressource(t: &mut Tel, cle: u64, octets: &[u8]) {
+    let tete = octets.get(..4).unwrap_or_default();
+    let police = matches!(tete, [0, 1, 0, 0] | b"OTTO" | b"true");
+    if police {
+        if let Ok(ff) =
+            web_sys::FontFace::new_with_u8_array(&style::famille(Cle::du_fil(cle)), octets)
+        {
+            let _: Result<(), JsValue> = t.document.fonts().add(&ff);
+            let _: Result<js_sys::Promise, JsValue> = ff.load();
+        }
+        return;
+    }
+    let mime = if octets.starts_with(b"\x89PNG") {
+        "image/png"
+    } else if octets.starts_with(&[0xff, 0xd8]) {
+        "image/jpeg"
+    } else if octets.starts_with(b"GIF8") {
+        "image/gif"
+    } else if octets.starts_with(b"RIFF") {
+        "image/webp"
+    } else {
+        "image/svg+xml"
+    };
+    let tableau = js_sys::Array::new();
+    tableau.push(&js_sys::Uint8Array::from(octets));
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type(mime);
+    if let Ok(b) = web_sys::Blob::new_with_u8_array_sequence_and_options(&tableau, &options)
+        && let Ok(url) = web_sys::Url::create_object_url_with_blob(&b)
+    {
+        t.images.insert(cle, url);
+    }
 }
 
 /// Les effets de la vue : la vibration, là où elle existe ; une identité ne se rejoue pas,
@@ -921,9 +981,26 @@ fn garder_la_file(t: &mut Tel) {
     }
 }
 
+/// Le retenu de la page, gardé dans `localStorage` quand il change (lot 12, fin) : par salle
+/// et par jeu, comme `PageFil::retenir` le dit ([`retenu`]). Un stockage cassé le laisse en
+/// mémoire.
+fn garder_le_retenu(t: &mut Tel) {
+    let Some((cle, garde)) = t.retenu.as_mut() else {
+        return;
+    };
+    let actuel = t.page.as_ref().and_then(|p| p.retenu());
+    if let Some(o) = retenu::a_ecrire(actuel, garde.as_deref()) {
+        if let Some(s) = stockage_local(&t.fenetre) {
+            let _: Result<(), JsValue> = s.set_item(cle, &hexa(o));
+        }
+        *garde = Some(o.to_vec());
+    }
+}
+
 /// Ce qu'un recalcul de la page demande : le tenu à l'appareil, les doigts lâchés (REM-23),
 /// la page reposée.
 fn appliquer(t: &mut Tel, r: &Recalcul) {
+    garder_le_retenu(t);
     let now = maintenant_us(&t.fenetre);
     if let Some(tenu) = &r.tenu
         && let Some(a) = t.appareil.as_mut()
@@ -1068,6 +1145,12 @@ fn comptes_a_rebours(t: &Tel, now_ms: f64) {
 // ---------------------------------------------------------------------------
 
 fn montrer_l_ecran(t: &mut Tel) {
+    if t.pire_cas {
+        // La page de pire cas du banc n'a ni salle ni relais : rien ne la couvre.
+        t.ecran = None;
+        poser_style(&t.voile, &[("display", "none")]);
+        return;
+    }
     let e = ecrans::Etat {
         adresse_illisible: t.adresse_illisible || t.panne_module.is_some(),
         refus: t.appareil.as_ref().and_then(Appareil::refus),
@@ -1351,6 +1434,10 @@ fn mettre_a_jour(
                     ("padding", "12px"),
                     ("min-height", "44px"),
                     ("touch-action", "manipulation"),
+                    // Un nom d'un seul mot plus large que la page (une réponse tapée,
+                    // montrée au vote de Punchline) se coupe, comme un texte (fin du
+                    // lot 12 : vu déborder à 768 × 1024 par le scénario `pages`).
+                    ("overflow-wrap", "anywhere"),
                 ],
             );
         }
@@ -1365,6 +1452,7 @@ fn mettre_a_jour(
                     ("padding", "16px"),
                     ("min-height", "56px"),
                     ("touch-action", "none"),
+                    ("overflow-wrap", "anywhere"),
                 ],
             );
         }
@@ -1908,7 +1996,7 @@ fn etat_json(t: &Tel) -> String {
     let comptes = p.map(PageDuTelephone::comptes).unwrap_or_default();
     let (recus, total) = a.map_or((0, 0), Appareil::progres_du_module);
     format!(
-        "{{\"ecran\":{},\"accueilli\":{},\"ws\":{},\"module\":{},\"progres\":[{recus},{total}],\"panne\":{},\"noeuds\":{},\"gestes\":{},\"tenus\":{},\"files_pleines\":{},\"file_max\":{},\"accuse\":{},\"en_file\":{},\"dernier_geste\":{},\"onglet\":\"{:x}\",\"m4\":{},\"pages\":{},\"fautes\":{},\"laches_rem23\":{},\"coupures\":{},\"arriere_plans\":{},\"tenu\":{},\"tenu_relache\":{},\"refus\":{},\"vue\":{},\"lien\":{}}}",
+        "{{\"ecran\":{},\"accueilli\":{},\"ws\":{},\"module\":{},\"progres\":[{recus},{total}],\"panne\":{},\"noeuds\":{},\"gestes\":{},\"tenus\":{},\"files_pleines\":{},\"file_max\":{},\"accuse\":{},\"en_file\":{},\"dernier_geste\":{},\"onglet\":\"{:x}\",\"m4\":{},\"pages\":{},\"fautes\":{},\"laches_rem23\":{},\"coupures\":{},\"arriere_plans\":{},\"tenu\":{},\"tenu_relache\":{},\"refus\":{},\"vue\":{},\"lien\":{},\"changements\":{},\"retenu\":{},\"retenu_repris\":{},\"retenu_cle\":{}}}",
         t.ecran
             .map_or_else(|| String::from("null"), |e| json(e.nom())),
         a.is_some_and(Appareil::accueilli),
@@ -1944,6 +2032,15 @@ fn etat_json(t: &Tel) -> String {
         t.vue.map_or(0, |(p, _)| p),
         a.and_then(Appareil::lien_relais)
             .map_or_else(|| String::from("null"), |l| l.to_string()),
+        t.changements,
+        p.and_then(|p| p.retenu())
+            .map_or_else(|| String::from("null"), |o| json(&hexa(o))),
+        t.retenu_repris
+            .as_deref()
+            .map_or_else(|| String::from("null"), |o| json(&hexa(o))),
+        t.retenu
+            .as_ref()
+            .map_or_else(|| String::from("null"), |(c, _)| json(c)),
     )
 }
 
@@ -2043,6 +2140,74 @@ fn debordements_json(t: &Tel) -> String {
     )
 }
 
+/// Le scénario `pages` (§ 8.2 ; lot 12, fin) : le banc pose ici, sans salle ni relais, les
+/// pages de pire cas que le module construit depuis ses limites. `quoi` dit ce que sont les
+/// octets reçus par `__banc.morceau` : `module` (le module livré, réécrit et compilé comme
+/// celui que la connexion apporte, et la page faite dessus), `ressource` (une ressource de
+/// la page, de clé `cle` en hexadécimal) ou `vue` (une vue de téléphone, que la page reçoit
+/// comme celle d'une soirée, à la taille d'écran du moment). Rend du JSON : `ok`, ou
+/// `erreur`.
+fn pire_cas(t: &mut Tel, quoi: &str, cle: &str) -> String {
+    let octets = core::mem::take(&mut t.morceaux);
+    t.pire_cas = true;
+    montrer_l_ecran(t);
+    let r = match quoi {
+        "module" => pire_cas_module(t, &octets),
+        "ressource" => u64::from_str_radix(cle, 16)
+            .map_err(|e| format!("clé illisible : {e}"))
+            .map(|c| {
+                ajouter_une_ressource(t, c, &octets);
+                String::new()
+            }),
+        "vue" => pire_cas_vue(t, &octets),
+        autre => Err(format!("pire cas : « {autre} » inconnu")),
+    };
+    match r {
+        Ok(plus) => format!("{{\"ok\":true{plus}}}"),
+        Err(e) => format!("{{\"erreur\":{}}}", json(&e)),
+    }
+}
+
+fn pire_cas_module(t: &mut Tel, octets: &[u8]) -> Result<String, String> {
+    let charge = moteur_navigateur::charger(octets, &reecriture::Reglages::PHASE_3)
+        .map_err(|e| format!("le module est refusé : {e:?}"))?;
+    let instance = InstanceDePage::ouvrir(charge.fabrique())
+        .map_err(|e| format!("l'instance de la page : {e}"))?;
+    let tenu = match &instance.declaration().telephones {
+        ApplicableFil::Oui(tel) => Some(tel.tenu.clone()),
+        ApplicableFil::SansObjet(_) => None,
+    };
+    let ecran = l_ecran(&t.fenetre, &t.document);
+    t.page = Some(PageDuTelephone::new(
+        instance,
+        Locaux::new(ecran, t.capacites),
+        tenu.as_ref(),
+    ));
+    t.images.clear();
+    t.pas_du_pire_cas = 0;
+    Ok(String::new())
+}
+
+fn pire_cas_vue(t: &mut Tel, montre: &[u8]) -> Result<String, String> {
+    let now = maintenant_us(&t.fenetre);
+    let ecran = l_ecran(&t.fenetre, &t.document);
+    t.pas_du_pire_cas = t.pas_du_pire_cas.saturating_add(1);
+    let pas = jeu_abi::Pas::du_fil(t.pas_du_pire_cas);
+    let p = t.page.as_mut().ok_or("pas de module")?;
+    let mut r = p.ecran(now, ecran);
+    let r2 = p.vue_recue(now, pas, montre);
+    if let Some(f) = r2.faute {
+        return Err(format!(
+            "la page de cette vue est en faute ou invalide : {f}"
+        ));
+    }
+    r.page_changee |= r2.page_changee;
+    let noeuds = p.page().map_or(0, |pg| pg.noeuds.len());
+    t.a_poser = true;
+    appliquer(t, &r);
+    Ok(format!(",\"noeuds\":{noeuds}"))
+}
+
 fn crochets_du_banc(etat: &Etat) -> Result<(), String> {
     let objet = js_sys::Object::new();
     let fenetre = etat.borrow().fenetre.clone();
@@ -2096,6 +2261,27 @@ fn crochets_du_banc(etat: &Etat) -> Result<(), String> {
     });
     poser("deborder", deborder.as_ref().unchecked_ref());
     deborder.forget();
+    let e = Rc::clone(etat);
+    let morceau = Closure::<dyn Fn(String) -> bool>::new(move |h: String| {
+        e.try_borrow_mut().is_ok_and(|mut t| match lire_hexa(&h) {
+            Some(o) => {
+                t.morceaux.extend_from_slice(&o);
+                true
+            }
+            None => false,
+        })
+    });
+    poser("morceau", morceau.as_ref().unchecked_ref());
+    morceau.forget();
+    let e = Rc::clone(etat);
+    let pc = Closure::<dyn Fn(String, String) -> String>::new(move |quoi: String, cle: String| {
+        e.try_borrow_mut().map_or_else(
+            |_| String::from("{\"erreur\":\"occupée\"}"),
+            |mut t| pire_cas(&mut t, &quoi, &cle),
+        )
+    });
+    poser("pire_cas", pc.as_ref().unchecked_ref());
+    pc.forget();
     js_sys::Reflect::set(&fenetre, &JsValue::from_str("__banc"), &objet)
         .map_err(|_| "window.__banc")?;
     Ok(())

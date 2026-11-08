@@ -50,6 +50,9 @@ pub enum PourLeJeu {
     Rien,
     /// Au commun : F8 (une marque).
     Commun,
+    /// Au commun : F9, l'écran de démarrage par-dessus la partie, pour changer de jeu
+    /// (lot 12, fin).
+    Demarrage,
     /// Gardée par le navigateur (Échap qui sort du plein écran, P38).
     Navigateur,
     /// L'action d'un raccourci.
@@ -57,6 +60,10 @@ pub enum PourLeJeu {
     /// La touche brute.
     Brute(Touche),
 }
+
+/// La touche du commun qui remontre l'écran de démarrage (lot 12, fin ; choisie : F9, à
+/// côté de F8, qu'aucun jeu ne porte).
+pub const TOUCHE_DEMARRAGE: &str = "F9";
 
 /// Ce que devient la touche `code` (le `code` du DOM, la touche physique), dans `phase`,
 /// une répétition automatique ou non, sur la dernière `scene` reçue.
@@ -71,6 +78,9 @@ pub fn pour_le_jeu(
 ) -> PourLeJeu {
     if code == CodeTouche::F8.as_str() {
         return PourLeJeu::Commun;
+    }
+    if code == TOUCHE_DEMARRAGE {
+        return PourLeJeu::Demarrage;
     }
     if code == CodeTouche::ECHAP.as_str() && plein_ecran == PleinEcran::SansVerrou {
         return PourLeJeu::Navigateur;

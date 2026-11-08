@@ -298,6 +298,18 @@ pub struct PageDuTelephone<P: Pager> {
 }
 
 impl<P: Pager> PageDuTelephone<P> {
+    /// Ce que la page a retenu (`PageFil::retenir`), pour que la coque le garde (lot 12,
+    /// fin : `localStorage` dans le navigateur, par salle et par jeu).
+    pub fn retenu(&self) -> Option<&[u8]> {
+        self.locaux.retenu.as_deref()
+    }
+
+    /// Ce que la coque avait gardé du retenu de cette salle et de ce jeu, rendu à la page
+    /// neuve (une page rechargée) avant son premier appel.
+    pub fn reprendre_le_retenu(&mut self, octets: Vec<u8>) {
+        self.locaux.retenu = Some(octets);
+    }
+
     /// Une page sans vue encore. `tenu` : les règles du tenu des téléphones du jeu
     /// (`TelephonesFil::tenu`), d'où le débit et la fraîcheur.
     pub fn new(
@@ -985,6 +997,10 @@ impl<P: Pager> PageDuTelephone<P> {
             alea,
         );
         match sorte {
+            // Un bouton, une fois sur `SINGE_BOUTON_UN_SUR` de ces tirages (fin du lot 12).
+            0 if !boutons.is_empty() && (alea >> 48) % SINGE_BOUTON_UN_SUR != 0 => {
+                (Recalcul::default(), None)
+            }
             0 if !boutons.is_empty() => {
                 let c = boutons.get(tirer(boutons.len(), alea >> 8)).copied();
                 let g = c.and_then(|c| {
@@ -1049,6 +1065,15 @@ impl<P: Pager> PageDuTelephone<P> {
     }
 }
 
+/// Le singe n'appuie sur un bouton tiré qu'une fois sur ce nombre (choisi : le rythme
+/// d'avant la fusion du lot 11, où le bouton était une sorte sur cinq). Fin du lot 12 : la
+/// sorte tirée parmi ce que la page offre, une page qui n'offre que des boutons voyait le
+/// singe appuyer à chacun de ses tours (700 ms) ; au salon de Punchline, le singe devenu VIP
+/// lançait la partie (« Tout le monde est là ») puis l'annulait (« Attends, on annule ! »),
+/// sans fin, et aucune partie ne commençait (`soiree punchline`, deux passages, 400 s
+/// chacun ; reproduit en mémoire par `soiree_en_memoire --singe-attend`).
+pub const SINGE_BOUTON_UN_SUR: u64 = 5;
+
 /// La sorte de geste du singe (0 un bouton, 1 un champ, 2 un choix, 3 une croix, 4 un
 /// maintenu), tirée par `alea` parmi celles que la page offre ; `u64::MAX` si elle n'en
 /// offre aucune. Fusion du lot 11 : un tirage parmi les cinq perdait son tour sur une page
@@ -1067,6 +1092,19 @@ fn sorte_du_singe(offertes: [bool; 5], alea: u64) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+/// § 8.1, le singe partage le salon (lot 12, fin) : le salon est au complet quand chaque
+/// autre téléphone natif de la soirée a vu accuser un premier geste (`accuses`, le
+/// dernier geste accusé de chacun, [`Appareil::accuse`]). Le banc ne connaît pas le jeu :
+/// un geste accusé est ce qu'il sait de « ce téléphone a rejoint ». Avant, le singe ne
+/// joue rien : à la fusion du lot 11, le singe devenu VIP du salon de Punchline lançait
+/// chaque partie 5 à 45 pas après l'ouverture, avant que les autres natifs aient
+/// rejoint, et un natif resté sur « pas de la partie » ne recevait aucun coup du bot.
+/// Une fois au complet, le salon le reste (l'appelant garde la réponse) : une partie
+/// relancée garde sa table.
+pub fn salon_au_complet(accuses: impl IntoIterator<Item = u64>) -> bool {
+    accuses.into_iter().all(|a| a > 0)
+}
+
 /// Ce qu'un joueur de page a fait des coups du bot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ComptesJoueur {
@@ -1083,10 +1121,14 @@ pub struct ComptesJoueur {
     pub tenus_sans_chemin: u64,
     /// Les gestes partis du singe.
     pub gestes_du_singe: u64,
+    /// Les tours que le singe a joués, geste parti ou non (un retenu n'en joue aucun).
+    pub tours_du_singe: u64,
     /// Les gestes de la page refusés par l'appareil (file pleine, trop long).
     pub refuses: u64,
     /// Les files pleines (SAL-07), dans `refuses`.
     pub files_pleines: u64,
+    /// Les pages refaites sur un autre module : la salle a changé de jeu (lot 12, fin).
+    pub changements: u64,
 }
 
 /// Un téléphone natif du banc qui passe **par la page** (§ 8.1, lot 12) : l'instance du
@@ -1097,6 +1139,12 @@ pub struct JoueurDePage<F: Fabrique> {
     page: Option<PageDuTelephone<InstanceDePage<F>>>,
     singe: Option<u64>,
     prochain_singe_us: u64,
+    /// Le singe attend que le salon soit au complet ([`salon_au_complet`]) : il ne joue
+    /// aucun geste tant que c'est vrai.
+    singe_retenu: Oui,
+    /// L'empreinte du module dont la page est faite : un autre module reçu (la salle a
+    /// changé de jeu, lot 12, fin) refait la page.
+    module_de_la_page: Option<[u8; 32]>,
     /// Ce qu'il a fait.
     pub comptes: ComptesJoueur,
     /// L'instance de la page n'a pas pu s'ouvrir : pourquoi.
@@ -1109,6 +1157,8 @@ impl<F: Fabrique> Default for JoueurDePage<F> {
             page: None,
             singe: None,
             prochain_singe_us: 0,
+            singe_retenu: Oui::Non,
+            module_de_la_page: None,
             comptes: ComptesJoueur::default(),
             panne: None,
         }
@@ -1122,6 +1172,24 @@ impl<F: Fabrique> JoueurDePage<F> {
         JoueurDePage {
             singe: Some(periode_us.max(1)),
             ..JoueurDePage::default()
+        }
+    }
+
+    /// Retient le singe (`Oui`) ou le laisse jouer (`Non`) : retenu, il ne joue aucun
+    /// geste au hasard ; les coups du bot passent toujours. § 8.1, le singe partage le
+    /// salon : le banc le retient tant que [`salon_au_complet`] ne l'a pas dit.
+    pub const fn retenir_le_singe(&mut self, retenu: Oui) {
+        self.singe_retenu = retenu;
+    }
+
+    /// La salle a changé de jeu (§ 2.8, lot 12, fin) : le module de la page n'est plus
+    /// celui que l'appareil reçoit ou a reçu (`recu`) ; la page sera refaite sur le nouveau.
+    fn suivre_le_module(&mut self, recu: Option<[u8; 32]>) {
+        if self.module_de_la_page.is_some() && recu != self.module_de_la_page {
+            self.page = None;
+            self.panne = None;
+            self.module_de_la_page = None;
+            self.comptes.changements = self.comptes.changements.saturating_add(1);
         }
     }
 
@@ -1162,8 +1230,9 @@ impl<F: Fabrique> JoueurDePage<F> {
         fabriquer: impl FnOnce(&[u8]) -> Option<F>,
         hasard: &mut S,
     ) {
+        self.suivre_le_module(appareil.module().map(|(e, _)| e));
         if self.page.is_none() && self.panne.is_none() {
-            let Some((_, module)) = appareil.module() else {
+            let Some((empreinte, module)) = appareil.module() else {
                 // Sans module, les coups du bot n'ont pas de page.
                 let n = appareil.prendre_les_coups().len();
                 self.comptes.gestes_sans_chemin = self
@@ -1172,6 +1241,7 @@ impl<F: Fabrique> JoueurDePage<F> {
                     .saturating_add(u64::try_from(n).unwrap_or(u64::MAX));
                 return;
             };
+            self.module_de_la_page = Some(empreinte);
             match fabriquer(module).map(InstanceDePage::ouvrir) {
                 Some(Ok(i)) => {
                     let tenu = match &i.declaration().telephones {
@@ -1234,9 +1304,11 @@ impl<F: Fabrique> JoueurDePage<F> {
             }
         }
         if let Some(periode) = self.singe
+            && self.singe_retenu == Oui::Non
             && t_us >= self.prochain_singe_us
         {
             self.prochain_singe_us = t_us.saturating_add(periode);
+            self.comptes.tours_du_singe = self.comptes.tours_du_singe.saturating_add(1);
             let (r, g) = page.singe(t_us, hasard);
             Self::appliquer(appareil, t_us, &r);
             if let Some(g) = g
@@ -1743,6 +1815,53 @@ mod tests {
         assert_eq!(a.comptes().files_pleines, 5);
         assert_eq!(a.en_file(), limite);
         assert_eq!(a.comptes().gestes, u64::try_from(limite).unwrap());
+    }
+
+    /// Fin du lot 12 : sur une page qui n'offre qu'un bouton, le singe n'y appuie qu'un tour
+    /// sur `SINGE_BOUTON_UN_SUR` environ (de 15 à 25 % de 2 000 tours) : à chaque tour, il
+    /// annulait chaque départ de Punchline.
+    #[test]
+    fn le_singe_n_appuie_qu_un_tour_sur_cinq_sur_un_bouton() {
+        struct UnBouton;
+        impl Pager for UnBouton {
+            fn page(&mut self, _: &[u8], _: Pas, _: &LocauxFil<'_>) -> Result<PageFil, String> {
+                Ok(PageFil {
+                    noeuds: vec![
+                        NoeudPage {
+                            cle: Cle::du_fil(1),
+                            parent: None,
+                            sorte: SorteNoeudPage::Colonne,
+                        },
+                        NoeudPage {
+                            cle: Cle::du_fil(2),
+                            parent: Some(0),
+                            sorte: SorteNoeudPage::Bouton {
+                                nom: String::from("Attends, on annule !"),
+                                geste: vec![7],
+                                quand: jeu_abi::Declencheur::Relache,
+                                style: StylePage::ORDINAIRE,
+                            },
+                        },
+                    ],
+                    tenu: None,
+                    retenir: None,
+                })
+            }
+        }
+        let mut p = PageDuTelephone::new(
+            UnBouton,
+            Locaux::new(EcranTelephone::ORDINAIRE, Capacites::AUCUNE),
+            None,
+        );
+        let _: Recalcul = p.vue_recue(0, Pas::du_fil(1), &[1]);
+        let mut h = crate::simulation::Graine::new("singe", 3);
+        let appuis = (0..2_000u64)
+            .filter(|t| p.singe(*t, &mut h).1.is_some())
+            .count();
+        assert!(
+            (300..=500).contains(&appuis),
+            "{appuis} appuis sur 2 000 tours"
+        );
     }
 
     /// Fusion du lot 11 : le singe tire sa sorte de geste parmi celles que la page offre,

@@ -38,6 +38,7 @@
 //! | [`PageVide`] | la page est celle par défaut de `Jeu::page` : vide | E21 (page vide) |
 //! | [`PoliceWoff2`] | une police déclarée en WOFF2 | E1 (polices sfnt) |
 //! | [`TexteQuiDeborde`] | à 9 999 points, une phrase trop longue pour sa boîte, même à la plus petite taille | E16 (débordements) |
+//! | [`PageQuiDeborde`] | à 9 999 points, la page du téléphone écrit le prénom du meneur à 512 px : une seule lettre est plus large qu'un téléphone | aucun : le scénario `pages` du banc (PHASE-3, § 8.2) |
 //!
 //! `JugeSurLeFait` et `FichierQuiPanique` passent dans le monde trop sage de la phase 1 (`Monde::PHASE_1`
 //! de l'épreuve) : seul le monde réel les fait échouer.
@@ -300,6 +301,12 @@ pub trait Defaut: Etat {
     /// sain.
     fn texte_du_record() -> Option<&'static str> {
         None
+    }
+
+    /// La page du téléphone écrit-elle, quand son joueur a 9 999 points, le prénom du
+    /// record à 512 px ? Non, dans le jeu sain.
+    fn record_sur_la_page() -> Oui {
+        Oui::Non
     }
 }
 
@@ -1152,5 +1159,26 @@ impl Defaut for TexteQuiDeborde {
         Some(
             "Record absolu : neuf mille neuf cent quatre-vingt-dix-neuf points, du jamais vu dans toute l'histoire de ce petit jeu de mots !",
         )
+    }
+}
+
+marqueur!(
+    /// Le contrôle négatif du scénario `pages` du banc (PHASE-3, § 8.2 ; lot 12, fin) : à
+    /// 9 999 points, la page du téléphone écrit le prénom du record (douze « W ») à
+    /// 512 px, la plus grande taille que `jeu_abi::PX_PAGE` permet. Une seule lettre y est
+    /// plus large qu'un téléphone de 360 ou de 390 px : même coupé à chaque lettre, le
+    /// texte déborde de sa boîte. Seuls les pires cas ont un joueur à 9 999 points, et
+    /// l'épreuve ne mesure que la scène de l'écran (E16) : aucun de ses contrôles
+    /// n'échoue ; le scénario `pages`, qui pose chaque page de pire cas dans un vrai
+    /// navigateur, doit le voir.
+    PageQuiDeborde
+);
+impl Defaut for PageQuiDeborde {
+    type Cas = Etape;
+    fn neuf() -> Self {
+        PageQuiDeborde
+    }
+    fn record_sur_la_page() -> Oui {
+        Oui::Oui
     }
 }

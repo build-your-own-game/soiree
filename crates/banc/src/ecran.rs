@@ -1455,6 +1455,8 @@ fn passage(o: &Options, n: Navigateur, moteur: Moteur, paquet: &Path, module: &[
         pages: Vec::new(),
         duree_min_s: 0,
         retardataires: false,
+        autres_jeux: Vec::new(),
+        fautif: None,
     };
     let dossier = o.travail.join(format!(
         "{}{}",

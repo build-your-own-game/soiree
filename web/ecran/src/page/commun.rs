@@ -13,6 +13,10 @@
 //!   reprend tout de suite dans le Worker, sous ce voile ;
 //! - **« Plein écran quitté — cliquer pour revenir »** (P38) : le navigateur a gardé Échap
 //!   pour sortir du plein écran, ou l'hôte en est sorti ;
+//! - **changer de jeu** (lot 12, fin) : une ligne de la liste touchée choisit son jeu ;
+//!   « Jouer » demande au Worker le jeu choisi (`CommandeEcran::ChangerDeJeu`) s'il n'est
+//!   pas celui de la salle, puis fait le geste ; F9 remontre l'écran de démarrage
+//!   par-dessus la partie, qui continue dessous ;
 //! - **« NON ÉPROUVÉ »**, en permanence, si le module joué n'a pas de rapport d'épreuve
 //!   (P17, question 16).
 //!
@@ -32,12 +36,12 @@ use web_sys::{Document, Element, HtmlElement, MouseEvent, Window};
 use jeu_abi::{Oui, SceneFil};
 use liaison::{AdresseAnnoncee, AdresseIp, CodeSalle};
 use rendu::Cadre;
-use salle::ecran::EtatSalle;
+use salle::ecran::{CommandeEcran, DeLaPage, EtatSalle};
 
-use super::{Etat, Page, banc, chaine, hexa, lire_hexa, style};
+use super::{Etat, Page, banc, chaine, hexa, lire_hexa, poster, style};
 use crate::aide::{EtatAide, messages};
 use crate::demarrage::{
-    ACTION_JOUER, Demarrage, FORME, JeuAuCatalogue, bouton_sous, scene, textes,
+    ACTION_JOUER, Demarrage, FORME, JeuAuCatalogue, bouton_sous, jeu_choisi, scene, textes,
 };
 use crate::toile::{maintenant_ms, texte_d_erreur};
 
@@ -334,9 +338,23 @@ pub(super) fn etat_salle(p: &mut Page, e: &EtatSalle) {
     }
 }
 
+/// F9 (lot 12, fin) : l'écran de démarrage, par-dessus la partie qui continue : on y
+/// choisit un autre jeu. « Jouer » y revient.
+pub(super) fn montrer_le_demarrage(p: &mut Page) {
+    if p.commun.montre == Montre::Rien {
+        p.commun.montre = Montre::Demarrage;
+        p.commun.demarrage.choisi = None;
+        p.commun.sale = true;
+        rapporter(p);
+    }
+}
+
 /// `VersPage::Jeu` : le module que la salle joue.
 pub(super) fn jeu(p: &mut Page, module: [u8; 32]) {
     p.commun.demarrage.en_jeu = Some(module);
+    if p.commun.demarrage.choisi == Some(module) {
+        p.commun.demarrage.choisi = None;
+    }
     p.commun.sale = true;
     montrer_l_insigne(&p.commun);
     rapporter(p);
@@ -584,13 +602,17 @@ fn ecouter_jouer(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result<(), 
         if !souris.is_trusted() {
             return;
         }
-        let (jouer, arreter) = {
+        let (action, arreter) = {
             let Ok(page) = pour_le_clic.try_borrow() else {
                 return;
             };
             let arreter = page.commun.fautif != Fautif::GesteAuJeu;
-            let jouer = page.commun.montre == Montre::Demarrage
-                && page.commun.scene.as_ref().is_some_and(|s| {
+            let action = page
+                .commun
+                .scene
+                .as_ref()
+                .filter(|_| page.commun.montre == Montre::Demarrage)
+                .and_then(|s| {
                     let a = Cadre::new(la_toile.width(), la_toile.height(), FORME).transformation();
                     let dpr = page.jeu.dpr;
                     let (x, y) = (
@@ -598,18 +620,51 @@ fn ecouter_jouer(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result<(), 
                         f64::from(souris.client_y()) * dpr,
                     );
                     let echelle = f64::from(a.echelle);
-                    echelle > 0.0
-                        && bouton_sous(
-                            s,
-                            (x - f64::from(a.x)) / echelle,
-                            (y - f64::from(a.y)) / echelle,
-                        ) == Some(ACTION_JOUER)
+                    (echelle > 0.0)
+                        .then(|| {
+                            bouton_sous(
+                                s,
+                                (x - f64::from(a.x)) / echelle,
+                                (y - f64::from(a.y)) / echelle,
+                            )
+                            .map(<[u8]>::to_vec)
+                        })
+                        .flatten()
                 });
-            (jouer, arreter)
+            (action, arreter)
         };
-        if jouer {
-            if arreter {
-                souris.stop_propagation();
+        let Some(action) = action else {
+            return;
+        };
+        if arreter {
+            souris.stop_propagation();
+        }
+        if let Some(e) = jeu_choisi(&action) {
+            // Une ligne de la liste : ce jeu est choisi, rien d'autre.
+            let mut p = pour_le_clic.borrow_mut();
+            p.commun.demarrage.choisi = (p.commun.demarrage.en_jeu != Some(e)).then_some(e);
+            p.commun.sale = true;
+            banc(
+                &p,
+                &format!("{{\"quoi\":\"choisi\",\"module\":\"{}\"}}", hexa(&e)),
+            );
+            return;
+        }
+        if action.as_slice() == ACTION_JOUER {
+            let choisi = {
+                let mut p = pour_le_clic.borrow_mut();
+                p.commun.demarrage.choisi.take()
+            };
+            if let Some(module) = choisi {
+                let p = pour_le_clic.borrow();
+                poster(
+                    &p,
+                    &DeLaPage::Commande(CommandeEcran::ChangerDeJeu { module }),
+                );
+                banc(
+                    &p,
+                    &format!("{{\"quoi\":\"changer\",\"module\":\"{}\"}}", hexa(&module)),
+                );
             }
             geste(&pour_le_clic);
         }
@@ -712,12 +767,16 @@ pub(super) fn ecouter(etat: &Etat, toile: &web_sys::HtmlCanvasElement) -> Result
 pub(super) fn centre_pour_le_banc(
     p: &Page,
     toile: &web_sys::HtmlCanvasElement,
+    jeu: Option<[u8; 32]>,
 ) -> Option<(f64, f64)> {
     match p.commun.montre {
         Montre::Demarrage => {
             let boite = p.commun.scene.as_ref()?.noeuds.iter().find_map(|n| {
                 if let jeu_abi::SorteNoeud::Bouton { boite, action, .. } = &n.sorte
-                    && action.as_slice() == ACTION_JOUER
+                    && match jeu {
+                        None => action.as_slice() == ACTION_JOUER,
+                        Some(e) => jeu_choisi(action) == Some(e),
+                    }
                 {
                     Some(*boite)
                 } else {

@@ -502,6 +502,7 @@ fn traiter_un(p: &mut Page, ev: Evenement) {
             // raccourci cède au champ qui a le focus (TL-34). F8 reste au commun
             // (SAL-162).
             if code != CodeTouche::F8.as_str()
+                && code != crate::clavier::TOUCHE_DEMARRAGE
                 && (composition == Oui::Oui || dans_un_champ == Oui::Oui)
             {
                 return;

@@ -46,6 +46,7 @@
 pub mod aide;
 pub mod bidi;
 pub mod cdp;
+mod changer;
 pub mod chrome;
 pub mod dessin;
 pub mod ecran;
@@ -55,6 +56,7 @@ mod horloge;
 pub mod machine;
 pub mod mandataire;
 pub mod navigateur;
+pub mod pages;
 pub mod rapport;
 pub mod rejouer;
 pub mod rejouer_garde;

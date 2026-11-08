@@ -17,7 +17,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use jeu_abi::{IdGeste, Oui, SorteAppel};
-use moteur_wasmtime::{InstantaneWasm, Moteur, ReglagesMoteur};
+use moteur_wasmtime::{FabriqueWasm, InstantaneWasm, Moteur, ReglagesMoteur};
 use partie::{CausePanne, Echec, Fabrique, Instance, PanneOutil};
 use salle::chien::{Chien, Decision, TIC_MS};
 use salle::ecran::{CommandeEcran, DeLaPage, VersPage};
@@ -28,7 +28,17 @@ use salle::simulation::{Pannes, Soiree, verifier_l_historique};
 /// (`target/verif-module`) : `cargo test` tient le verrou de `target/`.
 fn octets() -> &'static [u8] {
     static OCTETS: OnceLock<Vec<u8>> = OnceLock::new();
-    OCTETS.get_or_init(|| {
+    OCTETS.get_or_init(|| module_d_exemple("devine"))
+}
+
+/// Le module d'`ardoise` (un jeu sans téléphone), compilé de même.
+fn octets_d_ardoise() -> &'static [u8] {
+    static OCTETS: OnceLock<Vec<u8>> = OnceLock::new();
+    OCTETS.get_or_init(|| module_d_exemple("ardoise"))
+}
+
+fn module_d_exemple(nom: &str) -> Vec<u8> {
+    {
         let racine = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let cible = racine.join("target/verif-module");
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| String::from("cargo"));
@@ -38,7 +48,7 @@ fn octets() -> &'static [u8] {
             .args([
                 "build",
                 "-p",
-                "devine-module",
+                &format!("{nom}-module"),
                 "--target",
                 "wasm32-unknown-unknown",
                 "--profile",
@@ -48,11 +58,11 @@ fn octets() -> &'static [u8] {
             .expect("lancer cargo");
         assert!(
             statut.success(),
-            "la compilation du module de devine a échoué"
+            "la compilation du module de {nom} a échoué"
         );
-        std::fs::read(cible.join("wasm32-unknown-unknown/module/devine_module.wasm"))
-            .expect("lire le module de devine")
-    })
+        std::fs::read(cible.join(format!("wasm32-unknown-unknown/module/{nom}_module.wasm")))
+            .expect("lire le module")
+    }
 }
 
 /// Une soirée de `devine` : la chaîne entière écrite, chaque geste au plus une fois, tout
@@ -150,6 +160,203 @@ fn une_soiree_de_devine_par_la_page_survit_a_ses_pannes() {
     assert!(avant.is_some_and(|c| c.gestes_du_singe > 0), "{avant:?}");
     s.recharger(0, 1_000_000);
     assert_eq!(s.joueurs.get(&0).map(|j| j.comptes), avant);
+}
+
+/// § 8.1, le singe partage le salon (lot 12, fin ; la régression de la fusion du lot 11,
+/// `LOTS-PHASE-3.md`, « Fusion du lot 11, correction », constat 1) : un singe arrivé seul
+/// ne joue rien tant que chaque autre téléphone de la soirée n'a pas vu accuser un premier
+/// geste ; il joue ensuite. Le même départ sans la règle : le singe seul joue sur l'écran du
+/// prénom (au salon de Punchline, le singe devenu VIP y lançait la partie). Les coups des
+/// bots sont arrêtés tant que le singe est seul (`CommandeEcran::Bots`) : sinon, le coup
+/// `Rejoindre` de son bot lui ôte aussitôt l'écran du prénom, et le singe seul n'a rien à
+/// toucher, avec ou sans la règle.
+#[test]
+fn le_singe_attend_que_le_salon_soit_au_complet() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let singe = |s: &Soiree<_, _>| s.joueurs.get(&0).map_or(0, |j| j.comptes.gestes_du_singe);
+    let tours = |s: &Soiree<_, _>| s.joueurs.get(&0).map_or(0, |j| j.comptes.tours_du_singe);
+    for regle in [true, false] {
+        let mut s = Soiree::new(|| charge.fabrique(), 41, Oui::Oui, Pannes::AUCUNE);
+        s.livrer_le_module(octets().to_vec());
+        s.par_la_page(1);
+        if regle {
+            s.singe_attend_le_salon();
+        }
+        // Trois téléphones dans la soirée ; les deux autres ne se relient que 20 s après.
+        for k in 0..3 {
+            assert_eq!(s.ajouter_telephone(), k);
+        }
+        let bots = |s: &mut Soiree<_, _>, oui: Oui| {
+            s.depuis_la_page(
+                &DeLaPage::Commande(CommandeEcran::Bots(oui))
+                    .encoder()
+                    .expect("la commande"),
+            );
+        };
+        bots(&mut s, Oui::Non);
+        s.couper(1, Some(20_000_000));
+        s.couper(2, Some(20_000_000));
+        let t0 = s.t_us;
+        s.avancer_jusqua(t0 + 19_000_000);
+        assert!(
+            s.telephones[1..].iter().all(|x| x.appareil.accuse() == 0),
+            "les deux autres ne sont pas encore là"
+        );
+        assert!(
+            s.joueurs.get_mut(&0).and_then(|j| j.page()).is_some(),
+            "la page du singe est posée"
+        );
+        if !regle {
+            assert!(singe(&s) > 0, "sans la règle, le singe seul joue");
+            continue;
+        }
+        assert_eq!((tours(&s), singe(&s)), (0, 0), "le singe seul attend");
+        bots(&mut s, Oui::Oui);
+        let mut t = s.t_us;
+        while s.telephones[1..].iter().any(|x| x.appareil.accuse() == 0) {
+            assert_eq!(tours(&s), 0, "le singe attend le salon au complet");
+            assert!(t < t0 + 60_000_000, "les deux autres n'ont jamais rejoint");
+            t += 100_000;
+            s.avancer_jusqua(t);
+        }
+        s.avancer_jusqua(t + 30_000_000);
+        // Un tour par période (`SINGE_US`), qu'il trouve ou non de quoi toucher.
+        assert!(
+            tours(&s) >= 30,
+            "le salon au complet, le singe joue : {} tours",
+            tours(&s)
+        );
+    }
+}
+
+/// § 2.8, « Changer de jeu » (lot 12, fin) : sans rien relancer, la salle passe de
+/// `devine` à `ardoise` (un jeu sans téléphone), puis revient à `devine`. À chaque fois :
+/// une partie neuve du nouveau jeu, dont le premier pas suit le dernier de l'ancien ; la
+/// garde reprend le nouveau jeu (sa chaîne part du point neuf) ; mêmes liens (aucun
+/// téléphone ne se relie de nouveau) ; chaque téléphone reçoit le nouveau module et
+/// refait sa page dessus ; tout geste accusé est écrit, aucun en double ; l'autorité
+/// tuée après le changement reprend le nouveau jeu.
+#[test]
+fn une_salle_change_de_jeu_sans_rien_relancer() {
+    let moteur = Moteur::new(ReglagesMoteur::PHASE_3).expect("le moteur démarre");
+    let charge = moteur.charger(octets()).expect("le module de devine");
+    let mut s = Soiree::new(|| charge.fabrique(), 51, Oui::Oui, Pannes::AUCUNE);
+    s.livrer_le_module(octets().to_vec());
+    s.par_la_page(0);
+    for _ in 0..3 {
+        let _: usize = s.ajouter_telephone();
+    }
+    let t0 = s.t_us;
+    s.avancer_jusqua(t0 + 20_000_000);
+    let liens: Vec<_> = s.telephones.iter().map(|t| t.lien).collect();
+    assert_eq!(nom(&s).as_deref(), Some("devine"));
+    assert!(
+        gestes(&s) > 0,
+        "les téléphones jouent par la page de devine"
+    );
+    let e_devine = *blake3::hash(octets()).as_bytes();
+    let e_ardoise = *blake3::hash(octets_d_ardoise()).as_bytes();
+    // Devine, puis ardoise.
+    let avant = pas(&s);
+    let ardoise = moteur
+        .charger(octets_d_ardoise())
+        .expect("le module d'ardoise");
+    s.changer_de_jeu(octets_d_ardoise().to_vec(), move || ardoise.fabrique())
+        .expect("le changement");
+    assert_eq!(nom(&s).as_deref(), Some("ardoise"));
+    assert!(
+        pas(&s) > avant,
+        "le pas ne recule pas : {} puis {}",
+        avant,
+        pas(&s)
+    );
+    let t = s.t_us;
+    s.avancer_jusqua(t + 10_000_000);
+    for (k, x) in s.telephones.iter().enumerate() {
+        assert_eq!(
+            x.appareil.module().map(|(e, _)| e),
+            Some(e_ardoise),
+            "téléphone {k}"
+        );
+        assert!(x.appareil.accueilli(), "téléphone {k}");
+    }
+    assert_eq!(
+        s.telephones.iter().map(|t| t.lien).collect::<Vec<_>>(),
+        liens
+    );
+    s.comparer_a_la_garde().expect("la garde reprend ardoise");
+    // L'autorité tuée reprend ardoise, de la garde.
+    s.tuer_l_autorite(100_000);
+    let t = s.t_us;
+    s.avancer_jusqua(t + 5_000_000);
+    assert!(s.autorite_vit());
+    assert_eq!(nom(&s).as_deref(), Some("ardoise"));
+    s.comparer_a_la_garde()
+        .expect("la garde reprend ardoise, après la relance");
+    // Retour à devine : les téléphones refont leur page, et rejouent.
+    let gestes_avant = gestes(&s);
+    let avant = pas(&s);
+    let devine = moteur.charger(octets()).expect("le module de devine");
+    s.changer_de_jeu(octets().to_vec(), move || devine.fabrique())
+        .expect("le retour");
+    assert_eq!(nom(&s).as_deref(), Some("devine"));
+    assert!(pas(&s) > avant);
+    let t = s.t_us;
+    s.avancer_jusqua(t + 30_000_000);
+    for (k, x) in s.telephones.iter().enumerate() {
+        assert_eq!(
+            x.appareil.module().map(|(e, _)| e),
+            Some(e_devine),
+            "téléphone {k}"
+        );
+    }
+    for (k, j) in &s.joueurs {
+        assert!(
+            j.comptes.changements >= 2,
+            "téléphone {k} : {:?}",
+            j.comptes
+        );
+        assert_eq!(j.panne, None, "téléphone {k}");
+    }
+    assert!(
+        gestes(&s) > gestes_avant,
+        "les téléphones rejouent devine par la page"
+    );
+    let a = s.autorite.as_ref().expect("l'autorité").comptes();
+    assert_eq!(a.changements, 1, "{a:?}");
+    s.calmer();
+    let historique = s.relais.historique();
+    let h = verifier_l_historique::<InstantaneWasm>(&s.cle_de_garde(), s.salle(), &historique)
+        .expect("la chaîne de la soirée");
+    assert_eq!(h.changements, 2, "{h:?}");
+    assert_eq!(h.en_double, Vec::<u64>::new());
+    assert_eq!(s.accuses_non_ecrits(&h), Vec::<String>::new());
+    s.comparer_a_la_garde().expect("la garde reprend devine");
+}
+
+/// Le nom du jeu que joue la soirée.
+fn nom<M: FnMut() -> FabriqueWasm>(s: &Soiree<FabriqueWasm, M>) -> Option<String> {
+    s.autorite
+        .as_ref()
+        .and_then(|a| a.partie())
+        .map(|p| p.declaration().nom.as_str().to_owned())
+}
+
+/// Le pas définitif de la partie de la soirée.
+fn pas<M: FnMut() -> FabriqueWasm>(s: &Soiree<FabriqueWasm, M>) -> u64 {
+    s.autorite
+        .as_ref()
+        .and_then(|a| a.partie())
+        .map_or(0, |p| p.definitif().numero())
+}
+
+/// Les gestes que les téléphones ont envoyés par la page.
+fn gestes<M: FnMut() -> FabriqueWasm>(s: &Soiree<FabriqueWasm, M>) -> u64 {
+    s.joueurs
+        .values()
+        .map(|j| j.comptes.gestes_par_la_page)
+        .sum()
 }
 
 /// P18 et § 2.5 (lot 12) : un téléphone qui revient sans avoir rechargé dit le module
