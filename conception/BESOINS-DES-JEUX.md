@@ -4,6 +4,8 @@
 >
 > **Ce qui fait foi.** [`MANIFESTE.md`](../MANIFESTE.md) et [`CONTRAT.md`](../CONTRAT.md), puis [`INTERFACE.md`](INTERFACE.md). Un besoin qui revient dans deux jeux pèse plus lourd (MANIFESTE, « Une leçon monte d'un étage quand elle revient ») : le besoin 1 revient dans les trois.
 >
+> **Après le lot 7b de la phase 3** (le 2026-11-08) : les demandes des jeux restées ouvertes depuis le lot 7, et celles du lot 7b, sont rassemblées, **sans réponse**, dans « [Les demandes ouvertes après le lot 7b](#les-demandes-ouvertes-après-le-lot-7b--au-mainteneur) », chacune avec ce qu'elle coûterait et si elle demande une ABI nouvelle. Aucune n'est tranchée : c'est au mainteneur.
+>
 > **Mesures.** Chaque chiffre de carburant ci-dessous est mesuré le 2026-11-04 sur un Mac Apple Silicon (aarch64-apple-darwin), rustc 1.99.1, par `soiree-epreuve` (le carburant est compté par la réécriture : il est déterministe). Les modules des jeux mesurés sont ceux que leurs agents ont livrés (punchline `7ecb10a4…`, sidequest `a004867e…`, tier-list `a124bfd5…`), compilés contre le commun d'avant ces changements : ils gardent leurs contournements. Les budgets que juge E19 restent des points de départ, non mesurés.
 
 ## En une page
@@ -347,6 +349,194 @@ L'épreuve gagne E21, « Pages », et E19 juge chaque page sur une lecture divis
 - Pendant que l'écran de démarrage ou « Cliquer pour reprendre » couvre le jeu, aucune touche ne va au jeu, sauf F8 au commun. « Plein écran quitté » ne fait que le dire : le jeu reçoit ses touches.
 
 **Ce que chaque agent peut en tirer** : hors de Chrome, un geste qui ne s'annule que par Échap s'annule au second Échap (le premier rend le plein écran au navigateur ; le second, hors du plein écran, arrive au jeu), puis un clic sur le voile rend le plein écran. Un jeu qui veut mieux peut offrir le même geste par un bouton de sa scène ; ce n'est pas exigé.
+
+## Les demandes ouvertes après le lot 7b — au mainteneur
+
+> **Statut.** Rassemblées le 2026-11-08, par l'agent du commun, à la fin du lot 7b de la phase 3, depuis `games/punchline/BESOINS-COMMUN.md` (§ 11, § 12, § 13), `games/sidequest/BESOINS-COMMUN.md` (B12 à B20) et `games/tier-list/BESOINS-COMMUN.md` (§ 7, § 8, § 17 à § 21), dans l'état où les agents des jeux les ont laissés au lot 7b. **Aucune n'est tranchée** : ni accordée, ni refusée, ni différée. Pour chacune : ce que le commun fait aujourd'hui (lu dans son code à `bc56fec`, sauf mention), ce qu'elle coûterait, et si elle demande une ABI nouvelle. Les coûts sont estimés à la lecture du code, **non mesurés** ; « petit » veut dire une crate et ses tests, sans rejouer l'épreuve des jeux au-delà du plan court ; « moyen », plusieurs crates du commun ou un scénario du banc ; « lourd », un changement qui traverse le moteur, la garde ou le rendu.
+>
+> **Ce que coûte une ABI nouvelle, en soi.** L'ordre des variants et des champs de l'enveloppe est le format (`jeu_abi::enveloppe`, test `forme_figee`) : un champ ou un variant ajouté, même à la fin, fait monter `jeu_abi::ABI` (4 aujourd'hui) à 5. Le moteur refuse alors tout module en ABI 4 ; les trois jeux se recompilent, s'adaptent là où la forme les touche, et repassent leur épreuve au plan standard depuis leurs sources (PHASE-3, § 7, « Le plan court ou le plan standard » ; à la fin du lot 7b, le 2026-11-08, deux à la fois par le portillon, sous une charge de 1,5 à 2,9, des durées relevées et non mesurées au calme : Punchline 110 s, Tier list 232 s, Sidequest 589 s). Plusieurs demandes peuvent partager une seule montée. Le nouveau commun n'a encore aucune étiquette (question 19 : la première à la fin du lot 14) : aucun jeu publié ne dépend de l'ABI 4.
+>
+> Les besoins plus anciens qui restent ouverts (Punchline 3 et 6 ; Sidequest B2, B5, B7, B9 ; Tier list 5, 6, 9, 11, 12, 14) ont leur réponse plus haut (besoins 8, 14, 17 à 20) ; ils ne sont pas repris ici.
+
+### En une page
+
+| # | La demande | Jeux | ABI nouvelle ? | Coût estimé |
+|---|---|---|---|---|
+| D1 | Une coupe « entre les mots, et un mot trop long entre graphèmes » | Punchline § 12.1, Sidequest B19, Tier list § 21 | **oui** par une troisième `Coupe` ; **non** si `Coupe::Mots` change de sens | petit dans `mise-en-page` ; les trois jeux retirent leur borne |
+| D2 | La page du téléphone applique `Reglages::fond` (*un écart à INTERFACE, pas une demande nouvelle*) | Punchline § 13 | non | petit (`web/telephone`), plus un constat au banc |
+| D3 | L'avis d'un refus donné à la page | Punchline § 11.1, Sidequest B16 | **oui** | moyen |
+| D4 | Ce que valent les champs dans les locaux, écrit et tenu | Punchline § 11.2 | non | petit (documentation et tests de `salle::page`) |
+| D5 | Un champ qui s'enroule sur plusieurs lignes | Punchline § 11.3 (et besoin 17, Tier list § 9) | **oui** | moyen |
+| D6 | Les retours à la ligne du nom d'un bouton de la page | Punchline § 11.4 | non | petit (`web/telephone`) |
+| D7 | Le clavier et le focus sur la page | Punchline § 11.5 | non pour l'essentiel | petit (`web/telephone`) |
+| D8 | Les personnages, la pâte, le compte à rebours pressé, un nœud masqué | Punchline § 11.6 (besoin 20) | **oui** pour la pâte, le pressé et le nœud masqué | moyen |
+| D9 | L'option d'un `choix` montrée choisie avant tout toucher | Sidequest B12 | **oui** | petit, plus l'ABI |
+| D10 | Un choix multiple borné, où le dernier touché chasse le plus ancien | Sidequest B13 | **oui** | moyen |
+| D11 | La valeur de départ d'un champ | Sidequest B14 | **oui** | petit, plus l'ABI ; lié à D4 |
+| D12 | Un geste que la page envoie seule, une fois, à son arrivée | Sidequest B15 | **oui** | moyen |
+| D13 | La croix au clavier, et un bouton en son centre | Sidequest B17 | non pour le clavier ; **oui** pour le centre | petit ; moyen avec le centre |
+| D14 | Les animations de la page | Sidequest B18 | **oui** | moyen à lourd |
+| D15 | La police d'emoji (les 13 emoji des bulles, la couronne) | Sidequest B20, Punchline § 12.3 | non | petit une fois la police fournie ; attend la question 28 |
+| D16 | Les glyphes plus larges des polices de repli | Punchline § 12.2 (un constat, pas une demande) | non | petit (un pire cas ou une ligne du diagnostic) |
+| D17 | Un interligne dans `StyleTexte` | Tier list § 19 (non demandé pour lui seul) | **oui** | moyen |
+| D18 | L'allure d'un bouton de la télé, et la couleur du texte d'un `Champ` | Tier list § 20 | **oui** pour l'allure ; non pour la couleur du champ | moyen ; petit pour le champ |
+| D19 | Info-bulle, nom accessible, texte de remplacement ; une fenêtre fixe | Tier list § 7 | **oui** | moyen |
+| D20 | Le bot de l'épreuve nomme un sélecteur ; le monde dit des images non dessinées | Tier list § 8 | **oui** pour le sélecteur ; non pour les images | petit à moyen |
+| D21 | Un point de reprise sans le segment de données des assets | Tier list § 17 | non (le format de la garde change) | lourd |
+| D22 | La touche de diagnostic d'un jeu et le champ qui a le focus | Tier list § 18 | non | petit (une règle écrite) |
+
+Deux de ces demandes viennent de plusieurs jeux : D1 des trois, D3 de deux (MANIFESTE, « Une leçon monte d'un étage quand elle revient »).
+
+### D1. Une coupe « entre les mots, et un mot trop long entre graphèmes »
+
+**La demande.** `Coupe::Mots` laisse entier, donc déborder, un mot plus large que sa boîte ; `Coupe::Graphemes` coupe aussi les mots qui tiendraient. Les trois jeux veulent la coupe de `overflow-wrap: anywhere` de leurs anciennes pages : entre les mots, et entre deux graphèmes seulement le mot qui ne tient pas seul sur sa ligne. **En attendant**, chacun l'approche avec les deux coupes qui existent, d'après une borne calculée sur la chasse de ses polices : Punchline `ecran::MOT_LONG_MAX` (16 caractères), Sidequest `vues::coupe` et `vues::CHASSE_MAX` (« Ѡ », 2 740 sur 2 048), Tier list l'aperçu des tuiles en `Graphemes` (« d'u / ne »). Le prix, dit par les deux premiers : un texte qu'un seul mot trop long fait couper l'est partout, ses mots ordinaires compris ; et la borne devient fausse si une police de repli plus large entre (D15, D16).
+
+**Aujourd'hui.** `mise-en-page` coupe elle-même (`agencement.rs`) : aux occasions de UAX #14 (`unicode-linebreak`) en `Mots`, entre deux graphèmes en `Graphemes`, au plus tard possible ; le rendu dessine cet agencement tel quel (PHASE-3, § 2.9).
+
+**Ce qu'elle coûterait.** Deux chemins, au choix du mainteneur :
+- **une troisième valeur**, par exemple `Coupe::MotsPuisGraphemes`, dans `jeu-abi` (la scène) : **ABI 5** ; dans `mise-en-page`, une coupe de plus (les occasions de UAX #14, puis, dans un segment plus large que la ligne, les limites de graphème), ses tests de `tests/mesure.rs` ; E16 et le rendu n'ont rien d'autre à changer, puisqu'ils lisent l'agencement ;
+- **ou changer le sens de `Coupe::Mots`** pour qu'il coupe un mot trop long : pas d'ABI, une rupture de sens (au `CHANGELOG.md`) ; PHASE-3, § 2.9 (« En `Coupe::Mots`, un mot plus large que la boîte reste entier et déborde ») serait à réécrire ; le fautif `texte-qui-deborde` n'en dépend pas (son texte déborde en `Coupe::Graphemes` sur une seule ligne, `exemples/fautifs/src/socle.rs`).
+Dans les deux cas, chaque jeu retire sa borne et ses tests (`tests/mesure.rs` de Punchline rougit si la règle de `mise-en-page` change, c'est écrit dans `LOTS-PHASE-3.md`, « Lot 7b »), et repasse le plan standard.
+
+### D2. La page du téléphone applique `Reglages::fond`
+
+**La demande** (Punchline § 13). Le jeu donne à chaque vue la couleur du fond de sa page (`Reglages::fond` : la couleur du personnage, ou la pâte grise avant d'en avoir un) et choisit ses encres pour ce fond ; la page du commun garde son corps à #111, et les textes à l'encre sombre se lisent à peine (captures du lot 7b, `soiree/target/preuves/lot-7b/punchline/captures/`, hors dépôt). Le jeu ne contourne pas.
+
+**Aujourd'hui.** `MontreFil` porte déjà `reglages` jusqu'au téléphone, et `web/telephone` décode déjà `MontreFil` pour ses effets (`page.rs`, `effets`) ; il ne lit ni `fond`, ni `ecran_allume`, ni `orientation`.
+
+**Ce qu'elle coûterait.** Petit, **sans ABI** : poser `fond` sur le corps de la page à chaque vue reçue (et dire si les écrans du commun gardent le leur) ; un constat de plus au scénario `pages` du banc (la couleur du corps lue sur une vue qui donne un fond). `ecran_allume` reste `Non(ContexteNonSecurise)` tant que la page est servie en `http` (déjà dit au lot 12).
+
+**Rangée après la vérification du lot 7b** (2026-11-08). Celle-ci n'est pas une demande comme les autres : INTERFACE (§ 2.9) donne au jeu `Reglages::fond`, « la couleur de fond de la page », et la page du commun ne l'applique pas. C'est un écart du lot 12 à INTERFACE, écrit dans sa ligne (`PHASE-3.md`, § 7) : il se corrige dans le commun au premier lot qui touche la page, au plus tard avant la fiche de répétition du lot 14. Le mainteneur n'a à choisir que ce que gardent les écrans du commun. D'ici là, le passage de la vue de Punchline sans personnage à `Some(PATE_GRISE)` (lot 7b) n'a aucun effet visible.
+
+### D3. L'avis d'un refus donné à la page
+
+**La demande** (Punchline § 11.1 ; Sidequest B16 : « une erreur s'affiche dessous, sur le bon champ »). Le refus d'un geste part vers le téléphone en octets du jeu (`J::Avis`), mais ni `Recue` ni `Locaux` ne le donnent à `Jeu::page`, et le commun ne sait pas l'écrire (le texte est dans le jeu). Proposé par Punchline : que `Recue` porte le dernier avis reçu par ce téléphone, avec son pas, ou que le commun demande au module le texte d'un avis. Sidequest ajoute les états de la connexion (« Reconnexion… », « Hors ligne »), que seuls les écrans du commun connaissent.
+
+**Ce qu'elle coûterait.** **ABI 5** : un champ de plus dans `Appel::Page` ou `LocauxFil` (le dernier avis, ses octets et son pas ; et, si on la donne, la connexion) ; `jeu::Recue` le décode ; `web/telephone` et `salle::page` (le téléphone simulé) gardent le dernier avis ; E21 doit jouer des pages avec un avis, pour que leur validité et leur budget soient éprouvés. Moyen. Ce qu'on n'a pas regardé : quand un avis cesse d'être « le dernier » (à la vue suivante, au geste suivant).
+
+### D4. Ce que valent les champs dans les locaux, écrit et tenu
+
+**La demande** (Punchline § 11.2). La page suppose qu'un champ n'est dans les locaux qu'une fois touché depuis le chargement de la page, et qu'il y reste à travers un redessin et une reconnexion (PUN-40), pas un rechargement ; sinon une page rechargée déclarerait un brouillon vide et effacerait celui que la partie garde.
+
+**Aujourd'hui.** C'est ce que fait le code, lu, non tenu par un test qui le nomme : `salle::page::PageDuTelephone::taper` n'insère un champ qu'à la frappe, rien ne l'en retire, et les locaux vivent en mémoire de la page (un rechargement les vide).
+
+**Ce qu'elle coûterait.** Petit, **sans ABI** : écrire la règle dans la documentation de `Locaux::texte` (`jeu::page`) et de `LocauxFil`, et la tenir par un test dans `salle` (un champ jamais touché absent ; présent après un redessin et une reconnexion ; absent après un rechargement). À trancher avec D11 : une valeur de départ montrée dans un champ jamais touché.
+
+### D5. Un champ qui s'enroule sur plusieurs lignes
+
+**La demande** (Punchline § 11.3). Aux manches 1 et 2, le cahier veut un champ de trois lignes, qui s'enroule sans accepter de retour à la ligne ; la page de l'ABI 4 n'a que des champs d'une ligne (`SorteNoeudPage::Champ`), comme la scène de la télé depuis le lot 6 (`DefautScene::ChampMultiligne`). C'est voisin du besoin 17 (Tier list § 9 : un texte qui garde ses retours), différé ; les cahiers ne s'accordent pas sur le retour à la ligne (Sidequest le veut effacé, Tier list gardé).
+
+**Ce qu'elle coûterait.** **ABI 5** (un nombre de lignes dans `SorteNoeudPage::Champ`) ; `web/telephone` pose un `textarea` qui refuse Entrée ; E21 juge la validité. Moyen. Si le besoin 17 se rouvre en même temps, la règle du retour à la ligne est à trancher entre les deux cahiers.
+
+### D6. Les retours à la ligne du nom d'un bouton de la page
+
+**La demande** (Punchline § 11.4). En finale, un bouton de vote porte trois lignes séparées par `\n` dans son nom ; sans `white-space: pre-line`, elles se lisent d'un tenant.
+
+**Aujourd'hui.** `Page::bouton` garde le nom tel quel ; `web/telephone` ne pose pas de `white-space` sur ses boutons (la valeur du navigateur réduit `\n` à une espace).
+
+**Ce qu'elle coûterait.** Petit, **sans ABI** : `white-space: pre-line` sur le nom d'un bouton (et d'un maintenu, d'un texte ?) dans `web/telephone`, et un cas au scénario `pages` (un nom de trois lignes posé sur trois lignes). À dire dans la documentation de `Page::bouton`.
+
+### D7. Le clavier et le focus sur la page
+
+**La demande** (Punchline § 11.5). Le focus sur le premier champ ; la touche « suivant » puis « envoyer » (`enterkeyhint`) ; Entrée sans geste passe au champ suivant ; la majuscule en début de phrase pour une réponse, à chaque mot pour un prénom.
+
+**Aujourd'hui.** La majuscule suit déjà le `Clavier` du champ (`Prenom` : `autocapitalize="words"` ; `Texte` : `"sentences"`) ; `enterkeyhint` vaut toujours `"send"` ; Entrée sur un champ sans geste ne fait rien (`web/telephone`, `page.rs`, `touche`).
+
+**Ce qu'elle coûterait.** Petit, **sans ABI** : l'indication se déduit du champ (`"send"` s'il porte un geste sur Entrée, `"next"` sinon), et Entrée sans geste donne le focus au champ suivant dans l'ordre de la page. Le focus sur le premier champ au chargement : à constater, un navigateur de téléphone n'ouvre souvent pas le clavier hors d'un geste (lu, non constaté).
+
+### D8. Les personnages, la pâte, le compte à rebours pressé, un nœud masqué
+
+**La demande** (Punchline § 11.6, le besoin 20). Sans image déclarée, un personnage est une plaque de sa couleur à son nom ; la pâte et le compte à rebours « pressé » sous 10 s n'ont pas de vocabulaire ; la grille du départ, que le cahier garde « masquée et inactive », est retirée faute de nœud masqué. Rien ne rend la page injouable.
+
+**Ce qu'elle coûterait.** Le jeu peut déjà déclarer des images (`Page::image`, `Page::image_teintee`) ; la pâte (une texture de fond), un style « pressé » du compte à rebours et un nœud masqué demandent du vocabulaire dans `jeu-abi::page` : **ABI 5**, `web/telephone`, E21. Moyen.
+
+### D9. L'option d'un `choix` montrée choisie avant tout toucher
+
+**La demande** (Sidequest B12). Les locaux ne disent l'option qu'après un choix du joueur ; un `choix` ne porte pas l'option à montrer choisie, et le rendu montrera la première. Demandé : `SorteNoeudPage::Choix` qui porte l'option par défaut.
+
+**Ce qu'elle coûterait.** **ABI 5** (un champ de `SorteNoeudPage::Choix`), `Page::choix` qui le prend, `web/telephone` qui le pose, `valider_page` qui le borne. Petit hors de l'ABI. À dire : l'option par défaut entre-t-elle dans les locaux (comme un choix fait) ou non.
+
+### D10. Un choix multiple borné
+
+**La demande** (Sidequest B13). Deux accessoires, le troisième chassant le plus ancien ; la page met deux `choix` à la place.
+
+**Ce qu'elle coûterait.** **ABI 5** : une sorte de nœud ou un champ de `Choix` (le nombre d'options gardées) et, dans `LocauxFil`, une liste ordonnée d'options au lieu d'un `u32` ; `web/telephone`, `salle::page`, E21. Moyen.
+
+### D11. La valeur de départ d'un champ
+
+**La demande** (Sidequest B14). Le prénom prérempli (celui de l'app, sinon le dernier) ; le jeu met le prénom proposé en exemple, et « C'EST MOI ! » le porte tant que rien n'est tapé.
+
+**Ce qu'elle coûterait.** **ABI 5** (un champ `depart` de `SorteNoeudPage::Champ`), et une règle à écrire avec D4 : un champ prérempli jamais touché est-il dans les locaux ? Petit hors de l'ABI.
+
+### D12. Un geste que la page envoie seule, une fois, à son arrivée
+
+**La demande** (Sidequest B15, CAHIER § 6.4 : « la page rejoint seule »). Une page n'envoie un geste que par un bouton, un champ ou un tenu ; le jeu demande un appui sur « C'EST MOI ! » à la place.
+
+**Ce qu'elle coûterait.** **ABI 5** (un geste encodé dans `PageFil`, envoyé une fois par chargement de la page) ; l'autorité le revalide comme tout geste ; à écrire : ce que « une fois » veut dire à travers un rechargement et une reconnexion (la file des gestes non accusés survit au rechargement, `sessionStorage`). `web/telephone`, `salle::page`, E21. Moyen. Ou l'accepter tel quel : un appui.
+
+### D13. La croix au clavier, et un bouton en son centre
+
+**La demande** (Sidequest B17). Flèches, WASD et ZQSD pour la croix, Espace pour sauter ; le saut au centre de la croix.
+
+**Ce qu'elle coûterait.** Lire les touches pour la croix : `web/telephone` seulement, **sans ABI** (petit ; une touche ne sert que si le téléphone a un clavier). Un bouton au centre : **ABI 5** (une croix qui porte un enfant, ou un nœud de plus), moyen. Espace pour un bouton : un raccourci de bouton, **ABI 5** aussi, sauf règle fixe du commun.
+
+### D14. Les animations de la page
+
+**La demande** (Sidequest B18). Le héros qui saute ou glisse, l'avatar du saut qui bondit (0,32 s), la coche de « Message envoyé ».
+
+**Ce qu'elle coûterait.** **ABI 5** : un vocabulaire d'animation dans `StylePage` ou les nœuds (celui de la scène, `anime` et `Courbe`, pourrait servir de modèle), `web/telephone` qui l'applique en CSS, E19 qui n'en change pas (la page n'est pas rappelée pour animer). Moyen à lourd selon ce qu'on accepte.
+
+### D15. La police d'emoji
+
+**La demande** (Sidequest B20 : 13 emoji des bulles ; Punchline § 12.3 : la couronne « 👑 », 8 glyphes absents comptés par E16). C'est la question 28, ouverte depuis le lot 8 : aucune police d'emoji libre n'est sur la machine, et un téléchargement attend l'accord de l'hôte.
+
+**Ce qu'elle coûterait.** **Sans ABI** ; petit une fois la police fournie : elle entre dans `crates/mise-en-page/polices/` avec sa licence, juste après celle du commun dans les polices de repli (PHASE-3, § 2.9). Conséquence pour les jeux : la borne de Sidequest (`vues::CHASSE_MAX`) et celle de Punchline (`MOT_LONG_MAX`) supposent les chasses d'aujourd'hui ; une police d'emoji plus large les rendrait fausses (D1, D16). Le module des jeux ne change pas ; E16 change ce qu'il mesure (plan standard des trois jeux).
+
+### D16. Les glyphes plus larges des polices de repli
+
+**Le constat** (Punchline § 12.2, pas une demande de changement). Une lettre absente de Schoolbell se mesure dans une police de repli, jusqu'à 1,57 cadratin (Rubik) ; 80 de celles-là ne tiennent dans trois lignes d'aucune coupe à la plus petite taille d'une case. Aucun pire cas ne le dit.
+
+**Ce qu'il coûterait de le voir.** Petit, **sans ABI** : un pire cas du commun (un fautif) ou une ligne du diagnostic de la télé qui compte les textes mesurés dans une police de repli.
+
+### D17. Un interligne dans `StyleTexte`
+
+**La demande** (Tier list § 19, que le jeu ne demande pas pour lui seul). Le commun dessine une ligne à 1,2 fois la taille (`mise_en_page::INTERLIGNE`) ; le cahier de Tier list veut `40px/45px` pour le titre et `28px/1` pour la marque ; le jeu a pris 48 et 34 (écart au cahier, dit).
+
+**Ce qu'elle coûterait.** **ABI 5** (un champ de `StyleTexte`) ; `mise-en-page` (l'agencement, le cache), le rendu, la page d'un `EnPlace` (`line-height`), E16. Moyen.
+
+### D18. L'allure d'un bouton de la télé, et la couleur du texte d'un `Champ`
+
+**La demande** (Tier list § 20). Le commun dessine chaque `Bouton` de la télé sur un fond opaque avec son nom (`mise_en_page::bouton`, lot 9, « à revoir à la répétition ») : chez Tier list, il cache la roue et les flèches de chaque rang, la croix des fenêtres, **les quinze pastilles des réglages** et les boutons bleus du cahier. Le jeu ne dessine pas par-dessus. Proposé, au choix : un bouton dont le jeu dessine l'allure (une zone d'action nommée, que le commun ne peint pas), ou un style de bouton dans la scène. Et un `Champ` écrit en blanc sous `mix-blend-mode: difference` (`web/ecran`, `composants.rs`), mélange qui ne se fait pas avec la toile : sur le fond blanc du cahier, l'étiquette était invisible ; le jeu a pris un fond sombre.
+
+**Ce qu'elle coûterait.** L'allure : **ABI 5** (une variante de `ComposantVu::Bouton` ou un style), `web/rendu` et `web/ecran`, `mise-en-page` (E16 ne mesure pas encore le nom d'un bouton), moyen. La couleur du champ : sans ABI si le commun la choisit lui-même (une encre fixe sur un fond qu'il pose, au lieu du mélange), petit ; **ABI 5** si le jeu la donne. Vu en chemin, sans ABI : une `FormeEcran::Page` de 1 120 px dans une fenêtre plus étroite sort à droite sans défilement horizontal, et sa barre du haut n'a pas la largeur de la fenêtre (`web/ecran`).
+
+### D19. Info-bulle, nom accessible, texte de remplacement ; une fenêtre fixe
+
+**La demande** (Tier list § 7, ce qui reste après le lot 7). Une info-bulle (le nom entier d'une tuile, TL-29 ; « Ctrl/Cmd+Z »), un nom accessible, le texte de remplacement de l'image exportée ; et une fenêtre « fixe » sur un voile qui couvre l'écran, quand la page défile (`FormeEcran::Page`).
+
+**Aujourd'hui.** La ressource d'un `Lien`, que `partie::regles::images_citees` ne comptait pas au lot 7, est envoyée à la page depuis le lot 11 (`salle::ecran::images_citees` compte `ComposantVuFil::Lien { ressource, .. }`) : ce point est réglé.
+
+**Ce qu'elle coûterait.** **ABI 5** (des champs de nœud dans la scène, et une manière de dire « fixe » à un groupe ou une modale) ; `web/ecran` (attributs `title`, `aria-label`, `alt` sur les éléments posés ; une couche fixe au-dessus de l'espaceur) ; E1 ou E13 pour borner ces textes. Moyen.
+
+### D20. Le bot de l'épreuve nomme un sélecteur ; le monde dit des images non dessinées
+
+**La demande** (Tier list § 8). Le bot ne peut pas dire de quel sélecteur viennent ses fichiers (`ComposantBotFil::Fichiers` n'a pas de sélecteur) : le jeu garde, contre son cahier, qu'un seul JSON lâché est une restauration, sans quoi aucune restauration ne passerait par les soirées de l'épreuve. Et le rendu simulé de l'épreuve rend toujours zéro image non dessinée (`epreuve/src/fichiers.rs`) : l'avis TL-56 du jeu n'est jamais joué par l'épreuve.
+
+**Ce qu'elle coûterait.** Le sélecteur du bot : **ABI 5** (`ComposantBotFil::Fichiers` est dans l'enveloppe), plus la vérification du monde comme celle du cœur ; petit hors de l'ABI. Les images non dessinées : **sans ABI**, `epreuve` seulement (un rendu simulé sur quelques-uns en manque), petit ; il change ce que l'épreuve joue (plan standard des trois jeux).
+
+### D21. Un point de reprise sans le segment de données des assets
+
+**La demande** (Tier list § 17). Les polices déclarées sont dans le segment de données du module, donc dans chaque point de reprise : mesuré par le jeu le 2026-11-07 (`cargo test --test sauvegarde_lourde`), chaque point grossit de 786 432 octets ; plateau neuf, 323 584 → 1 110 016 octets hors des zones ; pire cas (M3), 17 625 088 → 18 411 520. Proposé : ne garder que ce qui diffère de la mémoire initiale du module, ou laisser hors de l'instantané les pages des assets. Punchline et Sidequest, qui déclarent aussi polices et images, y gagneraient de même.
+
+**Ce qu'elle coûterait.** **Sans ABI** pour les jeux, mais lourd : `moteur-commun` (`Instantane`), la relecture d'un point (le module doit être là pour retrouver la mémoire initiale), le format des cases de la garde (`VERSION_CASES`, octets figés de `salle/tests/garde.rs`), M3 à remesurer. À peser avec P8, la question 13 et la question 31 (le point de Tier list au pire, de 18 à 19,2 Mio dans le Worker) : sur ce pire cas, le gain est d'environ 4 %.
+
+### D22. La touche de diagnostic d'un jeu et le champ qui a le focus
+
+**La demande** (Tier list § 18). Le jeu a pris F2 plutôt que `KeyD` parce que le commun ne dit pas s'il cède la touche de diagnostic d'un jeu au champ qui a le focus.
+
+**Aujourd'hui.** La chaîne du clavier de la télé écarte un champ qui a le focus, sauf F8, toujours au commun (PHASE-3, § 2.9, « une seule chaîne du clavier ») ; le diagnostic de la télé n'est pas encore écrit dans `web/ecran` (aucune mention hors du son, lu).
+
+**Ce qu'elle coûterait.** Petit, **sans ABI** : écrire la règle (la touche de diagnostic d'un jeu cède au champ qui a le focus, ou non) dans PHASE-3, § 2.9 et dans la documentation de la déclaration, et la tenir par un test de `ecran::clavier` quand le diagnostic s'écrira.
 
 ## Les changements d'API, précisément
 

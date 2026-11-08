@@ -21,6 +21,16 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 7b : les jeux corrigent leurs pages et leurs textes
+
+Les trois jeux corrigent, dans leurs dépôts, les débordements que E16 a trouvés au lot 8 et ce que leur page montrait dans un navigateur (`conception/PHASE-3.md`, § 7, lot 7b ; `conception/LOTS-PHASE-3.md`, « Lot 7b »). **Le commun ne change pas** : ni son code, ni l'ABI (`jeu_abi::ABI` vaut 4), ni ce que l'épreuve joue ou juge. Après les trois jeux, depuis leurs sources, au plan standard, les trois rendent 0 (E16 : aucun débordement) ; le scénario `pages` est vert sur leurs trois modules dans Chrome et Firefox ; la référence du plan court revient à celle du lot 7 (Sidequest 0, Punchline 1 par E2 seul, Tier list 0).
+
+Ce que les jeux demandent encore au commun, depuis le lot 7 et à ce lot, est rassemblé **sans réponse** dans `conception/BESOINS-DES-JEUX.md`, « Les demandes ouvertes après le lot 7b » (22 demandes, chacune avec son coût estimé et l'ABI qu'elle demanderait) : au mainteneur de trancher. Deux reviennent dans plusieurs jeux : une coupe « entre les mots, et un mot trop long entre graphèmes » (les trois) et l'avis d'un refus donné à la page (Punchline et Sidequest).
+
+#### Passer à cette version
+
+Rien à changer pour un jeu. Ce que les jeux de la soirée ont appris, et qui vaut pour un autre : un pire cas se fait des caractères les plus larges de ses polices (lus dans `hmtx`), pas de « W » ; un mot plus large que sa boîte ne se coupe qu'en `Coupe::Graphemes` ; et une page du téléphone ne voit pas encore `Reglages::fond` (son corps reste #111 quelle que soit la vue : D2). *Après la vérification du lot 7b :* D2 est rangée comme un écart de la page à INTERFACE (§ 2.9), né au lot 12, à corriger dans le commun sans ABI au plus tard avant la fiche de répétition du lot 14 (`conception/PHASE-3.md`, § 7, ligne du lot 12) ; un jeu peut donc continuer à choisir ses encres pour le fond qu'il donne.
+
 ### Phase 3, lot 12 (fin) : changer de jeu, le singe qui partage le salon, le fil des natifs
 
 La fin du lot 12 (`conception/PHASE-3.md`, § 2.8, § 8.1, § 8.2 ; `conception/LOTS-PHASE-3.md`, « Lot 12, fin »). L'ABI ne change pas, ni les messages (`salle::fil::PROTOCOLE`, `salle::ecran::PROTOCOLE`), ni la forme des cases (`VERSION_CASES`), ni ce que l'épreuve joue ou juge : les modules gardent leur empreinte.

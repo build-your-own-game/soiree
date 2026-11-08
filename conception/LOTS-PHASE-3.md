@@ -3142,3 +3142,308 @@ M13, au calme : `MESURES-PHASE-3.md`, « Lot 12, fin, correction ». Le reste (M
 - La page du téléphone a deux crochets de plus en mode banc (`morceau`, `pire_cas`) et deux champs de plus dans son état (`retenu_repris`, `retenu_cle`).
 - Une mesure à 71 appareils se prend sans page de navigateur (`--telephones 71`), sinon la charge dépasse 3.
 - `cargo test --workspace` reconstruit `target/debug/soiree-banc` (autres fonctionnalités) : relever son sha256 après les tests, pas seulement à `construire`. Les contrôles par mutation changent les sources : rien d'autre ne tourne à côté d'eux.
+
+## Lot 7b — Les jeux corrigent leurs pages et leurs textes
+
+Chaque jeu, par son agent, dans son dépôt, en même temps (PHASE-3, § 7, ligne du lot 7b) ; chacun écrit sa part ci-dessous.
+
+### Tier list
+
+Fait le 2026-11-08, de 04 h 05 à 04 h 50 environ (UTC), par l'agent du jeu, dans `games/tier-list` seulement (branche `refonte`, `HEAD` `9827f39`), à côté des agents de Punchline et de Sidequest (le portillon partagé), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1, Chrome 156.0.8078.80, Firefox 158.0.1 ; Safari « pas exécuté »). Le commun n'est pas modifié (`bc56fec`, arbre propre à chaque preuve), sauf ce journal. Chaque cargo, chaque épreuve, chaque navigateur est passé par le portillon (`target/hote/lourd`), sauf des `cargo fmt` et `cargo update --offline`. Chaque navigateur et chaque relais lancés sont fermés. Rien n'est commité. Fichiers de travail : `target/travail/lot-7b/tier-list/` ; preuves : `target/preuves/lot-7b/tier-list/`.
+
+#### Ce qui est fait
+
+- **Le débordement que E16 a trouvé au lot 8** : la marque « TIER LIST » (28 px, `Lignes::Une`) dans une boîte de 28 px, une ligne de 33,6. Sa boîte fait maintenant 34 px, centrée dans la barre de 64 (`vue::ligne_du_commun(28)`, `vue::INTERLIGNE_DU_COMMUN` : 12 dixièmes, l'interligne de `mise-en-page`). E16 réussi : 1 151 textes mesurés, aucun débordement.
+- **Ce que la page montrait dans un navigateur, et que E16 ne voit pas** (la page servie par le relais du banc, vue dans Chrome et dans le navigateur de l'application) :
+  1. **Le titre rogné.** Un `EnPlace` de 40 px, que la page pose en `line-height: 1.2` sous `overflow: hidden`, dans 45 px par ligne (le 40/45 du cahier) : chaque ligne perdait 3 px. Le titre a maintenant 48 px par ligne (`vue::LIGNE_DU_TITRE`). Constaté : un titre de 500 « W » tient en 18 lignes de 48 px, la boîte exacte que le jeu lui donne (`scrollHeight` 864 = `clientHeight` 864).
+  2. **« Drop here to remove » invisible** : un nom rouge sur la poubelle rouge pleine. La poubelle est un bord rouge de 2 px sur le fond de la page, comme `#trash` dans `contenu/reference/style.css` (un nœud de plus).
+  3. **L'étiquette invisible dans les réglages** : le commun écrit un `Champ` en blanc, en `mix-blend-mode: difference`, et ce mélange ne se fait pas avec la toile (Chrome, WebGPU comme WebGL2 forcé ; de même dans le navigateur de l'application) ; sur le fond blanc du cahier, rien ne se lisait. Le fond de la zone de texte est sombre (`#111`, celui du champ de nom) : l'étiquette se lit. Écart au cahier, dit dans `BESOINS-COMMUN.md`, § 20.
+- **Ce qui retourne au commun, sans contournement** (`games/tier-list/BESOINS-COMMUN.md`) : § 19, l'interligne (un `StyleTexte` sans interligne : le 40/45 et le 28/1 du cahier restent hors d'atteinte) ; § 20, **l'allure d'un bouton** : le fond opaque et le nom que le commun dessine (`mise_en_page::bouton`) cachent la roue et les flèches de chaque rang, la croix, **les quinze pastilles des réglages** (on ne voit plus les couleurs qu'on choisit) et les boutons bleus du cahier ; le jeu pourrait dessiner son allure par-dessus (un clic vise le dernier bouton qui le contient, quoi qu'on dessine au-dessus), il ne le fait pas : ce serait contourner l'allure du commun, « à revoir à la répétition » (PHASE-3, annexe) ; et la couleur du texte d'un champ ; § 21, une coupe « par mots, puis par graphèmes dans un mot trop large » (l'aperçu d'une tuile coupe « d'u / ne »). Vu aussi : dans une fenêtre de moins de 1 120 px, la colonne des réglages des rangs sort à droite ; la barre du haut n'a pas toute la largeur de la fenêtre.
+- **Le scénario `pages`** : Tier list n'a pas de téléphone ; `pages` le dit « sans objet », et vert avec son contrôle négatif (rien à corriger, comme l'avait dit la fin du lot 12).
+- **`Cargo.lock`** mis à jour : les 27 paquets de `mise-en-page` (`cosmic-text` 0.19.0 et ce qu'elle tire), que l'épreuve depuis les sources y écrivait depuis le lot 8. Chaque version est celle du `Cargo.lock` du commun (comparé paquet par paquet : 0 écart) : `unicode-script` tenue à 0.5.8 et `yazi` à 0.2.1 (`cargo update --offline --precise`), leurs versions suivantes ayant moins de deux semaines (0.5.9 publiée le 2026-11-02, 0.2.2 le 2026-11-01, lu dans le registre en cache). L'épreuve depuis les sources ne réécrit plus le fichier (empreintes de début et de fin de `standard` identiques).
+
+#### Les tests qui le tiennent
+
+- `tests/partie.rs`, `les_lignes_tiennent_a_l_interligne_du_commun` (TL-55, à l'écran) : la part « hauteur » de E16 refaite en natif, et étendue aux textes en place (titre, étiquettes), sur les quatre pires cas et cinq écrans ordinaires.
+- `tests/partie.rs`, `aucun_texte_n_a_la_couleur_de_son_fond` : aucun texte de la couleur du rectangle sur lequel il se pose, sur chaque pire cas et le plateau ordinaire.
+- `tests/partie.rs`, `chaque_composant_qui_se_dessine_a_sa_boite` : 48 px pour une ligne de titre (au lieu de 45).
+- **Contrôles par mutation** (`controles.py`, chaque correction défaite le temps d'un essai) : **3 sur 3 rouges** (la marque à 28, le titre à 45, la poubelle pleine), sources remises.
+- Le fond sombre du champ des réglages n'a pas de test natif (ce serait tester une constante) : sa preuve est la capture `3-reglages.png`.
+
+#### Les vérifications, et l'index des preuves
+
+Un seul arbre de code pour toutes : Tier list `HEAD` `9827f39`, `git diff HEAD` hors `.md` **`49c033aa…`**, aucun fichier non suivi ; le commun `bc56fec`, aucun changement ; module `target/wasm32-unknown-unknown/module/tier_list_module.wasm` sha256 **`ae27434d…`**, BLAKE3 `1294a3e9…` (le même octet pour octet que celui que l'épreuve compile depuis les sources : même BLAKE3) ; `soiree-epreuve` `1edcdde5…`. Chaque dossier : `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt`, `empreinte-fin.txt` (par `empreinte.sh`, copié avec `preuve.sh`, `final-a.sh`, `final-b.sh`, `capture.sh`, `capture.mjs` et `controles.py`).
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `standard` | `lourd target/release/soiree-epreuve ../games/tier-list --json …/standard.json` | **code 0** ; E1 à E19 réussis ou sans objet (E2, E10, E11 sans objet), E20 pas exécuté (hors du plan), E21 sans objet (pas de téléphone) ; E16 : 1 151 textes, 0 débordement ; 206 s, charge 4,82 au plus |
+| `court` | `lourd target/release/soiree-epreuve --wasm <module> --court --json …` | code 3 (module seul : l'étape 1 n'est pas faite) ; **chaque contrôle réussi ou sans objet** : E16 réussi, comme la référence du lot 7 (Tier list 0 depuis ses sources) ; plus de E16 en échec (référence du lot 8) |
+| `e16` | `lourd target/release/soiree-epreuve --wasm <module> --controles E16 --json …` | code 3 (plan réduit, module seul) ; E16 réussi, 1 163 évaluations |
+| `pages` | `lourd target/debug/soiree-banc pages <module> --negatif target/wasm32-unknown-unknown/module/fautif_page_qui_deborde_module.wasm --navigateurs chrome,firefox --sans-construire` | **code 0** : Chrome et Firefox réussis ; Tier list « sans téléphone, sans objet » ; le contrôle négatif voit ses six débordements |
+| `capture` | `lourd capture.sh <module> …/captures` | **code 0** : la page vue dans Chrome 156 (`soiree-relais --banc --sans-reseau`, le paquet `c8c83348…`, `?bots=non`, « Jouer » cliqué où l'écran du commun le propose) : `captures/1-plateau-neuf.png`, `2-titre-a-sa-limite.png` et `2b-…-entier.png` (500 « W », aucun texte en place rogné), `3-reglages.png`, `4-tuiles-et-actions.png` (et `4b-ajout-actions-poubelle.png`, recadrée), `5-export.png` ; aucune erreur de la page ; `journal.txt` |
+| `tests` | `lourd cargo test --no-fail-fast` | code 0 : 100 réussis, 0 échec |
+| `clippy`, `clippy-wasm32` | `lourd cargo clippy --all-targets -- -D warnings` ; `… -p tier-list -p tier-list-module --target wasm32-unknown-unknown -- -D warnings` | code 0, 0 |
+| `fmt` | `cargo fmt --all -- --check` | code 0 |
+| `module` | `lourd sh -c "cargo build -p tier-list-module --target wasm32-unknown-unknown --profile module && shasum -a 256 …"` | code 0, `ae27434d…` |
+| `controles` | `python3 -I controles.py` | code 0 : 3 sur 3 rouges, sources remises (empreintes de début et de fin identiques) |
+
+Un premier passage de `standard` et des tests a été arrêté à la main (04 h 35) : clippy refusait l'arithmétique des deux nouveaux tests (`arithmetic_side_effects`, `map_unwrap_or`, `panic`) ; corrigés, tout a été relancé sur l'arbre final.
+
+**Le banc ne fait pas de capture d'écran** (aucun scénario n'écrit d'image de la page) : la capture vient de `capture.mjs`, qui prend la page que le relais du commun sert en mode banc, la pilote dans Chrome sans interface par CDP et l'écrit par `Page.captureScreenshot`. La page a aussi été regardée à la main dans le navigateur de l'application (1 280 × 900), avant la correction du champ des réglages. Firefox n'a pas été regardé (seulement joué par `pages`) ; Safari pas exécuté.
+
+#### Les mesures
+
+Aucune durée revendiquée (les durées du tableau sont celles de commandes sous une charge de 2,2 à 5,2). Du carburant, compté par la réécriture : la vue du pire cas le plus lourd 7 428 969, 8 762 369 avec le fixe, pour un budget de 10 312 500 (lot 7 : 7 426 116 et 8 759 516) ; une image, fixes compris, 4 212 839 au plus ; E15 : 336 222 octets vivants au plus au début de la soirée longue, 190 900 à la fin (comme au lot 7).
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **L'allure des boutons, la couleur d'un champ, l'interligne, la coupe par mots puis graphèmes** : au commun (`BESOINS-COMMUN.md`, § 19 à § 21). Tant que le bouton du commun est opaque, la fenêtre des réglages ne montre pas ses couleurs : le défaut le plus visible de Tier list sur la télé.
+- **Le 40/45 du titre et le 28/1 de la marque du cahier** : demandent un interligne dans le style ; 48 et 34 en attendant (écart au cahier, dit).
+- **Safari** : pas exécuté (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché).
+- **Firefox** n'a pas été regardé à l'œil : `capture.mjs` ne parle que CDP.
+- `CAHIER.md` n'est pas modifié : les écarts (48 px, le fond sombre du champ) sont dits dans `BESOINS-COMMUN.md`.
+
+#### Ce que le lot suivant doit savoir
+
+- La référence du plan court de Tier list revient à celle du lot 7 : chaque contrôle réussi ou sans objet (code 0 depuis les sources ; code 3 par `--wasm`, faute d'étape 1).
+- Le module de Tier list change : sha256 `ae27434d…`, BLAKE3 `1294a3e9…` (`84315a1b…` aux lots 7 à 12). Une épreuve ou un scénario qui le prend dans `target/modules-figes/` doit le reprendre.
+- `Cargo.lock` de Tier list porte maintenant `mise-en-page` et ses dépendances, aux versions du commun ; une épreuve depuis ses sources ne le réécrit plus.
+- Pour regarder la page : `target/travail/lot-7b/tier-list/capture.sh <module> <dossier>` (le relais du banc sur le port 7941, Chrome sans interface, six captures). Un outil de travail hors dépôt ; un scénario de capture dans le banc serait sa place.
+
+### Sidequest
+
+Fait le 2026-11-08, de 04 h 10 à 05 h 00 environ (UTC), par l'agent du jeu, dans `games/sidequest` seulement (branche `refonte`, `HEAD` `229199b`), à côté des agents de Punchline et de Tier list (le portillon partagé), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1, Chrome 156.0.8078.80, Firefox 158.0.1 ; Safari « pas exécuté »). Le commun n'est pas modifié (`bc56fec`, `diff HEAD` hors `.md` vide à chaque preuve), sauf ce journal. Chaque cargo, chaque épreuve, chaque navigateur est passé par le portillon (`target/hote/lourd`), sauf des `cargo fmt`, `cargo check -p sidequest` et deux `cargo clippy -p sidequest` de quelques secondes pendant le travail. Chaque navigateur et chaque relais lancés sont fermés (par le banc et par l'outil de capture). Rien n'est commité. Fichiers de travail : `target/travail/lot-7b-sidequest/` ; preuves : `target/preuves/lot-7b/sidequest-*`.
+
+#### Ce qui est fait
+
+- **Les quatre débordements que E16 a trouvés au lot 8** (la question de 180 « W » d'un seul mot au tableau, pires cas 2 à 4 ; le moment de la partie qui la cite, pire cas 5) : `Coupe::Mots` laisse entier un mot plus large que sa boîte. **Chaque texte variable de la télé choisit sa coupe** (`vues::coupe`) : la question au tableau, les réponses au sol, la bulle et le moment de la partie se coupent entre les mots si, coupés ainsi, ils tiennent sûrement à la plus petite taille de leur `Taille::Budget`, sinon entre deux graphèmes. Le jeu ne mesure pas : chaque caractère compte pour la plus large chasse de la police du commun (« Ѡ », 2 740 sur 2 048, `vues::CHASSE_MAX`), une espace ne coupe qu'entre deux lettres ou chiffres (là, UAX #14 permet toujours une coupe), les lignes se remplissent au plus tard comme dans `mise-en-page`. Tout texte des deux paquets garde ses mots entiers (CAHIER § 8.1, SQ-46) ; seul un texte qu'un mot trop long ferait déborder est coupé entre graphèmes (SQ-44). La bulle, toujours coupée entre graphèmes jusqu'ici, garde ses mots quand elle le peut.
+- **Les pires cas étaient trop doux, et le sont moins** (`epreuve.rs`) : ils écrivaient « W » (1 933) et « M » (1 706), quand la police a plus large. Le prénom et la bulle (encrés, tels quels) sont en « @ » (2 079, le plus large caractère encré) ; la question au tableau et les réponses au sol (en capitales) en « ﬄ », dont la capitale « FFL » fait 3 641 (un point de code y devient trois) ; le moment de la partie (tel quel) en « Ѡ » (2 740). Le tableau s'éprouve sous trois formes, une par écran qui le montre : un seul mot de 180 points de code, coupé entre graphèmes (`Question`) ; la plus longue question que la coupe laisse entière, des mots de 37 et 1 « Ѡ » sur sept lignes à la taille 14 (`Pause`) ; une échelle aux bornes les plus larges, comptes compris, dans ses bandes de 200 px (`Resultats`). La Fin a trois premiers à égalité (la plus longue annonce). Ces pires cas plus durs ont montré **deux débordements que ceux du lot 8 cachaient** : 80 « @ » ne tiennent pas en trois lignes dans une bulle, ni la plus longue borne d'une échelle en deux lignes dans sa bande. La bulle et les réponses prennent autant de lignes que leur boîte en tient (`Lignes::Libre` : 6 et 4 à la taille minimale). Le moment de la partie reste à `AuPlus(3)` : il tient (vu par E16).
+- **Le signe de la pause** « Ⅱ » (U+2161, absent de la police du commun : la télé en dessinait une boîte, le seul glyphe absent que comptait E16) est dessiné en deux barres.
+- **Le scénario `pages`** : rien à corriger (la fin du lot 12 l'avait dit vert) ; rejoué sur le module nouveau (le prénom des pires cas a changé) : vert.
+- **La page vue dans un navigateur** : par les pièces du banc (le relais en mode banc, la page du téléphone, ses crochets `__banc.morceau` et `__banc.pire_cas`), avec l'outil de travail de Punchline copié et réduit à une capture par pire cas (`target/travail/lot-7b-sidequest/capture`) : Chrome sans interface, 390 × 844, rapport 2 ; 355 vues jugées, 0 débordement ; cinq captures (les pires cas 0, 2, 3, 4, 5 ; le 1 n'a que des vues déjà vues), dans `target/preuves/lot-7b/sidequest-capture-390x844/png/`, par exemple `vue-213-pire-cas-4-appareil-1-390x844.png` (la manette aux résultats : le prénom de 18 « @ » tient sur une ligne, « En ligne · A1B2C3D4 », « Résultats : regarde la TV », la croix, l'avatar du bouton de saut, le message). Seule la manette s'y voit : chaque appareil d'un pire cas a un personnage, le sélecteur n'est pas un pire cas (il est vu dans `soiree --pages`, lot 12).
+- **Ce qui retourne au commun, sans contournement** (`games/sidequest/BESOINS-COMMUN.md`) : **B19**, une coupe « entre les mots, et un mot trop long entre graphèmes » (`overflow-wrap: anywhere`) ; en attendant, `vues::coupe` choisit l'une des deux coupes qui existent, d'après sa borne (prix : un texte coupé entre graphèmes l'est partout, ses mots ordinaires compris). Tier list demande la même (§ 21) : un besoin de deux jeux. **B20**, les 13 emoji que la police de l'original encre pour les bulles, dessinés comme des boîtes tant que la question 28 (police d'emoji) n'est pas réglée.
+
+#### Les tests qui le tiennent
+
+Dans `crates/sidequest/src/tests.rs` :
+- `la_plus_large_chasse_est_celle_de_la_police_du_commun` (SQ-44) : `vues::CHASSE_MAX` relue dans `LiberationSans-Regular.ttf` du commun (par son chemin ; tables `head`, `hhea`, `hmtx`, `cmap` Unicode au format 4, la seule), pour tout point de code, glyphe absent compris ;
+- `les_pires_cas_prennent_les_caracteres_les_plus_larges` (SQ-44) : « @ », « ﬄ » (en capitale, avec `char::to_uppercase` de Rust) et « Ѡ » sont les plus larges, chacun pour ce qu'en fait la télé, pour tout point de code ;
+- `les_paquets_gardent_leurs_mots_entiers` (SQ-46, CAHIER § 8.1) : chaque question des deux paquets au tableau, chaque réponse dans sa zone avec « · 71 · +1 », coupées entre les mots ;
+- `la_coupe_entre_les_mots_seulement_quand_elle_tient` (SQ-44, SQ-46) : 37 « Ѡ » oui, 38 non ; le signe isolé reste avec son mot ; sept lignes oui, huit non ; `Une`, `AuPlus`, la hauteur.
+
+Et **E16** sur les pires cas nouveaux. Les contrôles négatifs (`target/travail/lot-7b-sidequest/mutations.py`, preuve `sidequest-controles`) : 8 mutations, chacune rouge, la source remise et vérifiée par son sha256. E16 en échec sur la coupe forcée entre les mots au tableau (pires cas 2 et 4, une ligne de 4 480 unités), dans la bulle (pire cas 1), le moment (pire cas 5) et les réponses (pire cas 4), et sur la bulle à trois lignes (« 4 lignes, pour 3 permises ») et les réponses à deux (« 3 lignes, pour 2 permises ») ; `la_coupe_entre_les_mots_seulement_quand_elle_tient` rouge sur la chasse de « W » au lieu de « Ѡ » et sur une espace devant « ? » comptée pour une coupe.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7b/sidequest-*/` (hors dépôt ; `commande.txt`, `sortie.txt`, `code.txt`, `empreinte.txt`, `empreinte-fin.txt` ; scripts `target/travail/lot-7b-sidequest/preuve.sh` et `empreinte.sh`). **Toutes les preuves ont la même empreinte de code** : le commun `bc56fec`, `diff HEAD` hors `.md` vide ; Sidequest `229199b`, `diff HEAD` hors `.md` `2d05eb25159bb6aa`, aucun fichier non suivi ; le module `e80b86a9cf017d650865f67e8de1faef601850b570894b627d26b413e8b75430`, 749 827 octets (738 744 octets, `62043526…`, aux lots 7 à 12). (`BESOINS-COMMUN.md` et ce journal ont été écrits pendant et après : le `diff` entier change, pas celui hors `.md`.)
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `sidequest-fmt` | `cargo fmt --all -- --check` | code 0 |
+| `sidequest-clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `sidequest-clippy-wasm32` | `lourd cargo clippy -p sidequest -p sidequest-module --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `sidequest-module` | `lourd cargo build -p sidequest-module --target wasm32-unknown-unknown --profile module` | code 0, le module ci-dessus |
+| `sidequest-test-workspace` | `lourd cargo test --workspace --no-fail-fast` | code 0 : 88 tests (13 unitaires, 4 `avatars`, 3 `module`, 14 `page`, 7 `physique`, 47 `regles`) |
+| `sidequest-controles` | `python3 -I mutations.py` | 8 mutations, 8 rouges |
+| `sidequest-capture-390x844` | `lourd capture-pages-sidequest <module> <png> 390 844` | code 0 : 355 vues jugées dans Chrome, 0 débordement, 5 captures |
+| `sidequest-pages` | `lourd /usr/bin/time -l target/debug/soiree-banc pages <module> --negatif target/wasm32-unknown-unknown/module/fautif_page_qui_deborde_module.wasm --navigateurs chrome,firefox --sans-construire` | **code 0** : Chrome et Firefox, 6 pires cas, 355 vues distinctes, 1 065 pages jugées aux trois tailles, aucun débordement ; le contrôle négatif vu (6 débordements) ; 9 s ; 0,77 Go |
+| `sidequest-standard` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/sidequest --json …/sidequest-standard.json` | **code 0**, plan standard depuis les sources : E1 à E19 et E21 réussis, E20 pas exécuté (hors du plan) ; **E16 : 426 textes, 0 débordent, 0 glyphe absent** ; 551 s ; 2,33 Go ; charge 5,00 au départ, 3,33 à la fin |
+| `sidequest-court` | `lourd target/release/soiree-epreuve ../games/sidequest --court --json …/sidequest-court.json` | code 0, plan court depuis les sources : chaque contrôle réussi, E20 pas exécuté ; 150 s |
+
+`soiree-epreuve` est le binaire de la fin du lot 12 (`1edcdde5…`), non reconstruit.
+
+#### Les mesures
+
+Aucune. Les durées ci-dessus sont celles de commandes sous une charge de 2,3 à 5,4 (les autres agents) : pas des mesures. La mémoire résidente (`/usr/bin/time -l`) : 2,33 Go pour le plan standard (2,32 au lot 8), 0,77 Go pour `pages`.
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **Safari** : pas exécuté (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché).
+- **La coupe voulue** (B19) n'existe pas dans le commun : la borne de `vues::coupe` la remplace, avec son prix (dit plus haut). Elle suppose la police du commun seule : une police de repli plus large (celle d'emoji, question 28) la rendrait fausse sans que le test de la chasse le voie.
+- **Les pires cas ne couvrent que ce que E16 voit** : un pire cas par écran. La coupe entre les mots d'un texte que la borne accepte n'est éprouvée par E16 qu'à travers la forme `Pause` (sept lignes de « Ѡ ») ; le reste l'est par la borne elle-même (les tests). Les graphèmes faits de plusieurs glyphes larges (une suite de jamos, un emoji fait de liants), qu'aucune coupe ne coupe, ne sont pas dans les pires cas : un tel graphème de 180 points de code déborderait à toute coupe ; ni le jeu ni le commun ne le bornent aujourd'hui.
+- **Les 13 emoji des bulles** se dessinent comme des boîtes (B20, question 28).
+- Le `CAHIER.md` n'est pas changé : la pause montre toujours le signe « Ⅱ », en deux barres.
+
+#### Ce que le lot suivant doit savoir
+
+- La référence du plan court de Sidequest revient à celle du lot 7 : code 0 depuis les sources, chaque contrôle réussi (E20 hors du plan) ; par `--wasm`, code 3 (faute d'étape 1), E16 réussi.
+- Le module de Sidequest change : sha256 `e80b86a9…`, 749 827 octets (`62043526…` aux lots 7 à 12). Une épreuve ou un scénario qui le prend dans `target/modules-figes/` doit le reprendre.
+- Les pires cas de Sidequest sont nouveaux (prénoms et bulles en « @ », questions en « ﬄ », moment en « Ѡ », trois premiers à égalité) : ce que E16, E21, `pages` et `dessin` en voient change. La scène de la télé change aussi en soirée : le `StyleTexte` de la question, des réponses, de la bulle et du moment porte la coupe que `vues::coupe` choisit (entre les mots pour tout texte des paquets, quand la bulle était toujours entre graphèmes), et les réponses et la bulle ont `Lignes::Libre` ; la pause dessine deux rectangles au lieu d'un texte.
+- Pour regarder la page : `target/travail/lot-7b-sidequest/capture/target/debug/capture-pages-sidequest <module> <dossier> [largeur hauteur]` (Chrome sans interface, une capture par pire cas, chaque vue jugée). Un outil de travail hors dépôt.
+
+### Punchline
+
+Fait le 2026-11-08, de 04 h 00 à 05 h 05 environ (UTC), par l'agent du jeu, dans `games/punchline` seulement (branche `refonte`, `HEAD` `f84b86f`), à côté des agents de Sidequest et de Tier list (le portillon partagé), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1, Chrome 156.0.8078.80, Firefox 158.0.1 ; Safari « pas exécuté »). Chaque cargo, chaque épreuve, `soiree-banc pages`, l'outil de capture et les contrôles négatifs sont passés par le portillon, sauf des `cargo check -p punchline` et `cargo fmt` de quelques secondes et des E1+E16 sur un module seul (moins d'une seconde). Le commun n'est pas modifié (`bc56fec`, propre). Rien n'est commité. Chaque navigateur lancé a été fermé (par le banc, ou par l'outil de capture, qui tue Chrome et efface son profil).
+
+#### Ce qui est fait
+
+- **Les neuf débordements que E16 a trouvés au lot 8** (« Lot 8 », « Les débordements des trois jeux ») :
+  - **Le mot de 80 « W » sans espace dans les cases des bulles** (pires cas 4 à 7) : en `Coupe::Mots`, un mot plus large que sa boîte reste entier (PHASE-3, § 2.9). Les cases se coupent maintenant entre les mots, **sauf si un groupe insécable dépasse 16 caractères** (`ecran::MOT_LONG_MAX`, `ecran::coupe_d_une_case`) : la case entière se coupe alors entre graphèmes. Un mot sans lettre ni chiffre (« ! », « : ») colle à ses voisins, comme la coupe du commun colle le signe isolé (SQ-46). La borne est calculée, écrite en tête de `MOT_LONG_MAX` : à la plus petite taille d'une case (18), une ligne de 600 fait 33,3 cadratins, « Æ », la lettre la plus large de Schoolbell (lue dans `hmtx`), 0,882, l'espace 0,310 ; coupées entre les mots, trois lignes tiennent 80 lettres tant que 1,764 × L ≤ 29,4, soit L ≤ 16. Une recherche au hasard sur ce même modèle ne trouve un débordement qu'à partir de L = 19 (trois témoins dans le test). Le mot de 80 « W » tient maintenant à 26,8 (bulle de 600 × 280) et 25,8 (case de finale, 600 × 93), sur trois lignes.
+  - **Le titre de l'égalité à huit** (pire cas 9, 122 caractères sur une ligne de 1 200) : trois lignes au plus (`Lignes::AuPlus(3)`), boîte de 1 200 × 125 (au lieu de 1 200 × 90), qui descend jusqu'à la couronne de la plus haute marche ; il tient à 34,1 sur trois lignes ; « Léa gagne ! » reste à 80.
+  - **Le pire cas « des mots larges »** est passé de dix mots de 7 « W » à des mots de 16 « Æ » (la borne même) : 21,0 sur trois lignes, coupé entre les mots. Il est plus dur que l'ancien, pas plus facile.
+- **Un glyphe absent** : la pastille de l'écriture « ✓ », qu'aucune police connue ne dessine (4 des 12 glyphes absents de E16), devient « ● » (dans la police du commun ; le cahier dit « pastille jaune »). Restent 8 glyphes absents, les couronnes « 👑 » : la police d'emoji du commun (PHASE-3, question 28).
+- **La page vue dans un navigateur.** `soiree-banc pages` est vert (61 vues de pire cas, 183 pages aux trois tailles, Chrome et Firefox ; le scénario du lot 12 ne demandait rien à corriger chez Punchline). Pour la regarder, un outil de travail hors dépôt (`target/travail/lot-7b/punchline/capture/`, `capture-pages-punchline <module> <sortie> [largeur hauteur]`), fait des pièces du banc : `banc::pages::preparer`, le relais en mode banc, la page du téléphone du dernier paquet `web/`, Chrome sans interface en émulation de téléphone, les crochets `__banc.morceau` et `__banc.pire_cas`, puis `Page.captureScreenshot` pour chaque vue distincte (le banc ne garde aucune image). Vu : aucune page ne déborde, mais **les textes à l'encre sombre du jeu (titres, consignes, libellés) se lisent à peine sur le fond #111 de la page du commun**. Cause : la page du commun (`web/telephone`) n'applique pas `Reglages::fond`, que le jeu donne à chaque vue (la couleur du personnage). Rien n'est contourné dans le jeu (pas de plaque sous chaque texte) ; c'est la demande du § 13 de `BESOINS-COMMUN.md` du jeu. Le jeu corrige sa part : avant d'avoir un personnage, sa vue demandait aucun fond (`None`), donc le #111 du commun, sous une encre sombre ; elle demande maintenant la pâte grise du cahier (§ 6).
+- **`BESOINS-COMMUN.md`** du jeu : § 12 (les textes mesurés ; la demande d'une coupe qui ne coupe un mot que s'il ne tient pas seul, `overflow-wrap: anywhere`, qui rendrait `MOT_LONG_MAX` inutile : un changement de la forme de la scène, donc de l'ABI ; les glyphes des polices de repli, jusqu'à 1,57 cadratin, qu'aucune coupe ne borne ; la couronne), § 13 (la page n'applique pas `Reglages::fond`, ni `ecran_allume`), et « Ce que dit l'épreuve » refait. `AGENTS.md` du jeu : la table des tests, le choix des textes de la télé, la page vue, les chiffres du plan standard.
+- **Une dépendance de test** : `mise-en-page` du commun, par chemin (la règle « même commun » l'admet), pour mesurer dans les tests du jeu comme E16. Le `Cargo.lock` du jeu gagne ses 24 crates (27 paquets avec leurs versions), **aux versions du `Cargo.lock` du commun** (comparé paquet par paquet), dont `unicode-script` 0.5.8 et `yazi` 0.2.1 tenues par `cargo update --precise` (Cargo prenait 0.5.9 et 0.2.2, de moins de deux semaines) ; rien n'est téléchargé (`--offline`).
+
+#### Les écarts
+
+1. **La règle de coupe des bulles est une approximation**, avec les deux coupes qui existent, de la coupe de l'ancien jeu (`overflow-wrap: anywhere`) : une case qui a un seul groupe de plus de 16 caractères se coupe tout entière entre graphèmes, ses autres mots compris. Ce n'est pas un vocabulaire inventé ni une mesure lue par le jeu (le jeu compte des caractères) ; la borne vient de la chasse des polices, calculée hors du jeu et tenue par les tests. Un relecteur peut la voir comme un contournement : la coupe juste est demandée au commun (§ 12 du `BESOINS-COMMUN.md` du jeu).
+2. **La règle ne borne pas les glyphes des polices de repli** : une lettre absente de Schoolbell se mesure dans une police plus large (jusqu'à 1,57 cadratin, Rubik) ; 80 de celles-là ne tiennent dans aucune coupe. Aucun pire cas ne le dit ; c'est écrit au § 12.
+3. **Les pires cas de la page n'ont pas d'écran de vote à boutons** (dans le pire cas du vote, chacun a déjà voté) : les boutons de vote se voient dans `soiree --pages` (lot 12), pas dans les captures de ce lot.
+4. PHASE-3 n'a pas été trouvé faux sur la part de Punchline ; il n'est pas modifié.
+
+#### Les tests qui le tiennent
+
+- `tests/mesure.rs` (nouveau ; les textes de la scène mesurés par `mise-en-page` avec les polices du jeu dans l'ordre de la déclaration, comme E16) : `une_reponse_tapee_tient_dans_sa_bulle_pun54` (proptest, 64 cas : trois réponses de mots de 1 à 24 lettres parmi les plus larges de Schoolbell, avec des signes isolés, jouées jusqu'au premier duel, chaque texte de la scène mesuré ; PUN-54) ; `des_mots_de_seize_lettres_au_plus_se_coupent_entre_les_mots` (proptest, 64 cas) ; `un_mot_trop_long_se_coupe_entre_deux_graphemes` (le mot de 80 « W », un mot de 17) ; `un_signe_isole_compte_avec_son_mot_sq46` ; `chaque_texte_des_pires_cas_tient_pun54` (E16 avant l'épreuve) ; `aucun_glyphe_absent_hors_la_couronne` ; `sans_borne_la_coupe_entre_les_mots_deborderait` (trois témoins de 80 caractères au plus, en mots de 19 et 20 « Æ », qui débordent coupés entre les mots et tiennent par la règle). Une fois, à la main, les deux proptests à 4 096 cas chacun : verts (5,4 s ; le fichier remis à 64 cas ensuite).
+- **Les contrôles négatifs** (`target/travail/lot-7b/punchline/controles.py`, six mutations de `ecran.rs`, chacune rouge par son test nommé et pour sa raison, la source remise et vérifiée par son sha256, la graine qu'un proptest rougi garde effacée) : la borne relâchée à 20 (`sans_borne…` : « (Mots) : »), toujours entre les mots (`un_mot_trop_long…`), toujours entre graphèmes (`des_mots_de_seize…`), le titre remis sur une ligne de 90 (`chaque_texte_des_pires_cas…` : « Égalité »), « ✓ » remis (`aucun_glyphe_absent…`), le signe isolé non collé (`un_signe_isole…`). Aux essais, une borne relâchée à 24, puis à 20, ne rougissait pas le pire cas (« 24 24 24 5 » et « 20 20 20 17 » tiennent : la dernière ligne prend deux mots) : les témoins de `sans_borne…` viennent de là, et c'est lui que la mutation vise.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7b/punchline/*/` (hors dépôt ; `commande.txt`, `sortie.txt`, `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` par `target/travail/lot-7b/punchline/empreinte.sh` : pour le commun et Punchline, `HEAD`, sha256 de `git diff HEAD`, de `git diff HEAD` hors des `.md`, des fichiers non suivis, et le sha256 du module), lancées à la suite par `target/travail/lot-7b/punchline/final.sh` de 04 h 42 min 34 s à 04 h 55 min 11 s (`final.log`). **Les 12 preuves ont la même empreinte du code au départ et à la fin** : le commun `bc56fec`, aucune modification ; Punchline `f84b86f`, `diff HEAD` hors `.md` `c8ba92030d004436`, non suivi `crates/punchline/tests/mesure.rs` (`53f4a9a83f71255a`) ; module sha256 `4c3ebf10…` (943 772 octets, BLAKE3 `51bf9b6b…`). Seuls des `.md` ont changé après (`BESOINS-COMMUN.md` et `AGENTS.md` du jeu, ce journal). `modules.txt` : les sha256 du module, de `soiree-epreuve` (`1edcdde5…`, celui du lot 12), de `soiree-banc` (`ff48ae01…`) et de l'outil de capture.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `jeu-fmt` | dans Punchline : `cargo fmt --all -- --check` | code 0 |
+| `jeu-clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `jeu-clippy-wasm32` | `lourd cargo clippy -p punchline -p punchline-module --target wasm32-unknown-unknown -- -D warnings` | code 0 |
+| `jeu-tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0 : 92 réussis** (85 au lot 7, et les 7 de `mesure.rs`), 0 échec, 0 ignoré ; 15 s ; 0,30 Go |
+| `jeu-module` | `lourd cargo build -p punchline-module --target wasm32-unknown-unknown --profile module` | code 0 ; 943 772 octets, sha256 `4c3ebf10…` |
+| `controles` | `lourd python3 -I target/travail/lot-7b/punchline/controles.py …/controles/mutations` | code 0 : les six mutations rouges pour leur raison (556 s, dont 505 pour la première, surtout à attendre une place du portillon : le script tient une place, chaque test en prend une autre) |
+| `construire-release` | `lourd cargo build --release -p epreuve --bin soiree-epreuve` | code 0, rien à refaire |
+| `e16-module` | `soiree-epreuve --wasm <module> --controles E1,E16` | code 3 (module seul, étape 1 pas faite : jamais 0) ; **E16 réussi** : 142 textes, 0 débordement, 8 glyphes absents ; E1 réussi |
+| `court-punchline` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/punchline --court --json …` | code 1, **E2 seul** (« une fin, mais aucune autre après la nouvelle partie ») : la référence du lot 7, rendue (E16 réussi) ; 40 s ; 1,25 Go |
+| `standard-punchline` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/punchline --json …` | **code 0** ; E16 réussi (142 textes, 0 débordement) ; E21 réussi (2 500 évaluations, 74 158 vues distinctes) ; E19 : une page au plus 728 878 unités ; 112 s ; 1,73 Go ; charge 2,69 au départ, 2,31 à la fin, 2,89 au plus |
+| `pages` | `lourd /usr/bin/time -l target/debug/soiree-banc pages <module> --negatif <fautif_page_qui_deborde> --navigateurs chrome,firefox,safari --sans-construire …` | **code 0** : Chrome et Firefox réussis (10 pires cas, 61 vues distinctes, 183 pages aux trois tailles, de 5 à 17 nœuds, aucun débordement ; le contrôle négatif vu, 6 débordements) ; Safari pas exécuté ; 9 s |
+| `capture` | `lourd target/travail/lot-7b/punchline/capture/target/release/capture-pages-punchline <module> …/captures 390 844` | code 0 : 61 captures PNG (`captures/vue-NN-pire-cas-I-appareil-N-390x844.png`), chacune sans débordement selon la page ; polices chargées |
+
+**Les captures jointes** (dans `target/preuves/lot-7b/punchline/captures/`) : `vue-08-pire-cas-0-appareil-9-390x844.png` (le prénom, avant d'avoir un personnage), `vue-00-pire-cas-0-appareil-1-390x844.png` (le salon de l'organisateur, huit prénoms de 12 « W »), `vue-27-pire-cas-3-appareil-1-390x844.png` (l'écriture de la finale, trois cases), `vue-38-pire-cas-4-appareil-3-390x844.png` (vote enregistré), `vue-53-pire-cas-9-appareil-1-390x844.png` (le podium, « On rejoue ! »). On y voit le défaut du § 13 : l'encre sombre sur #111.
+
+#### Les mesures
+
+Aucune mesure de temps dans ce lot : les durées ci-dessus sont celles de commandes sous une charge de 2,2 à 3,9 (le portillon). Le carburant (E19) est déterministe : une page du téléphone au plus 728 878 unités (846 390 au lot 7), médiane 72 323.
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **La coupe juste des bulles** (`overflow-wrap: anywhere`) : demandée au commun (vocabulaire de la scène, ABI) ; d'ici là, la règle de `MOT_LONG_MAX`.
+- **La lisibilité de la page** : au commun (`Reglages::fond` non appliqué) ; le jeu ne la contourne pas.
+- **La couronne** reste une boîte : la police d'emoji du commun (question 28).
+- **Safari** : pas exécuté (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché).
+- E20 n'est pas relancé : ni le relevé, ni le banc, ni le moteur ne changent, et la ligne du lot ne le demande pas.
+
+#### Ce que le lot suivant doit savoir
+
+- Le module de Punchline change : sha256 `4c3ebf10…`, BLAKE3 `51bf9b6b…` (`82669f77…` aux lots 7 à 12). Une épreuve ou un scénario qui le prend ailleurs doit le reprendre.
+- La référence du plan court de Punchline revient à celle du lot 7 : code 1, E2 seul.
+- `tests/mesure.rs` du jeu mesure comme E16 : le commun qui change la règle de `mise-en-page` (PHASE-3, § 2.9) le verra rougir dans le jeu, et `ecran::MOT_LONG_MAX` est à recalculer si l'interligne, la police de Schoolbell ou la taille d'une case changent.
+- `Cargo.lock` de Punchline porte `mise-en-page` et ses dépendances aux versions du commun ; à tenir quand le commun met à jour `cosmic-text` ou ce qu'elle tire.
+- Pour regarder la page d'un jeu : `target/travail/lot-7b/punchline/capture/` (un outil de travail hors dépôt, qui dépend de `banc` et `relais` par chemin ; `cargo build --offline --release` dans son dossier, par le portillon). Un crochet de capture dans `soiree-banc pages` le rendrait inutile.
+
+### Le commun, après les trois jeux
+
+Fait le 2026-11-08, de 04 h 57 à 05 h 15 environ (UTC), par l'agent du commun, après les parts des trois jeux ci-dessus, sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1, Chrome 156.0.8078.80, Firefox 158.0.1 ; Safari « pas exécuté »). **Le code du commun ne change pas** (`bc56fec`, `git diff HEAD` hors `.md` vide à chaque preuve) ; seuls changent des documents. Chaque commande lourde est passée par le portillon. Rien n'est commité. Fichiers de travail : `target/travail/lot-7b/commun/` ; preuves : `target/preuves/lot-7b/commun/`.
+
+#### Ce qui est fait
+
+- **La preuve de la ligne du lot, refaite sur l'arbre final, les trois jeux ensemble.** Les arbres des jeux sont, hors `.md`, ceux que leurs agents ont éprouvés (mêmes `HEAD`, mêmes empreintes de `git diff HEAD` hors `.md` : Punchline `c8ba92030d004436` avec `tests/mesure.rs` non suivi, Sidequest `2d05eb25159bb6aa`, Tier list `49c033aab75e20e6` ; mêmes modules). La ligne du lot demande la preuve « après les trois jeux » : elle est refaite d'une traite plutôt que relue, puisque les trois jeux avaient travaillé en même temps.
+  - **Plan standard, depuis les sources, les trois au code 0.** Punchline : E1 à E19 et E21 réussis, E20 pas exécuté (hors du plan) ; E16, 142 textes, 0 débordement, 8 glyphes absents (les couronnes « 👑 », question 28). Sidequest : E1 à E19 et E21 réussis, E20 pas exécuté ; E16, 426 textes, 0 débordement, 0 glyphe absent. Tier list : E1 à E19 réussis ou sans objet (E2, E10, E11), E20 pas exécuté, E21 sans objet (pas de téléphone) ; E16, 1 151 textes, 0 débordement, 10 080 glyphes absents (les idéogrammes de ses pires cas, que Liberation Sans n'a pas : PHASE-3, § 2.9, « Pas de CJK »).
+  - **`pages` sur les trois modules en une seule fois**, le paquet de la page reconstruit depuis les sources du commun (sans `--sans-construire`) : Chrome et Firefox réussis ; Punchline 10 pires cas, 61 vues, 183 pages jugées aux trois tailles ; Sidequest 6 pires cas, 355 vues, 1 065 pages ; Tier list sans téléphone, sans objet ; le socle 4 vues ; aucun débordement ; le contrôle négatif voit ses 6 débordements dans chaque navigateur. Safari pas exécuté (`safaridriver`).
+  - **Le plan court de Tier list depuis ses sources** (l'agent du jeu l'avait joué par `--wasm`, qui rend 3 faute d'étape 1) : code 0, la référence du lot 7. Ceux de Punchline (code 1, E2 seul) et de Sidequest (code 0) l'ont été depuis leurs sources par leurs agents, sur les mêmes arbres. **La référence du plan court revient à celle du lot 7** ; c'est écrit dans PHASE-3, § 7.
+  - **Chaque agent a vu sa page** : les captures sont dans `target/preuves/lot-7b/punchline/captures/` (61), `target/preuves/lot-7b/sidequest-capture-390x844/png/` (5) et `target/preuves/lot-7b/tier-list/captures/` (7) ; relu ici `vue-27-pire-cas-3-appareil-1-390x844.png` de Punchline : l'encre sombre du jeu sur le #111 de la page du commun (la demande D2).
+- **`conception/BESOINS-DES-JEUX.md`, « Les demandes ouvertes après le lot 7b »** : les 22 demandes des jeux restées ouvertes (Punchline § 11, § 12, § 13 ; Sidequest B12 à B20 ; Tier list § 7, § 8, § 17 à § 21), D1 à D22, chacune avec ce que le commun fait aujourd'hui (lu dans son code), ce qu'elle coûterait (estimé, non mesuré) et si elle demande une ABI nouvelle ; **aucune n'est tranchée**. En tête, ce que coûte une montée d'ABI en soi, et que plusieurs demandes peuvent la partager. Deux viennent de plusieurs jeux : D1 (la coupe « mots puis graphèmes », des trois) et D3 (l'avis d'un refus, de deux). Lu en chemin et dit : la ressource d'un `Lien` (Tier list § 7, « pour le lot 11 ») est envoyée à la page depuis le lot 11 (`salle::ecran::images_citees`) ; la majuscule de la page suit déjà le `Clavier` (Punchline § 11.5) ; D1 peut se faire sans ABI si `Coupe::Mots` change de sens, ce que le mainteneur peut préférer à une troisième coupe.
+- **PHASE-3.md**, § 7 : la ligne du lot 7b porte « écrit après le lot », et la référence du plan court « ramenée au lot 7b ». **CHANGELOG.md** : une section « Phase 3, lot 7b » (rien à changer pour un jeu ; les demandes ouvertes). `crates/README.md` et `AGENTS.md` du commun ne changent pas : rien de ce qu'ils disent ne change.
+
+#### Les écarts
+
+1. **« Capture du banc »** (ligne du lot) : le banc ne fait pas de capture d'écran ; les captures viennent d'outils de travail hors dépôt faits de ses pièces, dans Chrome seulement (Firefox n'est vu que par `pages`). Écrit dans la ligne du lot, PHASE-3, § 7.
+2. **La part du commun ne relance pas `cargo test --workspace` ni clippy du commun** : son code est celui de la fin du lot 12, vérifié par la correction de la fin du lot 12, et rien n'y a changé (`diff HEAD` hors `.md` vide) ; seul `cargo fmt --all -- --check` a été relancé, dans les deux workspaces (code 0). Les tests, clippy et fmt des jeux sont ceux de leurs agents (leurs sections ci-dessus), sur les mêmes arbres.
+
+#### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7b/commun/<nom>/` : `commande.txt`, `sortie.txt` (complète), `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (par `empreinte.sh` : pour les quatre dépôts `HEAD`, sha256 de `git diff HEAD`, du même hors `.md`, des fichiers non suivis ; sha256 des trois modules, de `soiree-epreuve`, de `soiree-banc` et du fautif `page-qui-deborde`) ; les scripts `preuve.sh`, `empreinte.sh`, `final-a.sh`, `final-b.sh` y sont copiés ; `empreinte-finale.txt`, après les documents. **Empreinte du code, identique au début et à la fin de chaque preuve** : le commun `bc56fec`, hors `.md` vide (le `diff` entier change pendant `standard-sidequest` et `standard-tier-list` : ce sont les `.md` de ce lot) ; Punchline `f84b86f` / `c8ba92030d004436` ; Sidequest `229199b` / `2d05eb25159bb6aa` ; Tier list `9827f39` / `49c033aab75e20e6`. Modules (sha256) : Punchline `4c3ebf103714ac09…` (943 772 octets ; BLAKE3 `51bf9b6b…` dans le rapport), Sidequest `e80b86a9cf017d65…` (749 827 ; BLAKE3 `3ac3d7f1…`), Tier list `ae27434d35d9ce3d…` (1 615 421 ; BLAKE3 `1294a3e9…`) : les mêmes que ceux des agents, et ceux que l'épreuve a compilés depuis les sources. `soiree-epreuve` `1edcdde5…` (celui du lot 12, rien à refaire) ; `soiree-banc` reconstruit par `construire` (`05e7890d…`, les sources du commun inchangées).
+
+| Preuve | Commande (depuis `soiree/`, chacune par `target/hote/lourd`) | Résultat |
+|---|---|---|
+| `construire` | `sh -c "cargo build --release -p epreuve --bin soiree-epreuve && cargo build -p banc --bin soiree-banc"` | code 0 ; 8 s |
+| `standard-punchline` | `/usr/bin/time -l target/release/soiree-epreuve ../games/punchline --json …/standard-punchline.json` | **code 0** ; E16 142 textes, 0 débordement ; E21 2 500 évaluations ; 110 s, 2,05 Go |
+| `standard-tier-list` | `… ../games/tier-list --json …/standard-tier-list.json` | **code 0** ; E16 1 151 textes, 0 débordement ; 232 s, 1,29 Go |
+| `standard-sidequest` | `… ../games/sidequest --json …/standard-sidequest.json` | **code 0** ; E16 426 textes, 0 débordement ; E21 4 395 évaluations ; 589 s, 2,75 Go |
+| `pages` | `/usr/bin/time -l target/debug/soiree-banc pages <les trois modules> --negatif target/wasm32-unknown-unknown/module/fautif_page_qui_deborde_module.wasm --navigateurs chrome,firefox,safari --travail target/travail/lot-7b/commun/pages-travail` | **code 0** : Chrome et Firefox réussis, Safari pas exécuté ; 20 s, 0,77 Go |
+| `court-tier-list` | `/usr/bin/time -l target/release/soiree-epreuve ../games/tier-list --court --json …` | code 0 (la référence du lot 7) ; 41 s, 0,32 Go |
+
+`standard-sidequest` a tourné en même temps que `standard-punchline`, `standard-tier-list` et `pages`, l'un après l'autre (deux places du portillon).
+
+#### Les mesures
+
+Aucune mesure de temps : les durées ci-dessus sont celles de commandes lancées deux à la fois, sous une charge de 1,5 à 2,9 (relevée par le portillon : au plus 2,13 pour Punchline, 2,85 pour Tier list, 2,81 pour Sidequest, 2,70 pour `pages`), pas au calme. La mémoire résidente est celle de `/usr/bin/time -l` (Sidequest 2,75 Go, contre 2,33 Go chez son agent et 2,32 au lot 8 : non expliqué, non mesuré à part ; ce n'est pas une borne).
+
+#### Ce qui n'est pas fait, et pourquoi
+
+- **Aucune demande des jeux n'est tranchée** : c'est au mainteneur (la mission). D2, D4, D6, D7 et D22 sont petites et sans ABI ; elles attendent quand même sa décision.
+- **Safari** : pas exécuté (`safaridriver` refuse la session ; le réglage de l'hôte n'est pas touché).
+- **Un scénario de capture dans le banc** : non écrit (hors de la ligne du lot) ; deux outils de travail le font aujourd'hui, hors dépôt (`target/travail/lot-7b/punchline/capture/`, `target/travail/lot-7b/tier-list/capture.mjs`).
+- E20 n'est pas relancé : ni le relevé, ni le banc, ni le moteur ne changent, et la ligne du lot ne le demande pas.
+
+#### Ce que le lot suivant doit savoir
+
+- Les modules des trois jeux changent (sha256 ci-dessus ; aux lots 7 à 12 : Punchline `82669f77…`, Sidequest `62043526…`, Tier list `84315a1b…`) : une épreuve ou un scénario qui les prend dans `target/modules-figes/` doit les reprendre.
+- La référence du plan court est de nouveau celle du lot 7 : Sidequest 0 ; Punchline 1, E2 seul ; Tier list 0.
+- Les demandes ouvertes sont D1 à D22 dans `BESOINS-DES-JEUX.md` ; celles qui demandent une ABI (D1 par une troisième coupe, D3, D5, D8 à D12, D13 pour le centre, D14, D17, D18 pour l'allure, D19, D20 pour le sélecteur) peuvent partager une seule ABI 5. Punchline (`tests/mesure.rs`, `MOT_LONG_MAX`) et Sidequest (`vues::CHASSE_MAX`, et un test qui lit `crates/mise-en-page/polices/LiberationSans-Regular.ttf` par son chemin) dépendent désormais de la règle et de la police de `mise-en-page` : un changement de l'une ou de l'autre (D1, D15) les fait rougir, et c'est voulu.
+
+## Lot 7b, correction après la vérification
+
+Fait le 2026-11-08, de 05 h 20 à 05 h 45 environ (UTC), par un agent seul, sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2, rustc 1.99.1), d'après la vérification adverse du lot 7b (six constats : un important, cinq mineurs). Chaque cargo, chaque épreuve est passé par le portillon (sauf `cargo fmt`) ; aucun navigateur n'a été lancé. Rien n'est commité. Fichiers de travail : `target/travail/lot-7b-correction/` ; preuves : `target/preuves/lot-7b-correction/`.
+
+### Les constats, et ce qui en est fait
+
+1. **[important] La page de Punchline se lit à peine, parce que `web/telephone` n'applique pas `Reglages::fond`.** Vérifié : `page.rs` pose `background: #111` au corps et ne lit de `MontreFil` que ses effets ; INTERFACE (§ 2.9, `Montre { vue, effets, reglages }`) et `jeu_abi` (« La couleur de fond de la page ») donnent ce fond au jeu. **Tranché comme un écart de la page à INTERFACE, né au lot 12**, et non comme une demande nouvelle d'un jeu : c'est écrit dans la ligne du lot 12 (PHASE-3, § 7, « écrit après la vérification du lot 7b »), dans D2 (`BESOINS-DES-JEUX.md`, « Rangée après la vérification du lot 7b »), au CHANGELOG (section du lot 7b) et au § 13 du `BESOINS-COMMUN.md` de Punchline. Il se corrige dans le commun, sans ABI (`web/telephone`, et un constat du fond au scénario `pages`), au premier lot qui touche la page et au plus tard avant la fiche de répétition du lot 14 ; le mainteneur n'a à choisir que ce que gardent les écrans du commun (le voile, l'erreur). **Le code du commun n'est pas changé ici** : la ligne du lot 7b ne touche que les jeux (« dans chaque dépôt, par l'agent du jeu »), et la vérification range l'écart au lot 12. Dit aussi, au § 13 de Punchline : d'ici là, le passage de la vue sans personnage à `Some(PATE_GRISE)` n'a aucun effet visible.
+2. **[mineur] « Capture du banc »** : le banc ne fait pas de capture ; c'était déjà écrit dans la ligne du lot 7b et dans ce journal. Rien de simple à ajouter (un scénario de capture dans le banc est un travail du commun, hors de la ligne du lot) ; rien n'est changé.
+3. **[mineur] La preuve `sidequest-controles` était reconstituée à la main, et son script laissait dans `target/` le module du dernier mutant E16.** Corrigé : `target/travail/lot-7b-correction/controles.py` reprend les huit mutations de Sidequest à l'identique, note le sha256 du module au départ et, à la fin, sources remises, **reconstruit le module et exige le même sha256** (code 2 sinon) ; la preuve est refaite par `preuve.sh` (commande, sortie complète, début, fin, durée, empreinte des quatre dépôts et des trois modules au départ et à la fin). Le module est revenu à `e80b86a9…`. Le premier script (`target/travail/lot-7b-sidequest/mutations.py`) n'est pas à reprendre.
+4. **[mineur] Les règles de coupe des jeux ne bornent que les polices déclarées** (repli plus large, graphème de plusieurs glyphes larges) : déjà dit dans les deux `BESOINS-COMMUN.md` et ici ; la coupe juste est D1. Aucun pire cas simple ne le couvrirait sans connaître la police de repli de chaque navigateur ; rien n'est changé.
+5. **[mineur] Deux corrections sans test ni contrôle négatif.** Corrigé, par deux tests et trois mutations :
+   - Sidequest, `tests::aucun_texte_de_la_tele_n_a_de_glyphe_absent` (`src/tests.rs`) : chaque texte et chaque nom de bouton de la télé, à l'accueil, au salon avec un personnage et en pause, lu dans la `cmap` de la police du commun (la lecture de `Chasses::du_commun`, déjà là) ; E16 compte un glyphe absent sans échouer, ce test le tient. La mutation `sq-pause-en-texte` (la pause remise en texte « Ⅱ », le code d'avant le lot) le rougit : « pause : « Ⅱ », absents « Ⅱ » ».
+   - Tier list, `chaque_champ_se_pose_sur_un_fond_sombre` (`tests/partie.rs`) : chaque `Champ` de la télé (le nom d'une tuile, au plateau neuf ; celui des réglages) sur un rectangle sans composante au-dessus de 0x40 (le commun l'écrit en blanc) ; la recherche du rectangle dessous est mise en commun avec `aucun_texte_n_a_la_couleur_de_son_fond` (`fond_sous`, même règle qu'avant). Les mutations `tl-zone-de-texte-blanche` et `tl-champ-du-nom-blanc` le rougissent (« réglages, … : sur Some(Rgba(255, 255, 255, 255)) »).
+6. **[mineur] Le commun n'a relancé ni ses tests ni clippy** : justifié par la vérification elle-même ; son code est toujours à `bc56fec`, `diff HEAD` hors `.md` vide (empreinte ci-dessous). Rien n'est changé.
+
+### Ce que les jeux voient
+
+Rien ne change dans leurs modules : seuls des tests (`src/tests.rs` de Sidequest, `tests/partie.rs` de Tier list) et des `.md` changent. **Les trois modules gardent leur sha256 du lot 7b** (Punchline `4c3ebf10…`, Sidequest `e80b86a9…`, Tier list `ae27434d…`), et le commun ses sources : par la règle « une épreuve déjà faite sur le même module, avec les mêmes sources du commun, ne se relance pas », le plan standard des trois jeux et `pages` restent ceux du lot 7b (`target/preuves/lot-7b/commun/`). Le plan court de Sidequest et de Tier list est relancé depuis leurs sources, parce que l'étape 1 de l'épreuve passe clippy sur les tests du jeu : il l'a montré (ci-dessous).
+
+### Les tests qui la tiennent
+
+`sidequest` : `tests::aucun_texte_de_la_tele_n_a_de_glyphe_absent` (nouveau), et les quatre du lot 7b. `tier-list` : `partie::chaque_champ_se_pose_sur_un_fond_sombre` (nouveau), `aucun_texte_n_a_la_couleur_de_son_fond` (son aide réécrite, même règle). Les onze contrôles négatifs de `controles.py`, tous rouges pour leur raison.
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-7b-correction/<nom>/` : `commande.txt`, `sortie.txt` (complète), `code.txt` (début, fin, code, durée), `empreinte.txt` et `empreinte-fin.txt` (par `target/travail/lot-7b-correction/empreinte.sh` : pour les quatre dépôts `HEAD`, sha256 de `git diff HEAD`, du même hors `.md`, des fichiers non suivis ; sha256, taille et date des trois modules). **Empreinte du code à la fin de chaque preuve gardée** : le commun `bc56fec`, hors `.md` vide (`e3b0c442…`) ; Punchline `f84b86f`, hors `.md` `c8ba92030d004436`, non suivi `tests/mesure.rs` (inchangé depuis le lot 7b ; ce script hache les non suivis autrement que celui de Punchline, d'où `bd569872…` ici pour `53f4a9a8…` là-bas) ; Sidequest `229199b`, hors `.md` `c8476b63f668c7d1` ; Tier list `9827f39`, hors `.md` `8ceb7cc17a911f47` ; modules `4c3ebf10…`, `e80b86a9…`, `ae27434d…`.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `controles` | depuis `soiree/` : `python3 -I target/travail/lot-7b-correction/controles.py` (chaque cargo et chaque épreuve par `lourd`) | **code 0** : 11 mutations, 11 rouges ; six par E16 (plan court, module seul : le tableau, la bulle, le moment et les réponses toujours entre les mots, la bulle à 3 lignes « 4 lignes, pour 3 permise(s) », les réponses à 2 « 3 lignes, pour 2 permise(s) ») ; deux par `tests::la_coupe_entre_les_mots_seulement_quand_elle_tient` ; une par `tests::aucun_texte_de_la_tele_n_a_de_glyphe_absent` ; deux par `chaque_champ_se_pose_sur_un_fond_sombre` ; chaque source remise et vérifiée par son sha256 ; module de Sidequest reconstruit, revenu à `e80b86a9…` ; 182 s |
+| `sq-fmt` | dans Sidequest : `cargo fmt --all -- --check` | code 0 |
+| `sq-clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `sq-tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | code 0 : **89 réussis** (88 au lot 7b, et le nouveau), 0 échec, 0 ignoré ; 12 s |
+| `sq-court` | depuis `soiree/` : `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/sidequest --court --json …/sq-court.json` | **code 0**, la référence du lot 7 ; étape 1 faite (clippy et clippy wasm32 compris) ; module BLAKE3 `3ac3d7f1…`, celui du lot 7b ; E16 réussi ; 128 s |
+| `tl-fmt` | dans Tier list : `cargo fmt --all -- --check` | code 0 |
+| `tl-clippy` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 |
+| `tl-tests` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | code 0 : **101 réussis** (100 au lot 7b, et le nouveau), 0 échec, 0 ignoré ; 31 s ; 0,41 Go |
+| `tl-court` | `lourd /usr/bin/time -l target/release/soiree-epreuve ../games/tier-list --court --json …/tl-court.json` | **code 0**, la référence du lot 7 ; étape 1 faite ; module BLAKE3 `1294a3e9…`, celui du lot 7b ; E16 réussi ; 59 s |
+
+`premier-essai/` garde le premier passage, sur un arbre de Sidequest abandonné : `sq-clippy` y rend 101 et `sq-court` 1 (étape 1, « clippy : échouée »), le nouveau test ayant un `_ => continue` que `clippy::wildcard_enum_match_arm` refuse ; corrigé (deux `if let`), puis `controles`, `sq-*` relancés sur l'arbre final. Les preuves `tl-*` de ce premier passage sont gardées : l'empreinte de Tier list n'a pas changé depuis. `empreinte-finale.txt`, prise après ce journal : le code des quatre dépôts et les trois modules identiques à ceux des preuves ; seuls des `.md` ont changé depuis. `soiree status` : rien n'est commité ni poussé, comme voulu (un agent à part committe).
+
+### Les mesures
+
+Aucune mesure de temps : les durées ci-dessus sont celles de commandes sous une charge de 1,7 à 3,6 (le portillon), deux à la fois.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **La page qui applique `Reglages::fond`** : un écart du commun au lot 12, désormais écrit comme tel ; non corrigé ici (hors de la ligne du lot 7b).
+- Le plan standard des trois jeux et `pages` ne sont pas relancés : modules et sources du commun identiques à ceux du lot 7b (sha256 ci-dessus), dont les preuves restent valides ; clippy wasm32 n'est pas relancé à part (les changements sont des tests, que la cible wasm32 ne compile pas ; l'étape 1 des plans courts l'a passé).
+- Rien de Punchline n'est relancé : seul son `BESOINS-COMMUN.md` change.
+- Safari : pas concerné (aucun navigateur lancé).
+
+### Ce que le lot suivant doit savoir
+
+- Le lot qui touche `web/telephone` corrige D2 (le fond de la page), avec un constat au scénario `pages` ; Punchline n'a rien à changer alors (sa vue donne déjà le fond).
+- Les contrôles négatifs de Sidequest et Tier list pour le lot 7b sont dans `target/travail/lot-7b-correction/controles.py` (onze mutations), qui remet le module de Sidequest à son empreinte de départ.
+- `aucun_texte_de_la_tele_n_a_de_glyphe_absent` (Sidequest) lit la `cmap` de `crates/mise-en-page/polices/LiberationSans-Regular.ttf` : une police du commun changée, ou des emoji dans un pire cas de la télé (B20, question 28), le feraient rougir, et c'est voulu.
