@@ -21,6 +21,8 @@
 //!   (P39, lot 10a) ;
 //! - [`chien`] : le chien de garde de la page de l'écran, ses deux garde-fous muraux,
 //!   l'entrée qui bloque deux fois, les relances, le retard des réveils (P5, P39, lot 10a) ;
+//! - [`trace`] : les traces de l'entrée au pixel, découpées par segment, leurs
+//!   distributions, et le texte du panneau de diagnostic (§ 2.9, § 8.4, lot 13) ;
 //! - [`simulation`] : un relais en mémoire et un réseau simulé déterministe, à horloge
 //!   qui saute d'échéance en échéance et graine fixe (SAL-09), qui font tourner la vraie
 //!   autorité et de vrais appareils (SAL-10 ; PHASE-3, § 8.1, lot 4b).
@@ -44,3 +46,4 @@ pub mod horloge;
 pub mod livraison;
 pub mod page;
 pub mod simulation;
+pub mod trace;

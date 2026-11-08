@@ -126,6 +126,34 @@ pub struct Options {
     /// Un défaut voulu (`?fautif=…`, au banc seulement), pour le contrôle négatif d'un
     /// scénario (`changer` : `changer-sans-livrer`).
     pub fautif: Option<String>,
+    /// Le navigateur avec sa fenêtre (`--avec-interface`, M6, lot 13 ; Chrome aussi
+    /// depuis ce lot).
+    pub interface: crate::navigateur::Interface,
+    /// `arriere-plan` : comment l'écran passe à l'arrière-plan (lot 13, M6).
+    pub cacher: Cacher,
+}
+
+/// Comment `arriere-plan` passe l'écran à l'arrière-plan (M6, lot 13).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Cacher {
+    /// Un onglet vierge passé devant (le scénario du lot 10a).
+    #[default]
+    Onglet,
+    /// Une autre fenêtre du navigateur ouverte par-dessus (avec interface).
+    Recouverte,
+    /// La fenêtre de l'écran réduite dans le Dock (avec interface).
+    Reduite,
+}
+
+impl Cacher {
+    /// Son nom, au rapport et dans le dossier de travail.
+    pub const fn nom(self) -> &'static str {
+        match self {
+            Cacher::Onglet => "onglet",
+            Cacher::Recouverte => "recouverte",
+            Cacher::Reduite => "reduite",
+        }
+    }
 }
 
 /// Un téléphone qui rejoint retarde les autres si la médiane ou le 99ᵉ centile de leurs
@@ -706,7 +734,7 @@ pub(crate) fn ouvrir(
     })
     .map_err(|e| format!("le relais : {e}"))?;
     let profils = o.travail.join("profils");
-    let mut navigateur = match Lance::lancer(n, None, &profils) {
+    let mut navigateur = match Lance::lancer_avec(n, None, &profils, o.interface) {
         Ok(l) => l,
         Err(e) => {
             relais.arreter();
@@ -2603,14 +2631,18 @@ fn arriere_plan(
     charge: &ModuleCharge,
 ) -> Result<Passage, String> {
     let (telephones, redite) = telephones_et_redite(o, charge);
+    let mode = match o.cacher {
+        Cacher::Onglet => String::new(),
+        autre @ (Cacher::Recouverte | Cacher::Reduite) => format!("-{}", autre.nom()),
+    };
     let dossier = if o.fois > 1 {
         o.travail.join(format!(
-            "arriere-plan-{}-{}",
+            "arriere-plan{mode}-{}-{}",
             n.nom(),
             passe.saturating_add(1)
         ))
     } else {
-        o.travail.join(format!("arriere-plan-{}", n.nom()))
+        o.travail.join(format!("arriere-plan{mode}-{}", n.nom()))
     };
     let mut s = ouvrir(o, n, paquet, module, &dossier, (redite, ""))?;
     let mut p = Passage {
@@ -2680,11 +2712,24 @@ fn la_fenetre_cachee(
         .unwrap_or(0);
     let cache = maintenant();
     let cache_ms = cache.saturating_duration_since(s.depart).as_millis();
-    s.navigateur.cacher()?;
+    match o.cacher {
+        Cacher::Onglet => s.navigateur.cacher()?,
+        Cacher::Recouverte => s.navigateur.recouvrir()?,
+        Cacher::Reduite => s.navigateur.reduire(0)?,
+    }
+    p.notes.push(format!(
+        "à l'arrière-plan par : {}{}",
+        o.cacher.nom(),
+        if o.interface == crate::navigateur::Interface::Avec {
+            ", avec la fenêtre du navigateur"
+        } else {
+            ", sans interface"
+        }
+    ));
     s.tourner(Duration::from_secs(2))?;
     // L'onglet est vraiment caché : la page le dit, et (plus bas) aucun pas ne s'y
     // joue au signal d'une image.
-    constater_cache(s, p, "au début")?;
+    constater_cache(s, p, "au début", o.cacher)?;
     // Un retard injecté dans le Worker pendant que l'onglet est caché (§ 2.3, le cas
     // que vise le signalement) : trois réveils gelés de 150 ms, vingt secondes avant
     // la fin ; la page doit le signaler. Les sauts qu'il fait sont voulus : le Worker
@@ -2704,7 +2749,7 @@ fn la_fenetre_cachee(
     let reste_cache = Duration::from_secs(o.cache_s)
         .saturating_sub(maintenant().saturating_duration_since(cache));
     s.tourner(reste_cache)?;
-    constater_cache(s, p, "à la fin")?;
+    constater_cache(s, p, "à la fin", o.cacher)?;
     let pas_apres = s
         .etat(onglet)
         .and_then(|e| e.get("pas"))
@@ -2712,6 +2757,9 @@ fn la_fenetre_cachee(
         .unwrap_or(0);
     let duree = maintenant().saturating_duration_since(cache);
     let montre_ms = maintenant().saturating_duration_since(s.depart).as_millis();
+    if o.cacher == Cacher::Reduite {
+        s.navigateur.restaurer(0)?;
+    }
     s.navigateur.montrer(0)?;
     p.cache = Some((pas_apres.saturating_sub(pas_avant), duree.as_secs()));
     // La partie a suivi l'horloge : au moins 90 % des pas du temps caché.
@@ -2727,7 +2775,12 @@ fn la_fenetre_cachee(
             pas_apres.saturating_sub(pas_avant)
         ));
     }
-    juger_la_fenetre(s, p, onglet, (cache_ms.saturating_add(2_000), montre_ms));
+    juger_la_fenetre(
+        s,
+        p,
+        (onglet, o.cacher),
+        (cache_ms.saturating_add(2_000), montre_ms),
+    );
     Ok((pas_avant, pas_apres))
 }
 
@@ -2777,9 +2830,19 @@ fn juger_les_sauts_caches(
 }
 
 /// L'onglet est caché : la page le dit (`document.visibilityState`).
-fn constater_cache(s: &mut Session, p: &mut Passage, quand: &str) -> Result<(), String> {
+fn constater_cache(
+    s: &mut Session,
+    p: &mut Passage,
+    quand: &str,
+    cacher: Cacher,
+) -> Result<(), String> {
     let v = s.evaluer(0, "document.visibilityState")?;
-    if v.as_str() != Some("hidden") {
+    // M6 (lot 13) : une fenêtre recouverte ou réduite, ce que le navigateur en dit est
+    // ce qu'on mesure, pas une faute du banc.
+    if cacher != Cacher::Onglet {
+        p.notes
+            .push(format!("M6 : document.visibilityState vaut {v} {quand}"));
+    } else if v.as_str() != Some("hidden") {
         p.fautes.push(format!(
             "l'onglet n'est pas caché {quand} : document.visibilityState vaut {v}"
         ));
@@ -2791,7 +2854,12 @@ fn constater_cache(s: &mut Session, p: &mut Passage, quand: &str) -> Result<(), 
 /// pas ne s'y joue au signal d'une image (au plus 1 % : la page ne reçoit plus d'images,
 /// l'onglet était bien caché, et le « réussi » n'est pas vide) ; ce que les tours longs et les trous entre
 /// deux pas ont été, noté.
-fn juger_la_fenetre(s: &Session, p: &mut Passage, onglet: &str, (de_ms, a_ms): (u128, u128)) {
+fn juger_la_fenetre(
+    s: &Session,
+    p: &mut Passage,
+    (onglet, cacher): (&str, Cacher),
+    (de_ms, a_ms): (u128, u128),
+) {
     let dans = |l: &&Ligne| l.onglet == onglet && l.ms >= de_ms && l.ms <= a_ms;
     let etats: Vec<&Ligne> = s
         .lignes
@@ -2810,7 +2878,11 @@ fn juger_la_fenetre(s: &Session, p: &mut Passage, onglet: &str, (de_ms, a_ms): (
             // Firefox donne encore, de loin en loin, une image à un onglet caché
             // (constaté : de 0 à 3 en 360 s, `document.visibilityState` valant `hidden`) ;
             // un onglet visible en donne une par pas, des milliers. Au plus 1 % des pas.
-            if images.saturating_mul(100) > images.saturating_add(minuterie) || minuterie == 0 {
+            if cacher != Cacher::Onglet {
+                // M6 : ce que la fenêtre recouverte ou réduite reçoit d'images se mesure.
+            } else if images.saturating_mul(100) > images.saturating_add(minuterie)
+                || minuterie == 0
+            {
                 p.fautes.push(format!(
                     "l'onglet n'était pas caché : {images} pas joués au signal d'une image, {minuterie} par la minuterie"
                 ));

@@ -61,11 +61,12 @@ use crate::chiffre::{
     CleDeGarde, Fragment, Hasard, PaireAutorite, SecretDEntree, Session, TAILLE_POIGNEE, repondre,
 };
 use crate::ecran::{
-    AppareilVu, CommandeEcran, DeLaPage, EtatSalle, PanneSalle, RapportPanne, VersPage,
-    images_citees,
+    AppareilVu, CommandeEcran, DeLaPage, EtatSalle, IdTrace, PanneSalle, RapportPanne, Trace,
+    VersPage, images_citees,
 };
 use crate::fil::{
-    LimitesSalle, PROTOCOLE, RefusSalle, VersAppareil, VersAutorite, protocole_d_un_bonjour,
+    LimitesSalle, PROTOCOLE, RefusSalle, TraceTelephone, VersAppareil, VersAutorite,
+    protocole_d_un_bonjour,
 };
 use crate::garde::{
     Ecrivain, GardeLue, Inscrit, MARQUES_MAX, Marque, ONGLETS_RETENUS, OngletInscrit,
@@ -412,7 +413,16 @@ pub struct Autorite<F: Fabrique, H: Hasard> {
     mesure_du_point: Option<MesurePoint>,
     /// Le point en train de se sceller, mesuré.
     point_en_mesure: Option<MesurePoint>,
+    /// Les traces des entrées placées dont le pas n'est pas encore joué (§ 8.4, lot 13) :
+    /// au plus [`TRACES_EN_COURS_MAX`], la plus ancienne s'oublie.
+    traces_en_cours: Vec<Trace>,
 }
+
+/// Les traces suivies à la fois au plus (lot 13, choisi) : une entrée placée attend son
+/// pas au plus `ARRIERES_PAR_TOUR` tours ; 256 couvrent largement les entrées de 71
+/// téléphones et de l'écran pendant ce temps. Une trace oubliée n'est qu'une mesure de
+/// moins.
+pub const TRACES_EN_COURS_MAX: usize = 256;
 
 /// La répartition d'une durée de tour, en millisecondes, par cases de 0,1 ms jusqu'à
 /// 51,1 ms (la dernière case tient tout ce qui dépasse) : M13, la part du commun dans le
@@ -590,6 +600,7 @@ where
             bots: Oui::Oui,
             mesure_du_point: None,
             point_en_mesure: None,
+            traces_en_cours: Vec::new(),
         };
         let preuve = a.cles.garde.preuve();
         a.vers_relais(&VersRelais::Bonjour {
@@ -722,8 +733,10 @@ where
         core::mem::take(&mut self.sorties)
     }
 
-    /// Donne une horloge (en millisecondes) pour chronométrer chaque réveil : le banc
-    /// seulement. Rien de ce qu'elle rend ne décide de quoi que ce soit.
+    /// Donne une horloge (en millisecondes) pour chronométrer chaque réveil : les durées
+    /// du banc, et les instants de la fin du pas et des vues dans les traces (§ 8.4,
+    /// lot 13). Rien de ce qu'elle rend ne décide de quoi que ce soit : ni la partie ni la
+    /// garde n'en reçoivent rien.
     pub const fn chronometrer(&mut self, chrono: fn() -> f64) {
         self.chrono = Some(chrono);
     }
@@ -740,6 +753,71 @@ where
 
     fn heure_du_chrono(&self) -> f64 {
         self.chrono.map_or(0.0, |c| c())
+    }
+
+    /// L'instant absolu, en microsecondes, d'un moment du tour commencé à `t_us` (et à
+    /// `debut` sur l'horloge du chronomètre) : `t_us` sans horloge donnée.
+    fn heure_dans_le_tour(&self, t_us: u64, debut: f64) -> u64 {
+        let ecoule_us = (self.heure_du_chrono() - debut) * 1000.0;
+        if !ecoule_us.is_finite() || ecoule_us <= 0.0 {
+            return t_us;
+        }
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "une durée positive et finie, en microsecondes, bien sous 2⁶⁴"
+        )]
+        let e = ecoule_us as u64;
+        t_us.saturating_add(e)
+    }
+
+    /// Suit une entrée placée jusqu'à son pas (§ 8.4, lot 13).
+    fn suivre(&mut self, id: IdTrace, emetteur: TraceTelephone, recu_us: u64, place: jeu_abi::Pas) {
+        if self.traces_en_cours.len() >= TRACES_EN_COURS_MAX {
+            let _: Trace = self.traces_en_cours.remove(0);
+        }
+        self.traces_en_cours.push(Trace {
+            id,
+            evenement_us: emetteur.evenement_us,
+            envoi_us: emetteur.envoi_us,
+            relais: None,
+            recu_us,
+            place,
+            pas_debut_us: 0,
+            pas_fin_us: 0,
+            vue_fin_us: 0,
+            page_recue_us: 0,
+            image_us: 0,
+            soumis_us: 0,
+            gpu_fini_us: 0,
+            incertitude_us: emetteur.incertitude_us,
+        });
+    }
+
+    /// Les traces dont le pas vient d'être joué, avec les instants du tour, à la page,
+    /// juste après la scène de ce tour (la page y ajoute les siens).
+    fn traces_du_tour(&mut self, (debut_us, pas_fin_us, vue_fin_us): (u64, u64, u64)) {
+        let Some(definitif) = self.jeu().map(|j| j.partie.definitif().numero()) else {
+            return;
+        };
+        let (pretes, restent): (Vec<Trace>, Vec<Trace>) =
+            core::mem::take(&mut self.traces_en_cours)
+                .into_iter()
+                .partition(|t| t.place.numero() <= definitif);
+        self.traces_en_cours = restent;
+        if pretes.is_empty() {
+            return;
+        }
+        let pretes = pretes
+            .into_iter()
+            .map(|t| Trace {
+                pas_debut_us: debut_us,
+                pas_fin_us,
+                vue_fin_us,
+                ..t
+            })
+            .collect();
+        self.vers_page(&VersPage::Traces(pretes));
     }
 
     /// Ce que l'autorité a compté.
@@ -1431,13 +1509,13 @@ where
                     octets,
                     fait,
                     vu,
-                    ..
+                    trace,
                 },
                 Some((appareil, o)),
             ) => {
                 self.nouvelle(t_us, appareil);
                 if onglet == o {
-                    self.geste(t_us, appareil, onglet, numero, (octets, fait, vu));
+                    self.geste(t_us, appareil, onglet, numero, (octets, fait, vu, trace));
                 }
             }
             (
@@ -1734,7 +1812,7 @@ where
         appareil: Appareil,
         onglet: u64,
         numero: u64,
-        (octets, fait, vu): (&[u8], jeu_abi::Instant, Pas),
+        (octets, fait, vu, trace): (&[u8], jeu_abi::Instant, Pas, TraceTelephone),
     ) {
         let demi = self.demi(appareil);
         let Some(f) = self.fiche(appareil) else {
@@ -1785,8 +1863,19 @@ where
             },
         );
         match place {
-            Some(Placement::Place { .. }) => {
+            Some(Placement::Place { pas }) => {
                 self.comptes.gestes_places = self.comptes.gestes_places.saturating_add(1);
+                // Le téléphone donne ses instants dans le temps de la partie, qu'il estime
+                // par écho (0 avant tout écho) : la trace les ramène à l'heure de l'autorité.
+                if let Some(h) = self.jeu().map(|j| j.horloge) {
+                    let heure = |us: u64| if us == 0 { 0 } else { h.heure_us(us) };
+                    let emetteur = TraceTelephone {
+                        evenement_us: heure(trace.evenement_us),
+                        envoi_us: heure(trace.envoi_us),
+                        ..trace
+                    };
+                    self.suivre(IdTrace::Appareil { appareil, numero }, emetteur, t_us, pas);
+                }
                 if let Some(ov) = self
                     .fiche(appareil)
                     .and_then(|f| f.onglets.iter_mut().find(|o| o.onglet == onglet))
@@ -1849,12 +1938,24 @@ where
             return;
         };
         match m {
-            DeLaPage::Ecran { quoi, vu, .. } => {
+            DeLaPage::Ecran {
+                quoi,
+                vu,
+                t_us: evenement_us,
+                numero,
+                envoi_us,
+            } => {
                 let quoi = ecran_possede(&quoi);
-                if let Some(Placement::Place { .. }) =
+                if let Some(Placement::Place { pas }) =
                     self.arriver(t_us, Arrivee::Ecran { quoi, vu })
                 {
                     self.comptes.entrees_ecran = self.comptes.entrees_ecran.saturating_add(1);
+                    let emetteur = TraceTelephone {
+                        evenement_us,
+                        envoi_us,
+                        incertitude_us: 0,
+                    };
+                    self.suivre(IdTrace::Ecran(numero), emetteur, t_us, pas);
                 }
             }
             DeLaPage::Image { .. } => self.reveiller(t_us),
@@ -1887,14 +1988,17 @@ where
                 self.vers_page(&VersPage::Cle(g));
             }
             // Les fichiers, changer de jeu et une soirée neuve viennent avec l'écran (lots
-            // 10b et 11) ; `Demarrer`, `Figer` et `Retarder` sont l'affaire de la coque.
+            // 10b et 11) ; `Demarrer`, `Figer`, `Retarder`, `Calage` et `Echo` sont
+            // l'affaire de la coque.
             DeLaPage::Fichiers(_)
             | DeLaPage::Demarrer { .. }
             | DeLaPage::Commande(
                 CommandeEcran::ChangerDeJeu { .. }
                 | CommandeEcran::NouvelleSoiree
                 | CommandeEcran::Figer
-                | CommandeEcran::Retarder { .. },
+                | CommandeEcran::Retarder { .. }
+                | CommandeEcran::Calage(_)
+                | CommandeEcran::Echo { .. },
             ) => {}
         }
     }
@@ -1942,8 +2046,11 @@ where
         };
         self.traiter(t_us, &avancee);
         let avance = self.heure_du_chrono();
+        let pas_fin_us = self.heure_dans_le_tour(t_us, debut);
         self.vues(t_us, avant);
         let vu = self.heure_du_chrono();
+        let vue_fin_us = self.heure_dans_le_tour(t_us, debut);
+        self.traces_du_tour((t_us, pas_fin_us, vue_fin_us));
         if self.reglages.banc == Oui::Oui && self.bots == Oui::Oui {
             self.banc(t_us);
         }

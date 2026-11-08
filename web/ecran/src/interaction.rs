@@ -389,20 +389,11 @@ fn ecouter(
     Ok(())
 }
 
-/// Poste une entrée de l'écran au Worker.
-fn entree(p: &Page, quoi: EcranFil<'_>) {
-    let vu = p
-        .ecran
-        .as_ref()
-        .map_or(jeu_abi::Pas::ZERO, crate::toile::Ecran::pas);
-    poster(
-        p,
-        &DeLaPage::Ecran {
-            quoi,
-            vu,
-            t_us: heure_us(&p.fenetre),
-        },
-    );
+/// Poste une entrée de l'écran au Worker, numérotée pour sa trace (lot 13) : un clic, un
+/// glisser, un champ, des fichiers. L'événement n'est pas gardé dans la file : son instant
+/// est celui de l'envoi.
+fn entree(p: &mut Page, quoi: EcranFil<'_>) {
+    crate::page::entree_au_worker(p, quoi, salle::trace::Source::Souris, None);
 }
 
 /// Traite les événements de la file, tant que la page ne tient pas déjà son état.

@@ -55,6 +55,7 @@ pub mod firefox;
 mod horloge;
 pub mod machine;
 pub mod mandataire;
+pub mod mesures;
 pub mod navigateur;
 pub mod pages;
 pub mod rapport;

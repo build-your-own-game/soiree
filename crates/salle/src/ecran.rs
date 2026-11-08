@@ -15,8 +15,8 @@
 use std::collections::BTreeSet;
 
 use jeu_abi::{
-    Appareil, ComposantVuFil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage, FichierRecu,
-    FormeEcran, IdDemande, IdGeste, Oui, Pas, ReponseFil, SceneFil, SorteNoeud,
+    Appareil, CodeTouche, ComposantVuFil, DemandeFil, EcranFil, ErreurDecodage, ErreurEncodage,
+    FichierRecu, FormeEcran, IdDemande, IdGeste, Oui, Pas, ReponseFil, SceneFil, SorteNoeud,
 };
 use liaison::{AdresseAnnoncee, CodeSalle, Lien, RefusRelais};
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,10 @@ use serde::{Deserialize, Serialize};
 /// La version des messages entre la page et le Worker. Monte quand la forme d'un type
 /// de ce module change ; `tests/ecran.rs` la fige. *2 au lot 10a* : `VersPage::Chargement`,
 /// `Jeu`, `Accueil`, `Cle` et `Banc`, `DeLaPage::Demarrer`, et les commandes
-/// `ExporterLaCle`, `Figer` et `Retarder`. *3 au lot 11* : la commande `Bots`.
-pub const PROTOCOLE: u32 = 3;
+/// `ExporterLaCle`, `Figer` et `Retarder`. *3 au lot 11* : la commande `Bots`. *4 au
+/// lot 13* : le numéro et l'envoi d'une entrée de l'écran (`DeLaPage::Ecran`, sa trace,
+/// § 8.4), la touche du diagnostic (`VersPage::Jeu`), les commandes `Calage` et `Echo`.
+pub const PROTOCOLE: u32 = 4;
 
 /// Ce que le Worker envoie à la page de l'écran.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +84,8 @@ pub enum VersPage<'a> {
         module: [u8; 32],
         /// La forme de l'écran que le jeu déclare.
         forme: FormeEcran,
+        /// La touche du panneau de diagnostic que le jeu déclare (§ 2.9, lot 13).
+        diagnostic: CodeTouche,
     },
     /// Le relais a accueilli l'autorité : de quoi écrire le QR (§ 2.6, § 2.8). Le
     /// fragment ne quitte jamais l'ordinateur de la soirée que dans le QR.
@@ -112,8 +116,13 @@ pub enum DeLaPage<'a> {
         quoi: EcranFil<'a>,
         /// Le pas de la scène que l'écran montrait.
         vu: Pas,
-        /// L'instant de l'événement.
+        /// L'instant de l'événement (`event.timeStamp`, ramené à `timeOrigin`).
         t_us: u64,
+        /// Le numéro de l'entrée, que la page compte : sa trace le porte
+        /// (`IdTrace::Ecran`, lot 13).
+        numero: u64,
+        /// L'instant où la page la poste au Worker (lot 13).
+        envoi_us: u64,
     },
     /// Le signal d'une image (`requestAnimationFrame`) : le Worker joue le pas que
     /// l'horloge a atteint (P6).
@@ -183,6 +192,17 @@ pub enum CommandeEcran {
     /// navigateur, et un coup de bot défairait ce qu'il vérifie (lot 11). Ignorée hors du
     /// banc.
     Bots(Oui),
+    /// Le banc seulement : le pas joué au signal de l'image (`Oui`, P6, le réglage de la
+    /// soirée), ou par la seule minuterie du Worker (`Non`), pour mesurer la latence avec
+    /// et sans calage (M2, lot 13). La coque du Worker la lit ; ignorée hors du banc.
+    Calage(Oui),
+    /// Le banc seulement : un écho entre la page et le Worker (M14, lot 13). Le Worker
+    /// répond aussitôt, par une ligne `echo` au banc (`VersPage::Banc`), avec l'instant
+    /// de la page et le sien ; la page y ajoute l'instant du retour. Ignorée hors du banc.
+    Echo {
+        /// L'instant de l'envoi, sur l'horloge de la page.
+        t_us: u64,
+    },
 }
 
 /// L'état de la salle, tel que l'écran le montre.
@@ -267,11 +287,16 @@ pub struct Trace {
     pub vue_fin_us: u64,
     /// La scène reçue par la page.
     pub page_recue_us: u64,
+    /// Le début de l'image (`requestAnimationFrame`) qui la dessine (lot 13 : il sépare
+    /// l'attente de l'image du dessin lui-même).
+    pub image_us: u64,
     /// Le dessin soumis au GPU.
     pub soumis_us: u64,
     /// Le travail du GPU fini.
     pub gpu_fini_us: u64,
-    /// L'incertitude : un demi-aller-retour pour un téléphone, plus M14.
+    /// L'incertitude : un demi-aller-retour pour un téléphone. L'écart des horloges de la
+    /// page et du Worker (M14) n'y est pas : le rapport de `soiree-banc mesures` le donne
+    /// à côté des segments qu'il touche.
     pub incertitude_us: u32,
 }
 

@@ -1457,6 +1457,8 @@ fn passage(o: &Options, n: Navigateur, moteur: Moteur, paquet: &Path, module: &[
         retardataires: false,
         autres_jeux: Vec::new(),
         fautif: None,
+        interface: crate::navigateur::Interface::Sans,
+        cacher: soiree::Cacher::Onglet,
     };
     let dossier = o.travail.join(format!(
         "{}{}",

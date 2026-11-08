@@ -32,6 +32,7 @@ use jeu_abi::{EcranFil, IdGeste, Mods, Oui, Pas, PhaseTouche};
 use js_sys::{Array, Function, Object, Promise, Reflect, Uint8Array};
 use salle::chien::{Chien, Decision, TIC_MS};
 use salle::ecran::{CommandeEcran, DeLaPage, PanneSalle, VersPage};
+use salle::trace::Source;
 use wasm_bindgen::prelude::{Closure, wasm_bindgen};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::spawn_local;
@@ -46,6 +47,7 @@ use crate::toile::{ChoixMoteur, Ecran, decoder_image, maintenant_ms, texte_d_err
 
 mod audio;
 mod commun;
+mod mesure;
 
 /// Un redessin au plus tous les 250 ms sans scène neuve : les comptes à rebours (choisi).
 const REDESSIN_MS: f64 = 250.0;
@@ -81,6 +83,8 @@ pub(crate) struct Page {
     son: audio::HautParleur,
     /// L'ordinateur de la soirée est-il un Mac (`Mods::CMD_OU_CTRL`) ?
     systeme: Systeme,
+    /// L'entrée au pixel, le panneau de diagnostic, glisser (lot 13).
+    mesure: mesure::Mesure,
 }
 
 pub(crate) type Etat = Rc<RefCell<Page>>;
@@ -185,6 +189,36 @@ pub(crate) fn poster(p: &Page, m: &DeLaPage<'_>) {
     let _: Result<(), JsValue> = w.post_message_with_transfer(&tampon, &Array::of1(&tampon));
 }
 
+/// Une entrée de l'écran au Worker, numérotée pour sa trace (§ 8.4, lot 13) : l'instant
+/// de son événement (`event.timeStamp`, s'il est connu), celui de son envoi.
+pub(crate) fn entree_au_worker(
+    p: &mut Page,
+    quoi: EcranFil<'_>,
+    source: Source,
+    evenement_us: Option<u64>,
+) {
+    let vu = p.ecran.as_ref().map_or(Pas::ZERO, Ecran::pas);
+    let numero = p.mesure.numeroter(source, maintenant_ms());
+    let envoi_us = heure_us(&p.fenetre);
+    poster(
+        p,
+        &DeLaPage::Ecran {
+            quoi,
+            vu,
+            t_us: evenement_us.unwrap_or(envoi_us),
+            numero,
+            envoi_us,
+        },
+    );
+}
+
+/// L'instant d'un événement (`event.timeStamp`, en millisecondes depuis `timeOrigin`), en
+/// microsecondes dans la base de la page.
+fn instant_de(f: &Window, time_stamp_ms: f64) -> Option<u64> {
+    let t = f.performance()?.time_origin() + time_stamp_ms;
+    (t > 0.0).then_some((t * 1000.0) as u64)
+}
+
 /// Le point d'entrée de la page, que `demarrage.js` appelle avec sa propre adresse (celle
 /// du script du Worker).
 #[wasm_bindgen]
@@ -235,6 +269,13 @@ async fn demarrer(script: String) -> Result<(), String> {
         } else {
             script
         };
+    // Le banc seulement : glisser forcé ou jamais (M2, lot 13) ; hors du banc, la télé
+    // glisse à 100 Hz et plus (§ 2.9), quand un nœud se déplace.
+    let glisser = match parametre(&fenetre, "glisser").as_deref() {
+        Some("oui") if au_banc => mesure::ModeGlisser::Oui,
+        Some("non") if au_banc => mesure::ModeGlisser::Non,
+        _ => mesure::ModeGlisser::Auto,
+    };
     let (toile, bandeau) = la_toile_et_le_bandeau(&fenetre, &document, &corps)?;
     // Ce que les écouteurs appellent : la page, dès qu'elle existe.
     let soi: Rc<RefCell<Weak<RefCell<Page>>>> = Rc::new(RefCell::new(Weak::new()));
@@ -253,6 +294,12 @@ async fn demarrer(script: String) -> Result<(), String> {
     )?;
     // Après l'espaceur des composants : le voile et l'insigne du commun le couvrent.
     let commun = commun::creer(&fenetre, &document, &corps, fautif)?;
+    let mesure = mesure::Mesure::creer(
+        &document,
+        &corps,
+        if au_banc { Oui::Oui } else { Oui::Non },
+        glisser,
+    )?;
     let mut ecran = Ecran::creer(toile.clone(), choix).await?;
     let ceder = ceder(&fenetre);
     ecran.chauffer(ceder.as_ref().unchecked_ref()).await?;
@@ -285,6 +332,7 @@ async fn demarrer(script: String) -> Result<(), String> {
         commun,
         son: audio::HautParleur::new(),
         systeme,
+        mesure,
     }));
     *soi.borrow_mut() = Rc::downgrade(&etat);
     interaction::regler_la_taille(&mut etat.borrow_mut());
@@ -486,6 +534,10 @@ fn lancer_le_worker(etat: &Etat) {
 }
 
 /// Un message du Worker.
+#[expect(
+    clippy::too_many_lines,
+    reason = "chaque message du Worker se traite ici, d'un seul match"
+)]
 fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
     let mut p = etat.borrow_mut();
     if generation != p.generation {
@@ -523,12 +575,28 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
         }
     }
     match m {
-        VersPage::Scene { .. } | VersPage::Ressource { .. } => {
+        VersPage::Scene { pas, .. } => {
+            let t_us = heure_us(&p.fenetre);
+            p.mesure.scene_recue(pas.numero(), t_us);
             p.dessin.file.push_back(octets.to_vec());
             drop(p);
             traiter_la_file(etat);
         }
-        VersPage::Jeu { module, .. } => {
+        VersPage::Ressource { .. } => {
+            p.dessin.file.push_back(octets.to_vec());
+            drop(p);
+            traiter_la_file(etat);
+        }
+        VersPage::Traces(v) => {
+            p.mesure.traces(v);
+            for j in p.mesure.au_banc() {
+                banc(&p, &j);
+            }
+        }
+        VersPage::Jeu {
+            module, diagnostic, ..
+        } => {
+            p.mesure.nouveau_jeu(diagnostic);
             // Le jeu passe à l'écran dans l'ordre de la file, avant ses polices et ses
             // scènes.
             banc(
@@ -563,6 +631,12 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
                 exporter_la_cle(&p, &g);
             }
         }
+        // M14 (lot 13) : l'écho du Worker, l'instant de son retour ajouté.
+        VersPage::Banc(json) if json.starts_with("{\"quoi\":\"echo\"") => {
+            let retour = heure_us(&p.fenetre);
+            let corps = json.strip_suffix('}').unwrap_or(json);
+            banc(&p, &format!("{corps},\"retour\":{retour}}}"));
+        }
         VersPage::Banc(json) => banc(&p, json),
         VersPage::EtatSalle(e) => {
             let json = format!(
@@ -574,10 +648,8 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
             banc(&p, &json);
             commun::etat_salle(&mut p, &e);
         }
-        VersPage::Battement { .. }
-        | VersPage::EnCours(_)
-        | VersPage::Chargement(_)
-        | VersPage::Traces(_) => {}
+        VersPage::Battement { pas, .. } => p.mesure.battement(pas.numero()),
+        VersPage::EnCours(_) | VersPage::Chargement(_) => {}
     }
 }
 
@@ -656,6 +728,7 @@ fn traiter_la_file(etat: &Etat) {
             };
             let image = {
                 let mut p = e.borrow_mut();
+                let glisse = p.mesure.glisse();
                 let Some(ecran) = p.ecran.as_mut() else {
                     p.dessin.occupe = false;
                     return;
@@ -665,8 +738,15 @@ fn traiter_la_file(etat: &Etat) {
                     p.jeu.ressources.clear();
                     continue;
                 }
+                // Glisser (lot 13) : la scène que la neuve remplace, et son pas.
+                let avant = if glisse {
+                    ecran.scene().cloned().map(|s| (s, ecran.pas().numero()))
+                } else {
+                    None
+                };
                 match ecran.recevoir_sans_attendre(&suivant) {
                     Ok(crate::messages::Recu::Scene { pas, scene }) => {
+                        p.mesure.scene_a_l_ecran(avant, &scene, maintenant_ms());
                         interaction::geometrie(&mut p);
                         p.dessin.sale = true;
                         if !scene.effets.is_empty() {
@@ -720,6 +800,7 @@ fn image(etat: &Etat) {
         let mut p = e.borrow_mut();
         interaction::compter_l_image(&mut p);
         interaction::defiler_au_bord(&mut p);
+        p.mesure.image(maintenant_ms());
         let t_us = heure_us(&p.fenetre);
         poster(
             &p,
@@ -729,7 +810,17 @@ fn image(etat: &Etat) {
             },
         );
         let maintenant = maintenant_ms();
-        let du = p.dessin.sale || maintenant - p.dessin.dernier_ms >= REDESSIN_MS;
+        // Glisser (lot 13) : pendant le chemin d'un pas, chaque image se dessine ; il n'y a
+        // de chemin que si un nœud se déplace.
+        let chemin = if p.mesure.glisse() {
+            p.mesure
+                .chemin(maintenant)
+                .map(|(s, pas, f)| (s.clone(), pas, f))
+        } else {
+            None
+        };
+        let du =
+            p.dessin.sale || chemin.is_some() || maintenant - p.dessin.dernier_ms >= REDESSIN_MS;
         if du {
             interaction::avant_de_dessiner(&mut p);
         }
@@ -741,20 +832,60 @@ fn image(etat: &Etat) {
             Oui::Non
         };
         interaction::couvrir(&mut p, couvert);
+        let mut dessine: Option<(
+            mesure::Montre,
+            u32,
+            std::sync::Arc<std::sync::atomic::AtomicU64>,
+        )> = None;
+        if du && p.mesure.dessin_lent_ms > 0.0 {
+            // Le contrôle négatif de `mesures` (le banc seulement) : un dessin ralenti.
+            let fin = maintenant_ms() + p.mesure.dessin_lent_ms;
+            while maintenant_ms() < fin {}
+        }
         if du && let Some(ecran) = p.ecran.as_mut() {
-            let r = match du_commun {
+            let dessin_fait = match (du_commun, chemin.as_ref()) {
                 // L'écran de démarrage, une scène du commun, à la place de celle du jeu.
-                Some(s) => ecran
+                (Some(s), _) => ecran
                     .dessiner_le_commun(s, crate::demarrage::FORME)
-                    .map(|_| ()),
-                None if ecran.scene().is_some() => ecran.dessiner().map(|_| ()),
-                None => Ok(()),
+                    .map(|d| Some(((None, false), d.glyphes_absents))),
+                // Glisser : la scène à mi-chemin ; chaque nœud y est au moins à sa place
+                // du pas de la scène d'où part le chemin.
+                (None, Some((avant, pas, f))) if ecran.scene().is_some() => ecran
+                    .dessiner_entre(avant, *f)
+                    .map(|d| Some(((Some(*pas), true), d.glyphes_absents))),
+                (None, _) if ecran.scene().is_some() => ecran
+                    .dessiner()
+                    .map(|d| Some(((Some(ecran.pas().numero()), false), d.glyphes_absents))),
+                (None, _) => Ok(None),
             };
-            if let Err(x) = r {
-                web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}")));
+            match dessin_fait {
+                Ok(Some((montre, absents))) => {
+                    dessine = Some((montre, absents, ecran.quand_fini()));
+                }
+                Ok(None) => {}
+                Err(x) => {
+                    web_sys::console::error_1(&JsValue::from_str(&format!("la télé : {x}")));
+                }
             }
-            p.dessin.sale = false;
+            // Pendant un glisser, l'image suivante se redessine aussi.
+            p.dessin.sale = chemin.is_some();
             p.dessin.dernier_ms = maintenant;
+        }
+        if let Some((montre, absents, fini)) = dessine {
+            let soumis = heure_us(&p.fenetre);
+            p.mesure.dessine(montre, (t_us, soumis), &fini, absents);
+        }
+        if p.mesure.attend_le_gpu()
+            && let Some(ecran) = p.ecran.as_ref()
+        {
+            let _: Result<rendu::wgpu::PollStatus, rendu::wgpu::PollError> =
+                ecran.appareil().poll(rendu::wgpu::PollType::Poll);
+        }
+        let origine = p.fenetre.performance().map_or(0.0, |x| x.time_origin());
+        let moteur = p.ecran.as_ref().map_or_else(String::new, Ecran::moteur);
+        p.mesure.chaque_image((origine, maintenant_ms()), &moteur);
+        for j in p.mesure.au_banc() {
+            banc(&p, &j);
         }
         if let Some(f) = s.borrow().as_ref() {
             let _: Result<i32, JsValue> = p
@@ -839,6 +970,17 @@ pub(crate) fn touche(
     } else {
         PleinEcran::SansVerrou
     };
+    // La touche du panneau de diagnostic, que le jeu déclare, est au commun (§ 2.9,
+    // lot 13).
+    if p.mesure.est_la_touche(code) {
+        if phase == PhaseTouche::Enfoncee && repetition == Oui::Non {
+            k.prevent_default();
+            p.mesure.basculer();
+            banc(p, "{\"quoi\":\"diagnostic\"}");
+        }
+        return;
+    }
+    let evenement_us = instant_de(&p.fenetre, k.time_stamp());
     let scene = p.ecran.as_ref().and_then(Ecran::scene);
     let decision = pour_le_jeu(scene, code, mods, phase, repetition, plein, p.systeme);
     match decision {
@@ -888,16 +1030,7 @@ pub(crate) fn touche(
         }
         PourLeJeu::Action(action) => {
             k.prevent_default();
-            let vu = p.ecran.as_ref().map_or(Pas::ZERO, Ecran::pas);
-            let t_us = heure_us(&p.fenetre);
-            poster(
-                p,
-                &DeLaPage::Ecran {
-                    quoi: EcranFil::Action(&action),
-                    vu,
-                    t_us,
-                },
-            );
+            entree_au_worker(p, EcranFil::Action(&action), Source::Clavier, evenement_us);
             banc(
                 p,
                 &format!(
@@ -908,16 +1041,7 @@ pub(crate) fn touche(
             );
         }
         PourLeJeu::Brute(t) => {
-            let vu = p.ecran.as_ref().map_or(Pas::ZERO, Ecran::pas);
-            let t_us = heure_us(&p.fenetre);
-            poster(
-                p,
-                &DeLaPage::Ecran {
-                    quoi: EcranFil::Touche(t),
-                    vu,
-                    t_us,
-                },
-            );
+            entree_au_worker(p, EcranFil::Touche(t), Source::Clavier, evenement_us);
         }
     }
 }
@@ -984,6 +1108,10 @@ fn reprendre_ici(etat: &Etat) {
 }
 
 /// Les crochets du banc, sur `window.__banc` (mode banc seulement).
+#[expect(
+    clippy::too_many_lines,
+    reason = "les crochets du banc se posent ici, l'un après l'autre"
+)]
 fn crochets(etat: &Etat) -> Result<(), String> {
     let o = Object::new();
     let poser = |nom: &str, f: &JsValue| {
@@ -1067,6 +1195,57 @@ fn crochets(etat: &Etat) -> Result<(), String> {
     });
     poser("rapporter", rapport.as_ref())?;
     rapport.forget();
+    // Lot 13 : le pas joué au signal de l'image ou par la seule minuterie (M2), glisser
+    // forcé, jamais ou selon l'écran, et le texte du panneau de diagnostic.
+    let e = Rc::clone(etat);
+    let calage = Closure::<dyn FnMut(bool)>::new(move |oui: bool| {
+        let o = if oui { Oui::Oui } else { Oui::Non };
+        poster(&e.borrow(), &DeLaPage::Commande(CommandeEcran::Calage(o)));
+    });
+    poser("calage", calage.as_ref())?;
+    calage.forget();
+    let e = Rc::clone(etat);
+    let glisser = Closure::<dyn FnMut(String)>::new(move |m: String| {
+        e.borrow_mut().mesure.mode = match m.as_str() {
+            "oui" => mesure::ModeGlisser::Oui,
+            "non" => mesure::ModeGlisser::Non,
+            _ => mesure::ModeGlisser::Auto,
+        };
+    });
+    poser("glisser", glisser.as_ref())?;
+    glisser.forget();
+    // Corrigé après la vérification du lot 13 : les scènes où un nœud a glissé et les
+    // images à mi-chemin, `[scènes, images]` en JSON, pour que le banc dise si une
+    // condition « avec glisser » a vraiment glissé.
+    let e = Rc::clone(etat);
+    let ce_qui_a_glisse = Closure::<dyn FnMut() -> String>::new(move || {
+        let (scenes, images) = e.borrow().mesure.glisses();
+        format!("[{scenes},{images}]")
+    });
+    poser("glisses", ce_qui_a_glisse.as_ref())?;
+    ce_qui_a_glisse.forget();
+    let e = Rc::clone(etat);
+    let diagnostic = Closure::<dyn FnMut() -> String>::new(move || {
+        let p = e.borrow();
+        let moteur = p.ecran.as_ref().map_or_else(String::new, Ecran::moteur);
+        p.mesure.texte(&moteur)
+    });
+    poser("diagnostic", diagnostic.as_ref())?;
+    diagnostic.forget();
+    let e = Rc::clone(etat);
+    let echo = Closure::<dyn FnMut()>::new(move || {
+        let p = e.borrow();
+        let t_us = heure_us(&p.fenetre);
+        poster(&p, &DeLaPage::Commande(CommandeEcran::Echo { t_us }));
+    });
+    poser("echo", echo.as_ref())?;
+    echo.forget();
+    let e = Rc::clone(etat);
+    let lent = Closure::<dyn FnMut(f64)>::new(move |ms: f64| {
+        e.borrow_mut().mesure.dessin_lent_ms = if ms.is_finite() && ms > 0.0 { ms } else { 0.0 };
+    });
+    poser("dessin_lent", lent.as_ref())?;
+    lent.forget();
     let p = etat.borrow();
     Reflect::set(&p.fenetre, &JsValue::from_str("__banc"), &o)
         .map(|_| ())

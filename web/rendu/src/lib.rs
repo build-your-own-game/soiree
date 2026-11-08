@@ -1,5 +1,6 @@
 //! Le dessin de la scène de la télé sur le GPU (PHASE-3, § 2.9, lot 9).
 //!
+//! - [`glisser`] : la scène entre deux pas, les nœuds qui glissent à mi-chemin (lot 13).
 //! - [`cadre`] : où la scène se pose sur la toile (zone sûre, échelle entière, page).
 //! - [`liste`] : la scène mise à plat, en pixels, dans l'ordre du peintre, sans GPU.
 //! - [`qr`] : le QR code de l'adresse, en modules (SAL-191).
@@ -30,6 +31,7 @@
 )]
 
 pub mod cadre;
+pub mod glisser;
 pub mod gpu;
 pub mod liste;
 pub mod qr;

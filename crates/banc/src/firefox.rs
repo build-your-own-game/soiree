@@ -364,12 +364,16 @@ impl Firefox {
     pub fn touche(&mut self, onglet: usize, code: &str) -> Result<(), String> {
         let contexte = self.contexte(onglet)?;
         let valeur = match code {
-            "Enter" => "\u{E007}",
-            "Escape" => "\u{E00C}",
-            "Tab" => "\u{E004}",
+            "Enter" => String::from("\u{E007}"),
+            "Escape" => String::from("\u{E00C}"),
+            "Tab" => String::from("\u{E004}"),
             // Lot 12, fin : F9, l'écran de démarrage du commun (WebDriver : `\u{E039}`).
-            "F9" => "\u{E039}",
-            autre => return Err(format!("touche inconnue du banc : {autre}")),
+            "F9" => String::from("\u{E039}"),
+            // Lot 13 : les chiffres et les lettres (`Digit5`, `KeyD`), pour `mesures`.
+            autre => match crate::navigateur::caractere_de(autre) {
+                Some(c) => c.to_string(),
+                None => return Err(format!("touche inconnue du banc : {autre}")),
+            },
         };
         self.bidi
             .envoyer(
@@ -420,6 +424,48 @@ impl Firefox {
             .envoyer(
                 "browsingContext.activate",
                 &json!({ "context": contexte }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Ouvre une autre fenêtre par-dessus celle de l'écran (M6, lot 13).
+    pub fn recouvrir(&mut self) -> Result<(), String> {
+        let c = self.bidi.envoyer(
+            "browsingContext.create",
+            &json!({ "type": "window" }),
+            DELAI,
+        )?;
+        let contexte = c
+            .get("context")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("browsingContext.create sans contexte : {c}"))?
+            .to_owned();
+        self.bidi
+            .envoyer(
+                "browsingContext.activate",
+                &json!({ "context": contexte }),
+                DELAI,
+            )
+            .map(|_| ())
+    }
+
+    /// Met la fenêtre de l'écran dans l'état `etat` (`minimized`, `normal`), par
+    /// `browser.setClientWindowState` de `WebDriver BiDi` (M6, lot 13) : la première
+    /// fenêtre que `browser.getClientWindows` donne, la seule du banc avant `recouvrir`.
+    pub fn etat_de_la_fenetre(&mut self, etat: &str) -> Result<(), String> {
+        let f = self
+            .bidi
+            .envoyer("browser.getClientWindows", &json!({}), DELAI)?;
+        let fenetre = f
+            .pointer("/clientWindows/0/clientWindow")
+            .and_then(Json::as_str)
+            .ok_or_else(|| format!("browser.getClientWindows : {f}"))?
+            .to_owned();
+        self.bidi
+            .envoyer(
+                "browser.setClientWindowState",
+                &json!({ "clientWindow": fenetre, "state": etat }),
                 DELAI,
             )
             .map(|_| ())

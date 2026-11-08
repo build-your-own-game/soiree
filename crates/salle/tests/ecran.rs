@@ -25,8 +25,8 @@
 use std::collections::BTreeSet;
 
 use jeu_abi::{
-    Appareil, DemandeFil, EchecDemande, EcranFil, FormeEcran, IdDemande, IdFichier, IdGeste, Oui,
-    Pas, ReponseFil,
+    Appareil, CodeTouche, DemandeFil, EchecDemande, EcranFil, FormeEcran, IdDemande, IdFichier,
+    IdGeste, Oui, Pas, ReponseFil,
 };
 use liaison::{AdresseAnnoncee, AdresseIp, CodeSalle, Lien, RefusRelais};
 use proptest::prelude::*;
@@ -74,6 +74,8 @@ fn nom_commande(c: CommandeEcran) -> &'static str {
         CommandeEcran::Figer => "CommandeEcran::Figer",
         CommandeEcran::Retarder { .. } => "CommandeEcran::Retarder",
         CommandeEcran::Bots(_) => "CommandeEcran::Bots",
+        CommandeEcran::Calage(_) => "CommandeEcran::Calage",
+        CommandeEcran::Echo { .. } => "CommandeEcran::Echo",
     }
 }
 
@@ -120,6 +122,8 @@ const TOUS_LES_VARIANTS: &[&str] = &[
     "CommandeEcran::Figer",
     "CommandeEcran::Retarder",
     "CommandeEcran::Bots",
+    "CommandeEcran::Calage",
+    "CommandeEcran::Echo",
     "PanneSalle::Outil",
     "PanneSalle::Garde",
     "PanneSalle::Relais",
@@ -139,6 +143,7 @@ fn trace(id: IdTrace) -> Trace {
         pas_fin_us: 8,
         vue_fin_us: 9,
         page_recue_us: 10,
+        image_us: 12,
         soumis_us: 11,
         gpu_fini_us: 300,
         incertitude_us: 2_000,
@@ -248,7 +253,7 @@ fn vers_page_figes() -> Vec<(VersPage<'static>, &'static str)> {
                     numero: 2,
                 }),
             ]),
-            "06020001010201030405060708090a0bac02d00f01ac0202010201030405060708090a0bac02d00f",
+            "06020001010201030405060708090a0c0bac02d00f01ac0202010201030405060708090a0c0bac02d00f",
         ),
         (VersPage::EnCours(None), "0700"),
         (VersPage::EnCours(Some(IdGeste::du_fil(77))), "07014d"),
@@ -263,15 +268,17 @@ fn vers_page_figes() -> Vec<(VersPage<'static>, &'static str)> {
                     zone_sure_pour_cent: 90,
                     echelle_entiere: Oui::Non,
                 },
+                diagnostic: CodeTouche::new("KeyD"),
             },
-            "09cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00800fb8085a01",
+            "09cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00800fb8085a01044b657944",
         ),
         (
             VersPage::Jeu {
                 module: [0; 32],
                 forme: FormeEcran::Page { largeur_max: 1100 },
+                diagnostic: CodeTouche::new("F2"),
             },
-            "09000000000000000000000000000000000000000000000000000000000000000001cc08",
+            "09000000000000000000000000000000000000000000000000000000000000000001cc08024632",
         ),
         (
             VersPage::Accueil {
@@ -305,8 +312,10 @@ fn de_la_page_figes() -> Vec<(DeLaPage<'static>, &'static str)> {
                 quoi: EcranFil::Action(&[5]),
                 vu: Pas::du_fil(9),
                 t_us: 100,
+                numero: 3,
+                envoi_us: 200,
             },
-            "000001050964",
+            "00000105096403c801",
         ),
         (
             DeLaPage::Image {
@@ -353,6 +362,14 @@ fn de_la_page_figes() -> Vec<(DeLaPage<'static>, &'static str)> {
             "0406960103",
         ),
         (DeLaPage::Commande(CommandeEcran::Bots(Oui::Non)), "040701"),
+        (
+            DeLaPage::Commande(CommandeEcran::Calage(Oui::Non)),
+            "040801",
+        ),
+        (
+            DeLaPage::Commande(CommandeEcran::Echo { t_us: 300 }),
+            "0409ac02",
+        ),
         (
             DeLaPage::Demarrer {
                 banc: Oui::Oui,
@@ -442,7 +459,7 @@ fn les_octets_figes_couvrent_chaque_variant() {
 
 #[test]
 fn le_protocole_de_l_ecran_est_fige() {
-    assert_eq!(PROTOCOLE, 3);
+    assert_eq!(PROTOCOLE, 4);
 }
 
 /// SAL-118 : un octet de trop, ou un de moins, est un refus.
@@ -581,6 +598,7 @@ impl<'a> Lecteur<'a> {
             pas_fin_us: self.varint(),
             vue_fin_us: self.varint(),
             page_recue_us: self.varint(),
+            image_us: self.varint(),
             soumis_us: self.varint(),
             gpu_fini_us: self.varint(),
             incertitude_us: self.u32(),
@@ -660,6 +678,7 @@ impl<'a> Lecteur<'a> {
                     },
                     v => panic!("FormeEcran {v}"),
                 },
+                diagnostic: CodeTouche::essayer(self.texte()).unwrap(),
             },
             10 => {
                 let salle = CodeSalle(self.brut::<4>());
@@ -698,6 +717,8 @@ impl<'a> Lecteur<'a> {
                     quoi,
                     vu: self.pas(),
                     t_us: self.varint(),
+                    numero: self.varint(),
+                    envoi_us: self.varint(),
                 }
             }
             1 => DeLaPage::Image {
@@ -728,6 +749,10 @@ impl<'a> Lecteur<'a> {
                     fois: self.u32(),
                 },
                 7 => CommandeEcran::Bots(self.oui()),
+                8 => CommandeEcran::Calage(self.oui()),
+                9 => CommandeEcran::Echo {
+                    t_us: self.varint(),
+                },
                 v => panic!("CommandeEcran {v}"),
             }),
             5 => DeLaPage::Demarrer {

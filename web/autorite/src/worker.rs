@@ -199,6 +199,9 @@ struct Coque {
     /// Le banc seulement : le contrôle négatif du scénario `changer` (le module nouveau
     /// n'est pas livré aux téléphones), dit par l'adresse du script du Worker.
     changer_sans_livrer: Oui,
+    /// Le pas joué au signal de l'image (P6) ; `Non` sur la commande `Calage` du banc :
+    /// la minuterie seule le joue, pour mesurer la latence sans calage (M2, lot 13).
+    calage: Oui,
 }
 
 type Etat = Rc<RefCell<Coque>>;
@@ -309,6 +312,7 @@ pub fn demarrer_le_worker() {
         point_rapporte: None,
         change: None,
         changer_sans_livrer: Oui::Non,
+        calage: Oui::Oui,
     }));
     let pour_la_page = Rc::clone(&etat);
     let surmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |m: MessageEvent| {
@@ -367,17 +371,17 @@ fn de_la_page(etat: &Etat, octets: &[u8]) {
             drop(coque);
             vider(etat);
         }
-        DeLaPage::Commande(CommandeEcran::Retarder { ms, fois }) => {
-            let mut coque = etat.borrow_mut();
-            if coque.banc {
-                coque.retarder = (ms, fois);
-            }
-        }
+        DeLaPage::Commande(
+            c @ (CommandeEcran::Retarder { .. }
+            | CommandeEcran::Calage(_)
+            | CommandeEcran::Echo { .. }),
+        ) => commande_du_banc(etat, c),
         DeLaPage::Image { t_us, .. } => {
             let mut coque = etat.borrow_mut();
             let global = coque.global.clone();
             coque.derniere_image_ms = maintenant_ms(&global);
-            if coque.figee != Figee::Non || coque.perdu {
+            // Sans calage (le banc, M2), l'image ne joue pas le pas : la minuterie le joue.
+            if coque.figee != Figee::Non || coque.perdu || coque.calage == Oui::Non {
                 return;
             }
             let heure = heure_us(&global);
@@ -420,6 +424,32 @@ fn de_la_page(etat: &Etat, octets: &[u8]) {
             drop(coque);
             vider(etat);
         }
+    }
+}
+
+/// Une commande du banc seulement, ignorée hors du banc : le fil gelé (`Retarder`), le
+/// pas sans calage (`Calage`, M2), l'écho (`Echo`, M14 ; lot 13).
+fn commande_du_banc(etat: &Etat, c: CommandeEcran) {
+    let mut coque = etat.borrow_mut();
+    if !coque.banc {
+        return;
+    }
+    match c {
+        CommandeEcran::Retarder { ms, fois } => coque.retarder = (ms, fois),
+        CommandeEcran::Calage(o) => coque.calage = o,
+        CommandeEcran::Echo { t_us } => {
+            // M14 : l'écho répond tout de suite, avant tout autre travail.
+            let heure = heure_us(&coque.global);
+            let json = format!("{{\"quoi\":\"echo\",\"page\":{t_us},\"worker\":{heure}}}");
+            poster(&coque.global, &VersPage::Banc(&json));
+        }
+        CommandeEcran::ChangerDeJeu { .. }
+        | CommandeEcran::NouvelleSoiree
+        | CommandeEcran::Reprendre { .. }
+        | CommandeEcran::Marque
+        | CommandeEcran::ExporterLaCle
+        | CommandeEcran::Figer
+        | CommandeEcran::Bots(_) => {}
     }
 }
 
@@ -784,6 +814,7 @@ async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), Str
         &VersPage::Jeu {
             module: enregistrement.module,
             forme: charge.declaration().ecran,
+            diagnostic: charge.declaration().diagnostic,
         },
     );
     let temps_reel = relier(&global, etat, Bout::TempsReel)?;
@@ -807,9 +838,10 @@ async fn lancer(etat: &Etat, module_demande: Option<[u8; 32]>) -> Result<(), Str
         HasardNavigateur { crypto, echec },
         enregistrement.dernier,
     );
-    if reglages.banc == Oui::Oui {
-        autorite.chronometrer(chrono_ms);
-    }
+    // Le chronomètre donne aussi les instants de la fin du pas et des vues aux traces de
+    // l'entrée au pixel (§ 8.4, lot 13) : il tourne hors du banc aussi, pour le panneau
+    // de diagnostic. Quelques `performance.now()` par tour.
+    autorite.chronometrer(chrono_ms);
     // Le module part aux téléphones par la connexion chiffrée, par fenêtre (P18, § 2.5 ;
     // lot 12).
     autorite.livrer(enregistrement.module, &livre);
@@ -910,6 +942,7 @@ async fn changer_de_jeu(etat: &Etat, module: [u8; 32]) -> Result<(), String> {
         &VersPage::Jeu {
             module,
             forme: charge.declaration().ecran,
+            diagnostic: charge.declaration().diagnostic,
         },
     );
     // Le premier point du nouveau jeu part à la garde avant que l'enregistrement ne le
@@ -984,9 +1017,10 @@ fn tic(etat: &Etat) {
         .autorite
         .as_ref()
         .is_some_and(|a| a.secours_presse(heure, avance_us));
-    if coque.figee == Figee::Non && !coque.perdu && (sans_image || presse) {
+    let sans_calage = coque.calage == Oui::Non;
+    if coque.figee == Figee::Non && !coque.perdu && (sans_image || presse || sans_calage) {
         // Pas d'image (la page est cachée), ou l'image viendrait trop tard : la minuterie
-        // fait le pas (P6, § 2.3).
+        // fait le pas (P6, § 2.3). Sans calage (le banc, M2), elle le fait toujours.
         if let Some(autorite) = coque.autorite.as_mut() {
             let avant = autorite.partie().map(|p| p.definitif().numero());
             autorite.noter_retard(retard_ms);

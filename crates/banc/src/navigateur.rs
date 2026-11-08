@@ -77,8 +77,22 @@ pub enum Interface {
     /// Sans fenêtre (`--headless`) : le défaut de chaque scénario.
     #[default]
     Sans,
-    /// Firefox avec sa fenêtre, sur l'écran de l'hôte (`soiree-banc aide --avec-interface`).
+    /// Firefox avec sa fenêtre, sur l'écran de l'hôte (`soiree-banc aide --avec-interface`) ;
+    /// Chrome aussi depuis le lot 13 (`soiree-banc arriere-plan --avec-interface`, M6).
     Avec,
+}
+
+/// Le caractère d'une touche de chiffre ou de lettre (`Digit5` → `5`, `KeyD` → `d`),
+/// celui que le banc tape (lot 13) ; `None` pour une autre touche.
+pub fn caractere_de(code: &str) -> Option<char> {
+    let c = code
+        .strip_prefix("Digit")
+        .or_else(|| code.strip_prefix("Key"))?;
+    let mut lettres = c.chars();
+    match (lettres.next(), lettres.next()) {
+        (Some(x), None) if x.is_ascii_alphanumeric() => Some(x.to_ascii_lowercase()),
+        _ => None,
+    }
 }
 
 /// Un navigateur lancé.
@@ -104,8 +118,8 @@ impl Lance {
         Lance::lancer_avec(n, executable, profils, Interface::Sans)
     }
 
-    /// Comme [`Lance::lancer`], Firefox avec sa fenêtre si `interface` le demande ;
-    /// Chrome et Safari n'en changent pas ([`Interface`]).
+    /// Comme [`Lance::lancer`], Firefox et Chrome (depuis le lot 13) avec leur fenêtre si
+    /// `interface` le demande ; Safari n'en change pas ([`Interface`]).
     pub fn lancer_avec(
         n: Navigateur,
         executable: Option<&Path>,
@@ -114,7 +128,7 @@ impl Lance {
     ) -> Result<Lance, String> {
         let exe = executable.map_or_else(|| n.executable(), Path::to_path_buf);
         match n {
-            Navigateur::Chrome => Chrome::lancer(&exe, profils).map(Lance::Chrome),
+            Navigateur::Chrome => Chrome::lancer_avec(&exe, profils, interface).map(Lance::Chrome),
             Navigateur::Firefox => {
                 Firefox::lancer_avec(&exe, profils, interface).map(Lance::Firefox)
             }
@@ -205,6 +219,34 @@ impl Lance {
             Lance::Chrome(c) => c.montrer(onglet),
             Lance::Firefox(f) => f.montrer(onglet),
             Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
+    /// Ouvre une autre fenêtre du navigateur par-dessus celle de l'écran (M6, lot 13 ;
+    /// avec interface).
+    pub fn recouvrir(&mut self) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.recouvrir(),
+            Lance::Firefox(f) => f.recouvrir(),
+            Lance::Safari(_) => Err(String::from("Safari : une seule fenêtre par le banc")),
+        }
+    }
+
+    /// Réduit la fenêtre de l'onglet dans le Dock (M6, lot 13 ; avec interface).
+    pub fn reduire(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.etat_de_la_fenetre(onglet, "minimized"),
+            Lance::Firefox(f) => f.etat_de_la_fenetre("minimized"),
+            Lance::Safari(_) => Err(String::from("Safari : pas de fenêtre réduite par le banc")),
+        }
+    }
+
+    /// Rend la fenêtre réduite.
+    pub fn restaurer(&mut self, onglet: usize) -> Result<(), String> {
+        match self {
+            Lance::Chrome(c) => c.etat_de_la_fenetre(onglet, "normal"),
+            Lance::Firefox(f) => f.etat_de_la_fenetre("normal"),
+            Lance::Safari(_) => Err(String::from("Safari : pas de fenêtre réduite par le banc")),
         }
     }
 

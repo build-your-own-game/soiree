@@ -63,13 +63,28 @@ impl Chrome {
     /// Lance `executable` sans interface, sur un profil neuf sous `profils`, et s'y
     /// connecte par CDP.
     pub fn lancer(executable: &Path, profils: &Path) -> Result<Chrome, String> {
+        Chrome::lancer_avec(executable, profils, crate::navigateur::Interface::Sans)
+    }
+
+    /// Comme [`Chrome::lancer`] ; avec [`crate::navigateur::Interface::Avec`], Chrome
+    /// ouvre sa fenêtre sur l'écran de l'hôte (M6, lot 13 : la fenêtre recouverte ou
+    /// réduite), sans `--headless`.
+    pub fn lancer_avec(
+        executable: &Path,
+        profils: &Path,
+        interface: crate::navigateur::Interface,
+    ) -> Result<Chrome, String> {
         if !executable.exists() {
             return Err(format!("Chrome absent : {}", executable.display()));
         }
         let profil = profil_neuf(profils, "chrome")?;
+        let sans_fenetre: &[&str] = match interface {
+            crate::navigateur::Interface::Sans => &["--headless=new"],
+            crate::navigateur::Interface::Avec => &[],
+        };
         let mut processus = Command::new(executable)
+            .args(sans_fenetre)
             .args([
-                "--headless=new",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--disable-extensions",
@@ -273,12 +288,16 @@ impl Chrome {
     pub fn touche(&mut self, onglet: usize, code: &str) -> Result<(), String> {
         let s = self.session_de(onglet)?;
         let (cle, vk) = match code {
-            "Enter" => ("Enter", 13),
-            "Escape" => ("Escape", 27),
-            "Tab" => ("Tab", 9),
+            "Enter" => (String::from("Enter"), 13),
+            "Escape" => (String::from("Escape"), 27),
+            "Tab" => (String::from("Tab"), 9),
             // Lot 12, fin : F9, l'écran de démarrage du commun.
-            "F9" => ("F9", 120),
-            autre => return Err(format!("touche inconnue du banc : {autre}")),
+            "F9" => (String::from("F9"), 120),
+            // Lot 13 : les chiffres et les lettres (`Digit5`, `KeyD`), pour `mesures`.
+            autre => match crate::navigateur::caractere_de(autre) {
+                Some(c) => (c.to_string(), u32::from(c.to_ascii_uppercase())),
+                None => return Err(format!("touche inconnue du banc : {autre}")),
+            },
         };
         for sorte in ["rawKeyDown", "keyUp"] {
             self.cdp.envoyer(
@@ -358,6 +377,58 @@ impl Chrome {
                     .envoyer("Target.closeTarget", &json!({ "targetId": d }), None, DELAI);
         }
         Ok(())
+    }
+
+    /// Ouvre une autre fenêtre par-dessus celle de l'écran (M6, lot 13) ; `montrer` la
+    /// ferme.
+    pub fn recouvrir(&mut self) -> Result<(), String> {
+        let cible = self.cdp.envoyer(
+            "Target.createTarget",
+            &json!({ "url": "about:blank", "newWindow": true }),
+            None,
+            DELAI,
+        )?;
+        let id = cible
+            .get("targetId")
+            .and_then(Json::as_str)
+            .ok_or_else(|| String::from("Target.createTarget sans targetId"))?
+            .to_owned();
+        self.cdp.envoyer(
+            "Target.activateTarget",
+            &json!({ "targetId": id }),
+            None,
+            DELAI,
+        )?;
+        self.devant = Some(id);
+        Ok(())
+    }
+
+    /// Met la fenêtre de l'onglet dans l'état `etat` (`minimized`, `normal`) :
+    /// `Browser.setWindowBounds` (M6, lot 13).
+    pub fn etat_de_la_fenetre(&mut self, onglet: usize, etat: &str) -> Result<(), String> {
+        let id = self
+            .onglets
+            .get(onglet)
+            .map(|(t, _)| t.clone())
+            .ok_or_else(|| format!("pas d'onglet {onglet}"))?;
+        let f = self.cdp.envoyer(
+            "Browser.getWindowForTarget",
+            &json!({ "targetId": id }),
+            None,
+            DELAI,
+        )?;
+        let fenetre = f
+            .get("windowId")
+            .and_then(Json::as_u64)
+            .ok_or_else(|| format!("Browser.getWindowForTarget sans windowId : {f}"))?;
+        self.cdp
+            .envoyer(
+                "Browser.setWindowBounds",
+                &json!({ "windowId": fenetre, "bounds": { "windowState": etat } }),
+                None,
+                DELAI,
+            )
+            .map(|_| ())
     }
 
     /// Appuie sur F8, par la chaîne d'entrées du navigateur (`Input.dispatchKeyEvent`).

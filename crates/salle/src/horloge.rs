@@ -82,6 +82,14 @@ impl Horloge {
         }
     }
 
+    /// L'heure de l'ordinateur, en microsecondes, d'un instant de la partie (`partie_us`
+    /// depuis le pas 0) : l'inverse de [`Horloge::partie_us`]. La trace d'un geste (lot 13)
+    /// vient du téléphone dans le temps de la partie ; l'autorité la ramène ainsi à son
+    /// heure.
+    pub const fn heure_us(&self, partie_us: u64) -> u64 {
+        self.origine_us.saturating_add(partie_us)
+    }
+
     /// Le temps de la partie, en microsecondes depuis le pas 0, à l'heure `t_us` de
     /// l'ordinateur. Avant le pas 0, zéro.
     pub const fn partie_us(&self, t_us: u64) -> u64 {

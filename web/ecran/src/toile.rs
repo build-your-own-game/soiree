@@ -487,6 +487,21 @@ impl Ecran {
         Ok(dessin)
     }
 
+    /// Dessine la dernière scène à `f` millièmes du glisser depuis `precedente` (§ 2.9,
+    /// lot 13) : les nœuds qui glissent à mi-chemin, le reste tel quel. La dernière scène
+    /// reste celle qu'on garde.
+    pub fn dessiner_entre(&mut self, precedente: &SceneFil, f: u32) -> Result<Dessin, String> {
+        let derniere = self
+            .scene
+            .as_ref()
+            .ok_or_else(|| String::from("aucune scène recue"))?;
+        let entre = rendu::glisser::entre(precedente, derniere, f);
+        let derniere = self.scene.replace(entre);
+        let r = self.dessiner();
+        self.scene = derniere;
+        r
+    }
+
     /// Dessine une scène du commun (l'écran de démarrage, lot 10b) dans sa forme, à la place
     /// de celle du jeu, qui reste la dernière reçue et se redessinera ensuite.
     pub fn dessiner_le_commun(

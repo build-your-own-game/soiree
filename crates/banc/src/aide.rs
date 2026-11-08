@@ -242,7 +242,14 @@ fn ouvrir(
     })
     .map_err(|e| format!("le relais : {e}"))?;
     let profils = o.travail.join("profils");
-    let mut navigateur = match Lance::lancer_avec(n, None, &profils, o.interface) {
+    // `--avec-interface` ne vise que Firefox, qui refuse le plein écran sans fenêtre
+    // (lot 10b) ; Chrome reste sans interface, comme avant le lot 13.
+    let interface = if n == Navigateur::Firefox {
+        o.interface
+    } else {
+        crate::navigateur::Interface::Sans
+    };
+    let mut navigateur = match Lance::lancer_avec(n, None, &profils, interface) {
         Ok(l) => l,
         Err(e) => {
             relais.arreter();
