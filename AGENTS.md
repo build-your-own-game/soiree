@@ -121,6 +121,7 @@ Une phrase fausse produit du mauvais code chez tous les agents. Chaque fait a un
 | `conception/LOTS-PHASE-3.md`, `conception/MESURES-PHASE-3.md` | ce que chaque lot de la phase 3 a laissé ; ce qui y a été mesuré, daté, avec sa machine |
 | `conception/RESTE-PHASE-3.md` | ce que la phase 3 laisse, les budgets proposés, la première étiquette proposée, et toutes les questions au mainteneur en un seul endroit |
 | `conception/REPETITION-PHASE-3.md` | la fiche de répétition neuve : ce que seuls des humains, de vrais téléphones et le vrai Wi-Fi diront (l'ancienne `REPETITION.md` attend le mainteneur) |
+| `conception/PHASE-4.md` | la conception retenue de la phase 4 : la prédiction sur le téléphone, la projection et sa réconciliation, les décisions Q1 à Q28, les contrôles E22 et E23, les lots de construction et les questions au mainteneur (34 à 45) |
 | `conception/proposition-*.md` | les trois propositions d'où vient INTERFACE.md ; elles ne font plus foi |
 | `crates/README.md` | la carte des crates, leur graphe, ce qui est figé ; celles de `web/` aussi |
 | `lecons/sources/` | les leçons de l'ancien code, par identifiant |
