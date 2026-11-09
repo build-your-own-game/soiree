@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde_json::{Value as Json, json};
 
 use crate::cdp::{Cdp, ligne_d_evenement};
-use crate::navigateur::{arreter_processus, attendre_l_adresse, effacer, profil_neuf};
+use crate::navigateur::{Place, arreter_processus, attendre_l_adresse, effacer, profil_neuf};
 
 /// Le Chrome de la machine de l'hôte (macOS).
 pub const CHROME: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -31,6 +31,35 @@ pub enum GesteSouris {
 
 /// Le délai d'une requête CDP.
 const DELAI: Duration = Duration::from_secs(20);
+
+/// Le temps laissé à la fenêtre pour changer d'état (choisi : l'animation de macOS, sortie
+/// du plein écran ou réduction dans le Dock, dure moins d'une seconde ; cinq fois plus).
+pub const ATTENTE_DE_LA_FENETRE: Duration = Duration::from_secs(5);
+
+/// Les états à demander l'un après l'autre pour passer de `avant` à `voulu` : Chrome ne
+/// réduit pas une fenêtre en plein écran (macOS la tient dans son propre espace), il faut
+/// d'abord la rendre `normal` (lot 13b).
+pub fn etapes_vers<'a>(avant: &str, voulu: &'a str) -> Vec<&'a str> {
+    if voulu == "minimized" && avant == "fullscreen" {
+        vec!["normal", voulu]
+    } else {
+        vec![voulu]
+    }
+}
+
+/// L'état relu après une étape : celui demandé, ou une faute qui dit ce que Chrome a dit,
+/// et le chemin d'avant.
+pub fn juger_l_etat(voulu: &str, lu: &str, chemin: &[String]) -> Result<(), String> {
+    if lu == voulu {
+        Ok(())
+    } else {
+        Err(format!(
+            "la fenêtre de Chrome n'est pas « {voulu} » {} s après Browser.setWindowBounds : Browser.getWindowBounds dit « {lu} » (chemin : {})",
+            ATTENTE_DE_LA_FENETRE.as_secs(),
+            chemin.join(" → ")
+        ))
+    }
+}
 
 /// Un Chrome lancé, et sa connexion CDP.
 pub struct Chrome {
@@ -140,7 +169,7 @@ impl Chrome {
     /// Ouvre un onglet vierge, s'y attache, écoute sa console et ses exceptions, puis le
     /// mène à `url`.
     pub fn ouvrir(&mut self, url: &str) -> Result<(), String> {
-        let (id, session) = self.onglet(url)?;
+        let (id, session) = self.onglet(url, Place::Devant)?;
         self.onglets.push((id, session.clone()));
         self.session = Some(session);
         Ok(())
@@ -149,7 +178,18 @@ impl Chrome {
     /// Ouvre un onglet de plus à `url` (le second onglet de l'écran, lot 10a) ; rend son
     /// rang parmi les onglets ouverts.
     pub fn nouvel_onglet(&mut self, url: &str) -> Result<usize, String> {
-        let o = self.onglet(url)?;
+        let o = self.onglet(url, Place::Devant)?;
+        self.onglets.push(o);
+        Ok(self.onglets.len().saturating_sub(1))
+    }
+
+    /// Comme [`Chrome::nouvel_onglet`], mais l'onglet s'ouvre **derrière** celui de
+    /// l'écran (`Target.createTarget`, `background`), qui reste devant et visible (la
+    /// correction du lot 13b : l'écho de M14 avec un autre onglet le passait devant ;
+    /// l'onglet de l'écran, caché, quittait le plein écran, et le voile du commun prenait
+    /// le premier clic de la souris des conditions).
+    pub fn nouvel_onglet_derriere(&mut self, url: &str) -> Result<usize, String> {
+        let o = self.onglet(url, Place::Derriere)?;
         self.onglets.push(o);
         Ok(self.onglets.len().saturating_sub(1))
     }
@@ -403,9 +443,13 @@ impl Chrome {
         Ok(())
     }
 
-    /// Met la fenêtre de l'onglet dans l'état `etat` (`minimized`, `normal`) :
-    /// `Browser.setWindowBounds` (M6, lot 13).
-    pub fn etat_de_la_fenetre(&mut self, onglet: usize, etat: &str) -> Result<(), String> {
+    /// Met la fenêtre de l'onglet dans l'état `etat` (`minimized`, `normal`) par
+    /// `Browser.setWindowBounds` (M6, lot 13), en quittant d'abord le plein écran s'il le
+    /// faut ([`etapes_vers`]), et **relit** l'état après chaque étape
+    /// (`Browser.getWindowBounds`) : une fenêtre qui n'y est pas au bout de
+    /// [`ATTENTE_DE_LA_FENETRE`] est une faute (lot 13b : le banc demandait la réduction
+    /// sans la relire, et la page restait visible). Rend le chemin suivi, pour le rapport.
+    pub fn etat_de_la_fenetre(&mut self, onglet: usize, etat: &str) -> Result<String, String> {
         let id = self
             .onglets
             .get(onglet)
@@ -421,14 +465,47 @@ impl Chrome {
             .get("windowId")
             .and_then(Json::as_u64)
             .ok_or_else(|| format!("Browser.getWindowForTarget sans windowId : {f}"))?;
-        self.cdp
-            .envoyer(
+        let avant = self.etat_lu(fenetre)?;
+        let mut chemin = vec![avant.clone()];
+        for etape in etapes_vers(&avant, etat) {
+            self.cdp.envoyer(
                 "Browser.setWindowBounds",
-                &json!({ "windowId": fenetre, "bounds": { "windowState": etat } }),
+                &json!({ "windowId": fenetre, "bounds": { "windowState": etape } }),
                 None,
                 DELAI,
-            )
-            .map(|_| ())
+            )?;
+            // macOS anime la sortie du plein écran et la réduction : l'état se relit
+            // jusqu'à ce qu'il y soit, au plus `ATTENTE_DE_LA_FENETRE`.
+            let echeance = crate::horloge::maintenant()
+                .checked_add(ATTENTE_DE_LA_FENETRE)
+                .ok_or_else(|| String::from("délai trop long"))?;
+            let mut lu = self.etat_lu(fenetre)?;
+            while lu != etape && crate::horloge::maintenant() < echeance {
+                std::thread::sleep(Duration::from_millis(100));
+                lu = self.etat_lu(fenetre)?;
+            }
+            juger_l_etat(etape, &lu, &chemin)?;
+            chemin.push(lu);
+        }
+        Ok(format!(
+            "la fenêtre de Chrome, relue par Browser.getWindowBounds : {}",
+            chemin.join(" → ")
+        ))
+    }
+
+    /// L'état de la fenêtre `fenetre` que Chrome dit (`Browser.getWindowBounds`) :
+    /// `normal`, `minimized`, `maximized` ou `fullscreen`.
+    fn etat_lu(&mut self, fenetre: u64) -> Result<String, String> {
+        let b = self.cdp.envoyer(
+            "Browser.getWindowBounds",
+            &json!({ "windowId": fenetre }),
+            None,
+            DELAI,
+        )?;
+        b.pointer("/bounds/windowState")
+            .and_then(Json::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| format!("Browser.getWindowBounds sans windowState : {b}"))
     }
 
     /// Appuie sur F8, par la chaîne d'entrées du navigateur (`Input.dispatchKeyEvent`).
@@ -532,11 +609,12 @@ impl Chrome {
             .map(|_| ())
     }
 
-    /// Un onglet neuf, attaché, sa console et ses exceptions écoutées, mené à `url`.
-    fn onglet(&mut self, url: &str) -> Result<(String, String), String> {
+    /// Un onglet neuf, attaché, sa console et ses exceptions écoutées, mené à `url` ;
+    /// [`Place::Derriere`], il s'ouvre sans passer devant l'onglet de l'écran.
+    fn onglet(&mut self, url: &str, place: Place) -> Result<(String, String), String> {
         let cible = self.cdp.envoyer(
             "Target.createTarget",
-            &json!({ "url": "about:blank" }),
+            &json!({ "url": "about:blank", "background": place.en_arriere_plan() }),
             None,
             DELAI,
         )?;
@@ -644,7 +722,31 @@ impl Drop for Chrome {
 
 #[cfg(test)]
 mod tests {
-    use super::adresse_annoncee;
+    use super::{adresse_annoncee, etapes_vers, juger_l_etat};
+
+    /// Lot 13b : réduire une fenêtre en plein écran passe d'abord par `normal` ; une
+    /// fenêtre qui n'est pas dans l'état demandé, relu, est une faute qui le dit.
+    #[test]
+    fn la_fenetre_quitte_le_plein_ecran_avant_d_etre_reduite_et_se_relit() {
+        assert_eq!(
+            etapes_vers("fullscreen", "minimized"),
+            ["normal", "minimized"]
+        );
+        assert_eq!(etapes_vers("normal", "minimized"), ["minimized"]);
+        assert_eq!(etapes_vers("maximized", "minimized"), ["minimized"]);
+        assert_eq!(etapes_vers("minimized", "normal"), ["normal"]);
+        assert_eq!(etapes_vers("fullscreen", "normal"), ["normal"]);
+        assert_eq!(juger_l_etat("minimized", "minimized", &[]), Ok(()));
+        let faute = juger_l_etat(
+            "minimized",
+            "normal",
+            &[String::from("fullscreen"), String::from("normal")],
+        )
+        .unwrap_err();
+        assert!(faute.contains("n'est pas « minimized »"), "{faute}");
+        assert!(faute.contains("dit « normal »"), "{faute}");
+        assert!(faute.contains("fullscreen → normal"), "{faute}");
+    }
 
     #[test]
     fn l_adresse_que_chrome_annonce() {

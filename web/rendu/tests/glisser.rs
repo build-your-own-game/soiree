@@ -106,7 +106,9 @@ fn rupture_cle_absente_ou_sorte_changee_ne_glissent_pas() {
         noeud(3, plein(rect(80, 80), b), Oui::Oui, Oui::Non),
         // Ne glisse pas.
         noeud(4, plein(rect(80, 80), b), Oui::Non, Oui::Non),
-        // Un groupe : son décalage glisse.
+        // Un rectangle devenu un groupe : une autre sorte, il ne glisse pas (corrigé au lot
+        // 13b, le commentaire disait que son décalage glisse ; le décalage d'un groupe qui
+        // l'était déjà glisse : `le_decalage_d_un_groupe_glisse`).
         noeud(
             5,
             SorteNoeud::Groupe {
@@ -121,7 +123,8 @@ fn rupture_cle_absente_ou_sorte_changee_ne_glissent_pas() {
     for k in 0..4 {
         assert_eq!(position(&m, k), Some((80 * u, 80 * u)), "nœud {k}");
     }
-    // Rect avant, groupe après : des sortes différentes.
+    // Le nœud 5 : rectangle avant, groupe après, des sortes différentes ; il est déjà à
+    // la place de la dernière scène.
     assert_eq!(position(&m, 4), Some((80 * u, 80 * u)));
     assert!(a_des_noeuds_qui_glissent(&apres));
     assert!(!a_des_noeuds_qui_glissent(&scene(vec![noeud(

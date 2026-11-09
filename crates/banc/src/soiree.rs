@@ -2710,12 +2710,25 @@ fn la_fenetre_cachee(
         .and_then(|e| e.get("pas"))
         .and_then(Json::as_u64)
         .unwrap_or(0);
+    if o.cacher != Cacher::Onglet {
+        // M6 (lot 13b) : la page avant de cacher, et la session de l'écran (verrouillée,
+        // macOS peut tenir chaque fenêtre pour cachée).
+        let v = s.evaluer(0, "document.visibilityState")?;
+        p.notes
+            .push(format!("M6 : document.visibilityState vaut {v} avant"));
+        p.notes.push(crate::navigateur::note_de_la_session());
+    }
     let cache = maintenant();
     let cache_ms = cache.saturating_duration_since(s.depart).as_millis();
     match o.cacher {
         Cacher::Onglet => s.navigateur.cacher()?,
         Cacher::Recouverte => s.navigateur.recouvrir()?,
-        Cacher::Reduite => s.navigateur.reduire(0)?,
+        // Lot 13b : réduite, l'état de la fenêtre est relu, et une fenêtre qui ne l'est
+        // pas fait échouer le passage (l'erreur remonte).
+        Cacher::Reduite => {
+            let fait = s.navigateur.reduire(0)?;
+            p.notes.push(format!("M6 : réduite : {fait}"));
+        }
     }
     p.notes.push(format!(
         "à l'arrière-plan par : {}{}",
@@ -2758,7 +2771,8 @@ fn la_fenetre_cachee(
     let duree = maintenant().saturating_duration_since(cache);
     let montre_ms = maintenant().saturating_duration_since(s.depart).as_millis();
     if o.cacher == Cacher::Reduite {
-        s.navigateur.restaurer(0)?;
+        let fait = s.navigateur.restaurer(0)?;
+        p.notes.push(format!("M6 : rendue : {fait}"));
     }
     s.navigateur.montrer(0)?;
     p.cache = Some((pas_apres.saturating_sub(pas_avant), duree.as_secs()));

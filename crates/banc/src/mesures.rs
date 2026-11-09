@@ -380,6 +380,62 @@ fn jouer(s: &mut Session) -> Result<(), String> {
     .map(|_| ())
 }
 
+/// Le voile que l'écran du commun montre sur le jeu, d'après sa dernière ligne
+/// `ecran-du-commun` (`montre`) ; `None` s'il ne montre rien (lot 13b). Avec la fenêtre de
+/// Chrome, session de macOS verrouillée, le plein écran est quitté aussitôt entré, et le
+/// voile « Plein écran quitté — cliquer pour revenir » couvre le jeu : chaque clic du banc
+/// y va, et non au jeu.
+pub fn voile_sur_le_jeu(lignes: &[soiree::Ligne]) -> Option<String> {
+    let montre = lignes
+        .iter()
+        .rev()
+        .find(|l| l.quoi() == "ecran-du-commun")?
+        .json
+        .get("montre")?
+        .as_str()?;
+    (montre != "rien").then(|| montre.to_owned())
+}
+
+/// Les clics qui sont allés au voile du commun depuis la ligne `depuis` : chacun y refait
+/// le geste (une ligne `geste`), au lieu d'aller au jeu (lot 13b).
+pub fn clics_au_voile(lignes: &[soiree::Ligne], depuis: usize) -> usize {
+    lignes
+        .iter()
+        .skip(depuis)
+        .filter(|l| l.quoi() == "geste")
+        .count()
+}
+
+/// Lot 13b : le jeu est-il à découvert, `quand` (une seconde après « Jouer », puis après
+/// M14) ? Le voile du commun sur le jeu (le plein écran quitté), les clics de la souris
+/// iraient au voile : la souris ne serait pas mesurée, et c'est une faute, dite (le
+/// clavier, lui, va au jeu). `session` dit la session de l'écran, pour le rapport.
+pub fn faute_du_voile(lignes: &[soiree::Ligne], quand: &str, session: &str) -> Option<String> {
+    voile_sur_le_jeu(lignes).map(|voile| {
+        format!(
+            "le voile du commun « {voile} » couvre le jeu {quand} (le plein écran quitté ; {session}) : les clics de la souris vont au voile, la souris n'est pas mesurée"
+        )
+    })
+}
+
+/// [`faute_du_voile`] au passage ; rend vrai si le voile couvre le jeu.
+fn regarder_le_voile(lignes: &[soiree::Ligne], p: &mut Passage, quand: &str) -> bool {
+    let faute = faute_du_voile(lignes, quand, &crate::navigateur::note_de_la_session());
+    let couvert = faute.is_some();
+    p.fautes.extend(faute);
+    couvert
+}
+
+/// La faute d'une condition dont des clics sont allés au voile (lot 13b).
+fn faute_des_clics_au_voile(c: Condition, au_voile: usize) -> Option<String> {
+    (au_voile > 0).then(|| {
+        format!(
+            "{} : {au_voile} clic(s) de la souris allés au voile du commun et non au jeu : la souris de cette condition ne vaut pas mesure",
+            c.nom()
+        )
+    })
+}
+
 /// Le centre d'un bouton de la scène, par son nom (`window.__banc.composants()`), en
 /// pixels CSS.
 fn bouton(s: &mut Session, nom: &str) -> Result<Option<(f64, f64)>, String> {
@@ -637,7 +693,9 @@ fn echos_du_banc(s: &mut Session, n: u32) -> Result<Vec<(u64, u64, u64)>, String
 /// Les échos de la page à un autre onglet de la même origine, par `BroadcastChannel`.
 fn echos_d_un_onglet(s: &mut Session, n: u32) -> Result<Vec<(u64, u64, u64)>, String> {
     let url = format!("http://localhost:{}/banc-echo", s.port);
-    let autre = s.navigateur.nouvel_onglet(&url)?;
+    // Derrière l'onglet de l'écran, qui reste devant, visible et en plein écran
+    // (correction du lot 13b).
+    let autre = s.navigateur.nouvel_onglet_derriere(&url)?;
     s.tourner(Duration::from_secs(1))?;
     s.evaluer(
         autre,
@@ -659,6 +717,44 @@ fn echos_d_un_onglet(s: &mut Session, n: u32) -> Result<Vec<(u64, u64, u64)>, St
                 .collect()
         })
         .unwrap_or_default())
+}
+
+/// M14 avant tout découpage (la ligne du lot, § 8.4 ; corrigé après la vérification du
+/// lot 13 : les échos venaient après les quatre conditions) ; sorti de `passage` au lot
+/// 13b, tel quel.
+fn m14(o: &Options, s: &mut Session, p: &mut Passage) -> Result<(), String> {
+    let du_worker = echos_du_worker(s, o.echos)?;
+    p.echos.push((
+        String::from("le Worker de l'autorité"),
+        ecart_par_echo(&du_worker),
+    ));
+    let du_banc = echos_du_banc(s, o.echos)?;
+    // L'écho du banc a l'horloge du banc aux deux bouts : l'écart rendu est la page
+    // moins le banc ; on le retourne, pour dire le banc moins la page.
+    p.echos.push((
+        String::from("le processus du banc (et des téléphones natifs)"),
+        ecart_par_echo(&du_banc).map(|e| Ecart {
+            ecart_us: e.ecart_us.saturating_neg(),
+            ..e
+        }),
+    ));
+    let d_un_onglet = echos_d_un_onglet(s, o.echos)?;
+    p.echos.push((
+        String::from("un autre onglet, même origine"),
+        ecart_par_echo(&d_un_onglet),
+    ));
+    // Les segments `transport` et `vers-la-page` d'une entrée de l'écran vont d'une
+    // horloge à l'autre (la page, son Worker) : ils portent l'écart de M14, que le
+    // rapport donne à côté, et non dans l'incertitude de chaque trace (celle d'un
+    // téléphone : son demi-aller-retour).
+    if let Some((_, Some(e))) = p.echos.first() {
+        p.notes.push(format!(
+            "les segments entre la page et son Worker (transport et vers-la-page d'une entrée de l'écran) portent en plus l'écart de M14 : {} ms, à {} ms près",
+            ms(e.ecart_us),
+            ms(i64::try_from(e.incertitude_us).unwrap_or(i64::MAX))
+        ));
+    }
+    Ok(())
 }
 
 fn passage(
@@ -697,8 +793,12 @@ fn passage(
         let _: String = soiree::debuter(&mut s, &mut soiree_p, telephones)?;
         p.moteur.clone_from(&soiree_p.moteur);
         let avant = cadence(&mut s)?;
+        if o.interface == crate::navigateur::Interface::Avec {
+            p.notes.push(crate::navigateur::note_de_la_session());
+        }
         jouer(&mut s)?;
         s.tourner(Duration::from_secs(1))?;
+        let couvert = regarder_le_voile(&s.lignes, &mut p, "une seconde après « Jouer »");
         let apres = cadence(&mut s)?;
         p.notes.push(format!(
             "requestAnimationFrame dans la page : {avant} images/s sous l'écran de démarrage, {apres} en jeu, panneau fermé"
@@ -722,44 +822,26 @@ fn passage(
         p.notes.push(format!(
             "requestAnimationFrame dans la page : {ouvert} images/s en jeu, panneau ouvert"
         ));
-        // M14 avant tout découpage (la ligne du lot, § 8.4 ; corrigé après la vérification
-        // du lot 13 : les échos venaient après les quatre conditions).
-        let du_worker = echos_du_worker(&mut s, o.echos)?;
-        p.echos.push((
-            String::from("le Worker de l'autorité"),
-            ecart_par_echo(&du_worker),
-        ));
-        let du_banc = echos_du_banc(&mut s, o.echos)?;
-        // L'écho du banc a l'horloge du banc aux deux bouts : l'écart rendu est la page
-        // moins le banc ; on le retourne, pour dire le banc moins la page.
-        p.echos.push((
-            String::from("le processus du banc (et des téléphones natifs)"),
-            ecart_par_echo(&du_banc).map(|e| Ecart {
-                ecart_us: e.ecart_us.saturating_neg(),
-                ..e
-            }),
-        ));
-        let d_un_onglet = echos_d_un_onglet(&mut s, o.echos)?;
-        p.echos.push((
-            String::from("un autre onglet, même origine"),
-            ecart_par_echo(&d_un_onglet),
-        ));
-        // Les segments `transport` et `vers-la-page` d'une entrée de l'écran vont d'une
-        // horloge à l'autre (la page, son Worker) : ils portent l'écart de M14, que le
-        // rapport donne à côté, et non dans l'incertitude de chaque trace (celle d'un
-        // téléphone : son demi-aller-retour).
-        if let Some((_, Some(e))) = p.echos.first() {
-            p.notes.push(format!(
-                "les segments entre la page et son Worker (transport et vers-la-page d'une entrée de l'écran) portent en plus l'écart de M14 : {} ms, à {} ms près",
-                ms(e.ecart_us),
-                ms(i64::try_from(e.incertitude_us).unwrap_or(i64::MAX))
-            ));
+        m14(o, &mut s, &mut p)?;
+        // Correction du lot 13b : l'écho avec un autre onglet passait cet onglet devant
+        // celui de l'écran, qui, caché, quittait le plein écran (sans interface aussi) ; le
+        // voile prenait alors le premier clic de la souris des conditions. L'onglet s'ouvre
+        // maintenant derrière ; que le jeu soit encore à découvert se regarde ici, une
+        // demi-seconde après (la sortie du plein écran arrive en retard sur l'onglet revenu
+        // devant), et seulement si le voile n'était pas déjà là après « Jouer ».
+        s.tourner(Duration::from_millis(500))?;
+        if !couvert {
+            let _: bool = regarder_le_voile(&s.lignes, &mut p, "après M14, avant les conditions");
         }
         let mut tirage = Tirage(0x5eed_1a7e_0013);
         for c in CONDITIONS {
+            let depuis = s.lignes.len();
             let (traces, glisse) = une_condition(o, &mut s, c, &mut tirage)?;
             if traces.is_empty() {
                 p.fautes.push(format!("{} : aucune trace reçue", c.nom()));
+            }
+            if let Some(faute) = faute_des_clics_au_voile(c, clics_au_voile(&s.lignes, depuis)) {
+                p.fautes.push(faute);
             }
             p.notes.push(note_de_glisser(c, glisse));
             p.conditions.push((c.nom(), resumer(&traces)));
@@ -817,6 +899,82 @@ pub fn jouer_les_mesures(o: &Options, soiree_dir: &Path) -> Result<Vec<Passage>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Lot 13b : le voile du commun sur le jeu se lit dans la dernière ligne
+    /// `ecran-du-commun`, et chaque clic qui y va laisse une ligne `geste` (les lignes du
+    /// passage `m2-ardoise-chrome-interface` de la correction du lot 13, abrégées).
+    #[test]
+    fn le_voile_sur_le_jeu_et_les_clics_qui_y_vont_se_disent() {
+        let ligne = |texte: &str| soiree::Ligne {
+            onglet: String::from("975b816f"),
+            json: serde_json::from_str(texte).unwrap(),
+            ms: 2400,
+        };
+        let mut lignes = vec![
+            ligne(r#"{"quoi":"ecran-du-commun","montre":"demarrage"}"#),
+            ligne(r#"{"quoi":"geste"}"#),
+            ligne(r#"{"quoi":"ecran-du-commun","montre":"rien","plein_ecran":true}"#),
+        ];
+        assert_eq!(voile_sur_le_jeu(&lignes), None);
+        assert_eq!(voile_sur_le_jeu(&[]), None);
+        let depuis = lignes.len();
+        lignes.push(ligne(r#"{"quoi":"plein-ecran","dedans":false}"#));
+        lignes.push(ligne(
+            r#"{"quoi":"ecran-du-commun","montre":"plein-ecran-quitte","plein_ecran":false}"#,
+        ));
+        assert_eq!(
+            voile_sur_le_jeu(&lignes).as_deref(),
+            Some("plein-ecran-quitte")
+        );
+        assert_eq!(clics_au_voile(&lignes, depuis), 0);
+        lignes.push(ligne(r#"{"quoi":"geste"}"#));
+        lignes.push(ligne(r#"{"quoi":"touche","code":"Digit9","au":"jeu"}"#));
+        lignes.push(ligne(r#"{"quoi":"geste"}"#));
+        assert_eq!(clics_au_voile(&lignes, depuis), 2);
+        assert_eq!(clics_au_voile(&lignes, 0), 3);
+    }
+
+    /// Correction du lot 13b : le voile qui tombe sur le jeu après M14 (l'écho avec un
+    /// autre onglet, passé devant celui de l'écran) se dit, avec le moment et la session ;
+    /// les lignes du contrôle sans interface de la vérification du lot 13b
+    /// (`target/travail/verif-lot-13b/mesures-sans-interface`, Chrome), abrégées : le plein
+    /// écran entré à 2 337 ms, quitté à 10 467 ms, pendant M14.
+    #[test]
+    fn le_voile_tombe_apres_m14_se_dit() {
+        let ligne = |ms: u128, texte: &str| soiree::Ligne {
+            onglet: String::from("c23ce4e2"),
+            json: serde_json::from_str(texte).unwrap(),
+            ms,
+        };
+        let mut lignes = vec![
+            ligne(2329, r#"{"quoi":"geste"}"#),
+            ligne(
+                2329,
+                r#"{"quoi":"ecran-du-commun","montre":"rien","plein_ecran":true,"verrou":true}"#,
+            ),
+            ligne(2337, r#"{"quoi":"plein-ecran","dedans":true}"#),
+        ];
+        assert_eq!(
+            faute_du_voile(&lignes, "une seconde après « Jouer »", "s"),
+            None
+        );
+        lignes.push(ligne(10467, r#"{"quoi":"plein-ecran","dedans":false}"#));
+        lignes.push(ligne(
+            10467,
+            r#"{"quoi":"ecran-du-commun","montre":"plein-ecran-quitte","plein_ecran":false,"verrou":false}"#,
+        ));
+        let faute = faute_du_voile(
+            &lignes,
+            "après M14, avant les conditions",
+            "session ouverte",
+        );
+        assert_eq!(
+            faute.as_deref(),
+            Some(
+                "le voile du commun « plein-ecran-quitte » couvre le jeu après M14, avant les conditions (le plein écran quitté ; session ouverte) : les clics de la souris vont au voile, la souris n'est pas mesurée"
+            )
+        );
+    }
 
     /// M14 : un écart connu se retrouve, à un demi-aller-retour près, et les échos les
     /// plus longs (une page occupée) ne le déplacent pas.

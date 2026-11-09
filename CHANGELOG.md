@@ -21,6 +21,20 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 13b : la fenêtre réduite de Chrome et le plein écran
+
+Après la vérification du lot 13 (`conception/PHASE-3.md`, § 7 ; `conception/LOTS-PHASE-3.md`, « Lot 13b » ; les chiffres dans `conception/MESURES-PHASE-3.md`, « Lot 13b »). Le banc seul change.
+
+- **La fenêtre de Chrome se relit** : `Chrome::etat_de_la_fenetre` quitte d'abord le plein écran s'il le faut (`chrome::etapes_vers`), demande l'état par `Browser.setWindowBounds`, le relit par `Browser.getWindowBounds` (au plus `ATTENTE_DE_LA_FENETRE`, 5 s) et rend une faute s'il n'y est pas (`chrome::juger_l_etat`) ; `Lance::reduire` et `Lance::restaurer` rendent ce qui a été fait, et `arriere-plan --mode reduite` le note, avec `document.visibilityState` avant de cacher et la session de l'écran.
+- **La session de l'écran de macOS se lit** (`navigateur::session_verrouillee`, `verrou_dans`, `note_de_la_session` : `CGSSessionScreenIsLocked` de la session à la console, dans `ioreg -n Root -d1`, sans rien changer) : session verrouillée, Chrome quitte le plein écran aussitôt entré, et le voile du commun couvre le jeu (la cause du plein écran quitté vu à la correction du lot 13).
+- **`soiree-banc mesures` ne mesure plus la souris sous le voile** : avec interface, la session au rapport ; le voile du commun sur le jeu une seconde après « Jouer » (`mesures::voile_sur_le_jeu`), ou un clic allé au voile dans une condition (`mesures::clics_au_voile`), est une faute (code 1).
+- *Corrigé après la vérification* : **l'écho de M14 avec un autre onglet ne cache plus l'onglet de l'écran** : il s'ouvre derrière (`Lance::nouvel_onglet_derriere`, `navigateur::Place` : `background` de `Target.createTarget` et de `browsingContext.create`) ; passé devant, il faisait quitter le plein écran à l'onglet de l'écran, même sans interface, et le voile prenait le premier clic de la souris des conditions (Chrome sans interface, code 1). Le voile sur le jeu après M14 est une faute (`mesures::faute_du_voile`).
+- Le commentaire du nœud 5 de `web/rendu/tests/glisser.rs` est corrigé (un rectangle devenu groupe ne glisse pas).
+
+### Passer à cette version
+
+Rien à faire : aucune API d'un jeu ne change.
+
 ### Phase 3, lot 13 : la latence et le diagnostic
 
 Le lot 13 (`conception/PHASE-3.md`, § 2.9, § 8.4, § 8.6 ; `conception/LOTS-PHASE-3.md`, « Lot 13 » ; les chiffres dans `conception/MESURES-PHASE-3.md`, « Lot 13 »). **Un rapport, pas une porte.** L'ABI ne change pas, ni ce que l'épreuve joue ou juge, ni la forme des cases : les modules gardent leur empreinte. Les messages entre la page de l'écran et le Worker changent (`salle::ecran::PROTOCOLE` passe de 3 à 4) ; ceux des téléphones non (`salle::fil::PROTOCOLE`).

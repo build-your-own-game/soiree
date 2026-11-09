@@ -3600,3 +3600,117 @@ L'essai sur Sidequest, avant la campagne, hors règle de calme (`lourd caffeinat
 - **La règle de validité d'une mesure compte la charge de fin** : le portillon écrit « la plus haute pendant » sans la valeur de la fin (`target/travail/lot-13-corr/campagne.sh` l'applique ; `AGENTS.md` le dit).
 - Avec la fenêtre de Chrome, regarder si le plein écran tient (les lignes `plein-ecran-quitte` du `lignes.txt`) avant de lire les chiffres de la souris.
 - Le lot 14 (`RESTE-PHASE-3.md`) : la question sur glisser est retirée ; restent `onSubmittedWorkDone` dans Firefox avec sa fenêtre (le GPU, au clavier et au téléphone) et les premiers gestes après « Jouer ».
+
+## Lot 13b — La fenêtre réduite de Chrome et le plein écran
+
+Fait le 2026-11-08, de 23 h 10 à 23 h 50 environ (UTC), sur la machine de l'hôte (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2 ; Chrome 156.0.8078.80 ; Firefox et Safari non concernés), dans `soiree/` seulement (branche `refonte`, `HEAD` `d0bd4ae`, rien de commité) ; les jeux ne changent pas (`HEAD` `72d3710`, `1dc4a25`, `202f49a`, propres ; modules au sha256 du lot 7b). La ligne du lot n'existait pas au § 7 de PHASE-3 : elle y est ajoutée, d'après la mission (ce que la vérification du lot 13 a laissé).
+
+### Ce qui est fait
+
+1. **La fenêtre de Chrome se relit** (`crates/banc/src/chrome.rs`) : `Chrome::etat_de_la_fenetre` lit l'état (`Browser.getWindowBounds`), quitte d'abord le plein écran s'il faut réduire une fenêtre qui l'est (`etapes_vers` : `fullscreen` → `normal` → `minimized`), demande chaque état par `Browser.setWindowBounds`, **le relit** toutes les 100 ms jusqu'à `ATTENTE_DE_LA_FENETRE` (5 s, choisi : l'animation de macOS dure moins d'une seconde) et rend une faute s'il n'y est pas (`juger_l_etat` : « la fenêtre de Chrome n'est pas « minimized » … Browser.getWindowBounds dit … »). `Lance::reduire` et `Lance::restaurer` rendent le chemin suivi ; `arriere-plan --mode reduite` le note (« normal → minimized », puis « minimized → normal »), et l'erreur fait échouer le passage. Firefox ne change pas (sa réduction était constatée par la page, `hidden`) ; sa note dit « non relu ». `arriere-plan` note aussi, pour M6, `document.visibilityState` **avant** de cacher et la session de l'écran.
+2. **La cause du plein écran quitté aussitôt entré : la session de l'écran de l'hôte, verrouillée depuis 22 h 24 min 04 s** (`ioreg -n Root -d1`, `IOConsoleUsers` de la session à la console : `CGSSessionScreenIsLocked = Yes`, `CGSSessionScreenLockedTime` 1794176644). Relevé dans les lignes de chaque passage avec la fenêtre de Chrome : le plein écran tenait à 22 h 03 (le seul passage d'avant le verrou), il est quitté 0 à 8 ms après être entré (à l'heure où le banc lit les lignes) dans chacun des cinq d'après (22 h 37, 22 h 45, 22 h 56, 23 h 33, 23 h 37). **Ni le banc, ni la page** : le geste, le plein écran demandé, le verrou d'Échap et le voile sont les mêmes qu'à 22 h 03, et la page fait ce que P38 demande d'un plein écran quitté. Ce qui relève du commun, corrigé dans le banc : il lit le verrou (`navigateur::session_verrouillee`, `verrou_dans`, `note_de_la_session`, sans rien changer), le dit dans chaque rapport avec interface, et **`soiree-banc mesures` fait une faute** du voile du commun sur le jeu une seconde après « Jouer » (`mesures::voile_sur_le_jeu`) et de chaque clic allé au voile dans une condition (`mesures::clics_au_voile`, `faute_des_clics_au_voile`) : avant, un tel passage rendait le code 0 avec une souris sans trace. La contre-épreuve (le même passage, session rouverte) n'a pas pu se faire : la cause tient à la coïncidence des heures, pas à une expérience dans les deux sens.
+3. **Le commentaire du nœud 5** de `web/rendu/tests/glisser.rs` (`rupture_cle_absente_ou_sorte_changee_ne_glissent_pas`) : il disait « Un groupe : son décalage glisse » d'un rectangle devenu groupe, qui ne glisse pas (une autre sorte) ; corrigé, avec un renvoi à `le_decalage_d_un_groupe_glisse`. L'assertion ne change pas.
+4. **« retrouvés »** dans la ligne du lot 13 (§ 7) : barré et corrigé ; deux médianes du banc dans Chrome (31 et 28 ps) sont sous l'étendue du harnais (36 à 39), donc pas retrouvées.
+5. Pour `passage` de `mesures` (clippy, `too_many_lines`), les échos de M14 sont sortis tels quels dans `mesures::m14`.
+
+### Les tests qui le tiennent
+
+- `chrome::tests::la_fenetre_quitte_le_plein_ecran_avant_d_etre_reduite_et_se_relit` : les étapes de chaque état à l'autre, et la faute qui dit l'état relu et le chemin.
+- `navigateur::tests::le_verrou_de_la_session_a_la_console_se_lit` : les deux entrées relevées sur la machine (abrégées), le verrou d'une autre session ignoré, la clé absente, la sortie illisible.
+- `mesures::tests::le_voile_sur_le_jeu_et_les_clics_qui_y_vont_se_disent` : sur les lignes du passage de la correction du lot 13, abrégées.
+- **En vrai** : `m6-reduite-chrome-verrouillee` relit `minimized` puis `normal` ; `m2-ardoise-chrome-interface-verrouillee` rend les cinq fautes du voile (le chemin négatif, dans le vrai navigateur, sur l'état réel de la machine). Le chemin où la fenêtre n'est pas réduite n'a pas été provoqué en vrai (Chrome l'a réduite chaque fois) ; il est tenu par le test de `juger_l_etat`.
+
+### Les mesures
+
+`MESURES-PHASE-3.md`, « Lot 13b ». Chaque passage par `lourd --calme caffeinate -d`, la règle posée avant les passages (la charge la plus haute pendant et la charge de fin sous 3 ; `target/travail/lot-13b/campagne.sh`, son journal `campagne-journal.txt`) ; aucun passage écarté. **Toutes session de l'écran verrouillée** (relevé dans chaque empreinte).
+
+- **M6 réduite, Chrome, 480 s** (`m6-reduite-chrome-verrouillee`, charge 1,94 ; 1,38 ; 2,73 au plus pendant) : réussi. **Constat du navigateur** : Chrome dit sa fenêtre `minimized` (relue), et la page reste `visible` avant, au début et à la fin, et reçoit ses images (28 423 pas au signal d'une image, 123 par la minuterie). Mais un essai hors règle (`target/travail/lot-13b/essai-onglet.txt`, 30 s) montre que, session verrouillée, même un onglet passé derrière un autre dans la fenêtre de Chrome reste `visible` (`arriere-plan --mode onglet --avec-interface` en échec) : **ce que Chrome fait d'une fenêtre réduite session ouverte n'est pas établi**.
+- **M2 sur `ardoise` avec la fenêtre de Chrome** (`m2-ardoise-chrome-interface-verrouillee`, charge 2,15 ; 2,03 ; 2,50 ; code 1) : le plein écran quitté 8 ms après être entré, le voile sur le jeu, 18, 18, 16 et 16 clics au voile : **la souris n'est pas mesurée**. Le clavier arrive au jeu : 34,5 ms au 99ᵉ centile avec calage, sans glisser (un constat, session verrouillée). Le premier passage (binaire d'avant les retouches de clippy) est gardé sous `-avant-retouche` (charge 1,35 ; 1,34 ; 1,74 ; mêmes fautes).
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-13b/<nom>/` : `commande.txt`, `sortie.txt` (complète), `code.txt` (code, durée, fin), `empreinte.txt` et `empreinte-fin.txt` (`target/travail/lot-13b/preuve.sh` : celui de la correction du lot 13, plus la session de l'écran).
+
+**L'arbre de code des preuves finales** : `soiree` `HEAD` `d0bd4ae`, sha256 de `git diff HEAD` hors `.md` **`bd4c25ce…`**, aucun fichier non suivi ; les jeux propres ; `soiree-banc` (`build-banc-final`) sha256 `609caea2…` ; le paquet de la page inchangé (`web/` n'a changé que par un commentaire de test). `m6-reduite-chrome-verrouillee` a été pris avec le binaire d'avant les retouches de clippy (`ef0f764c…`, diff hors `.md` `b50fdd4a…`) : ces retouches ne touchent que `mesures` (`m14` sorti, deux fonctions de faute) et un commentaire de `navigateur`, rien du chemin d'`arriere-plan` ; M6 n'est pas refait pour elles.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `test-workspace-final` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0** : 118 binaires, 750 réussis (747 au lot 13 corrigé, plus les trois nouveaux), 0 échec, 1 ignoré (`plan_standard`, comme avant) ; 460 s (pas une mesure) |
+| `clippy-commun-final` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 (deux passages rouges gardés : `-rouge-1`, `too_many_lines` et `doc_markdown` ; `-rouge-2`, `too_many_lines`) |
+| `clippy-web-natif-final`, `clippy-web-wasm-final` | `lourd zsh -c "cd web && cargo clippy --all-targets [--target wasm32-unknown-unknown] -- -D warnings"` | code 0, 0 |
+| `test-web-glisser-final` | `lourd zsh -c "cd web && cargo test -p rendu --test glisser"` | code 0, 4 réussis |
+| fmt | `cargo fmt --all --check`, puis dans `web/` | code 0 (non gardé en preuve : sans sortie) |
+| `build-banc`, `build-banc-final` | `lourd cargo build --release -p banc --bin soiree-banc` | code 0, 0 |
+| `m6-reduite-chrome-verrouillee` | `lourd --calme caffeinate -d target/release/soiree-banc arriere-plan <punchline_module.wasm> --navigateurs chrome --cache 480 --avec-interface --mode reduite --sans-construire` | code 0 ; ci-dessus |
+| `m2-ardoise-chrome-interface-verrouillee` (et `-avant-retouche`) | `lourd --calme caffeinate -d target/release/soiree-banc mesures <ardoise_module.wasm> --navigateurs chrome --entrees 150 --duree 20 --echos 200 --avec-interface --sans-construire` | code 1 (les fautes du voile) ; ci-dessus |
+
+Les essais hors règle (`lourd caffeinate -d`, 30 s, pas des mesures) : `target/travail/lot-13b/essai-m6.txt` (la réduction relue, `normal → minimized`, page `visible`) et `essai-onglet.txt` (l'onglet caché resté `visible`, session verrouillée). Les plans courts ne sont pas relancés : `soiree-epreuve` ne dépend ni de `banc` ni de `web/`, rien d'autre n'a changé.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **La souris de M2 avec la fenêtre de Chrome** : pas mesurée. Elle demande la session de l'écran ouverte, et la session est restée verrouillée (déverrouiller demande le mot de passe de l'hôte : rien n'a été touché). Un script attendait le déverrouillage pour la rejouer (`target/travail/lot-13b/attendre-deverrouillage.sh`), avec M6 ; voir la ligne de fin de `campagne-journal.txt`.
+- **M6 réduite session ouverte** : pas mesurée, pour la même raison ; le constat de ce lot vaut session verrouillée.
+- **La contre-épreuve de la cause** (le plein écran qui tient session rouverte) : pas faite, même raison.
+- Safari : pas exécuté (automatisation à distance non permise). Ni le contrôle d'`arriere-plan` ni le rattrapage des jeux ne changent (question 30).
+- `soiree status` n'est pas lancé (`soiree/AGENTS.md` interdit la commande `soiree` à l'agent) ; `git status` des quatre dépôts relevé à la place : seul `soiree` a des changements.
+
+### Ce que le lot suivant doit savoir
+
+- **Avant toute mesure avec la fenêtre d'un navigateur, la session de l'écran doit être ouverte** : le rapport de `mesures` et d'`arriere-plan --avec-interface` le dit en une ligne, et `preuve.sh` du lot 13b le relève dans chaque empreinte. Session verrouillée, Chrome ne tient pas le plein écran et ne cache même pas un onglet passé derrière.
+- Pour finir ce lot quand l'hôte est là : `target/travail/lot-13b/campagne.sh m2 m6` (les noms prennent le suffixe `-deverrouillee`), puis lire au rapport la ligne de la session, l'absence de faute du voile, et l'état relu de la fenêtre ; et `arriere-plan --mode onglet --avec-interface` dans Chrome, pour savoir si Chrome avec sa fenêtre cache un onglet.
+- Le lot 14 (la fiche de répétition) : la télé de la soirée est une session ouverte ; regarder à l'œil une fenêtre de Chrome réduite y reste utile.
+
+## Lot 13b, correction après la vérification
+
+Fait le 2026-11-08 à 23 h 52 au 2026-11-09 à 0 h 11 (UTC), même machine (MacBook Apple M5, 10 cœurs, 16 Go, macOS 27.2 ; Chrome 156.0.8078.80, Firefox 158.0.1), dans `soiree/` seulement (`HEAD` `d0bd4ae`, rien de commité) ; les jeux ne changent pas. **La session de l'écran de l'hôte est restée verrouillée** du début à la fin (relevé dans chaque empreinte, et par `ioreg` à 23 h 52 et à 0 h 10).
+
+### Les constats de la vérification, un par un
+
+1. **[bloquant] La souris de M2 avec la fenêtre de Chrome n'est pas mesurée** : toujours vrai. La session est encore verrouillée (`CGSSessionScreenIsLocked = Yes`, même `CGSSessionScreenLockedTime`), la déverrouiller demande le mot de passe de l'hôte. Rien n'a été tenté ; **le lot n'est pas fini**.
+2. **[important] Le code 1 de `mesures` dans Chrome sans interface** : vérifié, et **corrigé**. Les lignes de la vérification (`target/travail/verif-lot-13b/mesures-sans-interface/chrome/lignes.txt`) le montrent : le Worker ne joue plus ses pas qu'à la minuterie à partir de 8,9 s (`par_image` figé à 547, `par_minuterie` de 5 à 68), juste après les échos du Worker et du banc, quand l'onglet de l'écho s'ouvre : l'onglet de l'écran est **caché** ; revenu devant (10 284 ms), il annonce le plein écran quitté (10 467 ms) et pose le voile, qui prend le premier clic de la première condition (13 050 ms). La cause : `Target.createTarget` ouvre l'onglet devant. **Correction** (`crates/banc`) : `navigateur::Place` (`Devant`, `Derriere`) et `Lance::nouvel_onglet_derriere` (Chrome : `Target.createTarget` avec `background` ; Firefox : `browsingContext.create` avec `background`) ; `mesures::echos_d_un_onglet` s'en sert ; et `mesures::faute_du_voile` regarde le voile **après M14** aussi (une demi-seconde après les échos ; « après M14, avant les conditions »), s'il n'était pas déjà là après « Jouer ». Contrôle : la commande de la vérification, rejouée avec le binaire final, rend le **code 0** ; le plein écran de Chrome n'est jamais quitté. M14 reste avant les conditions (la ligne du lot 13 le demande).
+3. **[important] Le constat de M6 réduite ne vaut que session verrouillée** : accepté tel quel ; c'était déjà dit (`MESURES-PHASE-3.md`, « Lot 13b »), et c'est une des raisons pour lesquelles le lot n'est pas fini. Rien à corriger dans le code.
+4. **[mineur] La cause du plein écran quitté aussitôt entré repose sur la coïncidence des heures** : accepté ; la contre-épreuve demande la session ouverte. Ce que la correction ajoute : la deuxième cause (l'onglet de l'écho) est, elle, prouvée dans les deux sens (le schéma présent avec l'ancien binaire, absent avec le nouveau, même commande).
+5. **[mineur] Deux chemins de `etat_de_la_fenetre` jamais tournés en vrai** : accepté, non corrigé. La relecture qui échoue et le passage par `normal` depuis le plein écran demandent une fenêtre en plein écran, que Chrome ne tient pas session verrouillée ; un faux CDP pour les tenir serait une crate de test que le banc n'a pas. Seules `etapes_vers` et `juger_l_etat` restent tenues par des tests.
+6. **[mineur] Les preuves de fmt et les empreintes de clippy-web** : corrigé ; `fmt-final` est gardé, et toutes les preuves finales ont l'empreinte de l'arbre final.
+7. **[mineur] M6 pris avec un binaire intermédiaire** : non refait. Le constat vaut session verrouillée seulement (constat 3) ; le refaire session verrouillée, avec un binaire qui ne diffère que par l'onglet ouvert derrière (dont `arriere-plan` ne se sert pas), n'apprendrait rien. À refaire session ouverte, avec la souris de M2.
+
+### Les tests qui le tiennent
+
+- `mesures::tests::le_voile_tombe_apres_m14_se_dit` (nouveau) : sur les lignes du contrôle de la vérification, abrégées (le plein écran entré à 2 337 ms, quitté à 10 467 ms) : aucune faute avant, la faute « après M14, avant les conditions » après, avec la session.
+- **En vrai** : `mesures-sans-interface` (code 0 ; avant la correction, le même contrôle rendait 1) ; `essai-interface.txt` (hors règle) : l'onglet ouvert derrière est accepté par Chrome et Firefox avec leur fenêtre.
+- Les trois tests du lot 13b restent verts.
+
+### Les mesures
+
+Aucune mesure de temps : les passages de cette correction sont des contrôles (`lourd` sans `--calme`) ; leurs latences ne sont pas reprises. `MESURES-PHASE-3.md`, « Lot 13b », « Correction après la vérification ».
+
+### Les vérifications, et l'index des preuves
+
+Dans `target/preuves/lot-13b-corr/<nom>/` (`target/travail/lot-13b-corr/preuve.sh` : celui du lot 13b, son dossier changé). **L'arbre final** : `soiree` `HEAD` `d0bd4ae`, sha256 de `git diff HEAD` hors `.md` **`c6ccb8cb…`**, aucun fichier non suivi ; les jeux propres (`72d3710`, `1dc4a25`, `202f49a`) ; `soiree-banc` sha256 **`f667bea7…`** ; le paquet de la page et les modules inchangés.
+
+| Preuve | Commande | Résultat |
+|---|---|---|
+| `test-workspace-final` | `lourd /usr/bin/time -l cargo test --workspace --no-fail-fast` | **code 0** : 118 binaires, 751 réussis (750 du lot 13b et le nouveau), 0 échec, 1 ignoré (`plan_standard`, comme avant) ; 439 s (pas une mesure) |
+| `clippy-commun-final` | `lourd cargo clippy --workspace --all-targets -- -D warnings` | code 0 (le passage rouge gardé : `-rouge-1`, `fn_params_excessive_bools` sur le booléen de `onglet`, d'où `navigateur::Place` ; un second rouge, `doc_markdown` et la doc d'`Interface` déplacée, a été écrasé par le vert sous le même nom, non gardé) |
+| `clippy-web-natif-final`, `clippy-web-wasm-final` | `lourd zsh -c "cd web && cargo clippy --all-targets [--target wasm32-unknown-unknown] -- -D warnings"` | code 0, 0 |
+| `test-web-glisser-final` | `lourd zsh -c "cd web && cargo test -p rendu --test glisser"` | code 0, 4 réussis |
+| `fmt-final` | `cargo fmt --all --check`, puis dans `web/` | code 0, 0 |
+| `test-banc-lib-voile` | `lourd cargo test -p banc --lib -- voile fenetre verrou` | code 0, 4 réussis |
+| `build-banc-final` | `lourd cargo build --release -p banc --bin soiree-banc` | code 0 ; `f667bea7…` |
+| `mesures-sans-interface` | `lourd target/release/soiree-banc mesures <ardoise_module.wasm> --navigateurs chrome,firefox --entrees 60 --duree 8 --echos 50 --sans-construire --travail …` | **code 0**, « 2 mesuré(s), 0 en faute » ; plein écran de Chrome entré à 2 328 ms, jamais quitté ; charge 3,97 ; 3,01 ; 6,11 (un contrôle) |
+| `mesures-sans-interface-avant-place`, `build-banc` | les mêmes, binaire `d45961a8…` (arbre `060ab669…`, le booléen avant `Place`) | code 0 ; plein écran jamais quitté |
+| `test-workspace-interrompu` | arrêté par l'agent : l'arbre a changé pendant (clippy rouge) | sans valeur |
+
+Hors règle, pas des preuves : `target/travail/lot-13b-corr/essai-interface.txt` (binaire `d45961a8…`, `--avec-interface`, Chrome et Firefox, 20 entrées : les échos de M14 rendus avec l'onglet derrière ; Chrome code 1 par le voile dès « Jouer », la session verrouillée). Les plans courts ne sont pas relancés : `soiree-epreuve` ne dépend pas de `banc`.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **La souris de M2 avec la fenêtre de Chrome** : pas mesurée, la session de l'écran étant verrouillée (le constat bloquant reste). **Le lot 13b n'est pas fini.**
+- **M6 réduite session ouverte**, et la contre-épreuve de la session verrouillée comme cause : même raison.
+- Les deux chemins de `etat_de_la_fenetre` qui n'ont pas tourné en vrai (constat 5).
+- Safari : pas exécuté (automatisation à distance non permise). `soiree status` n'est pas lancé (`soiree/AGENTS.md`) ; `git status` relevé : seul `soiree` a des changements.
+
+### Ce que le lot suivant doit savoir
+
+- Pour finir le lot 13b, l'hôte présent et la session ouverte : `target/travail/lot-13b/campagne.sh m2 m6` (son `soiree-banc` est le binaire courant ; reconstruire d'abord si l'arbre a changé), puis lire au rapport : la ligne de la session, **aucune faute du voile, ni après « Jouer », ni après M14**, et l'état relu de la fenêtre ; et `arriere-plan --mode onglet --avec-interface` dans Chrome.
+- Tout onglet que le banc ouvre à côté de celui de l'écran, quand l'écran doit garder son plein écran, s'ouvre par `nouvel_onglet_derriere` ; `nouvel_onglet` (devant) reste pour les scénarios où l'onglet ouvert doit être vu (le second onglet de l'écran, lot 10a ; les jumeaux des pages, lot 12).

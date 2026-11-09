@@ -19,7 +19,9 @@ use serde_json::{Value as Json, json};
 
 use crate::bidi::{Bidi, ligne_d_evenement};
 use crate::chrome::GesteSouris;
-use crate::navigateur::{Interface, arreter_processus, attendre_l_adresse, effacer, profil_neuf};
+use crate::navigateur::{
+    Interface, Place, arreter_processus, attendre_l_adresse, effacer, profil_neuf,
+};
 
 /// Le Firefox de la machine de l'hôte (macOS).
 pub const FIREFOX: &str = "/Applications/Firefox.app/Contents/MacOS/firefox";
@@ -209,9 +211,22 @@ impl Firefox {
 
     /// Ouvre un onglet de plus à `url` ; rend son rang parmi les onglets ouverts.
     pub fn nouvel_onglet(&mut self, url: &str) -> Result<usize, String> {
-        let c = self
-            .bidi
-            .envoyer("browsingContext.create", &json!({ "type": "tab" }), DELAI)?;
+        self.onglet(url, Place::Devant)
+    }
+
+    /// Comme [`Firefox::nouvel_onglet`], l'onglet ouvert derrière celui de l'écran
+    /// (`browsingContext.create`, `background`), qui reste devant (correction du lot 13b,
+    /// comme [`crate::chrome::Chrome::nouvel_onglet_derriere`]).
+    pub fn nouvel_onglet_derriere(&mut self, url: &str) -> Result<usize, String> {
+        self.onglet(url, Place::Derriere)
+    }
+
+    fn onglet(&mut self, url: &str, place: Place) -> Result<usize, String> {
+        let c = self.bidi.envoyer(
+            "browsingContext.create",
+            &json!({ "type": "tab", "background": place.en_arriere_plan() }),
+            DELAI,
+        )?;
         let contexte = c
             .get("context")
             .and_then(Json::as_str)

@@ -69,6 +69,24 @@ impl Navigateur {
     }
 }
 
+/// Où s'ouvre un onglet de plus (correction du lot 13b) : devant les autres, ou derrière
+/// celui de l'écran, qui reste alors devant, visible et en plein écran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// Devant : l'onglet ouvert passe au premier plan (le défaut des navigateurs).
+    Devant,
+    /// Derrière : l'onglet ouvert reste à l'arrière-plan.
+    Derriere,
+}
+
+impl Place {
+    /// La valeur de `background`, dans `Target.createTarget` comme dans
+    /// `browsingContext.create`.
+    pub const fn en_arriere_plan(self) -> bool {
+        matches!(self, Self::Derriere)
+    }
+}
+
 /// Avec ou sans fenêtre (lot 10b, après la vérification) : Firefox sans interface refuse
 /// le plein écran à un vrai clic du banc ; avec sa fenêtre, il le donne. Chrome reste
 /// toujours sans interface (Keyboard Lock y suffit), Safari a toujours la sienne.
@@ -92,6 +110,42 @@ pub fn caractere_de(code: &str) -> Option<char> {
     match (lettres.next(), lettres.next()) {
         (Some(x), None) if x.is_ascii_alphanumeric() => Some(x.to_ascii_lowercase()),
         _ => None,
+    }
+}
+
+/// La session de l'écran de macOS est-elle verrouillée ? (lot 13b) Session verrouillée,
+/// une fenêtre ne peut pas entrer dans le plein écran : Chrome le quitte aussitôt entré, et
+/// le voile du commun couvre le jeu. Lu sans rien changer, dans `IOConsoleUsers` du
+/// registre d'`IOKit` (`ioreg -n Root -d1`) ; `None` si l'outil ne répond pas ou ne le dit
+/// pas.
+pub fn session_verrouillee() -> Option<bool> {
+    let sortie = std::process::Command::new("/usr/sbin/ioreg")
+        .args(["-n", "Root", "-d1"])
+        .output()
+        .ok()?;
+    verrou_dans(&String::from_utf8_lossy(&sortie.stdout))
+}
+
+/// Le verrou de la session à la console, dans le texte de `ioreg -n Root -d1` :
+/// `"CGSSessionScreenIsLocked"=Yes` dans l'entrée de `IOConsoleUsers` qui porte
+/// `"kCGSSessionOnConsoleKey"=Yes` (l'entrée n'a pas la clé tant que l'écran n'a jamais
+/// été verrouillé : `false`).
+pub fn verrou_dans(texte: &str) -> Option<bool> {
+    let ligne = texte.lines().find(|l| l.contains("\"IOConsoleUsers\""))?;
+    let a_la_console = ligne
+        .split('}')
+        .find(|e| e.contains("\"kCGSSessionOnConsoleKey\"=Yes"))?;
+    Some(a_la_console.contains("\"CGSSessionScreenIsLocked\"=Yes"))
+}
+
+/// La session de l'écran, en mots, pour un rapport avec interface (lot 13b).
+pub fn note_de_la_session() -> String {
+    match session_verrouillee() {
+        Some(true) => String::from(
+            "la session de l'écran de macOS est VERROUILLÉE (ioreg : CGSSessionScreenIsLocked) : une fenêtre n'y entre pas dans le plein écran",
+        ),
+        Some(false) => String::from("la session de l'écran de macOS est déverrouillée"),
+        None => String::from("la session de l'écran de macOS : verrou non lu"),
     }
 }
 
@@ -173,6 +227,17 @@ impl Lance {
         }
     }
 
+    /// Ouvre un onglet de plus à `url`, **derrière** celui de l'écran, qui reste devant,
+    /// visible et en plein écran (l'écho de M14 avec un autre onglet, correction du lot
+    /// 13b) ; rend son rang.
+    pub fn nouvel_onglet_derriere(&mut self, url: &str) -> Result<usize, String> {
+        match self {
+            Lance::Chrome(c) => c.nouvel_onglet_derriere(url),
+            Lance::Firefox(f) => f.nouvel_onglet_derriere(url),
+            Lance::Safari(_) => Err(String::from("Safari : un seul onglet par le banc")),
+        }
+    }
+
     /// Évalue `expression` dans l'onglet, sa promesse attendue ; rend sa valeur.
     pub fn evaluer(
         &mut self,
@@ -232,20 +297,26 @@ impl Lance {
         }
     }
 
-    /// Réduit la fenêtre de l'onglet dans le Dock (M6, lot 13 ; avec interface).
-    pub fn reduire(&mut self, onglet: usize) -> Result<(), String> {
+    /// Réduit la fenêtre de l'onglet dans le Dock (M6, lot 13 ; avec interface). Rend ce
+    /// qui a été fait, pour le rapport : dans Chrome, l'état relu de la fenêtre, et une
+    /// faute s'il n'est pas `minimized` (lot 13b).
+    pub fn reduire(&mut self, onglet: usize) -> Result<String, String> {
         match self {
             Lance::Chrome(c) => c.etat_de_la_fenetre(onglet, "minimized"),
-            Lance::Firefox(f) => f.etat_de_la_fenetre("minimized"),
+            Lance::Firefox(f) => f
+                .etat_de_la_fenetre("minimized")
+                .map(|()| String::from("browser.setClientWindowState minimized, non relu")),
             Lance::Safari(_) => Err(String::from("Safari : pas de fenêtre réduite par le banc")),
         }
     }
 
-    /// Rend la fenêtre réduite.
-    pub fn restaurer(&mut self, onglet: usize) -> Result<(), String> {
+    /// Rend la fenêtre réduite ; comme [`Lance::reduire`].
+    pub fn restaurer(&mut self, onglet: usize) -> Result<String, String> {
         match self {
             Lance::Chrome(c) => c.etat_de_la_fenetre(onglet, "normal"),
-            Lance::Firefox(f) => f.etat_de_la_fenetre("normal"),
+            Lance::Firefox(f) => f
+                .etat_de_la_fenetre("normal")
+                .map(|()| String::from("browser.setClientWindowState normal, non relu")),
             Lance::Safari(_) => Err(String::from("Safari : pas de fenêtre réduite par le banc")),
         }
     }
@@ -493,7 +564,27 @@ pub(crate) fn attendre_l_adresse(
 
 #[cfg(test)]
 mod tests {
-    use super::Navigateur;
+    use super::{Navigateur, verrou_dans};
+
+    /// Lot 13b : le verrou de la session à la console se lit dans `ioreg -n Root -d1`
+    /// (les deux entrées relevées le 2026-11-08 sur la machine de l'hôte, abrégées), et
+    /// pas celui d'une autre session.
+    #[test]
+    fn le_verrou_de_la_session_a_la_console_se_lit() {
+        let verrouillee = r#"  | {
+      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=No,"kCGSSessionUserNameKey"="axel","kCGSSessionUserIDKey"=501},{"kCGSSessionOnConsoleKey"=Yes,"kCGSSessionUserNameKey"="axel2","CGSSessionScreenLockedTime"=1794176644,"CGSSessionScreenIsLocked"=Yes,"kCGSSessionUserIDKey"=502})
+    }"#;
+        assert_eq!(verrou_dans(verrouillee), Some(true));
+        let ailleurs = r#"      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=No,"CGSSessionScreenIsLocked"=Yes},{"kCGSSessionOnConsoleKey"=Yes,"kCGSSessionUserIDKey"=502})"#;
+        assert_eq!(verrou_dans(ailleurs), Some(false));
+        let deverrouillee = r#"      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes,"CGSSessionScreenIsLocked"=No})"#;
+        assert_eq!(verrou_dans(deverrouillee), Some(false));
+        assert_eq!(verrou_dans("rien"), None);
+        assert_eq!(
+            verrou_dans(r#""IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=No})"#),
+            None
+        );
+    }
 
     #[test]
     fn les_noms_des_navigateurs() {
