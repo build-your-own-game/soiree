@@ -17,6 +17,8 @@
 //!   lot 10b) ;
 //! - [`jouer`] : la commande unique du jour J, `soiree-relais jouer` (P17, P35 ; lot 10b) ;
 //! - [`enregistrement`] : tout ce que le relais voit, pour le banc (§ 8.1) ;
+//! - [`mesure`] : la mesure du vrai Wi-Fi, échos, tics et bilans de la page `/#mesure`
+//!   (M5 ; lot 14) ;
 //! - [`coque`] : les fils, les sockets, l'heure ;
 //! - le binaire `soiree-relais`.
 //!
@@ -38,5 +40,6 @@ pub mod garde;
 pub mod horloge;
 pub mod http;
 pub mod jouer;
+pub mod mesure;
 pub mod paquet;
 pub mod preparer;

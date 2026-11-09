@@ -21,6 +21,20 @@ Aucune API de l'ancien commun ne survit : salon, `DeviceEvent`, `soiree.toml`, `
    ```
    L'épreuve vérifie les règles d'écriture, lance clippy, compile le module et la copie native (écrite hors du dépôt du jeu, dans son dossier de compilation), puis joue. Le jeu passe quand le code de sortie vaut 0, sur le plan standard : chaque étape exigée du CONTRAT faite, chaque contrôle réussi ou sans objet. `soiree-epreuve --wasm <module.wasm>` éprouve un module seul, mais ne rend jamais 0 : l'étape 1 n'y est pas faite. Ne lance pas `soiree check` ni `soiree certify` : l'outil n'est pas réécrit.
 
+### Phase 3, lot 14 : le jour de la soirée
+
+Le lot 14 (`conception/PHASE-3.md`, § 7 ; `conception/LOTS-PHASE-3.md`, « Lot 14 »). **Aucune étiquette n'est posée** (question 19, non accordée) ; `conception/RESTE-PHASE-3.md` dit ce que serait la première, ce que la phase laisse, les budgets proposés et toutes les questions au mainteneur ; `conception/REPETITION-PHASE-3.md` est la fiche de répétition neuve (rien n'y est encore fait : c'est humain).
+
+- **La page `/#mesure` du Wi-Fi** (M5) : la télé en `http://localhost:7878/#mesure` montre un QR vers `http://<adresse>:7878/mesure` et le dernier bilan de chaque téléphone ; la page du téléphone envoie un écho toutes les 50 ms par `GET /mesure/ws` (une WebSocket à part, hors des salles et de `liaison`, que le relais renvoie avec son heure et où il envoie un tic tous les 16,7 ms) et un bilan toutes les 10 s (aller-retour, rafales, écarts entre tics, dérive de l'horloge, arrière-plan), que le relais garde dans `<garde>/mesure-wifi.jsonl` (`relais::mesure`, `telephone::mesure`, `web/ecran/src/page/wifi.rs`). `web/demarrage.js` envoie `/mesure` à la colle du téléphone.
+- **`soiree-banc soiree-complete <module>…`** : les jeux à la suite depuis l'écran de démarrage, « On rejoue » deux fois chacun (sans objet pour un jeu qui déclare `fin: SansObjet`), le plein écran, le voile et le verrou d'Échap jugés après le geste, chaque « On rejoue » et chaque changement ; son contrôle négatif `--fautif oublie-le-plein-ecran` (la page, au banc seulement). **`soiree-banc mesure-wifi`** : la page `/#mesure` jouée de bout en bout sur la boucle locale, et son contrôle négatif (les échos retardés par le relais, `Reglages::retard_d_echo_du_banc`, refusé hors du banc).
+- `partie::EtatCoeur::partie()` : le numéro de la partie dans la soirée (une lecture ; rien ne change de ce que l'épreuve joue ou juge) ; le rapport d'état du Worker au banc le dit (`"partie"`).
+- La cause des gestes qui attendent 0,7 à 1,9 s après « Jouer » est établie : ils sont faits sous l'écran de démarrage, avant le geste (`RESTE-PHASE-3.md`, § 1 ; question 33).
+- *Corrigé après la vérification du lot 14* : **la page du téléphone applique `Reglages::fond`** (D2, un écart à INTERFACE § 2.9 né au lot 12, que PHASE-3 promettait « au plus tard avant la fiche de répétition du lot 14 ») : le corps prend la couleur que donne chaque vue, #111 sinon ; les écrans du commun (le voile) gardent #111 (un choix provisoire, laissé au mainteneur). Le scénario `pages` relit le fond du corps après chaque vue posée, avec son contrôle négatif (`__banc.oublier_le_fond`). `soiree-complete --fautif oublie-le-plein-ecran-au-second` : un oubli venu au second « On rejoue » seulement doit se voir. La ligne « chaîne » d'un passage du banc n'est plus tue quand la chaîne est vide, sauf pour `changer` et `soiree-complete`, qui ne la relisent pas.
+
+### Passer à cette version
+
+Rien à faire : aucune API d'un jeu ne change, ni l'ABI, ni ce que l'épreuve joue ou juge. Un jeu dont la vue donne `Reglages::fond` (Punchline, Sidequest) voit désormais ce fond sur la page de ses téléphones ; ses encres, choisies pour lui, s'y lisent.
+
 ### Phase 3, lot 13b : la fenêtre réduite de Chrome et le plein écran
 
 Après la vérification du lot 13 (`conception/PHASE-3.md`, § 7 ; `conception/LOTS-PHASE-3.md`, « Lot 13b » ; les chiffres dans `conception/MESURES-PHASE-3.md`, « Lot 13b »). Le banc seul change.

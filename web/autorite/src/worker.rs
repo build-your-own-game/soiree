@@ -1250,6 +1250,9 @@ fn rapport_d_etat(etat: &Etat) {
         .and_then(|p| p.etat().ok())
         .is_some_and(|e| e.terminale == Oui::Oui);
     let pas = autorite.partie().map(|p| p.definitif().numero());
+    // Le numéro de la partie dans la soirée (lot 14) : « On rejoue » le fait monter, même
+    // quand la phase terminale dure moins que l'intervalle de ce rapport.
+    let partie = autorite.partie().map(|p| u64::from(p.coeur().partie()));
     let (par_image, par_minuterie) = (coque.par_image, coque.par_minuterie);
     let repartition = |r: &RepartitionDuTour| {
         format!(
@@ -1267,8 +1270,9 @@ fn rapport_d_etat(etat: &Etat) {
         appareils
     );
     let json = format!(
-        "{{\"quoi\":\"etat\",\"m13\":{m13},\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"ecran\":{},\"arret\":{}}}",
+        "{{\"quoi\":\"etat\",\"m13\":{m13},\"par_image\":{par_image},\"par_minuterie\":{par_minuterie},\"pas\":{},\"partie\":{},\"terminale\":{terminale},\"depuis_le_point\":{},\"dernier\":{},\"points\":{},\"cases\":{},\"gestes\":{},\"marques\":{},\"ecartes\":{},\"ecran\":{},\"arret\":{}}}",
         nombre(pas),
+        nombre(partie),
         nombre(depuis),
         nombre(dernier),
         comptes.points,

@@ -18,6 +18,9 @@
 //!                    [--retardataires] [--minutes M]
 //!                    [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]
 //! soiree-banc changer <module.wasm> <module.wasm>… [--navigateurs chrome,firefox] [--pages …] [--telephones N] [--fautif changer-sans-livrer]
+//! soiree-banc soiree-complete <module.wasm>… [--navigateurs chrome,firefox,safari] [--pages …]
+//!                             [--telephones N] [--avec-interface] [--fautif oublie-le-plein-ecran[-au-second]]
+//!                             [--travail <dossier>] [--sans-construire]
 //! soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S]
 //!                          [--fois N] [--telephones N] [--avec-interface]
 //!                          [--mode onglet|recouverte|reduite] [--travail <dossier>]
@@ -35,7 +38,16 @@
 //!                             [--travail <dossier>] [--sans-construire]
 //! soiree-banc pages <module.wasm>… [--negatif <module.wasm>] [--navigateurs chrome,firefox]
 //!                   [--travail <dossier>] [--sans-construire]
+//! soiree-banc mesure-wifi [--navigateurs chrome,firefox,safari] [--duree S] [--sans-negatif]
+//!                         [--travail <dossier>] [--sans-construire]
 //! ```
+//!
+//! `mesure-wifi` (lot 14, `banc::mesure_wifi`) : la page `/#mesure` du Wi-Fi jouée de bout
+//! en bout sur la boucle locale (ce n'est pas M5, qui demande un vrai Wi-Fi) : la télé
+//! montre le QR de la page de mesure, un onglet de téléphone mesure `--duree` secondes
+//! (12 par défaut) et envoie son bilan, que le relais garde et que la télé montre ; puis
+//! le contrôle négatif (chaque écho retardé de 40 ms par le relais doit se voir). Code 0 si
+//! tout tient, 1 au moindre écart, 2 si rien n'a pu jouer.
 //!
 //! `pages` (lot 12, fin, `banc::pages`) : chaque page de téléphone de pire cas de chaque
 //! jeu, construite dans wasmtime depuis les limites déclarées, posée dans la page du
@@ -70,6 +82,18 @@
 //! (`document.visibilityState`, les images) noté sans jugement. `rejouer-garde` : la
 //! garde rejouée jusqu'à chaque marque F8 (§ 2.4, `banc::rejouer_garde`). Code 0 si tout
 //! tient, 1 au moindre écart, 2 si rien n'a pu jouer.
+//!
+//! `soiree-complete` (lot 14, `banc::soiree_complete`) : une soirée entière depuis
+//! l'écran de démarrage, les jeux donnés à la suite (le premier, puis chacun des autres
+//! par F9, sa ligne et « Jouer », comme `changer`), « On rejoue » deux fois chacun (sans
+//! objet pour un jeu sans fin), le plein écran, le voile et le verrou d'Échap jugés après
+//! le geste, chaque « On rejoue » et chaque changement ; la garde finale reprise dans
+//! wasmtime. Code 0 si chaque navigateur exécuté réussit, 1 au moindre écart, 2 si rien
+//! n'a pu jouer. `--fautif oublie-le-plein-ecran` est son contrôle négatif, à jouer sur un
+//! seul jeu : le passage « réussit » s'il voit le plein écran oublié après « On rejoue »,
+//! et seulement cela ; sinon « CONTRÔLE NÉGATIF RATÉ ». `--fautif
+//! oublie-le-plein-ecran-au-second` oublie au second « On rejoue » seulement : il doit être
+//! vu après le n° 2, et rien après le n° 1.
 //!
 //! `mesures` (lot 13, `banc::mesures`) : M2 et M14, **un rapport, pas une porte** ; de
 //! vraies touches et de vrais clics sur la télé, les gestes des téléphones natifs, chaque
@@ -125,7 +149,7 @@ use banc::soiree_native;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]\n        soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--pages chrome,firefox,safari] [--retardataires] [--minutes M] [--telephones N] [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]\n        soiree-banc changer <module.wasm> <module.wasm>… [--navigateurs chrome,firefox] [--pages chrome,firefox] [--telephones N] [--fautif changer-sans-livrer] [--travail <dossier>] [--sans-construire]\n        soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S] [--fois N] [--telephones N] [--avec-interface] [--mode onglet|recouverte|reduite] [--travail <dossier>] [--sans-construire]\n        soiree-banc mesures <module.wasm> [--navigateurs chrome,firefox] [--entrees N] [--duree S] [--telephones N] [--echos N] [--avec-interface] [--travail <dossier>] [--sans-construire]\n        soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm> [--salle CODE] [--sortie <dossier>]\n        soiree-banc ecran tier-list <module.wasm> [--navigateurs chrome,firefox] [--sans-webgl2] [--plein N] [--dpr R] [--fautif activation-perdue|geste-au-jeu|ne-couvre-pas] [--travail <dossier>] [--sans-construire]\n        soiree-banc aide <module.wasm>… [--navigateurs chrome,firefox,safari] [--travail <dossier>] [--sans-construire] [--sans-negatif] [--avec-interface]\n        soiree-banc pages <module.wasm>… [--negatif <module.wasm>] [--navigateurs chrome,firefox] [--travail <dossier>] [--sans-construire]"
+        "usage : soiree-banc machine [--sans-construire] [--navigateur chrome|firefox|safari] [--executable <chemin>]\n        soiree-banc rejouer <dossier> [--navigateurs chrome,firefox,safari] [--fautif fausser-apres:<n>] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc etalonner [--navigateurs chrome,firefox,safari] [--mesures m1,m10,m9] [--donnees <dossier>] [--modules devine,…] [--passes <n>] [--tours <n>] [--fois <n>] [--budget <unités>] [--etiquette <nom>] [--sans-construire] [--fautif fausser-apres:<n>]\n        soiree-banc regles-web\n        soiree-banc dessin <module.wasm>… [--navigateurs chrome,firefox,safari] [--fois <n>] [--sans-charge] [--sortie <fichier.json>] [--delai <s>] [--sans-construire]\n        soiree-banc soiree-native <module.wasm> [--telephones N] [--duree S] [--graine G] [--sans-pannes] [--tuer-le-relais N] [--partie-entiere] [--relais <binaire> | --relais-interne] [--travail <dossier>] [--calme S]\n        soiree-banc soiree <module.wasm> [--navigateurs chrome,firefox] [--pages chrome,firefox,safari] [--retardataires] [--minutes M] [--telephones N] [--duree-max S] [--m12 TOURS] [--travail <dossier>] [--sans-construire]\n        soiree-banc changer <module.wasm> <module.wasm>… [--navigateurs chrome,firefox] [--pages chrome,firefox] [--telephones N] [--fautif changer-sans-livrer] [--travail <dossier>] [--sans-construire]\n        soiree-banc soiree-complete <module.wasm>… [--navigateurs chrome,firefox,safari] [--pages chrome,firefox] [--telephones N] [--avec-interface] [--fautif oublie-le-plein-ecran|oublie-le-plein-ecran-au-second] [--travail <dossier>] [--sans-construire]\n        soiree-banc arriere-plan <module.wasm> [--navigateurs chrome,firefox] [--cache S] [--fois N] [--telephones N] [--avec-interface] [--mode onglet|recouverte|reduite] [--travail <dossier>] [--sans-construire]\n        soiree-banc mesures <module.wasm> [--navigateurs chrome,firefox] [--entrees N] [--duree S] [--telephones N] [--echos N] [--avec-interface] [--travail <dossier>] [--sans-construire]\n        soiree-banc rejouer-garde <dossier de la garde> --cle <fichier de G> --module <module.wasm> [--salle CODE] [--sortie <dossier>]\n        soiree-banc ecran tier-list <module.wasm> [--navigateurs chrome,firefox] [--sans-webgl2] [--plein N] [--dpr R] [--fautif activation-perdue|geste-au-jeu|ne-couvre-pas] [--travail <dossier>] [--sans-construire]\n        soiree-banc aide <module.wasm>… [--navigateurs chrome,firefox,safari] [--travail <dossier>] [--sans-construire] [--sans-negatif] [--avec-interface]\n        soiree-banc pages <module.wasm>… [--negatif <module.wasm>] [--navigateurs chrome,firefox] [--travail <dossier>] [--sans-construire]\n        soiree-banc mesure-wifi [--navigateurs chrome,firefox,safari] [--duree S] [--sans-negatif] [--travail <dossier>] [--sans-construire]"
     );
     ExitCode::from(2)
 }
@@ -633,6 +657,9 @@ enum Scenario {
     ArrierePlan,
     /// `changer` (lot 12, fin) : plusieurs modules, le premier puis chacun des autres.
     Changer,
+    /// `soiree-complete` (lot 14) : les jeux à la suite depuis l'écran de démarrage,
+    /// « On rejoue » deux fois chacun.
+    SoireeComplete,
 }
 
 #[expect(
@@ -662,9 +689,14 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
         fautif: None,
         interface: banc::navigateur::Interface::Sans,
         cacher: soiree::Cacher::Onglet,
+        complete: false,
     };
     if scenario == Scenario::Changer {
         o.travail = commun.join("target/banc/changer");
+    }
+    if scenario == Scenario::SoireeComplete {
+        o.travail = commun.join("target/banc/soiree-complete");
+        o.complete = true;
     }
     let mut i = args.iter();
     while let Some(a) = i.next() {
@@ -700,8 +732,11 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
                     _ => return usage(),
                 }
             }
-            // M6 (lot 13) : avec la fenêtre du navigateur, recouverte ou réduite.
-            "--avec-interface" if scenario == Scenario::ArrierePlan => {
+            // M6 (lot 13) : avec la fenêtre du navigateur, recouverte ou réduite ; la soirée
+            // complète avec la fenêtre (lot 14 : Firefox refuse le plein écran sans elle).
+            "--avec-interface"
+                if matches!(scenario, Scenario::ArrierePlan | Scenario::SoireeComplete) =>
+            {
                 o.interface = banc::navigateur::Interface::Avec;
             }
             "--mode" if scenario == Scenario::ArrierePlan => match i.next().map(String::as_str) {
@@ -718,7 +753,21 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
                 Some(f) if f == "changer-sans-livrer" => o.fautif = Some(f.clone()),
                 _ => return usage(),
             },
-            "--pages" if matches!(scenario, Scenario::Soiree | Scenario::Changer) => {
+            "--fautif" if scenario == Scenario::SoireeComplete => match i.next() {
+                Some(f)
+                    if f == banc::soiree_complete::FAUTIF
+                        || f == banc::soiree_complete::FAUTIF_AU_SECOND =>
+                {
+                    o.fautif = Some(f.clone());
+                }
+                _ => return usage(),
+            },
+            "--pages"
+                if matches!(
+                    scenario,
+                    Scenario::Soiree | Scenario::Changer | Scenario::SoireeComplete
+                ) =>
+            {
                 match i.next().map(|n| Navigateur::liste(n)) {
                     Some(Ok(n)) => o.pages = n,
                     _ => return usage(),
@@ -732,7 +781,9 @@ fn soiree_(args: &[String], scenario: Scenario) -> ExitCode {
             }
             "--retardataires" if scenario == Scenario::Soiree => o.retardataires = true,
             _ if a.starts_with("--") => return usage(),
-            _ if !o.module.as_os_str().is_empty() && scenario == Scenario::Changer => {
+            _ if !o.module.as_os_str().is_empty()
+                && matches!(scenario, Scenario::Changer | Scenario::SoireeComplete) =>
+            {
                 o.autres_jeux.push(PathBuf::from(a));
             }
             _ if !o.module.as_os_str().is_empty() => return usage(),
@@ -1109,6 +1160,63 @@ fn mesures_(args: &[String]) -> ExitCode {
     }
 }
 
+fn mesure_wifi_(args: &[String]) -> ExitCode {
+    let commun = banc::commun();
+    let mut o = banc::mesure_wifi::Options {
+        navigateurs: vec![Navigateur::Chrome, Navigateur::Firefox],
+        duree_s: 12,
+        construire: true,
+        travail: commun.join("target/banc/mesure-wifi"),
+        negatif: true,
+    };
+    let mut i = args.iter();
+    while let Some(a) = i.next() {
+        match a.as_str() {
+            "--sans-construire" => o.construire = false,
+            "--sans-negatif" => o.negatif = false,
+            "--navigateurs" => match i.next().map(|n| Navigateur::liste(n)) {
+                Some(Ok(n)) => o.navigateurs = n,
+                _ => return usage(),
+            },
+            "--duree" => match i.next().and_then(|d| d.parse::<u32>().ok()) {
+                Some(d) if d > 0 => o.duree_s = d,
+                _ => return usage(),
+            },
+            "--travail" => match i.next() {
+                Some(d) => o.travail = PathBuf::from(d),
+                None => return usage(),
+            },
+            _ => return usage(),
+        }
+    }
+    let passages = match banc::mesure_wifi::jouer(&o, &commun) {
+        Ok(p) => p,
+        Err(e) => {
+            println!("mesure-wifi : l'outil n'a pas pu jouer : {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let (mut reussis, mut echecs, mut non) = (0u32, 0u32, 0u32);
+    for p in &passages {
+        print!("{p}");
+        if p.pas_execute.is_some() {
+            non = non.saturating_add(1);
+        } else if p.fautes.is_empty() {
+            reussis = reussis.saturating_add(1);
+        } else {
+            echecs = echecs.saturating_add(1);
+        }
+    }
+    println!("\nmesure-wifi : {reussis} réussi(s), {echecs} échec(s), {non} pas exécuté(s)");
+    if echecs > 0 {
+        ExitCode::from(1)
+    } else if reussis == 0 {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
@@ -1120,12 +1228,14 @@ fn main() -> ExitCode {
         Some((c, reste)) if c == "dessin" => dessin_(reste),
         Some((c, reste)) if c == "soiree" => soiree_(reste, Scenario::Soiree),
         Some((c, reste)) if c == "changer" => soiree_(reste, Scenario::Changer),
+        Some((c, reste)) if c == "soiree-complete" => soiree_(reste, Scenario::SoireeComplete),
         Some((c, reste)) if c == "arriere-plan" => soiree_(reste, Scenario::ArrierePlan),
         Some((c, reste)) if c == "rejouer-garde" => rejouer_garde_(reste),
         Some((c, reste)) if c == "aide" => aide_(reste),
         Some((c, reste)) if c == "ecran" => ecran_(reste),
         Some((c, reste)) if c == "pages" => pages_(reste),
         Some((c, reste)) if c == "mesures" => mesures_(reste),
+        Some((c, reste)) if c == "mesure-wifi" => mesure_wifi_(reste),
         _ => usage(),
     }
 }

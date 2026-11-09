@@ -91,6 +91,14 @@ pub(super) enum Fautif {
     /// dessous (`page::le_commun_couvre` toujours faux ; un contrôle négatif du scénario
     /// `ecran`, remontée du lot 10b).
     NeCouvrePas,
+    /// Après « On rejoue » (le numéro de la partie qui monte dans le rapport d'état du
+    /// Worker), la page sort du plein écran et oublie de le rendre : ni voile, ni nouvelle
+    /// demande (le contrôle négatif du scénario `soiree-complete`, lot 14).
+    OubliePleinEcran,
+    /// La même faute, mais au second « On rejoue » seulement (la partie 2 d'un jeu) : le
+    /// plein écran tient après le premier (*lot 14 corrigé* : le contrôle négatif qui oublie
+    /// au premier ne montre pas que le banc verrait un oubli venu au second seulement).
+    OubliePleinEcranAuSecond,
 }
 
 /// L'état de l'écran du commun.
@@ -114,6 +122,9 @@ pub(super) struct Commun {
     scene: Option<SceneFil>,
     sale: bool,
     rapporte: String,
+    /// Le dernier numéro de partie que le Worker a dit (le banc seulement, pour
+    /// [`Fautif::OubliePleinEcran`]) ; oublié à chaque jeu.
+    partie_vue: Option<u64>,
 }
 
 /// Le voile et l'insigne, posés sur la toile.
@@ -187,6 +198,7 @@ pub(super) fn creer(
         scene: None,
         sale: true,
         rapporte: String::new(),
+        partie_vue: None,
     };
     montrer_le_voile(&c);
     Ok(c)
@@ -352,12 +364,55 @@ pub(super) fn montrer_le_demarrage(p: &mut Page) {
 /// `VersPage::Jeu` : le module que la salle joue.
 pub(super) fn jeu(p: &mut Page, module: [u8; 32]) {
     p.commun.demarrage.en_jeu = Some(module);
+    p.commun.partie_vue = None;
     if p.commun.demarrage.choisi == Some(module) {
         p.commun.demarrage.choisi = None;
     }
     p.commun.sale = true;
     montrer_l_insigne(&p.commun);
     rapporter(p);
+}
+
+/// Le rapport d'état du Worker, au banc (`{"quoi":"etat",…}`) : sous
+/// [`Fautif::OubliePleinEcran`] seulement, une partie neuve du même jeu (« On rejoue »)
+/// fait sortir la page du plein écran, sans voile ni nouvelle demande ; sous
+/// [`Fautif::OubliePleinEcranAuSecond`], seulement la partie 2. Hors de ces contrôles
+/// négatifs, la page n'en fait rien.
+pub(super) fn etat_du_worker(p: &mut Page, json: &str) {
+    let des_la_partie = match p.commun.fautif {
+        Fautif::OubliePleinEcran => 1,
+        Fautif::OubliePleinEcranAuSecond => 2,
+        Fautif::Aucun | Fautif::TaireLAide | Fautif::GesteAuJeu | Fautif::NeCouvrePas => {
+            return;
+        }
+    };
+    let Ok(v) = js_sys::JSON::parse(json) else {
+        return;
+    };
+    let Some(partie) = champ(&v, "partie").as_f64().map(|x| x as u64) else {
+        return;
+    };
+    let avant = p.commun.partie_vue.replace(partie);
+    if avant.is_some_and(|a| partie > a)
+        && partie >= des_la_partie
+        && p.document.fullscreen_element().is_some()
+    {
+        p.commun.plein_voulu = false;
+        let document: JsValue = p.document.clone().into();
+        // La promesse est attendue : un refus ne doit pas finir en erreur de la console,
+        // que le banc compterait à part.
+        if let Ok(promesse) = appeler(&document, "exitFullscreen", &Array::new())
+            && let Ok(promesse) = promesse.dyn_into::<Promise>()
+        {
+            spawn_local(async move {
+                let _: Result<JsValue, JsValue> = JsFuture::from(promesse).await;
+            });
+        }
+        banc(
+            p,
+            &format!("{{\"quoi\":\"fautif-plein-ecran-oublie\",\"partie\":{partie}}}"),
+        );
+    }
 }
 
 /// Un texte de `GET` (la boucle locale), ou rien.

@@ -780,6 +780,7 @@ fn passage(
         fautif: None,
         interface: o.interface,
         cacher: soiree::Cacher::Onglet,
+        complete: false,
     };
     let (telephones, redite) = soiree::telephones_et_redite(&so, charge);
     let dossier = o.travail.join(n.nom());

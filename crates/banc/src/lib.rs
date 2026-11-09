@@ -38,7 +38,12 @@
 //! - [`ecran`] : `soiree-banc ecran tier-list` (lot 11), Tier list jouée sur la télé par
 //!   les vraies entrées du navigateur : import, glisser, édition en place, rechargement,
 //!   export et sauvegarde captés, restauration, plateau plein (M3, M8), et son contrôle
-//!   négatif.
+//!   négatif ;
+//! - [`mesure_wifi`] : `soiree-banc mesure-wifi` (lot 14), la page `/#mesure` du Wi-Fi
+//!   jouée de bout en bout sur la boucle locale, et son contrôle négatif ;
+//! - [`soiree_complete`] : `soiree-banc soiree-complete` (lot 14), les jeux à la suite
+//!   depuis l'écran de démarrage, « On rejoue » deux fois chacun, le plein écran jugé, et
+//!   son contrôle négatif.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -55,6 +60,7 @@ pub mod firefox;
 mod horloge;
 pub mod machine;
 pub mod mandataire;
+pub mod mesure_wifi;
 pub mod mesures;
 pub mod navigateur;
 pub mod pages;
@@ -64,6 +70,7 @@ pub mod rejouer_garde;
 pub mod safari;
 pub mod serveur;
 pub mod soiree;
+pub mod soiree_complete;
 pub mod soiree_native;
 mod telephones;
 pub mod web;

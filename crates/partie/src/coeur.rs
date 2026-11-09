@@ -167,6 +167,14 @@ impl EtatCoeur {
         self.reveil
     }
 
+    /// Le numéro de la partie dans la soirée : 0 à la création, un de plus à chaque
+    /// nouvelle partie (« On rejoue »). Le banc le lit pour savoir qu'une nouvelle partie a
+    /// commencé sans l'attendre d'une phase terminale, que son rapport d'état, une fois
+    /// par seconde, peut manquer (lot 14, `soiree-banc soiree-complete`).
+    pub const fn partie(&self) -> u32 {
+        self.partie
+    }
+
     /// L'état d'une partie créée au pas `pas`.
     pub(crate) const fn neuf(pas: Pas, reveil: ReveilFil) -> EtatCoeur {
         EtatCoeur {

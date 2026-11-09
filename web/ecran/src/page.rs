@@ -48,6 +48,7 @@ use crate::toile::{ChoixMoteur, Ecran, decoder_image, maintenant_ms, texte_d_err
 mod audio;
 mod commun;
 mod mesure;
+mod wifi;
 
 /// Un redessin au plus tous les 250 ms sans scène neuve : les comptes à rebours (choisi).
 const REDESSIN_MS: f64 = 250.0;
@@ -254,6 +255,15 @@ async fn demarrer(script: String) -> Result<(), String> {
         .flatten()
         .and_then(|m| m.get_attribute("content"))
         .is_some_and(|c| c == "oui");
+    // `/#mesure` (lot 14) : la mesure du vrai Wi-Fi, à la place de la soirée.
+    if fenetre.location().hash().is_ok_and(|h| h == "#mesure") {
+        return wifi::demarrer(
+            &fenetre,
+            &document,
+            &corps,
+            if au_banc { Oui::Oui } else { Oui::Non },
+        );
+    }
     let (module, choix, fautif, systeme) =
         lire_l_adresse(&fenetre, if au_banc { Oui::Oui } else { Oui::Non });
     // Le banc seulement (la page les ignore hors du banc) : les bots arrêtés, et l'option
@@ -368,7 +378,9 @@ async fn demarrer(script: String) -> Result<(), String> {
 
 /// Ce que l'adresse de la page dit : `?jeu=` (le module d'une salle neuve), `?moteur=webgl2`,
 /// et, au banc seulement, `?fautif=taire-l-aide` (lot 10b), `?fautif=geste-au-jeu` et
-/// `?fautif=ne-couvre-pas` (la remontée du lot 10b) ; et le système de la machine.
+/// `?fautif=ne-couvre-pas` (la remontée du lot 10b), `?fautif=oublie-le-plein-ecran`
+/// (lot 14) et `?fautif=oublie-le-plein-ecran-au-second` (lot 14 corrigé) ; et le système
+/// de la machine.
 fn lire_l_adresse(
     fenetre: &Window,
     au_banc: Oui,
@@ -380,6 +392,8 @@ fn lire_l_adresse(
         Some("taire-l-aide") => commun::Fautif::TaireLAide,
         Some("geste-au-jeu") => commun::Fautif::GesteAuJeu,
         Some("ne-couvre-pas") => commun::Fautif::NeCouvrePas,
+        Some("oublie-le-plein-ecran") => commun::Fautif::OubliePleinEcran,
+        Some("oublie-le-plein-ecran-au-second") => commun::Fautif::OubliePleinEcranAuSecond,
         _ => commun::Fautif::Aucun,
     };
     let systeme = if fenetre
@@ -637,7 +651,12 @@ fn du_worker(etat: &Etat, generation: u64, octets: &[u8]) {
             let corps = json.strip_suffix('}').unwrap_or(json);
             banc(&p, &format!("{corps},\"retour\":{retour}}}"));
         }
-        VersPage::Banc(json) => banc(&p, json),
+        VersPage::Banc(json) => {
+            banc(&p, json);
+            if json.starts_with("{\"quoi\":\"etat\"") {
+                commun::etat_du_worker(&mut p, json);
+            }
+        }
         VersPage::EtatSalle(e) => {
             let json = format!(
                 "{{\"quoi\":\"salle\",\"appareils\":{},\"garde\":{}}}",

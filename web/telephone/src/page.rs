@@ -216,6 +216,9 @@ struct Tel {
     /// d'un texte qui déborde (`__banc.deborder`, le contrôle négatif du scénario `pages`).
     gele_jusqu_a: f64,
     deborde: bool,
+    /// Le banc : la page oublie le fond que donne le jeu (`__banc.oublier_le_fond`, le
+    /// contrôle négatif du fond au scénario `pages`, D2, lot 14 corrigé).
+    fond_oublie: bool,
     /// Le banc : la page de pire cas que le banc pose (scénario `pages`, lot 12, fin), sans
     /// salle ni relais ; l'écran du commun ne la couvre pas.
     pire_cas: bool,
@@ -447,7 +450,7 @@ fn demarrer() -> Result<(), String> {
                 "padding",
                 "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
             ),
-            ("background", "#111"),
+            ("background", style::FOND_DU_COMMUN),
             ("color", "#eee"),
             ("font-family", style::POLICE_DU_COMMUN),
             ("touch-action", "manipulation"),
@@ -480,7 +483,7 @@ fn demarrer() -> Result<(), String> {
             ("align-items", "center"),
             ("justify-content", "center"),
             ("gap", "16px"),
-            ("background", "#111"),
+            ("background", style::FOND_DU_COMMUN),
             ("font-size", "22px"),
             ("text-align", "center"),
             ("padding", "24px"),
@@ -602,6 +605,7 @@ fn demarrer() -> Result<(), String> {
         gele_jusqu_a: 0.0,
         retenues: Vec::new(),
         deborde: false,
+        fond_oublie: false,
         pire_cas: false,
         morceaux: Vec::new(),
         pas_du_pire_cas: 0,
@@ -783,7 +787,7 @@ fn apres(t: &mut Tel) {
         if t.vue.is_none_or(|(p, _)| p != pas.numero()) {
             let ms = maintenant_ms(&t.fenetre);
             t.vue = Some((pas.numero(), ms));
-            effets(t, &montre);
+            montre_recue(t, &montre);
         }
         if let Some(p) = t.page.as_mut() {
             let r = p.vue_recue(now, pas, &montre);
@@ -934,12 +938,31 @@ fn ajouter_une_ressource(t: &mut Tel, cle: u64, octets: &[u8]) {
     }
 }
 
-/// Les effets de la vue : la vibration, là où elle existe ; une identité ne se rejoue pas,
-/// même après un rechargement (P26, SAL-167, PUN-66).
-fn effets(t: &mut Tel, montre: &[u8]) {
+/// Une vue nouvelle : ses effets, puis ses réglages.
+fn montre_recue(t: &mut Tel, montre: &[u8]) {
     let Ok(m) = decoder::<MontreFil<'_>>(montre) else {
         return;
     };
+    effets(t, &m);
+    poser_le_fond(t, &m);
+}
+
+/// Le fond de la page, celui que donne la vue (`Reglages::fond`, INTERFACE § 2.9), posé sur
+/// le corps ; sinon celui du commun. Les écrans du commun (le voile) gardent le leur, posé
+/// sur eux (D2 ; *lot 14 corrigé* : jusque-là, le corps restait #111 quelle que soit la vue,
+/// et les encres sombres de Punchline, choisies pour son fond, se lisaient à peine).
+/// `ecran_allume` et `orientation` ne sont pas appliqués (lot 12 : le verrou d'écran demande
+/// un contexte sécurisé, que la page en `http` n'a pas).
+fn poser_le_fond(t: &Tel, m: &MontreFil<'_>) {
+    let fond = if t.fond_oublie { None } else { m.reglages.fond };
+    if let Some(corps) = t.document.body() {
+        poser_style(&corps, &[("background", &style::fond_de_la_page(fond))]);
+    }
+}
+
+/// Les effets de la vue : la vibration, là où elle existe ; une identité ne se rejoue pas,
+/// même après un rechargement (P26, SAL-167, PUN-66).
+fn effets(t: &mut Tel, m: &MontreFil<'_>) {
     let mut change = false;
     for e in &m.effets {
         let id = e.id.fil();
@@ -2203,6 +2226,9 @@ fn pire_cas_vue(t: &mut Tel, montre: &[u8]) -> Result<String, String> {
     }
     r.page_changee |= r2.page_changee;
     let noeuds = p.page().map_or(0, |pg| pg.noeuds.len());
+    if let Ok(m) = decoder::<MontreFil<'_>>(montre) {
+        poser_le_fond(t, &m);
+    }
     t.a_poser = true;
     appliquer(t, &r);
     Ok(format!(",\"noeuds\":{noeuds}"))
@@ -2261,6 +2287,15 @@ fn crochets_du_banc(etat: &Etat) -> Result<(), String> {
     });
     poser("deborder", deborder.as_ref().unchecked_ref());
     deborder.forget();
+    let e = Rc::clone(etat);
+    let oublier_le_fond = Closure::<dyn Fn(bool) -> bool>::new(move |oui: bool| {
+        e.try_borrow_mut().is_ok_and(|mut t| {
+            t.fond_oublie = oui;
+            true
+        })
+    });
+    poser("oublier_le_fond", oublier_le_fond.as_ref().unchecked_ref());
+    oublier_le_fond.forget();
     let e = Rc::clone(etat);
     let morceau = Closure::<dyn Fn(String) -> bool>::new(move |h: String| {
         e.try_borrow_mut().is_ok_and(|mut t| match lire_hexa(&h) {

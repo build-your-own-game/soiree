@@ -239,6 +239,7 @@ fn ouvrir(
         paquet: Some(relais::paquet::Paquet::lire(paquet)?),
         jeux: relais::paquet::Jeux::lire(&jeux)?,
         annonce_du_banc: (reseau == Reseau::Simule).then_some(ADRESSE_DU_BANC),
+        retard_d_echo_du_banc: None,
     })
     .map_err(|e| format!("le relais : {e}"))?;
     let profils = o.travail.join("profils");

@@ -17,7 +17,10 @@
 //! - **l'adresse** ([`adresse`]) : la salle du chemin, le fragment du QR ;
 //! - **le retenu** ([`retenu`]) : sous quelle clé de `localStorage` la page garde ce
 //!   qu'elle a retenu, et quand l'écrire ;
-//! - **le style** ([`style`]) : le CSS d'un nœud, sans navigateur.
+//! - **le style** ([`style`]) : le CSS d'un nœud, sans navigateur ;
+//! - **la mesure du Wi-Fi** ([`mesure`], et dans le navigateur `page_mesure`) : la page
+//!   `/mesure` qu'ouvre le QR de la télé en `/#mesure` (M5, lot 14), ses échos, ses tics,
+//!   son bilan.
 //!
 //! Ce qui ne touche pas au navigateur se teste en natif ; le reste, par `soiree-banc`.
 
@@ -25,8 +28,11 @@
 
 pub mod adresse;
 pub mod ecrans;
+pub mod mesure;
 pub mod retenu;
 pub mod style;
 
 #[cfg(target_arch = "wasm32")]
 mod page;
+#[cfg(target_arch = "wasm32")]
+mod page_mesure;

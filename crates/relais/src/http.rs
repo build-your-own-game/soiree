@@ -292,6 +292,14 @@ pub enum Route {
     /// `GET /aide` : ce que le relais sait des téléphones qui n'arrivent pas, et du
     /// pare-feu, pour l'aide de l'écran (boucle locale ; lot 10b).
     Aide,
+    /// `GET /mesure` : la page en mode mesure du Wi-Fi, pour un téléphone (tous ; lot 14,
+    /// `crate::mesure`).
+    Mesure,
+    /// `GET /mesure/ws` : la WebSocket de la mesure, échos et tics (tous ; lot 14).
+    MesureWs,
+    /// `GET /mesure/bilans` : les adresses de la page de mesure et les derniers bilans,
+    /// pour la télé (boucle locale ; lot 14).
+    MesureBilans,
     /// Rien de connu : `404`.
     Introuvable,
     /// Une autre méthode que `GET` : `405`.
@@ -315,6 +323,9 @@ pub fn router(r: &Requete) -> Route {
         "/ws" => Route::Ws,
         "/salle" => Route::Salle,
         "/aide" => Route::Aide,
+        "/mesure" => Route::Mesure,
+        "/mesure/ws" => Route::MesureWs,
+        "/mesure/bilans" => Route::MesureBilans,
         _ => {
             if let Some(code) = chemin.strip_prefix("/s/") {
                 return CodeSalle::lire(code).map_or(Route::Introuvable, Route::Telephone);

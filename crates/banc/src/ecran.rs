@@ -1459,6 +1459,7 @@ fn passage(o: &Options, n: Navigateur, moteur: Moteur, paquet: &Path, module: &[
         fautif: None,
         interface: crate::navigateur::Interface::Sans,
         cacher: soiree::Cacher::Onglet,
+        complete: false,
     };
     let dossier = o.travail.join(format!(
         "{}{}",

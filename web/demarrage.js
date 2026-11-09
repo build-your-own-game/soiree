@@ -9,7 +9,7 @@
 // permet pas.
 import initEcran, { demarrer_la_page } from "./ecran.js";
 import initAutorite, { demarrer_le_worker } from "./autorite.js";
-import initTelephone, { demarrer_le_telephone } from "./telephone.js";
+import initTelephone, { demarrer_le_telephone, demarrer_la_mesure } from "./telephone.js";
 
 const dansUnWorker =
   typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
@@ -22,6 +22,10 @@ if (dansUnWorker) {
   // La page d'un téléphone (lot 12) : elle ne charge que sa colle et son `.wasm`.
   await initTelephone();
   demarrer_le_telephone();
+} else if (location.pathname === "/mesure") {
+  // La mesure du Wi-Fi sur un téléphone (lot 14), ouverte par le QR de `/#mesure`.
+  await initTelephone();
+  demarrer_la_mesure();
 } else {
   // La page de la télé : elle lance le Worker sur ce même fichier.
   await initEcran();

@@ -44,6 +44,7 @@ use crate::file::{Envoi, FileSortante};
 use crate::garde::{Dossier, GARDE_MAX, PreuvesSurDisque};
 use crate::horloge::maintenant_us;
 use crate::http::{self, Banc, Contexte, Isolement, Jugement, Route};
+use crate::mesure::{self, Bilans};
 use crate::paquet::{self, Jeux, Paquet};
 
 /// Le port du relais par défaut (P14).
@@ -101,6 +102,11 @@ pub struct Reglages {
     /// `aide`). Elle échappe au refus d'une adresse qu'on n'écoute pas (SAL-77) : c'est
     /// pourquoi elle n'existe qu'au banc. Une adresse de documentation (`192.0.2.0/24`).
     pub annonce_du_banc: Option<IpAddr>,
+    /// **Le banc seulement** (avec `banc`) : chaque écho de la mesure du Wi-Fi
+    /// (`GET /mesure/ws`) ne repart qu'après ce retard, pour que le contrôle négatif du
+    /// scénario `mesure-wifi` voie un aller-retour qu'il connaît (lot 14). Refusé hors du
+    /// banc.
+    pub retard_d_echo_du_banc: Option<Duration>,
 }
 
 impl Reglages {
@@ -117,6 +123,7 @@ impl Reglages {
             paquet: None,
             jeux: Jeux::default(),
             annonce_du_banc: None,
+            retard_d_echo_du_banc: None,
         }
     }
 }
@@ -221,6 +228,10 @@ struct Partage {
     /// Le pare-feu, lu à la première demande de l'aide puis au plus toutes les
     /// [`PARE_FEU_RELU_US`] : l'heure de la lecture, et ce qu'il dit.
     pare_feu: Mutex<Option<(u64, PareFeu)>>,
+    /// La mesure du Wi-Fi (lot 14) : les derniers bilans des téléphones.
+    bilans: Mutex<Bilans>,
+    /// Le banc seulement : le retard de chaque écho de la mesure.
+    retard_d_echo: Option<Duration>,
 }
 
 /// Le pare-feu se relit au plus toutes les 10 s (choisi) : l'hôte peut l'autoriser pendant
@@ -282,6 +293,111 @@ fn aide_en_json(p: &Partage) -> String {
         |_| Aide::new().json(t, n, &pare_feu),
         |a| a.json(t, n, &pare_feu),
     )
+}
+
+/// `GET /mesure/bilans` (lot 14) : les adresses de la page de mesure, et les derniers
+/// bilans.
+fn bilans_en_json(p: &Partage) -> String {
+    let pages: Vec<String> = p
+        .contexte
+        .annoncees
+        .iter()
+        .map(|ip| format!("http://{}/mesure", http::hote(*ip, p.contexte.port)))
+        .collect();
+    let t = maintenant_us();
+    p.bilans.lock().map_or_else(
+        |_| Bilans::default().en_json(&pages, t),
+        |b| b.en_json(&pages, t),
+    )
+}
+
+/// Le côté lecture d'une mesure n'attend jamais plus que ce temps : les tics partent entre
+/// deux lectures (choisi : un quart de tic).
+const LECTURE_DE_MESURE: Duration = Duration::from_millis(4);
+
+/// Un bilan reçu : gardé en mémoire, et ajouté au fichier des bilans tant qu'il tient sous
+/// [`mesure::FICHIER_MAX`].
+fn garder_un_bilan(p: &Partage, lien: u32, bilan: &str) {
+    let t = maintenant_us();
+    if let Ok(mut b) = p.bilans.lock() {
+        b.garder(lien, t, bilan);
+    }
+    let chemin = p.dossier.racine().join(mesure::FICHIER);
+    let taille = std::fs::metadata(&chemin).map_or(0, |m| m.len());
+    let mut ligne = mesure::ligne(lien, t, bilan);
+    ligne.push('\n');
+    if taille.saturating_add(ligne.len() as u64) <= mesure::FICHIER_MAX
+        && let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&chemin)
+    {
+        let _: io::Result<()> = f.write_all(ligne.as_bytes());
+    }
+}
+
+/// Une WebSocket de mesure (lot 14, `crate::mesure`) : chaque écho revient avec l'heure du
+/// relais, un tic part tous les [`mesure::TIC_US`], chaque bilan est gardé. Un seul fil :
+/// les tics partent entre deux lectures courtes ; rien ne passe par les salles.
+fn lien_de_mesure(flux: TcpStream, reste: Vec<u8>, p: &Arc<Partage>) {
+    if flux.set_read_timeout(Some(LECTURE_DE_MESURE)).is_err() {
+        return;
+    }
+    let lien = p.prochain.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+    let mut ws = WebSocket::from_partially_read(
+        flux,
+        reste,
+        Role::Server,
+        Some(configuration(mesure::BILAN_MAX)),
+    );
+    let debut = maintenant_us();
+    let mut prochain = debut;
+    loop {
+        if p.arret.load(Ordering::SeqCst) {
+            break;
+        }
+        let t = maintenant_us();
+        if t.saturating_sub(debut) > mesure::DUREE_MAX_US {
+            let _: Result<(), tungstenite::Error> = ws.close(None);
+            break;
+        }
+        if t >= prochain {
+            let tic = Message::Binary(Bytes::copy_from_slice(&mesure::tic(t)));
+            if ws.send(tic).is_err() {
+                break;
+            }
+            prochain = mesure::prochain_tic(prochain, t);
+        }
+        match ws.read() {
+            Ok(Message::Binary(b)) => {
+                let Some(reponse) = mesure::repondre(&b, maintenant_us()) else {
+                    break;
+                };
+                if let Some(d) = p.retard_d_echo {
+                    thread::sleep(d);
+                }
+                if ws
+                    .send(Message::Binary(Bytes::copy_from_slice(&reponse)))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            Ok(Message::Text(t)) => {
+                if !mesure::bilan_valide(t.as_str()) {
+                    break;
+                }
+                garder_un_bilan(p, lien, t.as_str());
+            }
+            Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_)) => {}
+            Err(tungstenite::Error::Io(e))
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Ok(Message::Close(_)) | Err(_) => break,
+        }
+    }
 }
 
 /// Un relais lancé.
@@ -414,6 +530,18 @@ fn annonce_du_banc(r: &Reglages) -> Result<Option<IpAddr>, ErreurLancement> {
     }
 }
 
+/// Le retard des échos de la mesure (`Reglages::retard_d_echo_du_banc`), refusé hors du
+/// banc.
+fn retard_d_echo_du_banc(r: &Reglages) -> Result<Option<Duration>, ErreurLancement> {
+    match (r.retard_d_echo_du_banc, r.banc) {
+        (Some(d), Banc::Oui) => Ok(Some(d)),
+        (Some(_), Banc::Non) => Err(ErreurLancement(String::from(
+            "un retard des échos de la mesure n'existe qu'au banc",
+        ))),
+        (None, _) => Ok(None),
+    }
+}
+
 /// Lance le relais.
 pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
     let interfaces = match r.interfaces.clone() {
@@ -422,6 +550,7 @@ pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
     };
     let mut annoncees = adresses::choisir(&interfaces, r.adresse).map_err(ErreurLancement)?;
     let annoncee_sans_ecoute = annonce_du_banc(r)?;
+    let retard_d_echo = retard_d_echo_du_banc(r)?;
     let dossier = Dossier::ouvrir(&r.garde).map_err(|e| {
         ErreurLancement(format!(
             "le dossier de la garde {} : {e}",
@@ -468,6 +597,8 @@ pub fn lancer(r: &Reglages) -> Result<Relais, ErreurLancement> {
         arret: AtomicBool::new(false),
         aide: Mutex::new(Aide::new()),
         pare_feu: Mutex::new(None),
+        bilans: Mutex::new(Bilans::default()),
+        retard_d_echo,
     });
     let mut fils = Vec::new();
     // La garde sur disque, un seul fil, dans l'ordre.
@@ -616,6 +747,65 @@ fn page_d_un_telephone(pair: IpAddr, r: &http::Requete, p: &Partage) -> Vec<u8> 
     http::page(&p.page, Isolement::Non)
 }
 
+/// Une route de la mesure du Wi-Fi (lot 14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeMesure {
+    /// `GET /mesure`.
+    Page,
+    /// `GET /mesure/bilans`.
+    Bilans,
+    /// `GET /mesure/ws`.
+    Ws,
+}
+
+/// Les routes de la mesure du Wi-Fi (lot 14, `crate::mesure`) : la page, les bilans, la
+/// WebSocket.
+fn route_de_mesure(
+    route: DeMesure,
+    mut flux: TcpStream,
+    (pair, r, reste): (SocketAddr, &http::Requete, Vec<u8>),
+    p: &Arc<Partage>,
+) {
+    let c = &p.contexte;
+    match route {
+        DeMesure::Page => {
+            let reponse = if http::publique_permise(pair.ip(), r, c) {
+                http::page(&p.page, Isolement::Non)
+            } else {
+                http::erreur("403 Forbidden")
+            };
+            repondre(&mut flux, &reponse);
+        }
+        DeMesure::Bilans => {
+            let reponse = if http::boucle_locale_permise(pair.ip(), r, c) {
+                http::reponse(
+                    "200 OK",
+                    "application/json",
+                    bilans_en_json(p).as_bytes(),
+                    &[("Cache-Control", "no-store")],
+                )
+            } else {
+                http::erreur("403 Forbidden")
+            };
+            repondre(&mut flux, &reponse);
+        }
+        DeMesure::Ws => {
+            // Le même jugement que la WebSocket de la soirée (SAL-33) : une page du relais,
+            // d'un `Host` local ou annoncé.
+            if !matches!(http::juger_websocket(pair.ip(), r, c), Jugement::Admise(_)) {
+                return repondre(&mut flux, &http::erreur("403 Forbidden"));
+            }
+            let Some(accepte) = http::accepter_websocket(r) else {
+                return repondre(&mut flux, &http::erreur("400 Bad Request"));
+            };
+            if flux.write_all(&accepte).is_err() {
+                return;
+            }
+            lien_de_mesure(flux, reste, p);
+        }
+    }
+}
+
 fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
     let _: io::Result<()> = flux.set_nodelay(true);
     let Some((r, reste)) = lire_la_requete(&mut flux) else {
@@ -670,6 +860,9 @@ fn connexion(mut flux: TcpStream, pair: SocketAddr, p: &Arc<Partage>) {
             };
             repondre(&mut flux, &reponse);
         }
+        Route::Mesure => route_de_mesure(DeMesure::Page, flux, (pair, &r, reste), p),
+        Route::MesureBilans => route_de_mesure(DeMesure::Bilans, flux, (pair, &r, reste), p),
+        Route::MesureWs => route_de_mesure(DeMesure::Ws, flux, (pair, &r, reste), p),
         Route::Salle => {
             if !http::boucle_locale_permise(pair.ip(), &r, c) {
                 return repondre(&mut flux, &http::erreur("403 Forbidden"));

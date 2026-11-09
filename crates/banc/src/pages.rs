@@ -22,7 +22,13 @@
 //! 3. **Le jugement**, à chacune des trois tailles (`telephones::TAILLES`) : chaque vue
 //!    posée, `window.__banc.debordements()` lu, chaque élément qui déborde est une faute
 //!    qui nomme le jeu, le pire cas, l'appareil, la taille, la sorte et la clé. Une page qui
-//!    fait faute (`Page` qui panique, une page invalide) en est une aussi.
+//!    fait faute (`Page` qui panique, une page invalide) en est une aussi. **Le fond** (D2,
+//!    *lot 14 corrigé*) : après chaque vue posée, le fond du corps que le navigateur a
+//!    calculé (`getComputedStyle(document.body).backgroundColor`) doit être celui que la
+//!    vue donne (`Reglages::fond`, INTERFACE § 2.9), ou celui du commun (#111) si elle n'en
+//!    donne pas ; sinon, une faute qui nomme la vue. Son contrôle négatif, à chaque jeu dont
+//!    une vue donne un fond : la page l'oublie (`__banc.oublier_le_fond`), la même vue est
+//!    reposée, et le banc doit le voir.
 //! 4. **Le contrôle négatif** (`--negatif <module>`) : un fautif de module, dont la page de
 //!    pire cas écrit un texte que même une coupure à chaque lettre ne fait pas tenir
 //!    (`fautifs::jeux::PageQuiDeborde`, le prénom du record à 512 px). Il est joué dans
@@ -38,7 +44,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use jeu_abi::{Appel, ApplicableFil, RegardFil, Retour, SorteAppel, decoder, encoder};
+use jeu_abi::{
+    Appel, ApplicableFil, MontreFil, RegardFil, Retour, Rgba, SorteAppel, decoder, encoder,
+};
 use moteur_wasmtime::{Moteur, ReglagesMoteur};
 use partie::{Fabrique, Instance};
 use serde_json::Value as Json;
@@ -67,6 +75,14 @@ const SALLE: &str = "3FA9C2D1";
 /// Le multiplicateur des numéros d'appareil des pires cas (`jeu::Construction::appareils`) :
 /// le `n`-ième appareil d'un pire cas est `n × NOMBRE_D_OR`.
 const NOMBRE_D_OR: u64 = 0x9e37_79b9_7f4a_7c15;
+
+/// Le fond de la page du commun, quand la vue n'en donne pas : `#111`, celui de
+/// `web/telephone` (`style::FOND_DU_COMMUN`, D2).
+const FOND_DU_COMMUN: Rgba = Rgba(0x11, 0x11, 0x11, 255);
+
+/// L'écart d'opacité toléré entre le fond relu et celui de la vue : le navigateur arrondit
+/// l'opacité qu'il rend (choisi : un peu plus qu'un 255ᵉ).
+const OPACITE_TOLEREE: f64 = 0.01;
 
 /// Ce que le scénario joue.
 #[derive(Debug, Clone)]
@@ -285,13 +301,96 @@ fn attendre(l: &mut Lance, js: &str, delai: Duration) -> Result<bool, String> {
     }
 }
 
-/// Pose chaque vue d'un jeu à chaque taille ; rend les débordements, nommés.
+/// Le fond que donne une vue de téléphone (`Reglages::fond`, `None` s'il n'en donne pas) ;
+/// une erreur si la vue ne se lit pas comme une `MontreFil`.
+fn fond_de_la_vue(octets: &[u8]) -> Result<Option<Rgba>, String> {
+    decoder::<MontreFil<'_>>(octets)
+        .map(|m| m.reglages.fond)
+        .map_err(|e| format!("la vue ne se lit pas (MontreFil) : {e}"))
+}
+
+/// Juge le fond du corps que le navigateur a calculé (`rgb(r, g, b)` ou
+/// `rgba(r, g, b, a)`), contre celui que la vue donne, ou celui du commun (D2).
+fn juger_le_fond(attendu: Option<Rgba>, lu: &str) -> Result<(), String> {
+    let Rgba(r, g, b, a) = attendu.unwrap_or(FOND_DU_COMMUN);
+    let dedans = lu
+        .trim()
+        .strip_prefix("rgba(")
+        .or_else(|| lu.trim().strip_prefix("rgb("))
+        .and_then(|x| x.strip_suffix(')'))
+        .ok_or_else(|| format!("le fond relu « {lu} » ne se lit pas"))?;
+    let v: Vec<f64> = dedans
+        .split([',', '/', ' '])
+        .filter(|x| !x.is_empty())
+        .map(|x| {
+            x.parse::<f64>()
+                .map_err(|_| format!("le fond relu « {lu} » ne se lit pas"))
+        })
+        .collect::<Result<_, _>>()?;
+    let (lr, lg, lb, la) = match v.as_slice() {
+        [lr, lg, lb] => (*lr, *lg, *lb, 1.0),
+        [lr, lg, lb, la] => (*lr, *lg, *lb, *la),
+        _ => return Err(format!("le fond relu « {lu} » ne se lit pas")),
+    };
+    let meme = |x: f64, y: u8| (x - f64::from(y)).abs() < 0.5;
+    if meme(lr, r)
+        && meme(lg, g)
+        && meme(lb, b)
+        && (la - f64::from(a) / 255.0).abs() <= OPACITE_TOLEREE
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "le fond de la page est « {lu} », la vue donne rgba({r}, {g}, {b}, {a}/255){}",
+            if attendu.is_none() {
+                " (aucun fond du jeu : celui du commun)"
+            } else {
+                ""
+            }
+        ))
+    }
+}
+
+/// Relit le fond du corps de la page.
+fn fond_relu(l: &mut Lance) -> Result<String, String> {
+    let v = l.evaluer(0, "getComputedStyle(document.body).backgroundColor")?;
+    v.as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| format!("le fond relu n'est pas une chaîne ({v})"))
+}
+
+/// Le contrôle négatif du fond (D2) : la page oublie le fond du jeu, la même vue est
+/// reposée, le banc doit voir l'écart ; puis la page s'en souvient, et la vue est reposée.
+fn negatif_du_fond(l: &mut Lance, v: &VueDePireCas, attendu: Rgba) -> Result<String, String> {
+    if l.evaluer(0, "window.__banc.oublier_le_fond(true)")? != Json::Bool(true) {
+        return Err(String::from("la page refuse `__banc.oublier_le_fond`"));
+    }
+    let r = passer(l, &v.octets, "vue", "").and_then(|_| fond_relu(l));
+    let _: Json = l.evaluer(0, "window.__banc.oublier_le_fond(false)")?;
+    let _: Json = passer(l, &v.octets, "vue", "")?;
+    match juger_le_fond(Some(attendu), &r?) {
+        Err(vu) => Ok(vu),
+        Ok(()) => Err(String::from(
+            "CONTRÔLE NÉGATIF DU FOND RATÉ : la page a oublié le fond du jeu, et le banc relit quand même le bon",
+        )),
+    }
+}
+
+/// Pose chaque vue d'un jeu à chaque taille ; rend les débordements, nommés. Les écarts du
+/// fond (D2) vont dans `fonds`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "le jugement d'un jeu d'un bloc, dans l'ordre où le banc pose ses vues"
+)]
 fn juger_un_jeu(
     l: &mut Lance,
     jeu: &JeuDePages,
     notes: &mut Vec<String>,
+    fonds: &mut Vec<String>,
 ) -> Result<Vec<String>, String> {
     let mut debords = Vec::new();
+    let (mut fonds_relus, mut fonds_du_jeu) = (0u32, 0u32);
+    let mut negatif_fait = false;
     passer(l, &jeu.module, "module", "")?;
     for (c, o) in &jeu.ressources {
         passer(l, o, "ressource", &format!("{c:x}"))?;
@@ -335,6 +434,32 @@ fn juger_un_jeu(
                 }
             }
             posees = posees.saturating_add(1);
+            let attendu = fond_de_la_vue(&v.octets);
+            match attendu.clone().and_then(|f| fond_relu(l).map(|lu| (f, lu))) {
+                Err(e) => fonds.push(format!("{nommer} : {e}")),
+                Ok((f, lu)) => {
+                    fonds_relus = fonds_relus.saturating_add(1);
+                    if f.is_some() {
+                        fonds_du_jeu = fonds_du_jeu.saturating_add(1);
+                    }
+                    if let Err(e) = juger_le_fond(f, &lu) {
+                        fonds.push(format!("{nommer} : {e} (D2)"));
+                    }
+                }
+            }
+            if !negatif_fait
+                && let Ok(Some(f)) = attendu
+                && f != FOND_DU_COMMUN
+            {
+                negatif_fait = true;
+                match negatif_du_fond(l, v, f) {
+                    Ok(vu) => notes.push(format!(
+                        "{} : le contrôle négatif du fond est vu ({nommer}, la page l'oubliant : {vu})",
+                        jeu.nom
+                    )),
+                    Err(e) => fonds.push(format!("{nommer} : {e}")),
+                }
+            }
             let _: bool = attendre(
                 l,
                 "Array.from(document.images).every(i => i.complete)",
@@ -371,6 +496,15 @@ fn juger_un_jeu(
         jeu.vues.len(),
         if moins == u64::MAX { 0 } else { moins },
         jeu.ressources.len()
+    ));
+    notes.push(format!(
+        "{} : le fond de la page relu sur {fonds_relus} vue(s) posée(s), dont {fonds_du_jeu} avec un fond du jeu (D2){}",
+        jeu.nom,
+        if negatif_fait {
+            ""
+        } else {
+            " ; aucune vue ne donne un fond autre que celui du commun : contrôle négatif du fond sans objet"
+        }
     ));
     if posees > 0 && plus == 0 {
         debords.push(format!(
@@ -410,6 +544,7 @@ fn passage(
             paquet: Some(relais::paquet::Paquet::lire(paquet)?),
             jeux: relais::paquet::Jeux::lire(&vide)?,
             annonce_du_banc: None,
+            retard_d_echo_du_banc: None,
         })
         .map_err(|e| format!("le relais : {e}"))?;
         let mut nav = match Lance::lancer(n, None, &o.travail.join("profils")) {
@@ -437,11 +572,15 @@ fn passage(
                         .push(format!("{} : sans téléphone, sans objet", jeu.nom));
                     continue;
                 }
-                let debords = juger_un_jeu(&mut nav, jeu, &mut p.notes)?;
+                let mut fonds = Vec::new();
+                let debords = juger_un_jeu(&mut nav, jeu, &mut p.notes, &mut fonds)?;
                 p.fautes.extend(debords);
+                p.fautes.extend(fonds);
             }
             if let Some(fautif) = negatif {
-                let vus = juger_un_jeu(&mut nav, fautif, &mut p.notes)?;
+                let mut fonds = Vec::new();
+                let vus = juger_un_jeu(&mut nav, fautif, &mut p.notes, &mut fonds)?;
+                p.fautes.extend(fonds);
                 if vus.is_empty() {
                     p.fautes.push(format!(
                         "CONTRÔLE NÉGATIF RATÉ : aucune page de pire cas de {} ne déborde",
@@ -523,5 +662,27 @@ impl core::fmt::Display for Passage {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_fond_relu_se_juge_contre_celui_de_la_vue_d2() {
+        let jaune = Rgba(200, 180, 40, 255);
+        assert_eq!(juger_le_fond(Some(jaune), "rgb(200, 180, 40)"), Ok(()));
+        assert_eq!(juger_le_fond(None, "rgb(17, 17, 17)"), Ok(()));
+        assert_eq!(
+            juger_le_fond(Some(Rgba(10, 20, 30, 128)), "rgba(10, 20, 30, 0.5)"),
+            Ok(())
+        );
+        // La page qui garde son fond quand la vue en donne un (l'écart du lot 12) :
+        assert!(juger_le_fond(Some(jaune), "rgb(17, 17, 17)").is_err());
+        // Celle qui en pose un quand la vue n'en donne pas :
+        assert!(juger_le_fond(None, "rgb(200, 180, 40)").is_err());
+        assert!(juger_le_fond(Some(Rgba(10, 20, 30, 128)), "rgb(10, 20, 30)").is_err());
+        assert!(juger_le_fond(None, "transparent").is_err());
     }
 }

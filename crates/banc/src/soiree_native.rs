@@ -232,6 +232,7 @@ fn lancer_le_relais(
                 paquet: None,
                 jeux: relais::paquet::Jeux::default(),
                 annonce_du_banc: None,
+                retard_d_echo_du_banc: None,
             })
             .map_err(|e| format!("le relais : {e}"))?;
             RelaisLance::Interne(r)

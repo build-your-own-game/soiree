@@ -48,7 +48,7 @@ const PAR_JEU: Duration = Duration::from_secs(20);
 const LIVRAISON_MAX: Duration = Duration::from_secs(30);
 
 /// Le nom d'un jeu, lu dans la déclaration de son module.
-fn nom_du_jeu(charge: &ModuleCharge) -> String {
+pub(crate) fn nom_du_jeu(charge: &ModuleCharge) -> String {
     charge.declaration().nom.as_str().to_owned()
 }
 
@@ -122,7 +122,7 @@ fn centre(s: &mut Session, jeu: Option<&[u8; 32]>) -> Result<Option<(f64, f64)>,
 }
 
 /// Clique, par la vraie chaîne d'entrées, sur ce que l'écran du commun propose.
-fn cliquer(s: &mut Session, jeu: Option<&[u8; 32]>, quoi: &str) -> Result<(), String> {
+pub(crate) fn cliquer(s: &mut Session, jeu: Option<&[u8; 32]>, quoi: &str) -> Result<(), String> {
     let (x, y) = centre(s, jeu)?.ok_or_else(|| format!("{quoi} : rien à cliquer"))?;
     s.navigateur.montrer(0)?;
     s.navigateur.cliquer(0, x, y)
@@ -150,7 +150,7 @@ fn pas_et_tours(s: &Session, onglet: &str) -> (u64, u64) {
     clippy::too_many_lines,
     reason = "un changement se lit d'un trait, dans l'ordre où il se joue"
 )]
-fn changer_vers(
+pub(crate) fn changer_vers(
     s: &mut Session,
     p: &mut Passage,
     onglet: &str,
@@ -354,6 +354,7 @@ pub(crate) fn changer(
     let mut p = Passage {
         navigateur: s.navigateur.version().to_owned(),
         port: s.port,
+        chaine_non_relue: true,
         ..Passage::default()
     };
     let mut jeux: Vec<(Vec<u8>, ModuleCharge)> = Vec::new();
@@ -398,10 +399,24 @@ pub(crate) fn changer(
     };
     juger_les_natifs(&s, &mut p);
     controler_les_lignes(&s, &mut p, &[]);
-    // La garde finale reprend, avec le module du dernier jeu, la partie figée.
+    juger_la_garde_finale(&mut s, &mut p, fige, &dernier.1);
+    p.lignes = s.lignes.len();
+    ecrire_les_lignes(&dossier, &s.lignes, &s.autres);
+    s.fermer();
+    Ok(p)
+}
+
+/// La garde finale reprend, avec le module du dernier jeu, la partie figée (`changer`, et
+/// `soiree-complete` au lot 14).
+pub(crate) fn juger_la_garde_finale(
+    s: &mut Session,
+    p: &mut Passage,
+    fige: Option<Ligne>,
+    dernier: &ModuleCharge,
+) {
     if let Some(fige) = fige {
         let nom = fige.onglet.clone();
-        match exporter_la_cle(&mut s, 0, &nom) {
+        match exporter_la_cle(s, 0, &nom) {
             Ok(g) => {
                 let du_worker = format!(
                     "{}/{}",
@@ -416,12 +431,12 @@ pub(crate) fn changer(
                     .ok_or_else(|| String::from("pas de salle"))
                     .and_then(|salle| s.garde_sur_disque(salle).map(|d| (salle, d)));
                 match disque.and_then(|(salle, d)| {
-                    reprendre_de_la_garde(dernier.1.fabrique(), &g, salle, &d, None)
+                    reprendre_de_la_garde(dernier.fabrique(), &g, salle, &d, None)
                 }) {
                     Ok((f, e)) if format!("{}/{}", hexa(&f), hexa(&e)) == du_worker => {
                         p.notes.push(format!(
                             "la garde finale reprend, dans wasmtime avec le module de {}, la partie figée",
-                            nom_du_jeu(&dernier.1)
+                            nom_du_jeu(dernier)
                         ));
                     }
                     Ok((f, e)) => p.fautes.push(format!(
@@ -437,8 +452,4 @@ pub(crate) fn changer(
             Err(e) => p.fautes.push(e),
         }
     }
-    p.lignes = s.lignes.len();
-    ecrire_les_lignes(&dossier, &s.lignes, &s.autres);
-    s.fermer();
-    Ok(p)
 }

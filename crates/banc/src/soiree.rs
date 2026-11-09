@@ -131,6 +131,8 @@ pub struct Options {
     pub interface: crate::navigateur::Interface,
     /// `arriere-plan` : comment l'écran passe à l'arrière-plan (lot 13, M6).
     pub cacher: Cacher,
+    /// `soiree-complete` (lot 14) : les jeux à la suite, « On rejoue » deux fois chacun.
+    pub complete: bool,
 }
 
 /// Comment `arriere-plan` passe l'écran à l'arrière-plan (M6, lot 13).
@@ -202,6 +204,11 @@ pub struct Passage {
     pub m12: Vec<(f64, u64, String)>,
     /// La chaîne entière.
     pub historique: Historique,
+    /// Le scénario ne relit pas la chaîne et juge la garde finale à la place (`changer`,
+    /// `soiree-complete`) : sa ligne « chaîne » le dit au lieu d'une ligne de zéros. Un
+    /// scénario qui relit la chaîne et la trouve vide garde sa ligne de zéros (lot 14
+    /// corrigé).
+    pub chaine_non_relue: bool,
     /// Les phases terminales vues.
     pub terminales: u32,
     /// Les marques posées, et celles que `rejouer-garde` a rejouées.
@@ -731,6 +738,7 @@ pub(crate) fn ouvrir(
         paquet: Some(relais::paquet::Paquet::lire(paquet)?),
         jeux: relais::paquet::Jeux::lire(&jeux)?,
         annonce_du_banc: None,
+        retard_d_echo_du_banc: None,
     })
     .map_err(|e| format!("le relais : {e}"))?;
     let profils = o.travail.join("profils");
@@ -3028,7 +3036,9 @@ pub fn jouer(o: &Options, soiree_dir: &Path) -> Result<Vec<Passage>, String> {
     }
     for (n, passe) in tours {
         let n = &n;
-        let r = if !o.autres_jeux.is_empty() {
+        let r = if o.complete {
+            crate::soiree_complete::soiree_complete(o, *n, &paquet, &module, &charge)
+        } else if !o.autres_jeux.is_empty() {
             crate::changer::changer(o, *n, &paquet, &module, &charge)
         } else if o.m12 > 0 {
             m12(o, *n, &paquet, &module, &charge)
@@ -3083,17 +3093,27 @@ impl core::fmt::Display for Passage {
             )?;
         }
         let h = &self.historique;
-        writeln!(
-            f,
-            "  chaîne : {} cases, {} points, {} lignes, {} gestes, {} en double, {} écartées, {} sauts",
-            h.cases,
-            h.points,
-            h.lignes,
-            h.gestes.len(),
-            h.en_double.len(),
-            h.ecartees,
-            h.sauts
-        )?;
+        // `changer` et `soiree-complete` ne relisent pas la chaîne (ils jugent la garde
+        // finale) : une ligne de zéros n'y dirait rien (lot 14). Ailleurs, une chaîne vide
+        // garde sa ligne de zéros (lot 14 corrigé).
+        if self.chaine_non_relue && h.cases == 0 {
+            writeln!(
+                f,
+                "  chaîne : non relue par ce scénario (la garde finale est jugée)"
+            )?;
+        } else {
+            writeln!(
+                f,
+                "  chaîne : {} cases, {} points, {} lignes, {} gestes, {} en double, {} écartées, {} sauts",
+                h.cases,
+                h.points,
+                h.lignes,
+                h.gestes.len(),
+                h.en_double.len(),
+                h.ecartees,
+                h.sauts
+            )?;
+        }
         writeln!(
             f,
             "  phases terminales : {} ; marques F8 posées {}, rejouées {}",
@@ -3120,6 +3140,19 @@ impl core::fmt::Display for Passage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn une_chaine_vide_se_dit_sauf_si_le_scenario_ne_la_relit_pas() {
+        let relue = Passage::default().to_string();
+        assert!(relue.contains("chaîne : 0 cases"), "{relue}");
+        let non_relue = Passage {
+            chaine_non_relue: true,
+            ..Passage::default()
+        }
+        .to_string();
+        assert!(non_relue.contains("chaîne : non relue"), "{non_relue}");
+        assert!(!non_relue.contains("0 cases"), "{non_relue}");
+    }
 
     fn ligne(json: &str) -> Ligne {
         Ligne {

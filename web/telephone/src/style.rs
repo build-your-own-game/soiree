@@ -6,6 +6,12 @@
 
 use jeu_abi::{Alignement, Cle, Oui, Rgba, StylePage, TaillePage};
 
+/// Le fond de la page du commun : celui du corps tant que le jeu n'en donne pas
+/// (`Reglages::fond` à `None`, ou avant la première vue), et celui des écrans du commun (le
+/// voile), qui gardent le leur (D2, lot 14 corrigé ; choix provisoire, laissé au
+/// mainteneur : `RESTE-PHASE-3.md`, § 6.2). Le banc relit le même (`banc::pages`).
+pub const FOND_DU_COMMUN: &str = "#111";
+
 /// La taille d'un champ, au moins (iOS zoome en dessous).
 pub const CHAMP_PX_MIN: u16 = 16;
 
@@ -23,6 +29,13 @@ pub fn couleur(c: Rgba) -> String {
     let Rgba(rouge, vert, bleu, opacite) = c;
     let alpha = f64::from(opacite) / 255.0;
     format!("rgba({rouge},{vert},{bleu},{alpha:.3})")
+}
+
+/// Le fond du corps de la page pour les réglages d'une vue : la couleur que le jeu donne
+/// (`Reglages::fond`, « la couleur de fond de la page », INTERFACE § 2.9), sinon celle du
+/// commun (D2, lot 14 corrigé).
+pub fn fond_de_la_page(fond: Option<Rgba>) -> String {
+    fond.map_or_else(|| String::from(FOND_DU_COMMUN), couleur)
 }
 
 /// Une taille en CSS ; `min` en pixels (16 pour un champ).
@@ -82,5 +95,14 @@ mod tests {
         assert_eq!(taille(TaillePage::Hauteur(3), 16), "max(3vh, 16px)");
         assert_eq!(couleur(Rgba(1, 2, 3, 255)), "rgba(1,2,3,1.000)");
         assert_eq!(famille(Cle::du_fil(0xab)), "p00000000000000ab");
+    }
+
+    #[test]
+    fn le_fond_de_la_page_est_celui_du_jeu_sinon_celui_du_commun_d2() {
+        assert_eq!(
+            fond_de_la_page(Some(Rgba(200, 180, 40, 255))),
+            "rgba(200,180,40,1.000)"
+        );
+        assert_eq!(fond_de_la_page(None), FOND_DU_COMMUN);
     }
 }
