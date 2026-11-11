@@ -143,6 +143,11 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
         });
         println!("Écran       : {screen_url}");
         println!("Téléphones  : {remote_url}");
+        // Deux onglets d'un même navigateur sont le même joueur : `?j=` en fait
+        // des joueurs différents, pour essayer le jeu seul sur cet ordinateur.
+        let local = format!("http://localhost:{port}{remote_path}");
+        println!("Pour essayer à plusieurs sur cet ordinateur, un onglet par joueur :");
+        println!("              {local}?j=1   {local}?j=2   …");
         Ok(Self {
             shared,
             events,

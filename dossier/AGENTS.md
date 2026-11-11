@@ -40,6 +40,8 @@ cargo install --locked --path soiree/outil
 
 Réinstalle-le après chaque changement dans `soiree/regles/` ou `soiree/outil/` : `soiree check` applique les règles du binaire installé.
 
+`soiree games`, lancé ici, récupère dans `games/` tous les jeux de l'organisation et dit lesquels passent la vérification. `soiree help` liste le reste.
+
 ## La console et les jeux, côte à côte
 
 Un jeu emprunte une brique de la console par étiquette git, ici comme chez les amis :

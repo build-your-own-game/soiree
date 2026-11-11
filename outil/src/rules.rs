@@ -186,6 +186,16 @@ mod tests {
         }
     }
 
+    /// Les textes qui disent quoi installer nomment la version courante.
+    #[test]
+    fn the_install_command_names_this_version() {
+        let tag = format!("--tag v{} soiree", crate::VERSION);
+        for file in ["README.md", "REJOINDRE.md"] {
+            let text = fs::read_to_string(repo(file)).unwrap();
+            assert!(text.contains(&tag), "{file} ne nomme pas {tag}");
+        }
+    }
+
     /// `soiree rules` ne change rien à un jeu déjà en règle.
     #[test]
     fn writing_the_rules_twice_changes_nothing() {
