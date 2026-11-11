@@ -1,0 +1,11 @@
+# Le [patch] local de l'hôte : à copier dans `.cargo/config.toml`, à la racine
+# du dossier qui contient `soiree/` et `games/`. Ce fichier n'est dans aucun
+# dépôt. Voir AGENTS.md, à côté de `.cargo/`.
+#
+# Il remplace, pour tout projet placé sous ce dossier, la brique empruntée à
+# une étiquette de la console par le dossier local. Cargo exige que l'étiquette
+# existe sur GitHub : tant qu'aucune n'est publiée, les jeux d'ici empruntent
+# la brique par son chemin et ce [patch] reste en commentaire.
+
+# [patch."https://github.com/build-your-own-game/soiree"]
+# telecommande = { path = "soiree/telecommande" }

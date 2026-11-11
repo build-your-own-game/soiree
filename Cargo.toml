@@ -1,0 +1,50 @@
+# La console : l'outil `soiree` et les briques qu'elle prête.
+# Le jeu de départ (`modele/`) a son propre workspace, comme un vrai jeu.
+[workspace]
+resolver = "3"
+members = ["outil", "telecommande"]
+exclude = ["modele"]
+
+[workspace.package]
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+# Les règles de `regles/lints.toml`, que la console s'applique à elle-même.
+# Un test de l'outil vérifie que les deux sont identiques.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Du bruit dans du code de jeu : la documentation d'API publique n'y sert pas.
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Une exception est explicite et justifiée : #[expect(lint, reason = "…")], jamais #[allow].
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Un `unwrap`, un `expect`, un `panic!` ou un index hors bornes arrêtent la partie.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+todo = "deny"
+# Un `_ =>` sur une enum avale en silence le cas qu'on ajoutera demain : nomme ceux qu'on ignore.
+wildcard_enum_match_arm = "deny"
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie (avec max-fn-params-bools = 0).
+fn_params_excessive_bools = "deny"
+# Un entier converti en flottant peut perdre des chiffres : `f64::from`, ou une fonction qui dit pourquoi c'est sans effet.
+cast_precision_loss = "deny"
+# Un dépassement d'entier arrête la partie : `checked_`, `saturating_` ou `wrapping_`, choisi exprès.
+arithmetic_side_effects = "deny"
+# Une valeur qu'on jette dit son type (`let _: T = …`), et `.ok()` ne sert pas à faire taire un Result.
+let_underscore_untyped = "deny"
+unused_result_ok = "deny"
+
+# Un dépassement d'entier est un bug, même en release.
+[profile.release]
+overflow-checks = true

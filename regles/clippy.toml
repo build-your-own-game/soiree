@@ -1,0 +1,11 @@
+# Les réglages de Clippy de la console.
+# Copié par `soiree rules`, vérifié par `soiree check`.
+
+# Dans un test, un `unwrap` qui échoue fait échouer le test : c'est ce qu'on veut.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Un `bool` en paramètre s'inverse sans que le compilateur le voie : une enum à deux variants, ou deux fonctions.
+max-fn-params-bools = 0

@@ -1,9 +1,5 @@
 target/
-dist/
 .DS_Store
-# The tool's build, and the harness's dependencies.
-/outil/target/
-node_modules/
-
-# Local replay journals and browser panic reports (30-day retention).
-data/journals/
+# Restes d'anciennes branches.
+/crates/
+/web/

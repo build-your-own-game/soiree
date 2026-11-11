@@ -1,0 +1,14 @@
+# Les messages que le jeu et ses pages échangent. Les deux côtés compilent ce
+# crate : une page qui envoie un message inconnu du jeu ne compile pas.
+[package]
+name = "messages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

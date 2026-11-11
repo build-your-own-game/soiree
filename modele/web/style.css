@@ -1,12 +1,97 @@
-body { margin: 0; font: 20px -apple-system, system-ui, sans-serif; background: #12131a; color: #eee; }
-/* The TV's text stays in the safe area: the inner 90 % of the screen. */
-#app { padding: 6vh 6vw; }
-button { font-size: 40px; width: 100%; height: 50vh; border: 0; border-radius: 24px; background: #3a7; color: #fff; }
-.status { opacity: .7; margin: 8px 0 16px; }
-li { margin: 6px 0; } .away { opacity: .4; }
-/* The TV lists up to 15 players in three columns, inside the safe area. */
-.tv ul { columns: 3; font-size: 2.6vh; padding: 0; list-style: none; }
-.tv svg { width: 30vh; height: 30vh; }
-svg { width: 220px; height: 220px; background: #fff; padding: 8px; border-radius: 8px; }
-/* The QR code's dark modules, drawn by the page from the host's `Qr`. */
-svg path { fill: #12131a; shape-rendering: crispEdges; }
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #14121f;
+  color: #f4f1ff;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+main {
+  display: grid;
+  gap: 1.5rem;
+  justify-items: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.status {
+  min-height: 1.5em;
+  opacity: 0.6;
+}
+
+/* L'écran */
+.screen h1 {
+  font-size: 4rem;
+  margin: 0;
+}
+
+.screen .join {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
+
+.screen .qr {
+  width: 16rem;
+  background: white;
+  border-radius: 1rem;
+  padding: 0.5rem;
+}
+
+.screen ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.screen li {
+  background: #2a2640;
+  border-radius: 1rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.screen li.away {
+  opacity: 0.4;
+}
+
+/* La télécommande */
+.remote input {
+  font-size: 1.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  border: none;
+  text-align: center;
+  max-width: 80vw;
+}
+
+.remote button {
+  font-size: 2.5rem;
+  width: 70vw;
+  max-width: 20rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: none;
+  background: #ff5c8a;
+  color: white;
+  touch-action: manipulation;
+}
+
+.remote button:active {
+  transform: scale(0.95);
+}
+
+.remote .taps {
+  font-size: 2rem;
+  margin: 0;
+}

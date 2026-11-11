@@ -1,130 +1,53 @@
-//! `soiree new <nom>`: a new game from the embedded model.
+//! `soiree new <nom>` : un jeu neuf, copié du jeu de départ.
 
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::fs;
+use std::path::Path;
 
-use crate::embedded::{self, MODEL, VERSION};
-use crate::util::{self, Result};
+include!(concat!(env!("OUT_DIR"), "/modele.rs"));
 
-pub fn run(name: &str, parent: &Path, org: &str) -> ExitCode {
-    match create(name, parent, org) {
-        Ok(dir) => {
-            println!("{} créé, à la version {VERSION} du commun.", dir.display());
-            println!();
-            println!("Le jeu de départ est jouable : TV, téléphones, simulation et tests.");
-            println!();
-            println!("Ensuite :");
-            println!("  cd {name}");
-            println!("  soiree check  # vérifie le jeu et crée Cargo.lock avant le premier commit");
-            println!("  git init -b main && git add -A && git commit -m \"Le jeu de départ\"");
-            println!("  gh repo create {org}/{name} --private --source . --push");
-            println!("puis lis AGENTS.md.");
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("soiree new : {error}");
-            ExitCode::FAILURE
-        }
-    }
-}
+/// Dans le dépôt de la console, le jeu de départ emprunte la brique par son
+/// chemin. Un jeu neuf l'emprunte à la version de cet outil.
+const LOCAL_BRICK: &str = r#"telecommande = { path = "../telecommande" }"#;
+const TITLE: &str = "Mon jeu";
 
-pub fn create(name: &str, parent: &Path, org: &str) -> Result<PathBuf> {
-    if matches!(name, "salon" | "remote") {
-        return Err(format!(
-            "« {name} » : nom réservé au commun ; choisis un nom de jeu distinct (salon-arcade, remote-aventure…)"
-        ));
-    }
-    if !valid_name(name) {
-        return Err(format!(
-            "« {name} » : attendu des minuscules, des chiffres et des tirets, en commençant par une lettre (course-de-canards)"
-        ));
-    }
-    let dir = parent.join(name);
-    if dir.exists() {
-        return Err(format!("{} existe déjà", dir.display()));
-    }
-    for (path, contents) in MODEL {
-        let filled = contents
-            .replace("{{nom}}", name)
-            .replace("{{crate}}", &name.replace('-', "_"))
-            .replace("{{org}}", org)
-            .replace("{{version}}", VERSION);
-        util::write(&dir.join(path), &filled)?;
-    }
-    embedded::write_docs(&dir)?;
-    crate::ci::write(&dir)?;
-    Ok(dir)
-}
-
-/// Lower-case letters, digits and single dashes, starting with a letter: a
-/// repository name and a crate prefix at once.
-pub fn valid_name(name: &str) -> bool {
-    name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+pub fn run(args: &[String]) -> Result<(), String> {
+    let [name] = args else {
+        return Err("usage : soiree new <nom>".to_owned());
+    };
+    let valid = !name.is_empty()
         && name
             .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-        && !name.ends_with('-')
-        && !name.contains("--")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lints;
-    use crate::report::{Level, Report};
-
-    #[test]
-    fn names() {
-        assert!(valid_name("course-de-canards") && valid_name("jeu2"));
-        for bad in ["", "Jeu", "2jeu", "jeu-", "a--b", "jeu_x", "jeu x", "../x"] {
-            assert!(!valid_name(bad), "{bad}");
-        }
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if !valid {
+        return Err(format!(
+            "« {name} » : le nom d'un jeu s'écrit en minuscules, chiffres et tirets, comme `course-de-canards`"
+        ));
     }
-
-    #[test]
-    fn canonical_common_names_are_reserved_before_writing_a_game() {
-        let parent = crate::testdir::fresh("reserved-game-names");
-        for name in ["salon", "remote"] {
-            let error = create(name, &parent, "amis").unwrap_err();
-            assert!(error.contains("nom réservé au commun"), "{error}");
-            assert!(!parent.join(name).exists(), "reserved name wrote a game");
-        }
-        for name in ["salon-arcade", "remote-aventure"] {
-            assert!(create(name, &parent, "amis").is_ok(), "{name}");
-        }
+    let dir = Path::new(name);
+    if dir.exists() {
+        return Err(format!("{name} existe déjà"));
     }
-
-    #[test]
-    fn a_new_game_is_filled_and_follows_the_rules() {
-        let parent = crate::testdir::fresh("new");
-        let dir = create("canards", &parent, "amis").unwrap();
-        for (path, _) in MODEL {
-            let text = util::read(&dir.join(path)).unwrap();
-            assert!(!text.contains("{{"), "{path} garde un {{{{…}}}}");
+    let brick = format!(
+        r#"telecommande = {{ git = "https://github.com/build-your-own-game/soiree", tag = "v{}" }}"#,
+        crate::VERSION
+    );
+    for (relative, bytes) in FILES {
+        let path = dir.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("{} : {error}", parent.display()))?;
         }
-        assert!(
-            util::read(&dir.join("Cargo.toml"))
-                .unwrap()
-                .contains(&format!(
-                    "github.com/build-your-own-game/soiree\", tag = \"v{VERSION}\""
-                ))
-        );
-        assert!(dir.join(".soiree/salon/README.md").is_file());
-        assert_eq!(
-            util::read(&dir.join(".soiree/version")).unwrap().trim(),
-            VERSION
-        );
-
-        let mut report = Report::quiet();
-        lints::check_toolchain(&dir, &mut report);
-        let project = util::parse_toml(&util::read(&dir.join("Cargo.toml")).unwrap(), "c").unwrap();
-        lints::check_cargo(&project, &mut report);
-        lints::check_clippy(&dir, &mut report);
-        crate::ci::check(&dir, &mut report);
-        crate::gaps::check(&dir, &mut report);
-        crate::verification::validate_declaration(&dir, &mut report);
-        assert_eq!(report.count(Level::Error), 0, "{:?}", report.lines);
-
-        assert!(create("canards", &parent, "amis").is_err());
+        let written = match std::str::from_utf8(bytes) {
+            Ok(text) => fs::write(
+                &path,
+                text.replace(LOCAL_BRICK, &brick).replace(TITLE, name),
+            ),
+            Err(_) => fs::write(&path, bytes),
+        };
+        written.map_err(|error| format!("{} : {error}", path.display()))?;
     }
+    println!(
+        "Le jeu {name} est créé.\n\n  cd {name}\n  cargo run --release     lance le jeu\n  soiree check            vérifie qu'il passe\n\nLis AGENTS.md, ou donne-le à ton agent."
+    );
+    Ok(())
 }

@@ -1,90 +1,45 @@
-# La soirée
+# La console de nos soirées
 
-Des amis font chacun un jeu avec un agent de code, puis on y joue tous ensemble un soir, chez l'hôte.
-L'ordinateur de l'hôte est branché sur la TV ; les téléphones servent de manettes.
-Les jeux sont écrits en Rust, tournent dans le navigateur, et tiennent tous le même plancher de qualité.
+Des amis font chacun un jeu avec un agent de code, puis on y joue tous ensemble un soir, chez l'hôte. Son ordinateur est branché sur la télé ; les téléphones servent de télécommandes.
 
-Ce dépôt est le commun : les idées, la couche réseau, la télécommande, l'outil `soiree` et le jeu de départ. Chaque jeu vit dans son propre dépôt, dans l'organisation `build-your-own-game`.
-
-Tu ne codes pas ? Commence par [`REJOINDRE.md`](REJOINDRE.md) : donne-le à ton assistant IA, il te guidera.
-
-La version **0.3.0** introduit les contrats de vérification exécutables.
-Leur portée et leurs limites sont décrites dans [`VERIFICATION.md`](VERIFICATION.md) ;
-les [résultats de validation](certification/contracts-v0.3.0/README.md) distinguent
-les contrôles satisfaits des garanties qui restent non attestées.
+Ce dépôt est la console : les règles que tous les jeux suivent, l'outil qui les vérifie, les briques qu'elle prête et un jeu de départ. Chaque jeu vit dans son propre dépôt. Le pourquoi est dans [`MANIFESTE.md`](MANIFESTE.md).
 
 ## Commencer un jeu
 
-Ces étapes s'adressent à toi ou à ton agent de code. Chaque commande se lance dans un terminal.
-
-1. **Installer Rust**, avec rustup : suis https://rustup.rs. Ferme puis rouvre le terminal.
-2. **Installer l'outil `soiree`**, à la version de la soirée :
+1. **Installe Rust** avec rustup : https://rustup.rs. Ferme puis rouvre le terminal.
+2. **Installe l'outil `soiree`**, à la version de la soirée :
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.3.0 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.4.0 soiree
    ```
-   La première installation prend quelques minutes.
-3. **Vérifier l'ordinateur** :
-   ```sh
-   soiree doctor
-   ```
-   Il dit ce qui manque (la bonne version de Rust, la cible WebAssembly, wasm-bindgen, Node, Chrome, WebKit, Toxiproxy, git) et donne pour chacun le lien officiel. Il n'installe rien lui-même. Installe ce qui manque, puis relance-le jusqu'à ce qu'il soit tout vert.
-4. **Créer le jeu**, dans le dossier où tu ranges tes projets :
+3. **Crée ton jeu**, dans le dossier où tu ranges tes projets :
    ```sh
    soiree new mon-jeu
    cd mon-jeu
    ```
-   Le nom : des minuscules, des chiffres et des tirets, comme `course-de-canards`.
-5. **Vérifier le jeu, créer son dépôt dans l'organisation et pousser.**
-   Le premier contrôle crée aussi `Cargo.lock`, nécessaire à la CI.
-   Avec [GitHub CLI](https://cli.github.com) :
+4. **Lance-le** :
    ```sh
-   soiree check
-   git init -b main
-   git add -A
-   git commit -m "Le jeu de départ"
-   gh repo create build-your-own-game/mon-jeu --private --source . --push
+   cargo run --release
    ```
-   Sans `gh` : crée le dépôt `mon-jeu` sur https://github.com/organizations/build-your-own-game/repositories/new, puis suis les commandes que GitHub affiche pour « push an existing repository ».
-6. **Lire `AGENTS.md`**, à la racine du jeu. Si tu travailles avec un agent de code, demande-lui de le lire et de le suivre : c'est lui qui décrit la suite.
-
-C'est fini quand `soiree check` passe dans le dossier du jeu.
+   Le terminal affiche deux adresses : celle de l'écran, à ouvrir sur l'ordinateur, et celle des téléphones.
+5. **Donne `AGENTS.md` à ton agent de code** et dis-lui quel jeu tu veux.
 
 ## Les commandes
 
-| Commande | Quand | Ce qu'elle fait |
-|---|---|---|
-| `soiree doctor` | à l'installation | vérifie l'ordinateur et dit quoi installer |
-| `soiree new <nom>` | une fois par jeu | crée le jeu depuis `modele/` |
-| `soiree contracts` | avant de vérifier | résout les engagements de `verification.toml` et les minima communs en plan |
-| `soiree contracts --write-view` | après un changement d’engagement | actualise la vue dans `CERTIFICATION.md` |
-| `soiree check --fast` | en boucle serrée | contrôle les déclarations et le socle statique ; les tests restent non attestés |
-| `soiree check` | avant de valider le code | ajoute formatage, Clippy natif/WASM, tests réellement découverts par Cargo/libtest et doctests |
-| `soiree mutants` | à la demande | vérifie que les tests détectent des mutations ; rapports séparés |
-| `soiree certify` | pour éprouver le jeu réel | exécute les scénarios ordinaires du harnais ; écrit les observations et leur évaluation dans `certification/` |
-| `soiree certify -- --only ui,panic` | pour un retour ciblé | atteste uniquement les scénarios demandés et la santé du contrôleur |
-| `soiree upgrade` | après une publication | passe le jeu à la version du binaire installé, après vérification de son étiquette publiée |
-| `soiree status` | chez l'hôte | dans un dossier de plusieurs dépôts : ce qui n'est pas commité ou pas poussé |
-| `soiree host-setup` | chez l'hôte, une fois par machine | installe le dossier de l'hôte : `AGENTS.md`, le `[patch]` local, `soiree/` et ses jeux |
-
-`soiree help` les rappelle.
-
-Le code de sortie dit si le **périmètre demandé** a passé. Un passage rapide ou
-un scénario isolé ne certifient pas le reste du jeu. Les rapports distinguent
-méthode, résultat, hypothèses et provenance ; une intention écrite n’est pas
-un test passé. Les durées et les gains dans la boucle d’itération restent à
-mesurer. Le format et la migration sont dans [`VERIFICATION.md`](VERIFICATION.md).
-
-## Où trouver le reste
-
-| Pour | Lis |
+| Commande | Ce qu'elle fait |
 |---|---|
-| les idées, le niveau d'exigence, les principes d'ingénierie | [`MANIFESTE.md`](MANIFESTE.md) |
-| ce que chaque jeu tient le soir même | [`CERTIFICATION.md`](CERTIFICATION.md) |
-| les contrats exécutables, les rapports et leurs limites | [`VERIFICATION.md`](VERIFICATION.md) |
-| brancher un jeu sur la TV et les téléphones | [`salon/README.md`](salon/README.md) |
-| l'app iPhone qui sert de manette | [`remote/CONTRAT.md`](remote/CONTRAT.md) |
-| les jeux de la soirée | [`catalogue.toml`](catalogue.toml) |
-| ce qui change d'une version à l'autre | [`CHANGELOG.md`](CHANGELOG.md) |
-| modifier le commun | [`AGENTS.md`](AGENTS.md) |
+| `cargo run --release` | lance le jeu |
+| `soiree check` | vérifie que le jeu suit les règles et se branche ; un jeu qui ne passe pas n'est pas joué |
+| `soiree rules` | écrit dans le jeu les règles de la version installée, après une mise à jour de la console |
+| `soiree new <nom>` | crée un jeu depuis le jeu de départ |
+| `soiree manifeste` | affiche le manifeste |
 
-Une question, un besoin dans salon, une règle qui gêne : ouvre une issue sur ce dépôt.
+## Ce que contient ce dépôt
+
+| Dossier | Contenu |
+|---|---|
+| `MANIFESTE.md` | le but, les règles, comment la console évolue |
+| `regles/` | les règles vérifiées : version de Rust, linteur, réglages de Clippy |
+| `outil/` | l'outil `soiree` |
+| `telecommande/` | la brique « télécommande » : le téléphone trouve le jeu par un QR code et lui parle |
+| `modele/` | le jeu de départ que copie `soiree new` |
+| `dossier/` | les fichiers du dossier de l'hôte, qui range la console et ses jeux côte à côte |

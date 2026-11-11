@@ -1,0 +1,20 @@
+# Les pages : l'écran et la télécommande, compilés pour le navigateur.
+[package]
+name = "pages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Seulement pour le navigateur : sur l'ordinateur, ce crate est vide.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+messages.workspace = true
+telecommande.workspace = true
+wasm-bindgen = "0.2"
+
+[lints]
+workspace = true

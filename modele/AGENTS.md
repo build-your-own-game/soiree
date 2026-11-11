@@ -1,74 +1,70 @@
-# {{nom}}
+# Mon jeu
 
-> Ce fichier s'adresse à l'agent de code qui fait ce jeu, quel qu'il soit. La personne avec qui tu travailles en est l'auteur et le seul maître : ce dépôt est le sien.
+> Ce fichier s'adresse à l'agent de code qui fait ce jeu, quel qu'il soit. La personne avec qui tu travailles en est l'auteur : ce dépôt est le sien.
 
-## Avant d'écrire du code
+Ce jeu se joue en soirée, chez un ami, sur sa « console » : son ordinateur branché à la télé, et un téléphone par joueur. La console fixe quelques règles, les mêmes pour tous les jeux. Lance `soiree manifeste` et lis-le avant d'écrire du code.
 
-Lis, dans `.soiree/` (écrit par `soiree`, à la version de `soiree.toml`) :
-- `MANIFESTE.md` : le pari, le niveau d'exigence, les principes. Applique-le.
-- `CERTIFICATION.md` : le plancher que tout jeu tient le soir même.
-- `salon/README.md` : comment la TV, les téléphones et les manettes rejoignent le jeu. Tu ne touches jamais un socket ni une reconnexion : c'est salon.
-- `remote/CONTRAT.md`, seulement si le jeu utilise l'app iPhone.
+## Les trois commandes
 
-Si `.soiree/` manque, lance `soiree check` : il le recrée. Si `soiree` manque, lance `soiree doctor` après l'avoir installé (voir le README du dépôt commun).
+| Commande | Quand |
+|---|---|
+| `cargo run --release` | pour lancer le jeu et y jouer |
+| `soiree check` | avant de dire qu'une étape est finie |
+| `soiree rules` | quand `soiree check` dit que les règles ne sont pas en place |
 
-## Vérifier pendant le développement
+`soiree check` vérifie les règles, le formatage, le linteur, les tests, puis lance le jeu et regarde s'il sert sa page. Chaque refus dit quoi corriger : suis-le. Un jeu qui ne passe pas n'est pas joué à la soirée.
 
-**Après chaque changement : `soiree check --fast`.** Ce passage immédiat ne porte que sur les contrôles statiques et signale le reste comme non attesté. Il ne certifie ni les tests natifs ni le comportement de l'interface.
+## Jouer pour de vrai avant de dire que c'est fini
 
-**Avant de valider une étape : `soiree check`.** Il exécute les suites natives, les doctests, Clippy natif/WASM et les contrôles des garanties J. Le passage rapide ne le remplace pas.
+`soiree check` ne joue pas à ta place. Lance le jeu, ouvre l'écran et plusieurs télécommandes dans un navigateur, et fais une partie entière :
 
-La CI fournie est liée à cette version du commun ; ne la retirer ni
-l’assouplir. Mettre à niveau avec `soiree upgrade` depuis l’outil de la
-version cible. Pour une interface nouvelle, utiliser `salon_web::ui` et
-déclarer les contrôles de `cert.json.ui` : ressources possédées, tâches
-périmées invalidées, identité et composition des champs préservées, effets
-ponctuels identifiés. Une catégorie non applicable cesse de l’être dès que
-sa mécanique apparaît.
+- l'écran : `http://localhost:8080/`
+- un premier joueur : `http://localhost:8080/t?j=1`
+- un deuxième : `http://localhost:8080/t?j=2`, et ainsi de suite.
 
-**La boucle lourde, à la fin d'une étape : `soiree certify`.** 5 à 10 minutes : le vrai serveur, la TV et 8 téléphones dans un navigateur sans écran, coupures, réseau lent, entrées hostiles, endurance. Lance-la en arrière-plan quand l'étape te paraît finie, pas avant. Corrige les échecs produit et les pannes du contrôleur, puis relance le périmètre concerné. Un résultat de revue ou non attesté reste visible et peut rendre le code de sortie non nul : il demande une décision, une observation ou un contrôle manquant, pas une relance pour obtenir artificiellement du vert. Documente ces limites et committe `certification/` avec le code. Un passage ciblé réussi ne valide pas les autres scénarios.
+Chaque numéro après `?j=` est un téléphone différent. Sans la variable `PORT`, le jeu écoute sur le port 8080.
 
-Entre les deux, joue : lance le jeu (`cargo run --release -p {{nom}}-host`), ouvre la TV et des téléphones (`/play?seat=1`, `/play?seat=2`…), regarde des captures. Si ton environnement a un navigateur ou un simulateur iOS, sers-t'en.
+## Comment ce jeu est rangé
 
-## La certification propre à ce jeu
+| Dossier | Contenu |
+|---|---|
+| `jeu/` | le programme que lance `cargo run --release` : les règles du jeu (`game.rs`) et la boucle qui les relie aux pages (`main.rs`) |
+| `messages/` | les messages échangés : `Up` (d'une page vers le jeu) et `Down` (du jeu vers une page) |
+| `pages/` | l'écran et la télécommande, en Rust compilé pour le navigateur |
+| `web/` | `index.html`, la feuille de style, les images |
 
-`verification.toml` à la racine déclare ce que **ce jeu-ci** doit tenir, en plus des exigences communes. `CERTIFICATION.md` en présente une vue lisible générée : change le contrat source, pas son bloc généré.
+Rien de ce rangement n'est imposé. Tu peux tout réorganiser tant que `soiree check` passe.
 
-`soiree contracts` valide le contrat et imprime son plan JSON sans exécuter les contrôles ; `soiree contracts --write-view` met à jour la vue lisible. Ces commandes ne produisent pas une réussite de test.
+## La télécommande
 
-Chaque garantie garde un identifiant stable, une exigence observable et des références à des contrôles. Un contrôle `cargo-test` identifie exactement son paquet, sa catégorie et son nom de cible Cargo, puis le nom complet du test, modules compris. Un helper n'est pas un test : nomme le test qui l'exécute et conserve son rôle dans `assumptions`. Les hypothèses et limites restent explicites ; le texte d'une garantie ne prouve pas qu'elle est tenue.
+La page que les joueurs ouvrent sur leur téléphone est à toi : boutons, dessin au doigt, glisser, gyroscope, vibrations, tout ce qu'un navigateur de téléphone permet. Elle est en Rust, comme le reste.
 
-Ne pars pas d'une page blanche : `.soiree/certifications/` est un catalogue d'items rangés par mécanique (physique, vote, tour par tour, score…), chacun tiré d'un vrai bug de jeu.
-1. Repère les mécaniques de ton jeu et lis les fichiers correspondants.
-2. Prends **tous** les items qui s'appliquent, adapte-les à ton jeu, et garde leur identifiant dans `origins`. Déclare leur décision `adopted` avec une raison dans `catalogue_decisions`.
-3. Un item que tu écartes alors que sa mécanique est dans ton jeu : déclare `not-applicable` avec sa raison dans `catalogue_decisions`. Sans décision explicite, l'item reste non revu ; il ne devient ni satisfait ni non applicable.
-4. Refais ce tri quand le jeu gagne une mécanique.
+## La brique `telecommande`
 
-Ajoute ensuite ce que le catalogue n'a pas : chaque règle de ton jeu qui peut casser devient un item. Bons items : ce qu'un joueur pressé, un téléphone en retard ou une égalité peuvent casser.
+Ce jeu emprunte une brique à la console. Elle fait trois choses :
 
-Ne réutilise jamais un ancien rapport comme résultat courant, et ne déduis pas une réussite de la seule présence d'un test. Les contrôles UI et leurs catégories restent déclarés dans `cert.json.ui` ; ils ne remplacent pas les garanties propres au jeu. Un item retiré conserve son identifiant avec `retired = true`, et `LEARNINGS.md` explique ce qui le couvre désormais.
+- `telecommande::pages::build` compile les pages au démarrage du jeu ;
+- `telecommande::host::Room` sert les pages, affiche le QR code (`/qr.svg`) et échange des messages avec elles : `Joined`, `Message`, `Left` ;
+- `telecommande::web::connect` ouvre, dans une page, le lien vers le jeu, et le rouvre après une coupure.
 
-## Un bug trouvé en jouant
+À retenir :
 
-1. Reproduis-le : une suite d'entrées ou un replay, qui devient un test.
-2. Écris dans `LEARNINGS.md` pourquoi aucun item ne l'a vu.
-3. Ajoute ou durcis une garantie et son contrôle dans le `verification.toml` du jeu. Si la faille n'est pas propre à ton jeu, propose-la au catalogue, sans attendre qu'on te le demande : ouvre une pull request sur le dépôt commun qui ajoute l'item au bon fichier de `certifications/`, au format du catalogue, avec un lien vers le test de ton jeu qui l'a trouvée. L'hôte décide de l'ajouter ou non ; en attendant, la garantie reste dans le `verification.toml` du jeu. Si tu ne peux pas ouvrir de pull request toi-même, écris-en le contenu pour l'auteur.
+- **`Joined` arrive à chaque connexion**, aussi quand un téléphone revient de veille. Renvoie-lui alors ce qu'il doit afficher.
+- **Un téléphone garde son identité** (`Id`) quand il recharge la page. Garde sa place et son score.
+- **`Left` ne veut pas dire que le joueur a quitté la partie** : son téléphone s'est peut-être mis en veille dix secondes.
+
+Sa documentation complète est dans son code. Tu peux aussi t'en passer et faire autrement : la brique n'est pas obligatoire.
 
 ## Ce que tu ne modifies pas
 
-- Le dépôt commun (salon, la télécommande, les règles, le harnais). S'il manque quelque chose à salon, ou si une règle commune gêne sans raison, ouvre une issue sur `https://github.com/build-your-own-game/soiree` qui explique le besoin et ce que tu as essayé. Si tu ne peux pas ouvrir d'issue toi-même, écris-en le texte pour l'auteur.
-- `rust-toolchain.toml`, `clippy.toml` et les lints de `Cargo.toml` : `soiree` les écrit. Tu peux durcir une règle ; pour en assouplir une, il faut `#[expect(lint, reason = "…")]` à l'endroit précis, jamais `#[allow]`.
-- `.soiree/` : régénéré à chaque `soiree check`.
-- Le module écrit par `soiree dom` (souvent `page.rs`) : il tire du HTML et du CSS de la page les seuls noms que le Rust peut y lire, et les règles interdisent de lire la page par chaîne ailleurs. Change la page, puis relance `soiree dom` suivi du chemin du module.
-- Le `build.rs` copié de salon (`version.rs`) : il calcule depuis les sources la version que salon vérifie ; aucune version à monter à la main. `salon/README.md` dit comment brancher l'un et l'autre.
+`rust-toolchain.toml`, `clippy.toml` et la table `[workspace.lints]` de `Cargo.toml` : ce sont les règles de la console, écrites par `soiree rules`. Pour une exception, écris `#[expect(lint, reason = "…")]` à l'endroit précis, jamais `#[allow]`.
 
 ## Travailler avec l'auteur
 
-- **Il ne code peut-être pas.** Demande-le-lui au début s'il ne l'a pas dit. S'il ne code pas, c'est toi le développeur : parle-lui du jeu (règles, sensation, ce qui fait rire), pas de Rust. Montre-lui le jeu qui tourne plutôt que du code.
-- **Le jeu reste jouable à tout moment.** Avance par petites couches qui marchent.
-- **Committe et pousse souvent,** avec des messages qui disent ce qui change pour le joueur. Ce dépôt est sur GitHub : c'est sa sauvegarde et c'est là que l'hôte le récupère.
-- **Pour que le jeu soit proposé à la soirée,** il doit être dans `catalogue.toml` du dépôt commun : ouvre une pull request qui y ajoute une ligne, une seule fois.
+- **Il ne code peut-être pas.** Demande-le-lui au début. S'il ne code pas, parle-lui du jeu (les règles, ce qui fait rire), pas de Rust, et montre-lui le jeu qui tourne plutôt que du code.
+- **Le jeu reste jouable à tout moment.** Avance par petites étapes qui marchent.
+- **Committe et pousse souvent.** Le dépôt GitHub est sa sauvegarde, et c'est là que l'hôte récupère le jeu.
 
 ## Ce jeu
 
-*À remplir par toi, au fil du projet : en une phrase, ce qu'est le jeu ; les commandes pour le lancer et le tester ; ce que contient chaque crate ; les décisions qu'un autre agent doit connaître avant d'y toucher.*
+*À remplir par toi, au fil du projet : en une phrase, ce qu'est le jeu ; ses règles ; les décisions qu'un autre agent doit connaître avant d'y toucher.*

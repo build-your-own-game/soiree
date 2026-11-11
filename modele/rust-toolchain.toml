@@ -1,0 +1,6 @@
+# La version de Rust de la console, la même pour tous les jeux.
+# Copié par `soiree rules`, vérifié par `soiree check`.
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
