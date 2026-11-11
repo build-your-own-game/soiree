@@ -12,6 +12,8 @@ use serde::Deserialize;
 use wasm_bindgen_cli_support::Bindgen;
 
 const TARGET: &str = "wasm32-unknown-unknown";
+/// La version de `wasm-bindgen` de la brique, la même des deux côtés.
+const BINDGEN: &str = "0.2.130";
 
 #[derive(Deserialize)]
 struct Metadata {
@@ -85,9 +87,12 @@ pub fn build(manifest_dir: &Path, package: &str) -> io::Result<PathBuf> {
         .typescript(false)
         // Sans argument, `init()` charge le fichier compilé posé à côté.
         .omit_default_module_path(false);
-    bindgen
-        .generate(&pages)
-        .map_err(|error| io::Error::other(format!("{error:#}")))?;
+    bindgen.generate(&pages).map_err(|error| {
+        io::Error::other(format!(
+            "{error:#}\nSi l'erreur parle de version : le crate des pages doit utiliser exactement \
+             le `wasm-bindgen` de la brique. Écris `wasm-bindgen = \"={BINDGEN}\"` dans son Cargo.toml."
+        ))
+    })?;
     let statics = metadata.workspace_root.join("web");
     if statics.is_dir() {
         copy_dir(&statics, &pages)?;

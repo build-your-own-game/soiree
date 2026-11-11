@@ -122,15 +122,19 @@ fn without_lints(manifest: &str, prefix: &str) -> String {
 
 /// `soiree rules` : écrit la version de Rust, les réglages de Clippy et la
 /// table des lints, puis branche chaque crate sur cette table.
-pub fn run(dir: &Path) -> Result<(), String> {
-    let metadata = metadata(dir)?;
-    let root = &metadata.workspace_root;
+pub fn run(root: &Path) -> Result<(), String> {
+    // La racine s'écrit avant d'interroger cargo : il refuse un workspace dont
+    // les crates demandent une table de lints qui n'existe pas encore.
+    let manifest_path = root.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest_path).map_err(|error| {
+        format!(
+            "{} : {error}\nLance `soiree rules` à la racine du jeu, là où est son Cargo.toml.",
+            manifest_path.display()
+        )
+    })?;
     write(&root.join("rust-toolchain.toml"), TOOLCHAIN)?;
     write(&root.join("clippy.toml"), CLIPPY)?;
 
-    let manifest_path = root.join("Cargo.toml");
-    let text = fs::read_to_string(&manifest_path)
-        .map_err(|error| format!("{} : {error}", manifest_path.display()))?;
     let prefix = lints_prefix(&read_toml(&manifest_path)?);
     let updated = format!(
         "{}\n\n{}",
@@ -140,7 +144,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
     write(&manifest_path, &updated)?;
 
     if prefix == "workspace.lints" {
-        for package in &metadata.packages {
+        for package in &metadata(root)?.packages {
             if !read_toml(&package.manifest_path)?.contains_key("lints") {
                 let text = fs::read_to_string(&package.manifest_path)
                     .map_err(|error| format!("{} : {error}", package.manifest_path.display()))?;

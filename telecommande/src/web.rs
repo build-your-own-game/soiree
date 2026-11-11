@@ -23,9 +23,9 @@ use serde::de::DeserializeOwned;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::js_sys::Object;
-use web_sys::{MessageEvent, UrlSearchParams, WebSocket};
+use web_sys::{CloseEvent, MessageEvent, UrlSearchParams, WebSocket};
 
-use crate::Role;
+use crate::{REPLACED, Role};
 
 /// Le délai avant de rouvrir un lien coupé.
 const RETRY_MS: i32 = 1000;
@@ -37,7 +37,8 @@ pub enum Signal<Down> {
     Open,
     /// Le jeu a envoyé un message.
     Message(Down),
-    /// Le lien est coupé. Il se rouvre tout seul.
+    /// Le lien est coupé. Il se rouvre tout seul, sauf si la même page s'est
+    /// ouverte dans un autre onglet : c'est alors l'autre qui joue.
     Closed,
 }
 
@@ -50,7 +51,7 @@ enum Raw {
 struct Handlers {
     _open: Closure<dyn FnMut()>,
     _message: Closure<dyn FnMut(MessageEvent)>,
-    _close: Closure<dyn FnMut()>,
+    _close: Closure<dyn FnMut(CloseEvent)>,
 }
 
 struct Inner {
@@ -145,9 +146,12 @@ fn open(inner: &Rc<Inner>) {
     };
     let on_close = {
         let inner = Rc::clone(inner);
-        Closure::<dyn FnMut()>::new(move || {
+        Closure::<dyn FnMut(CloseEvent)>::new(move |event: CloseEvent| {
             inner.emit(Raw::Closed);
-            retry_later(&inner);
+            // Remplacé par un autre onglet de la même page : celui-ci s'arrête là.
+            if event.code() != REPLACED {
+                retry_later(&inner);
+            }
         })
     };
     socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));

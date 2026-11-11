@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderValue, StatusCode};
@@ -42,7 +42,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use crate::{Id, Role};
+use crate::{Id, REPLACED, Role};
 
 /// Le port quand la console n'en donne pas (chez toi, pendant que tu codes).
 const DEFAULT_PORT: u16 = 8080;
@@ -258,8 +258,17 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
     loop {
         tokio::select! {
             text = outgoing.recv() => {
-                // `None` : une connexion plus récente de la même page a pris la place.
-                let Some(text) = text else { break };
+                // `None` : une connexion plus récente de la même page a pris la
+                // place. On le dit à celle-ci pour qu'elle ne revienne pas.
+                let Some(text) = text else {
+                    let replaced = CloseFrame {
+                        code: REPLACED,
+                        reason: "replaced".into(),
+                    };
+                    let _: Result<(), axum::Error> =
+                        sink.send(Message::Close(Some(replaced))).await;
+                    break;
+                };
                 if sink.send(Message::Text(text.into())).await.is_err() {
                     break;
                 }

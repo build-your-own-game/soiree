@@ -24,6 +24,11 @@ pub mod pages;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
+/// Le code de fermeture d'un lien remplacé : la même page s'est connectée
+/// ailleurs (un deuxième onglet). L'ancien lien ne doit pas se rouvrir, sinon
+/// les deux se reprendraient la place sans fin.
+pub(crate) const REPLACED: u16 = 4000;
+
 /// Une page, reconnue d'une connexion à l'autre : un téléphone qui se met en
 /// veille puis revient garde le même `Id`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
