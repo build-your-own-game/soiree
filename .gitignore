@@ -1,5 +1,2 @@
 target/
 .DS_Store
-# Restes d'anciennes branches.
-/crates/
-/web/

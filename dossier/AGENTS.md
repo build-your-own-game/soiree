@@ -42,27 +42,27 @@ Réinstalle-le après chaque changement dans `soiree/regles/` ou `soiree/outil/`
 
 ## La console et les jeux, côte à côte
 
-Un jeu emprunte une brique de la console par étiquette git :
+Un jeu emprunte une brique de la console par étiquette git, ici comme chez les amis :
 
 ```toml
 telecommande = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }
 ```
 
-Ici, `.cargo/config.toml` remplace cette dépendance par le dossier `soiree/telecommande`. Cargo lit ce fichier pour tout projet placé sous ce dossier. Conséquences :
+Pour changer la console et un jeu en même temps, décommente le `[patch]` de `.cargo/config.toml`. Cargo lit ce fichier pour tout projet placé sous ce dossier et remplace alors la brique par le dossier `soiree/telecommande` :
 - Un changement dans une brique se voit tout de suite dans les jeux, sans étiquette ni push.
 - Le jeu compile ici avec une console que les amis n'ont pas. Chez eux, c'est l'étiquette qui compte.
 - L'étiquette nommée dans le `Cargo.toml` du jeu doit exister sur GitHub : Cargo la récupère avant d'appliquer le `[patch]`.
 
-**Tant qu'aucune étiquette de la console n'est publiée**, un jeu d'ici emprunte la brique par son chemin (`path = "../../soiree/telecommande"`) et le `[patch]` reste en commentaire. Un tel jeu ne se pousse pas : chez un ami, il ne compilerait pas.
+Remets le `[patch]` en commentaire avant de vérifier et de committer un jeu : son `Cargo.lock` doit nommer l'étiquette, pas le dossier local.
 
 ## Un changement qui touche la console et un jeu
 
 Dans l'ordre :
 
-1. **Développe ensemble.** Modifie `soiree/` et le jeu en même temps.
+1. **Développe ensemble.** Décommente le `[patch]`, modifie `soiree/` et le jeu en même temps.
 2. **Vérifie la console.** Suis `soiree/AGENTS.md`, puis `soiree check` dans chaque jeu.
-3. **Étiquette la console.** Committe dans `soiree/`, étiquette la nouvelle version, pousse le commit **et** l'étiquette (`git push --follow-tags`), avec l'accord de l'hôte.
-4. **Passe le jeu à l'étiquette.** Dans le `Cargo.toml` du jeu, écris la nouvelle étiquette. Puis `soiree rules` et `soiree check`.
+3. **Étiquette la console.** Committe dans `soiree/`, étiquette la nouvelle version, pousse le commit **et** l'étiquette, avec l'accord de l'hôte.
+4. **Passe le jeu à l'étiquette.** Remets le `[patch]` en commentaire. Dans le `Cargo.toml` du jeu, écris la nouvelle étiquette. Puis `soiree rules` et `soiree check`.
 5. **Pousse le jeu.** Seulement maintenant.
 
 **Ne pousse jamais un jeu qui dépend d'une console non publiée.**

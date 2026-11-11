@@ -2,10 +2,10 @@
 # du dossier qui contient `soiree/` et `games/`. Ce fichier n'est dans aucun
 # dépôt. Voir AGENTS.md, à côté de `.cargo/`.
 #
-# Il remplace, pour tout projet placé sous ce dossier, la brique empruntée à
-# une étiquette de la console par le dossier local. Cargo exige que l'étiquette
-# existe sur GitHub : tant qu'aucune n'est publiée, les jeux d'ici empruntent
-# la brique par son chemin et ce [patch] reste en commentaire.
+# Décommenté, il remplace, pour tout projet placé sous ce dossier, la brique
+# empruntée à une étiquette de la console par le dossier local : c'est ce qui
+# permet de changer la console et un jeu en même temps. Remets-le en
+# commentaire avant de vérifier et de committer un jeu.
 
 # [patch."https://github.com/build-your-own-game/soiree"]
 # telecommande = { path = "soiree/telecommande" }
