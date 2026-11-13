@@ -26,5 +26,6 @@ La suite est dans l'outil : `soiree help`.
 | `regles/` | les règles vérifiées : version de Rust, linteur, réglages de Clippy, et les conseils que donne `soiree check` quand une règle refuse |
 | `outil/` | l'outil `soiree` |
 | `telecommande/` | la brique « télécommande » : le téléphone trouve le jeu par un QR code et lui parle |
+| `iphone/` | l'app iPhone « Soirée » : une manette pour tous les jeux, avec capteurs de mouvement et vibrations |
 | `modele/` | le jeu de départ que copie `soiree new` |
 | `dossier/` | les fichiers du dossier de l'hôte, qui range la console et ses jeux côte à côte |

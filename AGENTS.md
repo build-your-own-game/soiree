@@ -12,6 +12,7 @@ Lis `MANIFESTE.md`. Ne le modifie pas sans demande explicite de l'hôte.
 | `outil/` | l'outil `soiree` : `new`, `check`, `publish`, `rules`, `manifeste`, et `games` pour l'hôte |
 | `REJOINDRE.md` | le texte qu'un ami colle dans son assistant IA pour commencer |
 | `telecommande/` | la brique « télécommande » (`host` et `pages` sur l'ordinateur, `web` dans le navigateur) |
+| `iphone/` | l'app iPhone « Soirée » (Swift) : une manette pour tous les jeux. Elle scanne le QR code, charge la télécommande du jeu et lui donne les capteurs de mouvement et les vibrations que Safari refuse. Son contrat avec les pages est dans `iphone/README.md`. |
 | `modele/` | le jeu de départ, un vrai jeu avec son propre workspace ; `soiree new` le copie |
 | `dossier/` | les modèles des fichiers du dossier de l'hôte |
 
