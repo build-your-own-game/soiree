@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::marker::PhantomData;
-use std::net::{IpAddr, TcpListener, UdpSocket};
+use std::net::{IpAddr, TcpListener, ToSocketAddrs as _, UdpSocket};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
@@ -42,6 +42,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
+use crate::tls::{self, Identity};
 use crate::{Id, REPLACED, Role};
 
 /// Le port quand la console n'en donne pas (chez toi, pendant que tu codes).
@@ -99,6 +100,11 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
     /// Le port est celui que donne la console (la variable `PORT`). L'adresse
     /// que les téléphones ouvrent est celle de la variable `SOIREE_ADRESSE` si
     /// l'hôte passe par un relais, sinon celle de cet ordinateur sur le Wi-Fi.
+    ///
+    /// Quand l'hôte donne un nom et son certificat (`SOIREE_TLS_NOM`,
+    /// `SOIREE_TLS_CERT`, `SOIREE_TLS_KEY`), cette adresse est en HTTPS, sur le
+    /// même port : Safari ne donne les capteurs de mouvement d'un téléphone
+    /// qu'à une page servie en HTTPS. L'écran reste à `http://localhost`.
     /// `remote_path` est le chemin de la télécommande, par exemple `"/t"`.
     ///
     /// Un chemin qui n'est pas un fichier du dossier reçoit `index.html` : une
@@ -107,10 +113,17 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
         let port = port()?;
         let listener = TcpListener::bind(("0.0.0.0", port))?;
         listener.set_nonblocking(true)?;
+        let identity = Identity::from_env()?;
         let base = std::env::var("SOIREE_ADRESSE").map_or_else(
-            |_| format!("http://{}:{port}", lan_address()),
+            |_| match &identity {
+                Some(identity) => format!("https://{}:{port}", identity.name),
+                None => format!("http://{}:{port}", lan_address()),
+            },
             |address| address.trim_end_matches('/').to_owned(),
         );
+        if let Some(identity) = &identity {
+            warn_if_elsewhere(&identity.name, port);
+        }
         let remote_url = format!("{base}{remote_path}");
         let screen_url = format!("http://localhost:{port}/");
         let (sender, events) = mpsc::channel();
@@ -135,6 +148,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
         let _: std::thread::JoinHandle<()> = std::thread::spawn(move || {
             let served = runtime.block_on(async move {
                 let listener = tokio::net::TcpListener::from_std(listener)?;
+                let listener = tls::Listener::new(listener, identity.as_ref())?;
                 axum::serve(listener, app).await
             });
             if let Err(error) = served {
@@ -216,6 +230,33 @@ fn lan_address() -> IpAddr {
             socket.local_addr()
         })
         .map_or(IpAddr::from([127, 0, 0, 1]), |address| address.ip())
+}
+
+/// En HTTPS, les téléphones arrivent par un nom : s'il ne mène pas à cet
+/// ordinateur sur le Wi-Fi, ils n'arriveront nulle part. On le dit tout de
+/// suite, plutôt que de laisser chercher pendant la soirée.
+fn warn_if_elsewhere(name: &str, port: u16) {
+    let here = lan_address();
+    let found: Vec<IpAddr> = (name, port)
+        .to_socket_addrs()
+        .map(|addresses| addresses.map(|address| address.ip()).collect())
+        .unwrap_or_default();
+    if found.contains(&here) {
+        return;
+    }
+    let there = if found.is_empty() {
+        "nulle part".to_owned()
+    } else {
+        found
+            .iter()
+            .map(IpAddr::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    eprintln!(
+        "Attention : {name} mène à {there}, et cet ordinateur est à {here} sur le Wi-Fi. \
+         Les téléphones n'arriveront pas tant que le DNS de {name} ne donne pas {here}."
+    );
 }
 
 fn qr_svg(url: &str) -> io::Result<String> {

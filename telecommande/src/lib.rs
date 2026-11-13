@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub mod host;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pages;
+#[cfg(not(target_arch = "wasm32"))]
+mod tls;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 

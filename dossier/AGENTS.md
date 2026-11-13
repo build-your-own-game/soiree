@@ -10,6 +10,7 @@ Ce dossier n'est pas un dépôt git. Il en contient plusieurs, chacun avec son h
 ./
 ├── AGENTS.md              ce fichier, dans aucun dépôt
 ├── .cargo/config.toml     le [patch] local, dans aucun dépôt
+├── fnox.toml              le certificat du HTTPS, chiffré, dans aucun dépôt
 ├── soiree/                https://github.com/build-your-own-game/soiree : la console
 └── games/
     ├── punchline/         https://github.com/build-your-own-game/punchline
@@ -69,6 +70,33 @@ Dans l'ordre :
 
 **Ne pousse jamais un jeu qui dépend d'une console non publiée.**
 
+## Le HTTPS sur le Wi-Fi
+
+Safari ne donne les capteurs de mouvement d'un téléphone qu'à une page servie en HTTPS. L'app iPhone de la console s'en passe ; un téléphone qui joue dans son navigateur en a besoin.
+
+La brique « télécommande » répond en HTTPS quand l'hôte lui donne un nom et son certificat, par trois variables : `SOIREE_TLS_NOM`, `SOIREE_TLS_CERT`, `SOIREE_TLS_KEY`. Le même port répond toujours en clair : l'écran reste à `http://localhost`, et le QR code mène au nom en HTTPS.
+
+Ici, ces variables sont dans `fnox.toml`, chiffrées. Pour lancer un jeu en HTTPS, depuis son dossier :
+
+```sh
+fnox exec -- cargo run --release
+```
+
+Sans `fnox exec`, le jeu se lance en clair, comme avant.
+
+- **Le nom et le certificat viennent du dépôt infra** (`tofu/soiree.tf`) : un nom public qui mène à l'adresse de cet ordinateur sur le Wi-Fi, et un certificat Let's Encrypt, valable 90 jours.
+- **L'adresse a changé** (autre Wi-Fi, autre box) : au lancement, le jeu le dit (« … mène à …, et cet ordinateur est à … »). Corrige `ip` dans `tofu/soiree.tf` du dépôt infra, puis `infra tofu apply`.
+- **Avant une soirée**, renouvelle et recopie le certificat. `infra tofu apply` le renouvelle quand il lui reste moins de 30 jours ; puis, depuis ce dossier :
+
+  ```sh
+  infra tofu output -raw soiree_https_cert | fnox set SOIREE_TLS_CERT
+  infra tofu output -raw soiree_https_cle | fnox set SOIREE_TLS_KEY
+  ```
+
+- **Un téléphone n'arrive pas** alors que le nom est bon : certaines box refusent un nom public qui mène à une adresse privée. L'app iPhone, elle, passe par l'adresse en clair.
+
 ## Ce qui n'est dans aucun dépôt
 
 `AGENTS.md` et `.cargo/config.toml`, ici, ne sont sauvegardés nulle part. Leurs modèles sont dans `soiree/dossier/`. Pour les changer pour de bon, change le modèle, puis recopie-le ici.
+
+`fnox.toml`, ici, porte le certificat du HTTPS : il n'a pas de modèle, il se refait depuis le dépôt infra (voir « Le HTTPS sur le Wi-Fi »).
