@@ -1,0 +1,62 @@
+# Ce que `soiree check` dit quand une règle refuse : pourquoi la console la
+# pose, et par où sortir. Une entrée par lint, sans le préfixe `clippy::`.
+
+[arithmetic_side_effects]
+pourquoi = "Un dépassement d'entier arrête la partie."
+remede = "Sur des entiers : `checked_`, `saturating_` ou `wrapping_`, choisi exprès. Les flottants et les vecteurs de `glam` ne déclenchent pas cette règle. Si elle se déclenche sur un type à toi qui porte des opérateurs (`+`, `*`), donne-lui des fonctions nommées, ou justifie l'exception sur la fonction qui calcule, pas sur le module."
+
+[unwrap_used]
+pourquoi = "Un `unwrap` qui échoue arrête la partie pour tout le monde."
+remede = "Traite le cas : `let Some(x) = … else { return }`, `if let`, `unwrap_or`, `?`. Dans un test, `unwrap` est permis."
+
+[expect_used]
+pourquoi = "Un `expect` qui échoue arrête la partie pour tout le monde."
+remede = "Traite le cas : `let Some(x) = … else { return }`, `if let`, `unwrap_or`, `?`. Dans un test, `expect` est permis."
+
+[panic]
+pourquoi = "Un `panic!` arrête la partie pour tout le monde."
+remede = "Ignore l'entrée impossible ou renvoie une erreur ; ne plante pas."
+
+[indexing_slicing]
+pourquoi = "Un index hors bornes arrête la partie."
+remede = "`get(i)`, `first()`, `last()`, un itérateur, ou un filtrage `[a, b, ..]`."
+
+[wildcard_enum_match_arm]
+pourquoi = "Un `_ =>` sur une enum avale en silence le cas qu'on ajoutera demain."
+remede = "Nomme les cas que tu ignores : `A | B => {}`."
+
+[fn_params_excessive_bools]
+pourquoi = "Un `bool` en paramètre s'inverse sans que le compilateur le voie."
+remede = "Une enum à deux variants, ou deux fonctions."
+
+[cast_precision_loss]
+pourquoi = "Un entier converti en flottant peut perdre des chiffres."
+remede = "`f64::from(x)` ou `f32::from(x)` quand le type le permet ; sinon une petite fonction dont le nom et le commentaire disent pourquoi la perte est sans effet, avec l'exception sur elle seule."
+
+[let_underscore_untyped]
+pourquoi = "Une valeur qu'on jette doit dire son type, pour ne pas jeter une erreur sans le voir."
+remede = "`let _: Type = …`."
+
+[unused_result_ok]
+pourquoi = "`.ok()` ne sert pas à faire taire un `Result`."
+remede = "Traite l'erreur, ou jette-la en disant son type : `let _: Result<…> = …`."
+
+[allow_attributes]
+pourquoi = "Une exception est explicite et justifiée."
+remede = "`#[expect(lint, reason = \"…\")]`, jamais `#[allow]`."
+
+[allow_attributes_without_reason]
+pourquoi = "Une exception est explicite et justifiée."
+remede = "Ajoute `reason = \"…\"` : ce que la règle protège, et pourquoi ce n'est pas en jeu ici."
+
+[unfulfilled_lint_expectations]
+pourquoi = "Cette exception ne sert plus : la règle ne se déclenche pas à cet endroit."
+remede = "Retire le `#[expect(…)]`."
+
+[too_many_lines]
+pourquoi = "Une fonction trop longue ne se relit plus d'un coup d'œil."
+remede = "Sors-en des étapes nommées : chaque bras d'un grand `match`, chaque phase, devient une petite fonction."
+
+[too_many_arguments]
+pourquoi = "Trop de paramètres : on les confond à l'appel."
+remede = "Regroupe ceux qui vont ensemble dans une structure."

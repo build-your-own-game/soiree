@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 pub const TOOLCHAIN: &str = include_str!("../../regles/rust-toolchain.toml");
 pub const CLIPPY: &str = include_str!("../../regles/clippy.toml");
+const ADVICE: &str = include_str!("../../regles/conseils.toml");
 const LINTS: &str = include_str!("../../regles/lints.toml");
 
 /// Les extensions des langages que la console n'accepte pas : tout est en Rust.
@@ -19,6 +20,7 @@ pub const FOREIGN: [&str; 7] = ["js", "mjs", "cjs", "jsx", "ts", "tsx", "py"];
 pub struct Metadata {
     pub packages: Vec<Package>,
     pub workspace_root: PathBuf,
+    pub target_directory: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -26,14 +28,88 @@ pub struct Package {
     pub name: String,
     pub manifest_path: PathBuf,
     pub targets: Vec<Target>,
+    /// Ce que le crate emprunte, tel que son `Cargo.toml` le demande.
+    pub dependencies: Vec<Dependency>,
+    /// `[package.metadata]` du `Cargo.toml` du crate.
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+pub struct Dependency {
+    pub name: String,
+    pub features: Vec<String>,
 }
 
 #[derive(Deserialize)]
 pub struct Target {
+    pub name: String,
+    pub kind: Vec<String>,
     pub crate_types: Vec<String>,
 }
 
+/// Pourquoi la console pose une règle, et par où sortir.
+#[derive(Deserialize)]
+pub struct Advice {
+    pub pourquoi: String,
+    pub remede: String,
+}
+
+/// Les conseils de la console, par nom de lint (sans `clippy::`).
+pub fn advice() -> std::collections::BTreeMap<String, Advice> {
+    toml::from_str(ADVICE).unwrap_or_default()
+}
+
+impl Metadata {
+    /// Les machines du jeu : les crates qui portent ses règles.
+    pub fn machines(&self) -> impl Iterator<Item = &Package> {
+        self.packages.iter().filter(|package| package.is_machine())
+    }
+
+    /// Les `clippy.toml` posés ailleurs qu'à la racine. Clippy lit le plus
+    /// proche d'un crate : un fichier en trop remplacerait, pour ce crate,
+    /// les réglages de la console.
+    pub fn stray_clippy_files(&self) -> Vec<PathBuf> {
+        let mut stray = Vec::new();
+        for package in &self.packages {
+            for name in ["clippy.toml", ".clippy.toml"] {
+                let path = package.dir().join(name);
+                if path.exists() && path != self.workspace_root.join("clippy.toml") {
+                    stray.push(path);
+                }
+            }
+        }
+        stray
+    }
+}
+
 impl Package {
+    /// Le dossier du crate.
+    pub fn dir(&self) -> &Path {
+        self.manifest_path.parent().unwrap_or(Path::new("."))
+    }
+
+    /// La machine du jeu : `[package.metadata.soiree] machine = true`.
+    pub fn is_machine(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("soiree")?.get("machine")?.as_bool())
+            == Some(true)
+    }
+
+    /// Le crate a une bibliothèque : ce que les autres crates lui empruntent.
+    pub fn has_library(&self) -> bool {
+        self.targets
+            .iter()
+            .any(|target| target.kind.iter().any(|kind| kind == "lib"))
+    }
+
+    /// Le crate a un exemple de ce nom (`examples/<nom>.rs`).
+    pub fn has_example(&self, name: &str) -> bool {
+        self.targets
+            .iter()
+            .any(|target| target.name == name && target.kind.iter().any(|kind| kind == "example"))
+    }
+
     /// Un crate compilé pour le navigateur : une page.
     pub fn is_page(&self) -> bool {
         self.targets
@@ -86,7 +162,11 @@ pub fn read_toml(path: &Path) -> Result<toml::Table, String> {
         .map_err(|error| format!("{} : {error}", path.display()))
 }
 
+/// Écrit le fichier s'il change, et le dit.
 fn write(path: &Path, text: &str) -> Result<(), String> {
+    if fs::read_to_string(path).ok().as_deref() == Some(text) {
+        return Ok(());
+    }
     fs::write(path, text).map_err(|error| format!("{} : {error}", path.display()))?;
     println!("  écrit {}", path.display());
     Ok(())
@@ -153,6 +233,11 @@ pub fn run(root: &Path) -> Result<(), String> {
             }
         }
     }
+    // Les réglages de Clippy sont ceux de la console, à la racine seulement.
+    for path in metadata(root)?.stray_clippy_files() {
+        fs::remove_file(&path).map_err(|error| format!("{} : {error}", path.display()))?;
+        println!("  supprimé {}", path.display());
+    }
     println!(
         "Les règles de soiree {} sont en place. Lance `soiree check`.",
         crate::VERSION
@@ -194,6 +279,15 @@ mod tests {
             let text = fs::read_to_string(repo(file)).unwrap();
             assert!(text.contains(&tag), "{file} ne nomme pas {tag}");
         }
+    }
+
+    /// Chaque fichier de règles se lit, seul et assemblé.
+    #[test]
+    fn the_rule_files_parse() {
+        let _: toml::Table = CLIPPY.parse().unwrap();
+        let advice = advice();
+        assert!(advice.contains_key("arithmetic_side_effects"));
+        assert!(advice.values().all(|one| !one.remede.is_empty()));
     }
 
     /// `soiree rules` ne change rien à un jeu déjà en règle.

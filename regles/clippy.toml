@@ -9,3 +9,12 @@ allow-indexing-slicing-in-tests = true
 
 # Un `bool` en paramètre s'inverse sans que le compilateur le voie : une enum à deux variants, ou deux fonctions.
 max-fn-params-bools = 0
+
+# Additionner deux vecteurs de `glam` ne déborde pas : ce sont des flottants. Sans cette ligne,
+# `arithmetic_side_effects` les refuserait à tort. Les entiers restent surveillés.
+arithmetic-side-effects-allowed = [
+  "glam::Vec2", "glam::Vec3", "glam::Vec3A", "glam::Vec4", "glam::Quat",
+  "glam::Mat2", "glam::Mat3", "glam::Mat3A", "glam::Mat4", "glam::Affine2", "glam::Affine3A",
+  "glam::DVec2", "glam::DVec3", "glam::DVec4", "glam::DQuat",
+  "glam::DMat2", "glam::DMat3", "glam::DMat4", "glam::DAffine2", "glam::DAffine3",
+]

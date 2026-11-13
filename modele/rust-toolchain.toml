@@ -3,4 +3,6 @@
 [toolchain]
 channel = "1.99"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]
+# `wasm32-unknown-unknown` pour les pages. Pour la machine : `wasm32v1-none`, une cible sans
+# système, et `wasm32-wasip1`, pour la rejouer en WebAssembly.
+targets = ["wasm32-unknown-unknown", "wasm32v1-none", "wasm32-wasip1"]

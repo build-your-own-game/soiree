@@ -17,7 +17,7 @@ Je n'ai peut-être jamais codé. Parle-moi simplement, une étape à la fois, et
 2. **Rust**, avec rustup : https://rustup.rs.
 3. **L'outil de la soirée.** La première installation prend quelques minutes.
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.4.1 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.5.0 soiree
    ```
 4. **Mon jeu.** Demande-moi un nom, en minuscules, chiffres et tirets. Puis, dans le dossier où je range mes projets :
    ```sh

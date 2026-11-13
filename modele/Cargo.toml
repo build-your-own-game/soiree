@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["jeu", "messages", "pages"]
+members = ["jeu", "machine", "messages", "pages"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,8 +12,10 @@ publish = false
 # La brique « télécommande » de la console : le lien entre le jeu, l'écran et
 # les téléphones. Tu peux t'en passer et faire autrement.
 telecommande = { path = "../telecommande" }
+machine = { path = "machine" }
 messages = { path = "messages" }
-serde = { version = "1", features = ["derive"] }
+# Sans ses options par défaut : la machine et les messages se compilent sans système.
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
 # Le linteur de la console : la table `[workspace.lints]` de chaque jeu.
 # Copié par `soiree rules`, vérifié par `soiree check`.

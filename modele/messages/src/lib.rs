@@ -1,4 +1,13 @@
 //! Ce que les pages envoient au jeu (`Up`) et ce que le jeu leur répond (`Down`).
+//!
+//! La machine emprunte ces types : comme elle, ce crate se passe du système.
+
+#![no_std]
+
+extern crate alloc;
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 

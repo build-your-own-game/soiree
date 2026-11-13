@@ -2,11 +2,13 @@
 
 mod check;
 mod games;
+mod machine;
 mod new;
 mod plug;
 mod publish;
 mod rules;
 mod sh;
+mod wasm;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

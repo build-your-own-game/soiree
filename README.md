@@ -11,7 +11,7 @@ Ce dépôt est la console : les règles que tous les jeux suivent, l'outil qui l
 **À la main** : installe Rust (https://rustup.rs), puis l'outil et un jeu :
 
 ```sh
-cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.4.1 soiree
+cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.5.0 soiree
 soiree new mon-jeu
 ```
 
@@ -23,7 +23,7 @@ La suite est dans l'outil : `soiree help`.
 |---|---|
 | `MANIFESTE.md` | le but, les règles, comment la console évolue |
 | `REJOINDRE.md` | le texte qu'un ami colle dans son assistant IA pour commencer |
-| `regles/` | les règles vérifiées : version de Rust, linteur, réglages de Clippy |
+| `regles/` | les règles vérifiées : version de Rust, linteur, réglages de Clippy, et les conseils que donne `soiree check` quand une règle refuse |
 | `outil/` | l'outil `soiree` |
 | `telecommande/` | la brique « télécommande » : le téléphone trouve le jeu par un QR code et lui parle |
 | `modele/` | le jeu de départ que copie `soiree new` |

@@ -1,8 +1,8 @@
 //! Le jeu de départ : chacun tape sur son téléphone, l'écran compte.
 //!
 //! `cargo run --release` compile les pages, les sert, et attend les joueurs.
-
-mod game;
+//! Les règles sont dans la machine (`machine/`) : ici, on lui porte ce que les
+//! téléphones envoient, et on envoie aux pages ce qu'elle en fait.
 
 use std::collections::BTreeSet;
 use std::io;
@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use game::Game;
+use machine::{Game, Phone};
 use messages::{Down, Up};
 use telecommande::host::{Event, Room};
 use telecommande::{Id, Role};
@@ -44,20 +44,20 @@ fn run() -> io::Result<()> {
             Event::Joined {
                 id,
                 role: Role::Remote,
-            } => game.join(id),
-            Event::Message { id, message } => game.apply(id, message),
+            } => game.join(Phone(id.0)),
+            Event::Message { id, message } => game.apply(Phone(id.0), message),
             Event::Left { id } => {
                 let _: bool = screens.remove(&id);
-                game.leave(id);
+                game.leave(Phone(id.0));
             }
         }
         // Après chaque événement, chaque page reçoit ce qu'elle doit afficher.
         for &screen in &screens {
             room.send(screen, &Down::Screen(game.screen(room.remote_url())));
         }
-        for player in game.players() {
-            if let Some(remote) = game.remote(player) {
-                room.send(player, &Down::Remote(remote));
+        for phone in game.players() {
+            if let Some(remote) = game.remote(phone) {
+                room.send(Id(phone.0), &Down::Remote(remote));
             }
         }
     }

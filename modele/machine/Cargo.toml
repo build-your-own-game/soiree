@@ -1,0 +1,20 @@
+# La machine : les règles du jeu, sans réseau, sans horloge, sans navigateur.
+# On lui donne des entrées, elle rend la partie : la même à chaque fois, sur
+# l'ordinateur comme dans un navigateur. `soiree check` le vérifie : la machine
+# se compile sans système, et `examples/empreinte.rs` donne les mêmes lignes en
+# natif et en WebAssembly.
+[package]
+name = "machine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[package.metadata.soiree]
+machine = true
+
+[dependencies]
+messages.workspace = true
+
+[lints]
+workspace = true
