@@ -104,7 +104,9 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
     /// Quand l'hôte donne un nom et son certificat (`SOIREE_TLS_NOM`,
     /// `SOIREE_TLS_CERT`, `SOIREE_TLS_KEY`), cette adresse est en HTTPS, sur le
     /// même port : Safari ne donne les capteurs de mouvement d'un téléphone
-    /// qu'à une page servie en HTTPS. L'écran reste à `http://localhost`.
+    /// qu'à une page servie en HTTPS. L'écran reste à `http://localhost`. Si le
+    /// nom ne mène pas à cet ordinateur, la commande de `SOIREE_TLS_SUIVRE`
+    /// le met à jour (voir [`follow`]).
     /// `remote_path` est le chemin de la télécommande, par exemple `"/t"`.
     ///
     /// Un chemin qui n'est pas un fichier du dossier reçoit `index.html` : une
@@ -122,7 +124,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
             |address| address.trim_end_matches('/').to_owned(),
         );
         if let Some(identity) = &identity {
-            warn_if_elsewhere(&identity.name, port);
+            follow(&identity.name, port);
         }
         let remote_url = format!("{base}{remote_path}");
         let screen_url = format!("http://localhost:{port}/");
@@ -233,9 +235,14 @@ fn lan_address() -> IpAddr {
 }
 
 /// En HTTPS, les téléphones arrivent par un nom : s'il ne mène pas à cet
-/// ordinateur sur le Wi-Fi, ils n'arriveront nulle part. On le dit tout de
-/// suite, plutôt que de laisser chercher pendant la soirée.
-fn warn_if_elsewhere(name: &str, port: u16) {
+/// ordinateur sur le Wi-Fi, ils n'arriveront nulle part.
+///
+/// L'adresse de l'ordinateur change avec le réseau. Si l'hôte a donné de quoi
+/// faire suivre le nom (`SOIREE_TLS_SUIVRE` : une commande, où `{adresse}`
+/// est remplacé par l'adresse de cet ordinateur), on la lance, sans retarder
+/// le jeu. Sinon on le dit tout de suite, plutôt que de laisser chercher
+/// pendant la soirée.
+fn follow(name: &str, port: u16) {
     let here = lan_address();
     let found: Vec<IpAddr> = (name, port)
         .to_socket_addrs()
@@ -253,10 +260,43 @@ fn warn_if_elsewhere(name: &str, port: u16) {
             .collect::<Vec<_>>()
             .join(", ")
     };
-    eprintln!(
+    let stuck = format!(
         "Attention : {name} mène à {there}, et cet ordinateur est à {here} sur le Wi-Fi. \
          Les téléphones n'arriveront pas tant que le DNS de {name} ne donne pas {here}."
     );
+    let Some(command) = std::env::var("SOIREE_TLS_SUIVRE")
+        .ok()
+        .filter(|command| !command.trim().is_empty())
+    else {
+        eprintln!("{stuck}");
+        return;
+    };
+    // La commande porte les identifiants de l'hôte : on ne l'affiche jamais.
+    let command = command.replace("{adresse}", &here.to_string());
+    let name = name.to_owned();
+    let _: std::thread::JoinHandle<()> = std::thread::spawn(move || {
+        let (shell, flag) = if cfg!(windows) {
+            ("cmd", "/C")
+        } else {
+            ("sh", "-c")
+        };
+        let ran = std::process::Command::new(shell)
+            .args([flag, &command])
+            .output();
+        match ran {
+            Ok(output) if output.status.success() => println!(
+                "{name} menait à {there} : il mène maintenant à {here}. Les téléphones le \
+                 verront d'ici une minute."
+            ),
+            Ok(output) => eprintln!(
+                "{stuck}\nLa mise à jour du nom a échoué : {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => {
+                eprintln!("{stuck}\nLa mise à jour du nom n'a pas pu se lancer : {error}");
+            }
+        }
+    });
 }
 
 fn qr_svg(url: &str) -> io::Result<String> {

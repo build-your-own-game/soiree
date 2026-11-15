@@ -74,26 +74,25 @@ Dans l'ordre :
 
 Safari ne donne les capteurs de mouvement d'un téléphone qu'à une page servie en HTTPS. L'app iPhone de la console s'en passe ; un téléphone qui joue dans son navigateur en a besoin.
 
-La brique « télécommande » répond en HTTPS quand l'hôte lui donne un nom et son certificat, par trois variables : `SOIREE_TLS_NOM`, `SOIREE_TLS_CERT`, `SOIREE_TLS_KEY`. Le même port répond toujours en clair : l'écran reste à `http://localhost`, et le QR code mène au nom en HTTPS.
+Ici, **le HTTPS est le réglage par défaut** : `cargo run --release`, dans le dossier d'un jeu, lance le jeu en HTTPS. Le QR code mène à un nom en HTTPS ; le même port répond toujours en clair, pour l'écran (`http://localhost`) et pour l'app.
 
-Ici, ces variables sont dans `fnox.toml`, chiffrées. Pour lancer un jeu en HTTPS, depuis son dossier :
+Trois pièces le font tenir :
 
-```sh
-fnox exec -- cargo run --release
-```
+- **`fnox.toml`**, ici, porte quatre variables chiffrées que la brique « télécommande » lit : `SOIREE_TLS_NOM` (le nom), `SOIREE_TLS_CERT` et `SOIREE_TLS_KEY` (son certificat et sa clé), `SOIREE_TLS_SUIVRE` (la commande qui fait suivre le nom).
+- **Le terminal les charge tout seul** : `eval "$(fnox activate zsh)"` dans `~/.zshrc` les donne à tout ce qu'on lance sous ce dossier, et les retire quand on en sort. Hors d'un terminal (un outil qui lance le jeu lui-même), écris `fnox exec -- cargo run --release`.
+- **Le nom suit l'ordinateur.** Son adresse change avec le réseau (la maison, un partage de connexion). Au lancement, si le nom ne mène pas ici, la brique lance la commande de `SOIREE_TLS_SUIVRE` et le dit ; les téléphones voient la nouvelle adresse dans la minute. Cette commande n'a que des identifiants limités à ce nom : elle ne peut rien changer d'autre.
 
-Sans `fnox exec`, le jeu se lance en clair, comme avant.
+Le nom, son enregistrement dynamique et le certificat viennent du dépôt infra (`tofu/soiree.tf`).
 
-- **Le nom et le certificat viennent du dépôt infra** (`tofu/soiree.tf`) : un nom public qui mène à l'adresse de cet ordinateur sur le Wi-Fi, et un certificat Let's Encrypt, valable 90 jours.
-- **L'adresse a changé** (autre Wi-Fi, autre box) : au lancement, le jeu le dit (« … mène à …, et cet ordinateur est à … »). Corrige `ip` dans `tofu/soiree.tf` du dépôt infra, puis `infra tofu apply`.
-- **Avant une soirée**, renouvelle et recopie le certificat. `infra tofu apply` le renouvelle quand il lui reste moins de 30 jours ; puis, depuis ce dossier :
+- **Avant une soirée**, renouvelle et recopie le certificat : il dure 90 jours. `infra tofu apply` le renouvelle quand il lui reste moins de 30 jours ; puis, depuis ce dossier :
 
   ```sh
   infra tofu output -raw soiree_https_cert | fnox set SOIREE_TLS_CERT
   infra tofu output -raw soiree_https_cle | fnox set SOIREE_TLS_KEY
   ```
 
-- **Un téléphone n'arrive pas** alors que le nom est bon : certaines box refusent un nom public qui mène à une adresse privée. L'app iPhone, elle, passe par l'adresse en clair.
+- **Un jeu en clair, exprès** : `env -u SOIREE_TLS_NOM -u SOIREE_TLS_CERT -u SOIREE_TLS_KEY cargo run --release`.
+- **Un téléphone n'arrive pas** alors que le jeu dit que le nom mène ici : attends une minute (le temps que l'ancienne adresse s'oublie), puis soupçonne la box : certaines refusent un nom public qui mène à une adresse privée. L'app iPhone, elle, passe par l'adresse en clair.
 
 ## Ce qui n'est dans aucun dépôt
 
