@@ -29,6 +29,9 @@ struct SoireeApp: App {
                 }
             }
             .preferredColorScheme(.dark)
+            // Le téléphone est une manette qu'on agite : secouer ne doit pas
+            // proposer « Annuler la saisie ».
+            .onAppear { UIApplication.shared.applicationSupportsShakeToEdit = false }
             // Le bouton « Ouvrir dans l'app » des pages vues dans Safari.
             .onOpenURL { lien in
                 if let adresse = Adresse.lireLien(lien) {
