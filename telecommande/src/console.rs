@@ -7,10 +7,11 @@
 //! ```
 //!
 //! [`run`] prépare les pages, les sert, et fait vivre la machine : le temps,
-//! ce que les pages envoient, ce qu'elles doivent montrer, le journal et
-//! l'état gardé. Tout ce qui se décide est dans [`Session`], sans réseau ni
-//! fichier : `run` ne fait que la brancher sur la salle, l'horloge et le
-//! disque.
+//! ce que les pages envoient, ce qu'elles doivent montrer, ce que la machine
+//! demande au monde extérieur, le journal et l'état gardé. Tout ce qui se
+//! décide est dans [`Session`], sans réseau ni fichier : `run` ne fait que la
+//! brancher sur la salle, l'horloge, le disque et les portes
+//! ([`crate::doors`]).
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -22,8 +23,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cartouche::journal::Line;
-use cartouche::{Input, Machine, Page, fingerprint, take_notes};
+use cartouche::{ASKS_MAX, Answer, Ask, Date, Input, Machine, Page, To, fingerprint, take_notes};
 
+use crate::doors::Doors;
 use crate::host::{Event, Id, Opening, Room};
 use crate::{Welcome, Wire};
 
@@ -105,6 +107,7 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
         join_url: room.remote_url().to_owned(),
         ticks_per_second: M::TICKS_PER_SECOND,
     };
+    let mut doors = Doors::new(room.answers(), room.store(), folder.join("sauvegardes"));
     let mut session = Session::new(woken.machine, &welcome, Instant::now(), first_tick);
     loop {
         let wake = [
@@ -118,22 +121,18 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
         let before = session.ticks();
         let event = room.next(wait);
         let now = Instant::now();
-        let mut out = match &event {
-            Some(Event::Joined(id, role)) => session.joined(
-                Page {
-                    id: id.0,
-                    role: *role,
-                },
-                now,
-            ),
-            Some(Event::Text(id, text)) => session.message(id.0, text, now),
+        let happened = event.is_some();
+        let mut out = match event {
+            Some(Event::Joined(id, role)) => session.joined(Page { id: id.0, role }, now),
+            Some(Event::Text(id, text)) => session.message(id.0, &text, now),
             Some(Event::Left(id)) => session.left(id.0, now),
+            Some(Event::Answer(serial, answer)) => session.answered(serial, answer, now),
             None => Out::default(),
         };
         out.extend(session.advance(now));
-        deliver(&room, &mut journal, out);
+        deliver(&room, &mut doors, &mut journal, out, now);
         if let Some(keeper) = &mut keeper {
-            if event.is_some() || session.ticks() != before {
+            if happened || session.ticks() != before {
                 keeper.touch();
             }
             keeper.keep(now, || {
@@ -146,20 +145,24 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
         }
         // Rien n'est prévu : le jeu attend. Ce qui est écrit doit être sur le
         // disque si on l'arrête maintenant.
-        if event.is_none() && wake.is_none() {
+        if !happened && wake.is_none() {
             journal.write(session.settle().as_slice());
             journal.flush();
         }
     }
 }
 
-/// Porte ce que la session a décidé : aux pages, au journal, sur stderr.
-fn deliver(room: &Room, journal: &mut Journal, out: Out) {
+/// Porte ce que la session a décidé : aux pages, aux portes, au journal, sur
+/// stderr.
+fn deliver(room: &Room, doors: &mut Doors, journal: &mut Journal, out: Out, now: Instant) {
     for warning in &out.warnings {
         eprintln!("{warning}");
     }
     for (page, text) in out.sends {
         room.send(Id(page.id), text);
+    }
+    for (serial, ask) in out.asks {
+        doors.open(serial, ask, now);
     }
     journal.write(&out.lines);
     if out
@@ -176,6 +179,9 @@ fn deliver(room: &Room, journal: &mut Journal, out: Out) {
 pub(crate) struct Out {
     /// Les textes à envoyer, et à qui, dans l'ordre.
     pub(crate) sends: Vec<(Page, String)>,
+    /// Ce que la machine demande au monde extérieur, à faire maintenant :
+    /// chaque demande avec le numéro que la console lui donne.
+    pub(crate) asks: Vec<(u64, Ask)>,
     /// Les lignes à écrire au journal, dans l'ordre.
     pub(crate) lines: Vec<Line>,
     /// Ce qu'il faut dire sur stderr.
@@ -185,6 +191,7 @@ pub(crate) struct Out {
 impl Out {
     fn extend(&mut self, other: Out) {
         self.sends.extend(other.sends);
+        self.asks.extend(other.asks);
         self.lines.extend(other.lines);
         self.warnings.extend(other.warnings);
     }
@@ -290,6 +297,14 @@ impl Clock {
     }
 }
 
+/// Une demande de la machine que la console a prise.
+struct Asked {
+    /// Le numéro que la console lui a donné : celui de sa réponse.
+    serial: u64,
+    ask: Ask,
+    answered: bool,
+}
+
 /// Ce qui s'est passé depuis le dernier repère du journal.
 #[derive(Default)]
 struct SinceMark {
@@ -306,6 +321,15 @@ pub(crate) struct Session<M: Machine> {
     pages: BTreeMap<u64, Present>,
     /// Le message d'accueil, écrit une fois pour toutes.
     welcome: String,
+    /// Les demandes que la machine liste et que la console a prises, par leur
+    /// numéro dans la machine.
+    asked: BTreeMap<u32, Asked>,
+    /// Le nombre de demandes prises depuis le lancement.
+    serials: u64,
+    /// La liste des demandes a été lue au moins une fois.
+    listened: bool,
+    /// On a déjà dit que la machine demande trop à la fois.
+    crowded: bool,
     since_mark: SinceMark,
     out: Out,
 }
@@ -326,6 +350,10 @@ impl<M: Machine> Session<M> {
             },
             pages: BTreeMap::new(),
             welcome,
+            asked: BTreeMap::new(),
+            serials: 0,
+            listened: false,
+            crowded: false,
             since_mark: SinceMark::default(),
             out: Out::default(),
         }
@@ -407,6 +435,28 @@ impl<M: Machine> Session<M> {
         self.after_input(now)
     }
 
+    /// Le monde extérieur a répondu à la demande que la console avait prise
+    /// sous le numéro `serial`. Une réponse dont la machine ne veut plus (la
+    /// demande a quitté sa liste) n'entre ni dans la machine ni dans le
+    /// journal.
+    pub(crate) fn answered(&mut self, serial: u64, answer: Answer, now: Instant) -> Out {
+        let tick = self.ticks();
+        let Some(asked) = self
+            .asked
+            .values_mut()
+            .find(|asked| asked.serial == serial && !asked.answered)
+        else {
+            return std::mem::take(&mut self.out);
+        };
+        asked.answered = true;
+        let id = asked.ask.id;
+        let line = Line::answer(tick, &asked.ask, &answer);
+        self.write(line);
+        let effects = self.machine.answer(id, answer);
+        self.carry(effects);
+        self.after_input(now)
+    }
+
     /// Le temps a passé jusqu'à `now` : joue les pas qui sont dus, et envoie
     /// les vues qui attendaient leur tour.
     pub(crate) fn advance(&mut self, now: Instant) -> Out {
@@ -421,6 +471,10 @@ impl<M: Machine> Session<M> {
         }
         if due > 0 {
             self.refresh();
+        }
+        // La première fois aussi : un état repris demande peut-être déjà.
+        if due > 0 || !self.listened {
+            self.listen();
         }
         self.flush_views(now);
         std::mem::take(&mut self.out)
@@ -442,13 +496,55 @@ impl<M: Machine> Session<M> {
             self.mark();
         }
         self.refresh();
+        self.listen();
         self.flush_views(now);
         std::mem::take(&mut self.out)
     }
 
+    /// Lit ce que la machine demande au monde extérieur. Une demande est
+    /// prise une fois, tant qu'elle reste dans la liste ; celle qui la quitte
+    /// est oubliée, et sa réponse avec.
+    fn listen(&mut self) {
+        self.listened = true;
+        let mut listed = self.machine.asks();
+        if listed.len() > ASKS_MAX && !self.crowded {
+            self.crowded = true;
+            self.out.warnings.push(format!(
+                "la machine demande {} choses à la fois au monde extérieur : la console en \
+                 écoute {ASKS_MAX}, les autres attendent",
+                listed.len()
+            ));
+        }
+        listed.truncate(ASKS_MAX);
+        let mut asked = BTreeMap::new();
+        for ask in listed {
+            if asked.contains_key(&ask.id) {
+                continue;
+            }
+            let known = self.asked.remove(&ask.id).filter(|known| known.ask == ask);
+            let known = known.unwrap_or_else(|| {
+                self.serials = self.serials.saturating_add(1);
+                self.out.asks.push((self.serials, ask.clone()));
+                Asked {
+                    serial: self.serials,
+                    ask,
+                    answered: false,
+                }
+            });
+            let _: Option<Asked> = asked.insert(known.ask.id, known);
+        }
+        self.asked = asked;
+    }
+
     /// Passe une entrée à la machine, porte ses effets et lit ses notes.
     fn apply(&mut self, input: Input<M::Command>) {
-        for (to, effect) in self.machine.apply(input) {
+        let effects = self.machine.apply(input);
+        self.carry(effects);
+    }
+
+    /// Porte les effets que la machine vient de rendre, et lit ses notes.
+    fn carry(&mut self, effects: Vec<(To, M::Effect)>) {
+        for (to, effect) in effects {
             match serde_json::to_string(&Wire::<(), M::Effect>::Effect(effect)) {
                 Ok(text) => {
                     for present in self.pages.values() {
@@ -709,7 +805,7 @@ impl Keeper {
 
 /// Écrit dans un fichier à côté, puis le renomme : un arrêt en plein milieu
 /// ne laisse jamais un fichier à moitié écrit.
-fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(folder) = path.parent() {
         fs::create_dir_all(folder)?;
     }
@@ -861,47 +957,16 @@ fn stamp(now: SystemTime) -> String {
     let seconds = now
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
-    let (year, month, day) = civil(seconds / 86_400);
-    let time = seconds % 86_400;
+    let date = Date::at(seconds);
     format!(
-        "{year:04}-{month:02}-{day:02}_{:02}-{:02}-{:02}",
-        time / 3600,
-        time % 3600 / 60,
-        time % 60
+        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
+        date.year,
+        date.month,
+        date.day,
+        date.hour,
+        date.minute,
+        seconds % 60
     )
-}
-
-/// L'année, le mois et le jour d'un nombre de jours depuis le 1er janvier
-/// 1970 (l'algorithme `civil_from_days` de Howard Hinnant, sur des entiers
-/// positifs : l'année commence en mars, le jour bissextile tombe à la fin).
-fn civil(days: u64) -> (u64, u64, u64) {
-    let shifted = days.saturating_add(719_468);
-    let era = shifted / 146_097;
-    let day_of_era = shifted % 146_097;
-    let year_of_era = day_of_era
-        .saturating_sub(day_of_era / 1460)
-        .saturating_add(day_of_era / 36_524)
-        .saturating_sub(day_of_era / 146_096)
-        / 365;
-    let day_of_year = day_of_era.saturating_sub(
-        year_of_era
-            .saturating_mul(365)
-            .saturating_add(year_of_era / 4)
-            .saturating_sub(year_of_era / 100),
-    );
-    let month_from_march = day_of_year.saturating_mul(5).saturating_add(2) / 153;
-    let day = day_of_year
-        .saturating_sub(month_from_march.saturating_mul(153).saturating_add(2) / 5)
-        .saturating_add(1);
-    let month = if month_from_march < 10 {
-        month_from_march.saturating_add(3)
-    } else {
-        month_from_march.saturating_sub(9)
-    };
-    let year = year_of_era
-        .saturating_add(era.saturating_mul(400))
-        .saturating_add(u64::from(month <= 2));
-    (year, month, day)
 }
 
 #[cfg(test)]
@@ -1189,6 +1254,130 @@ mod tests {
         assert_eq!(&again, session.machine());
         assert_eq!((done.inputs, done.marks), (3, 2));
         assert_eq!(done.fingerprint, fingerprint(session.machine()));
+    }
+
+    /// Une machine qui demande la date à chaque tape, et garde la dernière.
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    struct Curious {
+        /// Le numéro de la demande en cours.
+        wish: Option<u32>,
+        asked: u32,
+        dates: Vec<Date>,
+        silences: u32,
+    }
+
+    impl Machine for Curious {
+        type Command = Press;
+        type View = u32;
+        type Effect = Sound;
+        const TICKS_PER_SECOND: u32 = 0;
+
+        fn new(_: u64) -> Self {
+            Self {
+                wish: None,
+                asked: 0,
+                dates: Vec::new(),
+                silences: 0,
+            }
+        }
+
+        fn apply(&mut self, input: Input<Press>) -> Vec<(To, Sound)> {
+            match input {
+                Input::Message(_, Press::Tap) => {
+                    self.asked = self.asked.saturating_add(1);
+                    self.wish = Some(self.asked);
+                }
+                // La machine n'attend plus.
+                Input::Message(_, Press::Nothing) => self.wish = None,
+                Input::Message(_, Press::Beep)
+                | Input::Joined(_)
+                | Input::Left(_)
+                | Input::Tick => {}
+            }
+            Vec::new()
+        }
+
+        fn view(&self, _: Page) -> Option<u32> {
+            Some(u32::try_from(self.dates.len()).unwrap())
+        }
+
+        fn suggest(&self, _: Page) -> Vec<Press> {
+            vec![Press::Tap]
+        }
+
+        fn asks(&self) -> Vec<Ask> {
+            self.wish.map(Ask::date).into_iter().collect()
+        }
+
+        fn answer(&mut self, id: u32, answer: Answer) -> Vec<(To, Sound)> {
+            assert_eq!(self.wish, Some(id));
+            self.wish = None;
+            match answer.as_date() {
+                Some(date) => self.dates.push(date),
+                None => self.silences = self.silences.saturating_add(1),
+            }
+            vec![(To::Remotes, Sound::Beep)]
+        }
+    }
+
+    #[test]
+    fn what_a_machine_asks_is_done_once_and_its_answer_comes_back() {
+        let start = Instant::now();
+        let mut session = Session::new(Curious::new(1), &welcome(), start, 0);
+        let ada = Page::remote(1);
+        let mut lines = vec![Line::start("curieux", 1, 0, None)];
+        let out = session.joined(ada, start);
+        assert_eq!(out.asks, []);
+        lines.extend(out.lines);
+        let out = session.message(1, "\"Tap\"", start);
+        assert_eq!(out.asks, [(1, Ask::date(1))]);
+        lines.extend(out.lines);
+        // Tant que la demande reste dans la liste, elle n'est pas refaite.
+        let out = session.message(1, "\"Beep\"", start);
+        assert_eq!(out.asks, []);
+        lines.extend(out.lines);
+
+        let noon = Date::at(43_200);
+        let out = session.answered(1, Answer::date(noon), after(start, 100));
+        assert_eq!(session.machine().dates, [noon]);
+        // L'effet de la réponse part, la vue change, et le journal le note.
+        assert_eq!(to(&out, ada), [effect(), view(0, 1)]);
+        assert_eq!(
+            out.lines,
+            [Line::answer(0, &Ask::date(1), &Answer::date(noon))]
+        );
+        lines.extend(out.lines);
+        // Une réponse n'entre qu'une fois.
+        let out = session.answered(1, Answer::date(noon), start);
+        assert_eq!((out.lines.len(), session.machine().dates.len()), (0, 1));
+
+        // Une demande que la machine retire n'a plus de réponse à recevoir.
+        let out = session.message(1, "\"Tap\"", start);
+        assert_eq!(out.asks, [(2, Ask::date(2))]);
+        lines.extend(out.lines);
+        lines.extend(session.message(1, "\"Nothing\"", start).lines);
+        let out = session.answered(2, Answer::date(noon), start);
+        assert_eq!((out.lines.len(), session.machine().dates.len()), (0, 1));
+        // Sans réponse, la machine continue.
+        lines.extend(session.message(1, "\"Tap\"", start).lines);
+        lines.extend(session.answered(3, Answer::nothing(), start).lines);
+        assert_eq!(session.machine().silences, 1);
+
+        lines.extend(session.settle());
+        let text: String = lines.iter().map(|line| line.write() + "\n").collect();
+        let (again, done) = replay::<Curious>(&read(&text).unwrap()).unwrap();
+        assert_eq!(&again, session.machine());
+        assert_eq!((done.inputs, done.marks), (8, 1));
+    }
+
+    #[test]
+    fn a_kept_state_that_was_asking_asks_again() {
+        let start = Instant::now();
+        let mut kept = Curious::new(1);
+        kept.wish = Some(4);
+        let mut session = Session::new(kept, &welcome(), start, 9);
+        assert_eq!(session.advance(start).asks, [(1, Ask::date(4))]);
+        assert_eq!(session.advance(after(start, 1000)).asks, []);
     }
 
     #[test]

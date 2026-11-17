@@ -1,6 +1,11 @@
 //! Le journal d'une partie : la graine et chaque entrée, avec le numéro de son
 //! pas. Il suffit à refaire la partie à l'identique.
 //!
+//! Ce que le monde extérieur a répondu à la machine y est aussi : rejouée, la
+//! partie n'interroge ni internet ni le disque. Seuls les octets d'un contenu
+//! lourd n'y sont pas : le journal porte son ticket, et les octets se relisent
+//! dans le dossier des contenus.
+//!
 //! Une ligne de JSON par événement, dans l'ordre où la machine les a reçus. La
 //! console l'écrit pendant que le jeu tourne ; [`replay`] le rejoue.
 //!
@@ -13,7 +18,8 @@ use std::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Input, Machine, Page, fingerprint};
+use crate::ask::Got;
+use crate::{Answer, Ask, Content, Date, Input, Machine, Page, Want, fingerprint};
 
 /// Une ligne du journal.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -43,6 +49,8 @@ pub enum Line {
         page: Page,
         command: serde_json::Value,
     },
+    /// La console a répondu à la demande numéro `id` de la machine.
+    Answer { tick: u64, id: u32, answer: Told },
     /// L'empreinte de l'état à cet endroit du journal, en hexadécimal.
     Mark { tick: u64, fingerprint: String },
     /// Un cas qui n'aurait pas dû arriver (`oups!`).
@@ -70,6 +78,15 @@ impl Line {
         }
     }
 
+    /// La réponse de la console à une demande, après `tick` pas.
+    pub fn answer(tick: u64, ask: &Ask, answer: &Answer) -> Self {
+        Line::Answer {
+            tick,
+            id: ask.id,
+            answer: Told::of(ask, answer),
+        }
+    }
+
     /// Un repère : l'empreinte de l'état après `tick` pas.
     pub fn mark(tick: u64, print: u64) -> Self {
         Line::Mark {
@@ -81,6 +98,102 @@ impl Line {
     /// La ligne, écrite : du JSON sans retour à la ligne.
     pub fn write(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+/// Une réponse de la console, telle que le journal l'écrit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Told {
+    /// Pas de réponse.
+    Nothing,
+    /// C'est fait.
+    Done,
+    Date(Date),
+    /// Ce qu'internet a répondu.
+    Web {
+        status: u16,
+        body: Bytes,
+    },
+    /// Les octets d'une sauvegarde.
+    Bytes(Bytes),
+    /// Les noms des sauvegardes.
+    Names(Vec<String>),
+    /// Les octets de ce contenu : ils sont dans le dossier des contenus, sous
+    /// le nom de ce ticket, pas dans le journal.
+    Content(Content),
+}
+
+impl Told {
+    fn of(ask: &Ask, answer: &Answer) -> Self {
+        match (&answer.0, &ask.want) {
+            (Got::Nothing, _) => Told::Nothing,
+            (Got::Done, _) => Told::Done,
+            (Got::Date(date), _) => Told::Date(*date),
+            (Got::Web { status, body }, _) => Told::Web {
+                status: *status,
+                body: Bytes::of(body),
+            },
+            (Got::Bytes(_), Want::Content(content)) => Told::Content(*content),
+            (
+                Got::Bytes(bytes),
+                Want::Date
+                | Want::Web(_)
+                | Want::Save { .. }
+                | Want::Load(_)
+                | Want::Erase(_)
+                | Want::Saves,
+            ) => Told::Bytes(Bytes::of(bytes)),
+            (Got::Names(names), _) => Told::Names(names.clone()),
+        }
+    }
+
+    /// La réponse à remettre à la machine. `contents` rend les octets d'un
+    /// contenu ; `Err` nomme le contenu qui n'est plus là.
+    fn answer(&self, contents: impl Fn(Content) -> Option<Vec<u8>>) -> Result<Answer, String> {
+        Ok(match self {
+            Told::Nothing => Answer::nothing(),
+            Told::Done => Answer::done(),
+            Told::Date(date) => Answer::date(*date),
+            Told::Web { status, body } => Answer::web(*status, body.read()?),
+            Told::Bytes(bytes) => Answer::bytes(bytes.read()?),
+            Told::Names(names) => Answer::names(names.clone()),
+            Told::Content(content) => {
+                Answer::bytes(contents(*content).ok_or_else(|| content.name())?)
+            }
+        })
+    }
+}
+
+/// Des octets dans le journal : tels quels quand ce sont du texte (la réponse
+/// d'internet se lit dans le fichier), en hexadécimal sinon.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Bytes {
+    Text(String),
+    Hex { hex: String },
+}
+
+impl Bytes {
+    fn of(bytes: &[u8]) -> Self {
+        // Un texte qui se lit : sans caractère invisible, sauf la fin de ligne.
+        let reads = |text: &str| {
+            text.chars()
+                .all(|one| !one.is_control() || "\n\r\t".contains(one))
+        };
+        match core::str::from_utf8(bytes) {
+            Ok(text) if reads(text) => Bytes::Text(text.to_string()),
+            Ok(_) | Err(_) => Bytes::Hex { hex: hex(bytes) },
+        }
+    }
+
+    fn read(&self) -> Result<Vec<u8>, String> {
+        match self {
+            Bytes::Text(text) => Ok(text.as_bytes().to_vec()),
+            Bytes::Hex { hex } => {
+                unhex(hex).ok_or_else(|| "des octets mal écrits en hexadécimal".to_string())
+            }
+        }
     }
 }
 
@@ -132,6 +245,9 @@ pub enum Strayed {
     /// Une commande que ce jeu ne sait plus lire : le journal vient d'une
     /// autre version du jeu.
     Unreadable { tick: u64, why: String },
+    /// Une réponse du journal ne se relit pas : un contenu que la console ne
+    /// garde plus, ou des octets abîmés.
+    Gone { tick: u64, what: String },
     /// L'état n'est plus celui du repère : la machine ne joue plus la même
     /// partie.
     Differs {
@@ -141,8 +257,19 @@ pub enum Strayed {
     },
 }
 
-/// Rejoue un journal avec la machine `M`, et vérifie chaque repère.
+/// Rejoue un journal avec la machine `M`, et vérifie chaque repère. Un
+/// journal qui porte le ticket d'un contenu ne se rejoue qu'avec
+/// [`replay_with`].
 pub fn replay<M: Machine>(lines: &[Line]) -> Result<(M, Replayed), Strayed> {
+    replay_with(lines, |_| None)
+}
+
+/// Rejoue un journal avec la machine `M`, et vérifie chaque repère.
+/// `contents` rend les octets d'un contenu que la console garde.
+pub fn replay_with<M: Machine>(
+    lines: &[Line],
+    contents: impl Fn(Content) -> Option<Vec<u8>>,
+) -> Result<(M, Replayed), Strayed> {
     let mut rest = lines.iter();
     let Some(Line::Start {
         seed, state, tick, ..
@@ -197,6 +324,14 @@ pub fn replay<M: Machine>(lines: &[Line]) -> Result<(M, Replayed), Strayed> {
                     }
                 })?;
                 let _: Vec<_> = machine.apply(Input::Message(*page, command));
+                done.inputs = done.inputs.saturating_add(1);
+            }
+            Line::Answer { tick, id, answer } => {
+                advance(&mut machine, &mut done, &mut clock, *tick);
+                let answer = answer
+                    .answer(&contents)
+                    .map_err(|what| Strayed::Gone { tick: *tick, what })?;
+                let _: Vec<_> = machine.answer(*id, answer);
                 done.inputs = done.inputs.saturating_add(1);
             }
             Line::Mark { tick, fingerprint } => {
@@ -403,6 +538,116 @@ mod tests {
         let (again, done) = replay::<Counter>(&lines).unwrap();
         // L'état repris avait déjà reçu cinq pas : il en reçoit deux de plus.
         assert_eq!((again.ticks, done.ticks), (game.ticks + 2, 2));
+    }
+
+    /// Une machine qui garde ce que le monde lui répond.
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    struct Listener {
+        asked: bool,
+        date: Option<Date>,
+        heard: Vec<Vec<u8>>,
+    }
+
+    impl Machine for Listener {
+        type Command = Tap;
+        type View = ();
+        type Effect = NoEffect;
+        const TICKS_PER_SECOND: u32 = 10;
+
+        fn new(_: u64) -> Self {
+            Self {
+                asked: true,
+                date: None,
+                heard: Vec::new(),
+            }
+        }
+
+        fn apply(&mut self, _: Input<Tap>) -> Vec<(To, NoEffect)> {
+            Vec::new()
+        }
+
+        fn view(&self, _: Page) -> Option<()> {
+            None
+        }
+
+        fn suggest(&self, _: Page) -> Vec<Tap> {
+            Vec::new()
+        }
+
+        fn asks(&self) -> Vec<Ask> {
+            if self.asked {
+                std::vec![Ask::date(1)]
+            } else {
+                Vec::new()
+            }
+        }
+
+        fn answer(&mut self, _: u32, answer: Answer) -> Vec<(To, NoEffect)> {
+            self.asked = false;
+            self.date = self.date.or(answer.as_date());
+            if let Some((_, body)) = answer.as_web() {
+                self.heard.push(body.to_vec());
+            }
+            if let Some(bytes) = answer.as_bytes() {
+                self.heard.push(bytes.to_vec());
+            }
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn what_the_world_answered_replays_from_the_journal() {
+        let level = Content::of(b"un niveau", crate::Kind::Other);
+        let lines = [
+            Line::start("curieux", 1, 10, None),
+            Line::answer(2, &Ask::date(1), &Answer::date(Date::at(86_400))),
+            Line::answer(
+                3,
+                &Ask::web(2, crate::Web::get("https://juge.test/")),
+                &Answer::web(200, b"{\"ok\":true}".to_vec()),
+            ),
+            Line::answer(
+                3,
+                &Ask::load(3, "score"),
+                &Answer::bytes(std::vec![0x04, 0x00]),
+            ),
+            Line::answer(
+                4,
+                &Ask::content(4, level),
+                &Answer::bytes(b"un niveau".to_vec()),
+            ),
+        ];
+        let text: String = lines.iter().map(|line| line.write() + "\n").collect();
+        // Un texte se lit dans le journal ; le reste est en hexadécimal ; un
+        // contenu n'y laisse que son ticket.
+        assert!(text.contains(r#""body":"{\"ok\":true}""#), "{text}");
+        assert!(text.contains(r#"{"hex":"0400"}"#), "{text}");
+        assert!(!text.contains("un niveau"), "{text}");
+        let read = read(&text).unwrap();
+        assert_eq!(read, lines);
+
+        let store = |content| (content == level).then(|| b"un niveau".to_vec());
+        let (again, done) = replay_with::<Listener>(&read, store).unwrap();
+        assert_eq!(again.date, Some(Date::at(86_400)));
+        assert_eq!(
+            again.heard,
+            [
+                b"{\"ok\":true}".to_vec(),
+                std::vec![0x04, 0x00],
+                b"un niveau".to_vec()
+            ]
+        );
+        assert_eq!((done.ticks, done.inputs), (4, 4));
+
+        // Sans le contenu, la partie ne se rejoue pas au-delà.
+        let strayed = replay::<Listener>(&read).unwrap_err();
+        assert_eq!(
+            strayed,
+            Strayed::Gone {
+                tick: 4,
+                what: level.name()
+            }
+        );
     }
 
     #[test]

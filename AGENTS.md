@@ -12,8 +12,8 @@ Lis `MANIFESTE.md`, puis `CONTRAT.md`. Ne les modifie pas sans demande explicite
 | `outil/` | l'outil `soiree` : `new`, `check`, `publish`, `rules`, `manifeste`, et `games` pour l'hôte |
 | `REJOINDRE.md` | le texte qu'un ami colle dans son assistant IA pour commencer |
 | `CONTRAT.md` | le contrat de la cartouche : ce qu'un jeu fournit, ce que la console fournit. L'outil l'embarque (`soiree contrat`). |
-| `cartouche/` | la brique « cartouche » : le contrat (`Machine`, `State`, `Input`, le ticket `Content` d'un contenu lourd), le tirage au hasard des commandes (`draw`), le journal d'une partie (`journal`) et le banc qui joue des parties (`bench`). Sans système, comme la machine qui l'emprunte. |
-| `telecommande/` | la brique « télécommande » : le programme de tous les jeux (`console`, sur l'ordinateur : il fait tourner la machine, sert les pages, écrit le journal, range les contenus lourds) et le lien d'une page vers le jeu (`web`, dans le navigateur : `connect`, `upload`) |
+| `cartouche/` | la brique « cartouche » : le contrat (`Machine`, `State`, `Input`, le ticket `Content` d'un contenu lourd, les demandes au monde extérieur `Ask` et leurs réponses `Answer`), le tirage au hasard des commandes (`draw`), le journal d'une partie (`journal`) et le banc qui joue des parties (`bench`). Sans système, comme la machine qui l'emprunte. |
+| `telecommande/` | la brique « télécommande » : le programme de tous les jeux (`console`, sur l'ordinateur : il fait tourner la machine, sert les pages, écrit le journal, range les contenus lourds ; `doors` fait ce que la machine demande au monde extérieur) et le lien d'une page vers le jeu (`web`, dans le navigateur : `connect`, `upload`) |
 | `iphone/` | l'app iPhone « Soirée » (Swift) : une manette pour tous les jeux. Elle scanne le QR code, charge la télécommande du jeu et lui donne les capteurs de mouvement et les vibrations que Safari refuse. Son contrat avec les pages est dans `iphone/README.md`. |
 | `modele/` | le jeu de départ, un vrai jeu avec son propre workspace ; `soiree new` le copie |
 | `dossier/` | les modèles des fichiers du dossier de l'hôte |
@@ -37,7 +37,7 @@ Leur source est `regles/`. La console se les applique : `Cargo.toml`, `rust-tool
 
 Un jeu est une cartouche : une machine et des pages. La console est le programme. `CONTRAT.md` dit ce que chacun fournit ; il est fait pour ne plus bouger.
 
-- **Le contrat se change par ajout.** Une méthode nouvelle avec une valeur par défaut, une porte de plus : aucun jeu n'a à changer. Retirer ou changer le sens d'une ligne du contrat oblige à réécrire tous les jeux : ne le fais que sur demande de l'hôte.
+- **Le contrat se change par ajout.** Une méthode nouvelle avec une valeur par défaut, une porte de plus : aucun jeu n'a à changer. Une porte vers le monde extérieur est une chose de plus à demander (`Ask::…`) et une lecture de plus sur la réponse (`Answer::as_…`) : un jeu n'écrit jamais de `match` sur ces types, donc aucun ne casse. Retirer ou changer le sens d'une ligne du contrat oblige à réécrire tous les jeux : ne le fais que sur demande de l'hôte.
 - **Ce que la console apprend à faire s'appuie sur les propriétés du contrat**, sans rien demander aux jeux : rejouer une partie, la reprendre, la rattraper. Avant d'ajouter quelque chose au contrat, cherche si la console peut le faire seule.
 - **Une contrainte tient par construction, pas par une règle.** Le jeu n'a pas de programme à lui (`src/main.rs` est le même pour tous, `soiree check` le vérifie) : il n'y a donc nulle part où cacher une règle du jeu hors de la machine. La machine se compile sans système : elle ne peut pas lire l'horloge.
 
@@ -47,7 +47,7 @@ Chaque jeu déclare sa machine : le crate qui porte ses règles (`[package.metad
 
 - **Par principe** : `soiree check` compile la machine pour une cible sans système (`wasm32v1-none`). L'horloge, les fichiers, le réseau, le hasard du système, `HashMap` et les fonctions mathématiques du système n'y existent pas : aucune liste à tenir, et une dépendance qui s'en sert est refusée aussi. C'est une compilation sans lancement, rapide.
 - **`glam`** y est permis avec `libm` et `scalar-math` seulement : sans elles, il calcule avec des instructions propres au processeur et le dernier chiffre change (essai fait : 20 000 pas, différents par défaut, identiques avec ces deux options).
-- **Par le banc** (`cartouche/src/bench.rs`, lancé par `outil/src/machine.rs`) : l'exemple `banc` de la machine, le même fichier dans tous les jeux, joue des parties sans une ligne écrite par le jeu. Des pages arrivent et partent, envoient ce que la machine suggère (`Machine::suggest`) ou des commandes tirées au hasard depuis leur type (`cartouche::draw`), le temps passe par rafales. `soiree check` le lance deux fois en natif, puis en WebAssembly (`outil/src/wasm.rs`, un interpréteur embarqué : rien à installer à côté), et compare les lignes d'empreinte. Puis `--long`, en natif : plus de parties, la reprise depuis la photo comparée à la partie jouée d'une traite, le temps de chaque pas.
+- **Par le banc** (`cartouche/src/bench.rs`, lancé par `outil/src/machine.rs`) : l'exemple `banc` de la machine, le même fichier dans tous les jeux, joue des parties sans une ligne écrite par le jeu. Des pages arrivent et partent, envoient ce que la machine suggère (`Machine::suggest`) ou des commandes tirées au hasard depuis leur type (`cartouche::draw`), le temps passe par rafales. Ce que la machine demande au monde extérieur (`Machine::asks`), le banc y répond à sa place, pannes comprises ; il ne consulte son hasard pour ça que si la machine demande quelque chose, pour qu'un jeu qui ne demande rien joue les mêmes parties qu'avant. `soiree check` le lance deux fois en natif, puis en WebAssembly (`outil/src/wasm.rs`, un interpréteur embarqué : rien à installer à côté), et compare les lignes d'empreinte. Puis `--long`, en natif : plus de parties, la reprise depuis la photo comparée à la partie jouée d'une traite, le temps de chaque pas.
 - **L'empreinte** est celle des octets de l'état (`cartouche::fingerprint`) : le jeu ne l'écrit plus. Un champ oublié n'existe plus ; un état caché hors de la photo se voit à la reprise.
 - **Un jeu peut garder un exemple `empreinte`**, pour des parties écrites d'avance qui vont là où le hasard ne va pas : `soiree check` le lance comme le banc.
 - `modele/machine/` montre la forme attendue.
@@ -56,9 +56,13 @@ Chaque jeu déclare sa machine : le crate qui porte ses règles (`[package.metad
 
 `telecommande::console::run` est le programme de tous les jeux. Il donne le temps (`TICKS_PER_SECOND`, au plus un dixième de seconde de rattrapage), n'envoie une vue que si elle a changé (au plus soixante par seconde), porte les effets une fois, et écrit dans le dossier du jeu, sous `.soiree/` :
 
-- **le journal** de chaque lancement (`.soiree/journal/`) : la graine et chaque entrée, avec le numéro de son pas. `soiree rejouer <fichier>` refait la partie et vérifie ses repères ;
+- **le journal** de chaque lancement (`.soiree/journal/`) : la graine, chaque entrée et chaque réponse du monde extérieur, avec le numéro de son pas. `soiree rejouer <fichier>` refait la partie et vérifie ses repères ;
 - **l'état gardé** (`.soiree/etat`) des jeux qui le demandent (`REMEMBERS`). Un état illisible est mis de côté, jamais écrasé ;
 - **les contenus lourds** (`.soiree/contenus/`) que les pages lui confient à `/contenu` : une image, un son. Chacun porte le nom de son ticket (`cartouche::Content`) et se redemande à `/contenu/<nom>`. Au-delà de 500 Mo, les contenus montrés il y a le plus longtemps s'effacent.
+
+- **les sauvegardes** (`.soiree/sauvegardes/`) qu'une machine demande de garder (`Ask::save`) : un fichier par nom.
+
+Ce que la machine demande au monde extérieur (`Machine::asks`), `telecommande/src/doors.rs` le fait : la date à la montre de l'hôte, une question à internet, les octets d'un contenu, les sauvegardes. La réponse revient par `Machine::answer` et s'écrit au journal ; d'un contenu, le journal ne garde que le ticket. Un secret (`{NOM}` dans un en-tête) vient de la variable `SOIREE_SECRET_NOM` et ne part que vers l'adresse de `SOIREE_SECRET_NOM_POUR` : il n'entre ni dans la machine ni dans le journal.
 
 Un jeu qui se joue sans télécommande (`REMOTES = false`) n'a ni adresse ni QR code pour les téléphones : la console répond elle-même à `/t`, et refuse un lien de télécommande.
 

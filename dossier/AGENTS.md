@@ -95,6 +95,17 @@ Le nom, son enregistrement dynamique et le certificat viennent du dépôt infra 
 - **Un jeu en clair, exprès** : `env -u SOIREE_TLS_NOM -u SOIREE_TLS_CERT -u SOIREE_TLS_KEY cargo run --release`.
 - **Un téléphone n'arrive pas** alors que le jeu dit que le nom mène ici : attends une minute (le temps que l'ancienne adresse s'oublie), puis soupçonne la box : certaines refusent un nom public qui mène à une adresse privée. L'app iPhone, elle, passe par l'adresse en clair.
 
+## Les secrets d'un jeu
+
+Un jeu qui interroge internet (une IA qui juge) n'a jamais de clé dans son code : sa machine écrit `{NOM}` dans un en-tête, et la console y met la clé. L'hôte la lui confie par deux variables, dans le `fnox.toml` du dossier du jeu :
+
+```sh
+fnox set SOIREE_SECRET_NOM          # la clé
+fnox set SOIREE_SECRET_NOM_POUR     # la seule adresse où elle a le droit d'aller : api.exemple.com
+```
+
+Quand une clé manque, le jeu continue sans réponse, et la console dit dans le terminal quelles variables donner.
+
 ## Ce qui n'est dans aucun dépôt
 
 `AGENTS.md` et `.cargo/config.toml`, ici, ne sont sauvegardés nulle part. Leurs modèles sont dans `soiree/dossier/`. Pour les changer pour de bon, change le modèle, puis recopie-le ici.

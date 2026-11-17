@@ -3,6 +3,9 @@
 //!
 //! Des écrans et des téléphones arrivent et partent, envoient des commandes
 //! suggérées par la machine ou tirées au hasard, le temps passe par rafales.
+//! Ce que la machine demande au monde extérieur, le banc y répond à sa
+//! place : une date quelconque, un internet qui répond n'importe quoi ou pas
+//! du tout, des sauvegardes qu'il garde en mémoire.
 //! En route, le banc photographie la partie et la reprend depuis la photo,
 //! calcule les vues de toutes les pages et mesure le temps de chaque pas.
 //!
@@ -17,8 +20,10 @@
 //! `--graine <n>` rejoue une partie en racontant chaque entrée ;
 //! `--rejouer <fichier>` rejoue le journal d'une partie de soirée.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::format;
+use std::path::Path;
 use std::process::ExitCode;
 use std::string::{String, ToString};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,7 +35,10 @@ use serde::Serialize;
 use crate::draw::{self, Cause};
 use crate::journal::{self, Strayed};
 use crate::rng::Rng;
-use crate::{Input, Machine, Page, Role, fingerprint};
+use crate::{
+    ASKS_MAX, Answer, Ask, Content, Date, Input, Machine, Page, Role, SAVE_MAX, SAVE_NAME_MAX,
+    SAVES_MAX, To, Want, fingerprint,
+};
 
 /// Combien de parties, et jusqu'où va chacune.
 #[derive(Clone, Copy)]
@@ -69,6 +77,10 @@ const ATTENTION_SECONDS: u64 = 10;
 const ATTENTION_COMMANDS: u8 = 12;
 /// Un jeu sans rythme a ce temps-là pour répondre à une entrée, en microsecondes.
 const UNPACED_BUDGET: u64 = 50_000;
+/// Les dates que le banc invente vont de 1970 à 2099, en secondes.
+const DATES: u64 = 4_102_444_800;
+/// Ce que le banc invente comme octets en compte au plus tant.
+const NOISE_MAX: u64 = 64;
 
 /// Reprendre la partie depuis sa photo en cours de route, ou la jouer d'une traite.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -161,6 +173,20 @@ struct Outcome {
     ticks: u64,
     /// Les commandes que la machine a suggérées et que le banc a envoyées.
     suggested: u64,
+    /// Les réponses du monde extérieur que le banc a données.
+    answers: u64,
+}
+
+/// Une demande que le banc écoute, comme la console.
+struct Pending {
+    ask: Ask,
+    answered: Answered,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Answered {
+    Yes,
+    No,
 }
 
 /// Une partie en cours.
@@ -177,6 +203,12 @@ struct Party<'bench, M: Machine> {
     inputs: u64,
     ticks: u64,
     suggested: u64,
+    answers: u64,
+    /// Ce que la machine demande au monde extérieur, et ce qui a déjà sa
+    /// réponse.
+    asked: Vec<Pending>,
+    /// Les sauvegardes du jeu, que le banc garde en mémoire.
+    saves: BTreeMap<String, Vec<u8>>,
     /// L'empreinte de tout ce que les pages ont reçu : vues et effets.
     shown: Print,
     lines: Vec<String>,
@@ -239,7 +271,7 @@ fn short<M: Machine>() -> Result<(), Failure> {
 fn long<M: Machine>() -> Result<(), Failure> {
     let progress = Progress::default();
     let mut timing = Timing::default();
-    let (mut inputs, mut ticks, mut suggested) = (0_u64, 0_u64, 0_u64);
+    let (mut inputs, mut ticks, mut suggested, mut answers) = (0_u64, 0_u64, 0_u64, 0_u64);
     for seed in 0..LONG.parties {
         let resumed = guarded(&progress, || {
             play::<M>(seed, LONG, Resume::Yes, Talk::Marks, &progress, &mut timing)
@@ -267,11 +299,15 @@ fn long<M: Machine>() -> Result<(), Failure> {
         inputs = inputs.saturating_add(resumed.inputs);
         ticks = ticks.saturating_add(resumed.ticks);
         suggested = suggested.saturating_add(resumed.suggested);
+        answers = answers.saturating_add(resumed.answers);
     }
     println!(
         "{} parties, {inputs} entrées, {ticks} pas ; {suggested} commandes suggérées par la machine.",
         LONG.parties
     );
+    if answers > 0 {
+        println!("{answers} réponses du monde extérieur, données par le banc.");
+    }
     if suggested == 0 {
         return Err(Failure(
             "La machine ne suggère jamais rien : `suggest` rend toujours une liste vide.\n\
@@ -328,7 +364,16 @@ fn replay<M: Machine>(file: &str) -> Result<(), Failure> {
     let text =
         std::fs::read_to_string(file).map_err(|error| Failure(format!("{file} : {error}")))?;
     let lines = journal::read(&text).map_err(|why| Failure(format!("{file} : {why}")))?;
-    match journal::replay::<M>(&lines) {
+    // Les contenus sont rangés à côté du journal : `.soiree/contenus/`.
+    let contents = Path::new(file)
+        .parent()
+        .and_then(Path::parent)
+        .map(|folder| folder.join("contenus"));
+    let content = |content: Content| {
+        let bytes = std::fs::read(contents.as_ref()?.join(content.name())).ok()?;
+        (Content::of(&bytes, content.kind) == content).then_some(bytes)
+    };
+    match journal::replay_with::<M>(&lines, content) {
         Ok((_, done)) => {
             println!(
                 "{} pas, {} entrées, {} repères retrouvés sur {}. Empreinte finale : {:016x}.",
@@ -346,6 +391,12 @@ fn replay<M: Machine>(file: &str) -> Result<(), Failure> {
         Err(Strayed::Unreadable { tick, why }) => Err(Failure(format!(
             "Au pas {tick}, ce journal porte une commande que le jeu ne sait plus lire ({why}).\n\
              Un journal ne se rejoue qu'avec la version du jeu qui l'a écrit."
+        ))),
+        Err(Strayed::Gone { tick, what }) => Err(Failure(format!(
+            "Au pas {tick}, la machine a lu le contenu `{what}`, et la console ne le garde plus \
+             (`.soiree/contenus/`).\n\
+             Un journal porte le ticket d'un contenu, pas ses octets : sans eux, la partie ne se \
+             rejoue pas au-delà de ce pas."
         ))),
         Err(Strayed::Differs {
             tick,
@@ -427,6 +478,9 @@ fn play<M: Machine>(
         inputs: 0,
         ticks: 0,
         suggested: 0,
+        answers: 0,
+        asked: Vec::new(),
+        saves: BTreeMap::new(),
         shown: Print::new(),
         lines: Vec::new(),
         progress,
@@ -448,12 +502,18 @@ fn play<M: Machine>(
         inputs: party.inputs,
         ticks: party.ticks,
         suggested: party.suggested,
+        answers: party.answers,
     })
 }
 
 impl<M: Machine> Party<'_, M> {
     /// Une chose de plus arrive à la partie.
     fn step(&mut self) -> Result<(), Failure> {
+        // Le hasard n'est consulté que si la machine attend une réponse : un
+        // jeu qui ne demande rien joue les mêmes parties qu'avant.
+        if self.waits() && self.rng.chance(1, 3) {
+            return self.reply();
+        }
         match self.rng.below(100) {
             0..=29 => self.pass(),
             30..=51 => self.suggested_command(1),
@@ -493,6 +553,7 @@ impl<M: Machine> Party<'_, M> {
             if elapsed < rate / 4 || elapsed.is_multiple_of(rate) {
                 self.look()?;
             }
+            self.reply_in_time()?;
         }
         self.look()?;
         if self.talk == Talk::Everything {
@@ -523,6 +584,7 @@ impl<M: Machine> Party<'_, M> {
             if elapsed < rate / 4 || elapsed.is_multiple_of(rate) {
                 self.look()?;
             }
+            self.reply_in_time()?;
             for page in self.present.clone() {
                 if sent >= ATTENTION_COMMANDS || !self.rng.chance(1, 8) {
                     continue;
@@ -708,17 +770,148 @@ impl<M: Machine> Party<'_, M> {
         self.after(&format!("{} se recharge", name(page)))
     }
 
+    /// La machine attend-elle une réponse du monde extérieur ?
+    fn waits(&self) -> bool {
+        self.asked
+            .iter()
+            .any(|pending| pending.answered == Answered::No)
+    }
+
+    /// Pendant que le temps passe, une réponse arrive de temps en temps.
+    fn reply_in_time(&mut self) -> Result<(), Failure> {
+        if self.waits() && self.rng.chance(1, 40) {
+            self.reply()?;
+        }
+        Ok(())
+    }
+
+    /// Le monde extérieur répond à une des demandes de la machine.
+    fn reply(&mut self) -> Result<(), Failure> {
+        let waiting: Vec<Ask> = self
+            .asked
+            .iter()
+            .filter(|pending| pending.answered == Answered::No)
+            .map(|pending| pending.ask.clone())
+            .collect();
+        let Some(ask) = self.rng.pick(&waiting).cloned() else {
+            return Ok(());
+        };
+        for pending in &mut self.asked {
+            if pending.ask.id == ask.id {
+                pending.answered = Answered::Yes;
+            }
+        }
+        let answer = self.imagine(&ask);
+        self.answers = self.answers.saturating_add(1);
+        let budget = Timing::budget::<M>();
+        let machine = &mut self.machine;
+        let effects = timed(self.timing, budget, || machine.answer(ask.id, answer));
+        self.hear(&effects)?;
+        self.after(&format!("le monde répond à la demande {}", ask.id))
+    }
+
+    /// Ce que le monde extérieur répond à cette demande : ce que la machine
+    /// suppose, une fois sur deux, quand elle suppose quelque chose ; sinon
+    /// ce que la console pourrait vraiment répondre, pannes comprises.
+    fn imagine(&mut self, ask: &Ask) -> Answer {
+        match &ask.want {
+            Want::Date => Answer::date(Date::at(self.rng.below(DATES))),
+            Want::Web(_) => self.supposed(ask.id).unwrap_or_else(|| {
+                let status = [200, 400, 429, 500];
+                match self.rng.pick(&status).copied() {
+                    Some(status) if self.rng.chance(1, 2) => Answer::web(status, self.noise()),
+                    Some(_) | None => Answer::nothing(),
+                }
+            }),
+            Want::Content(_) => self.supposed(ask.id).unwrap_or_else(|| {
+                if self.rng.chance(1, 2) {
+                    Answer::bytes(self.noise())
+                } else {
+                    Answer::nothing()
+                }
+            }),
+            Want::Save { name, bytes } => {
+                let room = self.saves.len() < SAVES_MAX || self.saves.contains_key(name);
+                let fits = !name.is_empty()
+                    && name.len() <= SAVE_NAME_MAX
+                    && bytes.len() <= SAVE_MAX
+                    && room;
+                // Un disque plein, une fois sur huit.
+                if fits && !self.rng.chance(1, 8) {
+                    let _: Option<Vec<u8>> = self.saves.insert(name.clone(), bytes.clone());
+                    Answer::done()
+                } else {
+                    Answer::nothing()
+                }
+            }
+            Want::Load(name) => match self.saves.get(name).cloned() {
+                // Une sauvegarde d'une autre version du jeu, une fois sur huit.
+                Some(_) if self.rng.chance(1, 8) => Answer::bytes(self.noise()),
+                Some(bytes) => Answer::bytes(bytes),
+                None => Answer::nothing(),
+            },
+            Want::Erase(name) => {
+                let _: Option<Vec<u8>> = self.saves.remove(name);
+                Answer::done()
+            }
+            Want::Saves => Answer::names(self.saves.keys().cloned().collect()),
+        }
+    }
+
+    /// Une des réponses que la machine suppose à cette demande, une fois sur
+    /// deux.
+    fn supposed(&mut self, id: u32) -> Option<Answer> {
+        let guesses = self.machine.guess(id);
+        if guesses.is_empty() || self.rng.chance(1, 2) {
+            return None;
+        }
+        let rank = self.rng.index(guesses.len());
+        guesses.into_iter().nth(rank)
+    }
+
+    /// Quelques octets quelconques.
+    fn noise(&mut self) -> Vec<u8> {
+        let length = self.rng.below(NOISE_MAX);
+        (0..length)
+            .map(|_| u8::try_from(self.rng.below(256)).unwrap_or(0))
+            .collect()
+    }
+
     /// Fait entrer quelque chose dans la machine, et écoute ses effets.
     fn apply(&mut self, input: Input<M::Command>) -> Result<(), Failure> {
         let budget = Timing::budget::<M>();
         let machine = &mut self.machine;
         let effects = timed(self.timing, budget, || machine.apply(input));
-        for (to, effect) in &effects {
+        self.hear(&effects)
+    }
+
+    /// Écrit les effets comme la console les enverra, puis relit ce que la
+    /// machine demande au monde extérieur : comme la console, le banc fait
+    /// une demande une fois, tant qu'elle reste dans la liste.
+    fn hear(&mut self, effects: &[(To, M::Effect)]) -> Result<(), Failure> {
+        for (to, effect) in effects {
             let to = json(to, "le destinataire d'un effet")?;
             let effect = json(effect, "un effet")?;
             self.shown.feed(to.as_bytes());
             self.shown.feed(effect.as_bytes());
         }
+        let budget = Timing::budget::<M>();
+        let machine = &self.machine;
+        let mut listed = timed(self.timing, budget, || machine.asks());
+        listed.truncate(ASKS_MAX);
+        let mut asked: Vec<Pending> = Vec::new();
+        for ask in listed {
+            if asked.iter().any(|pending| pending.ask.id == ask.id) {
+                continue;
+            }
+            let answered = self
+                .asked
+                .iter()
+                .find(|pending| pending.ask == ask)
+                .map_or(Answered::No, |pending| pending.answered);
+            asked.push(Pending { ask, answered });
+        }
+        self.asked = asked;
         Ok(())
     }
 
@@ -1130,6 +1323,197 @@ mod tests {
         for seed in 0..6 {
             assert!(lines::<Board>(seed, Resume::Yes).inputs > 0);
         }
+    }
+
+    /// Un jeu qui demande tout au monde extérieur : la date en arrivant, un
+    /// juge, un niveau, et des sauvegardes.
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    struct Curious {
+        date: Option<Date>,
+        /// Le numéro de la prochaine demande.
+        next: u32,
+        /// Les demandes qui attendent leur réponse.
+        waiting: BTreeMap<u32, Wish>,
+        judged: u32,
+        level: Vec<u8>,
+        kept: u32,
+        names: usize,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    enum Wish {
+        Date,
+        Judge,
+        Level(Content),
+        Keep(u32),
+        Recall,
+        Forget,
+        List,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    enum Curiosity {
+        Judge,
+        Level(Content),
+        Keep,
+        Recall,
+        Forget,
+        List,
+    }
+
+    static JUDGED: AtomicU64 = AtomicU64::new(0);
+    static RECALLED: AtomicU64 = AtomicU64::new(0);
+
+    impl Curious {
+        fn wish(&mut self, wish: Wish) {
+            // Plus de demandes que la console n'en écoute : les dernières attendent.
+            if self.waiting.len() < 20 {
+                let _: Option<Wish> = self.waiting.insert(self.next, wish);
+                self.next = self.next.wrapping_add(1);
+            }
+        }
+    }
+
+    impl Machine for Curious {
+        type Command = Curiosity;
+        type View = u32;
+        type Effect = Ding;
+        const TICKS_PER_SECOND: u32 = 20;
+
+        fn new(_: u64) -> Self {
+            Self {
+                date: None,
+                next: 0,
+                waiting: BTreeMap::new(),
+                judged: 0,
+                level: Vec::new(),
+                kept: 0,
+                names: 0,
+            }
+        }
+
+        fn apply(&mut self, input: Input<Curiosity>) -> Vec<(To, Ding)> {
+            match input {
+                Input::Joined(_) => {
+                    if self.date.is_none() && !self.waiting.values().any(|wish| *wish == Wish::Date)
+                    {
+                        self.wish(Wish::Date);
+                    }
+                }
+                Input::Left(_) | Input::Tick => {}
+                Input::Message(_, Curiosity::Judge) => self.wish(Wish::Judge),
+                Input::Message(_, Curiosity::Level(content)) => self.wish(Wish::Level(content)),
+                Input::Message(_, Curiosity::Keep) => {
+                    self.kept = self.kept.wrapping_add(1);
+                    self.wish(Wish::Keep(self.kept));
+                }
+                Input::Message(_, Curiosity::Recall) => self.wish(Wish::Recall),
+                Input::Message(_, Curiosity::Forget) => self.wish(Wish::Forget),
+                Input::Message(_, Curiosity::List) => self.wish(Wish::List),
+            }
+            Vec::new()
+        }
+
+        fn view(&self, _: Page) -> Option<u32> {
+            Some(self.judged)
+        }
+
+        fn suggest(&self, _: Page) -> Vec<Curiosity> {
+            vec![
+                Curiosity::Judge,
+                Curiosity::Level(Content::of(b"niveau", crate::Kind::Other)),
+                Curiosity::Keep,
+                Curiosity::Recall,
+                Curiosity::Forget,
+                Curiosity::List,
+            ]
+        }
+
+        fn asks(&self) -> Vec<Ask> {
+            self.waiting
+                .iter()
+                .map(|(id, wish)| match wish {
+                    Wish::Date => Ask::date(*id),
+                    Wish::Judge => Ask::web(*id, crate::Web::get("https://juge.test/")),
+                    Wish::Level(content) => Ask::content(*id, *content),
+                    Wish::Keep(kept) => Ask::save(*id, "score", kept.to_le_bytes().to_vec()),
+                    Wish::Recall => Ask::load(*id, "score"),
+                    Wish::Forget => Ask::erase(*id, "score"),
+                    Wish::List => Ask::saves(*id),
+                })
+                .collect()
+        }
+
+        fn answer(&mut self, id: u32, answer: Answer) -> Vec<(To, Ding)> {
+            // Le banc ne répond qu'à ce qui est demandé, et une seule fois.
+            let wish = self.waiting.remove(&id).expect("une réponse sans demande");
+            match wish {
+                Wish::Date => {
+                    let date = answer.as_date().expect("la date ne manque jamais");
+                    assert!((1..=12).contains(&date.month) && (1..=7).contains(&date.weekday));
+                    self.date = Some(date);
+                }
+                Wish::Judge => {
+                    if answer.as_web() == Some((200, b"oui".as_slice())) {
+                        self.judged = self.judged.saturating_add(1);
+                        let _: u64 = JUDGED.fetch_add(1, Ordering::Relaxed);
+                        return vec![(To::Everyone, Ding::RoundOver)];
+                    }
+                }
+                Wish::Level(_) => {
+                    self.level = answer.as_bytes().unwrap_or_default().to_vec();
+                }
+                Wish::Recall => {
+                    // Ce qui revient est ce qui a été gardé, ou n'importe quoi.
+                    if let Some(Ok(bytes)) = answer.as_bytes().map(<[u8; 4]>::try_from)
+                        && u32::from_le_bytes(bytes) <= self.kept
+                    {
+                        let _: u64 = RECALLED.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                Wish::Forget => assert!(answer.is_done()),
+                Wish::Keep(_) => {}
+                Wish::List => {
+                    self.names = answer.as_names().expect("la liste ne manque jamais").len();
+                    assert!(self.names <= 1);
+                }
+            }
+            Vec::new()
+        }
+
+        fn guess(&self, id: u32) -> Vec<Answer> {
+            match self.waiting.get(&id) {
+                Some(Wish::Judge) => vec![Answer::web(200, b"oui".to_vec())],
+                Some(Wish::Level(_)) => vec![Answer::bytes(b"niveau".to_vec())],
+                Some(Wish::Date | Wish::Keep(_) | Wish::Recall | Wish::Forget | Wish::List)
+                | None => Vec::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn the_world_answers_what_a_machine_asks() {
+        let mut answers = 0;
+        for seed in 0..4 {
+            answers += lines::<Curious>(seed, Resume::Yes).answers;
+        }
+        assert!(answers > 100, "{answers} réponses seulement");
+        // Ce que la machine suppose d'internet lui revient, et ce qu'elle
+        // garde aussi.
+        assert!(JUDGED.load(Ordering::Relaxed) > 0);
+        assert!(RECALLED.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn a_party_that_asks_resumes_as_if_nothing_happened() {
+        let straight = lines::<Curious>(5, Resume::No);
+        assert_eq!(lines::<Curious>(5, Resume::Yes).lines, straight.lines);
+        assert_eq!(lines::<Curious>(5, Resume::No).lines, straight.lines);
+    }
+
+    #[test]
+    fn a_machine_that_asks_nothing_is_never_answered() {
+        assert_eq!(lines::<Taps>(3, Resume::Yes).answers, 0);
     }
 
     #[test]

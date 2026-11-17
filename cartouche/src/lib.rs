@@ -13,6 +13,10 @@
 //! machine : la console le garde, la machine n'en porte que le ticket
 //! ([`Content`]).
 //!
+//! Ce que la machine veut du monde extérieur (internet, la date, une
+//! sauvegarde), elle le demande à la console ([`Machine::asks`]) : la réponse
+//! lui revient par [`Machine::answer`], et elle est dans le journal.
+//!
 //! Cette brique se passe du système, comme la machine qui l'emprunte. Le
 //! banc ([`bench`]) et le journal ([`journal`]) le demandent : ils ne sont là
 //! que derrière leur option.
@@ -23,6 +27,7 @@ extern crate alloc;
 #[cfg(feature = "journal")]
 extern crate std;
 
+mod ask;
 #[cfg(feature = "bench")]
 pub mod bench;
 mod content;
@@ -38,6 +43,9 @@ use alloc::vec::Vec;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+pub use ask::{
+    ASKS_MAX, Answer, Ask, Date, Method, SAVE_MAX, SAVE_NAME_MAX, SAVES_MAX, WEB_MAX, Want, Web,
+};
 pub use content::{Content, Kind};
 pub use notes::{Note, note, take_notes};
 pub use state::{State, fingerprint};
@@ -88,7 +96,9 @@ impl Page {
     }
 }
 
-/// Tout ce qui peut arriver à la partie. Il n'y a pas d'autre porte.
+/// Tout ce qui peut arriver à la partie. Il n'y a pas d'autre porte, sauf
+/// celle qu'une machine ouvre elle-même en demandant quelque chose au monde
+/// extérieur : la réponse lui revient par [`Machine::answer`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Input<Command> {
     /// Une page arrive ou revient.
@@ -167,6 +177,35 @@ pub trait Machine: State {
     /// ses boutons enverraient. La console s'en sert pour jouer des parties
     /// qui avancent.
     fn suggest(&self, page: Page) -> Vec<Self::Command>;
+
+    /// Ce que la machine demande au monde extérieur maintenant : la date,
+    /// une réponse d'internet, un contenu, une sauvegarde. Ne change rien.
+    ///
+    /// La console lit cette liste après chaque entrée. Elle fait une demande
+    /// une fois, tant qu'elle reste dans la liste, et en écoute au plus
+    /// [`ASKS_MAX`] à la fois. Une demande qui quitte la liste avant sa
+    /// réponse n'en reçoit pas. Après un arrêt, une console qui garde l'état
+    /// refait les demandes restées sans réponse.
+    fn asks(&self) -> Vec<Ask> {
+        Vec::new()
+    }
+
+    /// La console a répondu à la demande numéro `id`. La machine la retire
+    /// de sa liste. Seule la console passe par ici, une fois par demande, et
+    /// la réponse est dans le journal : la partie se rejoue sans internet.
+    fn answer(&mut self, id: u32, answer: Answer) -> Vec<(To, Self::Effect)> {
+        let _: (u32, Answer) = (id, answer);
+        Vec::new()
+    }
+
+    /// Ce qu'internet ou un contenu pourrait répondre à la demande numéro
+    /// `id` : la console s'en sert pour jouer des parties qui avancent, comme
+    /// de [`Machine::suggest`]. Le reste (la date, les sauvegardes), elle
+    /// l'invente seule.
+    fn guess(&self, id: u32) -> Vec<Answer> {
+        let _: u32 = id;
+        Vec::new()
+    }
 }
 
 /// Note un cas qui n'aurait pas dû arriver, et continue.

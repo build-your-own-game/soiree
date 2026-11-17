@@ -11,7 +11,7 @@ Ce dépôt est la console : les règles que tous les jeux suivent, le contrat qu
 **À la main** : installe Rust (https://rustup.rs), puis l'outil et un jeu :
 
 ```sh
-cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.8.0 soiree
+cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.9.0 soiree
 soiree new mon-jeu
 ```
 

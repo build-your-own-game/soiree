@@ -18,12 +18,16 @@ serde_json = "1"
 # Le journal d'une partie, que la console écrit.
 cartouche = { path = "../cartouche", features = ["journal"] }
 axum = { version = "0.8", features = ["ws"] }
+# L'heure locale de l'hôte, pour la machine qui demande la date.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 futures-util = "0.3"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rustls-pki-types = { version = "1.16.0", features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
 tower-http = { version = "0.7", features = ["fs", "set-header"] }
+# Interroge internet pour la machine qui le demande.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Fabrique le JavaScript qui charge les pages. Sa version est exactement celle
 # de `wasm-bindgen` ci-dessous : personne n'a d'outil à installer à côté.
 wasm-bindgen-cli-support = "=0.2.130"

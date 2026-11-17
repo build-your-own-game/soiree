@@ -31,6 +31,8 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
+use cartouche::Answer;
+
 use crate::store::{CONTENT_MAX, Refused, Store};
 use crate::tls::{self, Identity};
 use crate::{REPLACED, Role};
@@ -65,6 +67,9 @@ pub(crate) enum Event {
     Text(Id, String),
     /// Une page n'est plus là.
     Left(Id),
+    /// Le monde extérieur a répondu à une demande de la machine : le numéro
+    /// que la console a donné à cette demande, et la réponse.
+    Answer(u64, Answer),
 }
 
 struct Peer {
@@ -79,7 +84,7 @@ struct Shared {
     /// Le QR code de l'adresse des téléphones. `None` : le jeu se joue sans
     /// télécommande, et aucune n'entre.
     qr: Option<String>,
-    store: Store,
+    store: Arc<Store>,
 }
 
 /// Ce qu'il faut pour ouvrir le jeu aux pages.
@@ -167,7 +172,7 @@ impl Room {
             } else {
                 None
             },
-            store: Store::open(contents),
+            store: Arc::new(Store::open(contents)),
         });
         let no_cache =
             SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
@@ -233,6 +238,17 @@ impl Room {
         if let Some(peer) = lock(&self.shared.peers).get(&to) {
             let _: Result<(), SendError<String>> = peer.outbox.send(text);
         }
+    }
+
+    /// Par où une réponse du monde extérieur arrive au jeu : elle sort de
+    /// [`Room::next`] comme ce qui vient des pages, à son tour.
+    pub(crate) fn answers(&self) -> mpsc::Sender<Event> {
+        self.shared.events.clone()
+    }
+
+    /// Les contenus que les pages ont confiés.
+    pub(crate) fn store(&self) -> Arc<Store> {
+        Arc::clone(&self.shared.store)
     }
 
     /// L'adresse que les téléphones ouvrent. Le QR code de cette adresse est

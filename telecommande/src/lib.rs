@@ -22,6 +22,8 @@ pub use cartouche::{Content, Kind, Page, Role};
 #[cfg(not(target_arch = "wasm32"))]
 pub mod console;
 #[cfg(not(target_arch = "wasm32"))]
+mod doors;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod host;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pages;
