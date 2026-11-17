@@ -24,7 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use cartouche::journal::Line;
 use cartouche::{Input, Machine, Page, fingerprint, take_notes};
 
-use crate::host::{Event, Id, Room};
+use crate::host::{Event, Id, Opening, Room};
 use crate::{Welcome, Wire};
 
 /// Le plus court écart entre deux vues envoyées à une page : au plus soixante
@@ -77,7 +77,12 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
         }
     };
     let first_tick = woken.kept.as_ref().map_or(0, |kept| kept.ticks);
-    let room = Room::open(&pages, "/t")?;
+    let room = Room::open(Opening {
+        pages: &pages,
+        contents: folder.join("contenus"),
+        remote_path: "/t",
+        remotes: M::REMOTES,
+    })?;
     let mut journal = Journal::open(&folder.join("journal"), &stamp);
     journal.write(&[Line::start(
         &game,

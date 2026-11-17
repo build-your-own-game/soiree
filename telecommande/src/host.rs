@@ -7,18 +7,21 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::net::{IpAddr, TcpListener, ToSocketAddrs as _, UdpSocket};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
-use axum::Router;
+use axum::body::Bytes;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use axum::http::{HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::extract::{DefaultBodyLimit, Path as Named, Query, State};
+use axum::http::header::{
+    CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS,
+};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use qrcode::QrCode;
 use qrcode::render::svg;
@@ -28,6 +31,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
+use crate::store::{CONTENT_MAX, Refused, Store};
 use crate::tls::{self, Identity};
 use crate::{REPLACED, Role};
 
@@ -37,6 +41,14 @@ const DEFAULT_PORT: u16 = 8080;
 const HEARTBEAT: Duration = Duration::from_secs(3);
 /// Une page muette aussi longtemps est partie : téléphone en veille, Wi-Fi perdu.
 const SILENCE: Duration = Duration::from_secs(10);
+/// Ce qu'un téléphone voit quand le jeu se joue sans télécommande.
+const NO_REMOTES: &str = "<!doctype html>\n<html lang=\"fr\">\n<meta charset=\"utf-8\">\n\
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+    <title>Soirée</title>\n\
+    <body style=\"margin:0;min-height:100vh;display:grid;place-items:center;\
+    font:1.4rem system-ui,sans-serif;background:#111;color:#eee;text-align:center\">\n\
+    <p style=\"margin:2rem\">Ce jeu se joue sur le grand écran,<br>sans télécommande.</p>\n\
+    </body>\n</html>\n";
 
 /// Une page, reconnue d'une connexion à l'autre : un téléphone qui se met en
 /// veille puis revient garde le même `Id`.
@@ -64,7 +76,22 @@ struct Shared {
     peers: Mutex<BTreeMap<Id, Peer>>,
     connections: AtomicU64,
     events: mpsc::Sender<Event>,
-    qr: String,
+    /// Le QR code de l'adresse des téléphones. `None` : le jeu se joue sans
+    /// télécommande, et aucune n'entre.
+    qr: Option<String>,
+    store: Store,
+}
+
+/// Ce qu'il faut pour ouvrir le jeu aux pages.
+pub(crate) struct Opening<'a> {
+    /// Le dossier des pages, à servir.
+    pub(crate) pages: &'a Path,
+    /// Le dossier où ranger ce que les pages confient.
+    pub(crate) contents: PathBuf,
+    /// Le chemin de la télécommande, par exemple `"/t"`.
+    pub(crate) remote_path: &'a str,
+    /// Faux : le jeu se joue sans télécommande.
+    pub(crate) remotes: bool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -91,11 +118,23 @@ impl Room {
     /// qu'à une page servie en HTTPS. L'écran reste à `http://localhost`. Si le
     /// nom ne mène pas à cet ordinateur, la commande de `SOIREE_TLS_SUIVRE`
     /// le met à jour (voir [`follow`]).
-    /// `remote_path` est le chemin de la télécommande, par exemple `"/t"`.
     ///
     /// Un chemin qui n'est pas un fichier du dossier reçoit `index.html` : une
     /// seule page peut donc être l'écran à `/` et la télécommande à `/t`.
-    pub(crate) fn open(pages: &Path, remote_path: &str) -> io::Result<Self> {
+    ///
+    /// Un jeu sans télécommande n'a pas d'adresse pour les téléphones : celui
+    /// qui ouvre quand même le chemin de la télécommande lit que le jeu se
+    /// joue sur l'écran, et un lien de télécommande est refusé.
+    ///
+    /// Les pages confient ce qui est lourd à `/contenu` et le redemandent à
+    /// `/contenu/<nom>` (voir [`crate::store`]).
+    pub(crate) fn open(opening: Opening<'_>) -> io::Result<Self> {
+        let Opening {
+            pages,
+            contents,
+            remote_path,
+            remotes,
+        } = opening;
         let port = port()?;
         let listener = TcpListener::bind(("0.0.0.0", port))?;
         listener.set_nonblocking(true)?;
@@ -107,26 +146,47 @@ impl Room {
             },
             |address| address.trim_end_matches('/').to_owned(),
         );
-        if let Some(identity) = &identity {
+        if let Some(identity) = &identity
+            && remotes
+        {
             follow(&identity.name, port);
         }
-        let remote_url = format!("{base}{remote_path}");
+        let remote_url = if remotes {
+            format!("{base}{remote_path}")
+        } else {
+            String::new()
+        };
         let screen_url = format!("http://localhost:{port}/");
         let (sender, events) = mpsc::channel();
         let shared = Arc::new(Shared {
             peers: Mutex::new(BTreeMap::new()),
             connections: AtomicU64::new(0),
             events: sender,
-            qr: qr_svg(&remote_url)?,
+            qr: if remotes {
+                Some(qr_svg(&remote_url)?)
+            } else {
+                None
+            },
+            store: Store::open(contents),
         });
         let no_cache =
             SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
         let files = ServeDir::new(pages).fallback(ServeFile::new(pages.join("index.html")));
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/ws", get(upgrade))
-            .route("/qr.svg", get(qr))
+            .route("/qr.svg", get(qr));
+        if !remotes {
+            app = app.route(remote_path, get(|| async { Html(NO_REMOTES) }));
+        }
+        // Un contenu ne change jamais sous son nom : lui seul se garde en cache.
+        let app = app
             .fallback_service(files)
             .layer(no_cache)
+            .route(
+                "/contenu",
+                post(upload).layer(DefaultBodyLimit::max(CONTENT_MAX)),
+            )
+            .route("/contenu/{name}", get(download))
             .with_state(Arc::clone(&shared));
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -142,12 +202,17 @@ impl Room {
             }
         });
         println!("Écran       : {screen_url}");
-        println!("Téléphones  : {remote_url}");
-        // Deux onglets d'un même navigateur sont le même joueur : `?j=` en fait
-        // des joueurs différents, pour essayer le jeu seul sur cet ordinateur.
-        let local = format!("http://localhost:{port}{remote_path}");
-        println!("Pour essayer à plusieurs sur cet ordinateur, un onglet par joueur :");
-        println!("              {local}?j=1   {local}?j=2   …");
+        if remotes {
+            println!("Téléphones  : {remote_url}");
+            // Deux onglets d'un même navigateur sont le même joueur : `?j=` en
+            // fait des joueurs différents, pour essayer le jeu seul sur cet
+            // ordinateur.
+            let local = format!("http://localhost:{port}{remote_path}");
+            println!("Pour essayer à plusieurs sur cet ordinateur, un onglet par joueur :");
+            println!("              {local}?j=1   {local}?j=2   …");
+        } else {
+            println!("Téléphones  : aucun, ce jeu se joue sur l'écran");
+        }
         Ok(Self {
             shared,
             events,
@@ -171,7 +236,8 @@ impl Room {
     }
 
     /// L'adresse que les téléphones ouvrent. Le QR code de cette adresse est
-    /// servi à `/qr.svg` : `<img src="/qr.svg">` suffit à l'afficher.
+    /// servi à `/qr.svg` : `<img src="/qr.svg">` suffit à l'afficher. Vide
+    /// quand le jeu se joue sans télécommande.
     pub(crate) fn remote_url(&self) -> &str {
         &self.remote_url
     }
@@ -271,10 +337,64 @@ fn qr_svg(url: &str) -> io::Result<String> {
 }
 
 async fn qr(State(shared): State<Arc<Shared>>) -> Response {
+    let Some(qr) = shared.qr.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     (
         StatusCode::OK,
         [(CONTENT_TYPE, HeaderValue::from_static("image/svg+xml"))],
-        shared.qr.clone(),
+        qr,
+    )
+        .into_response()
+}
+
+/// Une page confie un contenu : ses octets, et son type dans l'en-tête. La
+/// réponse est son ticket.
+async fn upload(State(shared): State<Arc<Shared>>, headers: HeaderMap, body: Bytes) -> Response {
+    let declared = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    match shared.store.put(&body, declared) {
+        Ok(content) => Json(content).into_response(),
+        Err(Refused::Empty) => (StatusCode::BAD_REQUEST, "Ce contenu est vide.").into_response(),
+        Err(Refused::TooBig) => {
+            (StatusCode::PAYLOAD_TOO_LARGE, "Ce contenu est trop lourd.").into_response()
+        }
+        Err(Refused::Disk(error)) => {
+            eprintln!("un contenu n'a pas pu être rangé : {error}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Le contenu n'a pas pu être rangé.",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Une page redemande un contenu par le nom de son ticket. Il est servi
+/// comme une donnée inerte : ouvert tel quel, il ne peut rien lancer.
+async fn download(State(shared): State<Arc<Shared>>, Named(name): Named<String>) -> Response {
+    let Some((bytes, content_type)) = shared.store.get(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content_type = HeaderValue::from_str(&content_type)
+        .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream"));
+    (
+        StatusCode::OK,
+        [
+            (CONTENT_TYPE, content_type),
+            (
+                CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            ),
+            (X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            (
+                CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static("sandbox; default-src 'none'"),
+            ),
+        ],
+        bytes,
     )
         .into_response()
 }
@@ -290,6 +410,10 @@ async fn upgrade(
     Query(hello): Query<Hello>,
     State(shared): State<Arc<Shared>>,
 ) -> Response {
+    // Un jeu sans télécommande : sa machine n'en voit jamais.
+    if hello.role == Role::Remote && shared.qr.is_none() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     upgrade.on_upgrade(move |socket| serve(socket, Id(hello.id), hello.role, shared))
 }
 

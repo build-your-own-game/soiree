@@ -62,6 +62,8 @@ const STRIDE: u64 = 40;
 /// Au plus tant d'écrans et de télécommandes à la fois.
 const SCREENS_MAX: usize = 2;
 const REMOTES_MAX: usize = 8;
+/// Un jeu sans télécommande se joue à plusieurs écrans : au plus tant.
+const SCREENS_ALONE_MAX: usize = 4;
 /// Un moment d'attention dure au plus tant de secondes, et tant de commandes.
 const ATTENTION_SECONDS: u64 = 10;
 const ATTENTION_COMMANDS: u8 = 12;
@@ -596,12 +598,19 @@ impl<M: Machine> Party<'_, M> {
 
     /// Une page que la machine n'a jamais vue arriver envoie n'importe quoi.
     fn stranger(&mut self) -> Result<(), Failure> {
-        let page = if self.rng.chance(1, 2) {
+        let page = self.newcomer(1, 2);
+        self.send_random(page)
+    }
+
+    /// Une page neuve : une télécommande `times` fois sur `out_of`, sinon un
+    /// écran. Toujours un écran pour un jeu sans télécommande : la console
+    /// n'en laisse entrer aucune.
+    fn newcomer(&mut self, times: u64, out_of: u64) -> Page {
+        if self.rng.chance(times, out_of) && M::REMOTES {
             Page::remote(self.rng.next_u64())
         } else {
             Page::screen(self.rng.next_u64())
-        };
-        self.send_random(page)
+        }
     }
 
     fn send_random(&mut self, page: Page) -> Result<(), Failure> {
@@ -645,9 +654,17 @@ impl<M: Machine> Party<'_, M> {
         } else {
             let screens = self.count(Role::Screen);
             let remotes = self.count(Role::Remote);
-            if remotes < REMOTES_MAX && (screens >= SCREENS_MAX || self.rng.chance(5, 6)) {
+            let screens_max = if M::REMOTES {
+                SCREENS_MAX
+            } else {
+                SCREENS_ALONE_MAX
+            };
+            if M::REMOTES
+                && remotes < REMOTES_MAX
+                && (screens >= screens_max || self.rng.chance(5, 6))
+            {
                 Page::remote(self.rng.next_u64())
-            } else if screens < SCREENS_MAX {
+            } else if screens < screens_max {
                 Page::screen(self.rng.next_u64())
             } else {
                 // Tout le monde est là : quelqu'un s'en va à la place.
@@ -739,7 +756,12 @@ impl<M: Machine> Party<'_, M> {
     /// Un repère : la photo, la reprise, et ce qu'une page inconnue obtient.
     fn checkpoint(&mut self) -> Result<(), Failure> {
         // Une page que la machine n'a jamais vue ne doit rien casser.
-        let nobody = Page::remote(self.rng.next_u64());
+        let id = self.rng.next_u64();
+        let nobody = if M::REMOTES {
+            Page::remote(id)
+        } else {
+            Page::screen(id)
+        };
         if let Some(view) = self.machine.view(nobody) {
             let view = json(&view, "une vue")?;
             self.shown.feed(view.as_bytes());
@@ -1061,6 +1083,53 @@ mod tests {
         }
 
         assert_eq!(lines::<Still>(2, Resume::Yes).ticks, 0);
+    }
+
+    #[test]
+    fn a_game_without_remotes_never_sees_one() {
+        #[derive(Serialize, Deserialize)]
+        struct Board(u64);
+
+        fn only_screens(page: Page) {
+            assert_eq!(page.role, Role::Screen, "une télécommande est entrée");
+        }
+
+        impl Machine for Board {
+            type Command = Command;
+            type View = u64;
+            type Effect = NoEffect;
+            const TICKS_PER_SECOND: u32 = 0;
+            const REMOTES: bool = false;
+
+            fn new(_: u64) -> Self {
+                Self(0)
+            }
+
+            fn apply(&mut self, input: Input<Command>) -> Vec<(To, NoEffect)> {
+                match input {
+                    Input::Joined(page) | Input::Left(page) | Input::Message(page, _) => {
+                        only_screens(page);
+                    }
+                    Input::Tick => {}
+                }
+                self.0 = self.0.saturating_add(1);
+                Vec::new()
+            }
+
+            fn view(&self, page: Page) -> Option<u64> {
+                only_screens(page);
+                Some(self.0)
+            }
+
+            fn suggest(&self, page: Page) -> Vec<Command> {
+                only_screens(page);
+                vec![Command::Tap]
+            }
+        }
+
+        for seed in 0..6 {
+            assert!(lines::<Board>(seed, Resume::Yes).inputs > 0);
+        }
     }
 
     #[test]

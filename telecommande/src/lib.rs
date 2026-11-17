@@ -8,7 +8,8 @@
 //! - Sur l'ordinateur : [`console::run`] est tout le programme d'un jeu. Il
 //!   prépare les pages, les sert, donne le temps à la machine, lui passe ce
 //!   que les pages envoient et leur renvoie ce qu'elles doivent montrer.
-//! - Dans le navigateur : [`web::connect`] ouvre le lien vers la console.
+//! - Dans le navigateur : [`web::connect`] ouvre le lien vers la console, et
+//!   [`web::upload`] lui confie ce qui est lourd (une image, un son).
 //!
 //! Sur le fil, la console envoie un [`Wire`] ; la page envoie sa commande
 //! telle quelle, en JSON. Une page qui envoie une commande que la machine ne
@@ -16,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use cartouche::{Page, Role};
+pub use cartouche::{Content, Kind, Page, Role};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod console;
@@ -24,6 +25,8 @@ pub mod console;
 pub(crate) mod host;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pages;
+#[cfg(not(target_arch = "wasm32"))]
+mod store;
 #[cfg(not(target_arch = "wasm32"))]
 mod tls;
 #[cfg(target_arch = "wasm32")]
@@ -50,6 +53,7 @@ pub enum Wire<View, Effect> {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Welcome {
     /// L'adresse que les téléphones ouvrent (son QR code est servi à `/qr.svg`).
+    /// Vide quand le jeu se joue sans télécommande.
     pub join_url: String,
     /// Le rythme du jeu : pour dessiner un compte à rebours à partir du numéro du pas.
     pub ticks_per_second: u32,

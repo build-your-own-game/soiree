@@ -9,6 +9,10 @@
 //! ([`State`]). C'est ce qui permet à la console de jouer des parties toute
 //! seule, de les photographier, de les reprendre et de les rejouer.
 //!
+//! Ce qui est lourd (une image qu'un joueur apporte) reste hors de la
+//! machine : la console le garde, la machine n'en porte que le ticket
+//! ([`Content`]).
+//!
 //! Cette brique se passe du système, comme la machine qui l'emprunte. Le
 //! banc ([`bench`]) et le journal ([`journal`]) le demandent : ils ne sont là
 //! que derrière leur option.
@@ -21,6 +25,7 @@ extern crate std;
 
 #[cfg(feature = "bench")]
 pub mod bench;
+mod content;
 pub mod draw;
 #[cfg(feature = "journal")]
 pub mod journal;
@@ -33,6 +38,7 @@ use alloc::vec::Vec;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+pub use content::{Content, Kind};
 pub use notes::{Note, note, take_notes};
 pub use state::{State, fingerprint};
 
@@ -142,6 +148,10 @@ pub trait Machine: State {
     const TICKS_PER_SECOND: u32;
     /// Vrai : la console garde l'état d'un lancement à l'autre.
     const REMEMBERS: bool = false;
+    /// Faux : le jeu se joue sans télécommande. La console n'annonce pas
+    /// l'adresse des téléphones, et la machine ne voit jamais de
+    /// [`Role::Remote`].
+    const REMOTES: bool = true;
 
     /// Une partie neuve. La graine est tout le hasard du jeu.
     fn new(seed: u64) -> Self;

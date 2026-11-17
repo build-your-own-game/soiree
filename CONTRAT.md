@@ -55,6 +55,8 @@ pub trait Machine: State {
     const TICKS_PER_SECOND: u32;
     /// Vrai : la console garde l'état d'un lancement à l'autre.
     const REMEMBERS: bool = false;
+    /// Faux : le jeu se joue sans télécommande.
+    const REMOTES: bool = true;
 
     /// Une partie neuve. La graine est tout le hasard du jeu. Ne peut pas échouer.
     fn new(seed: u64) -> Self;
@@ -72,6 +74,10 @@ pub trait State: Sized {
     fn save(&self) -> Vec<u8>;
     fn load(bytes: &[u8]) -> Option<Self>;
 }
+
+/// Le ticket d'un contenu lourd (une image, un son) que la console garde.
+pub struct Content { pub print: u64, pub len: u32, pub kind: Kind }
+pub enum Kind { Image, Sound, Video, Other }
 ```
 
 Ce que chaque ligne impose, et pourquoi :
@@ -83,6 +89,8 @@ Ce que chaque ligne impose, et pourquoi :
 - **`view`**. Une vue se calcule sans rien changer, et dit tout ce qui dure. Une page rechargée retrouve tout dans la vue suivante.
 - **`Effect`**. Ce qui ne dure pas : un son, une vibration, un « trop tard ». `apply` les rend, la console les porte une fois. Une vérité n'est jamais un effet : une page absente à ce moment-là ne le reçoit pas.
 - **`suggest`**. Ce que les boutons de cette page enverraient maintenant. La console s'en sert pour jouer des parties qui avancent ; une machine peut y mettre le coup d'un bon joueur.
+- **`REMOTES`**. Un jeu qui se joue sans télécommande le dit. La console n'annonce pas d'adresse aux téléphones et n'en laisse entrer aucun : la machine ne voit jamais de `Role::Remote`, et n'a rien à écrire pour un visiteur dont elle ne veut pas.
+- **`Content`** (contrainte 4). Ce qui est lourd, une image ou un son qu'un joueur apporte, ne voyage pas dans une commande : la page le confie à la console, qui rend un ticket. La commande, l'état, la vue et le journal ne portent que le ticket, et restent légers. La machine ne voit jamais les octets : une règle peut dépendre de la taille et du genre d'un contenu, pas de ce qu'il montre. Un ticket peut ne mener à rien (une page a envoyé n'importe quoi, ou le contenu est effacé) : la partie continue, la page laisse un vide.
 - Le salon, les places, qui a le droit de lancer ou d'arrêter : tout cela est dans la machine (contrainte 2).
 
 À l'intérieur de la machine, tout est libre : l'organisation, la physique, les bibliothèques, tant qu'elles se passent du système.
@@ -94,7 +102,8 @@ Du Rust compilé pour le navigateur, libre dans sa forme. Une page reçoit des v
 - **Elle ne garde aucune vérité.** Ce qui décide de la partie est dans la machine. Elle garde ce qui sert à montrer : une animation, un ralenti, un texte en cours de saisie, un réglage de confort.
 - **Elle envoie le plus brut possible.** Elle peut interpréter ce que fait le joueur quand le débit ou la latence l'imposent (reconnaître un geste dans cent mesures de capteurs par seconde). Ce qu'elle interprète, la console ne le teste pas : c'est au jeu de le tester.
 - **Elle peut emprunter le crate de la machine** pour ses types et ses constantes, pas pour décider à sa place.
-- La console lui donne, à la connexion : l'adresse des téléphones, le rythme du jeu, et avec chaque vue le numéro du pas. Un compte à rebours se dessine sans qu'on renvoie une vue à chaque pas. Ce numéro compte tous les pas que la machine a reçus depuis sa naissance : il ne repart pas de zéro quand la console relance un jeu dont elle garde l'état.
+- **Elle confie à la console ce qui est lourd** (`telecommande::web::upload`), met le ticket reçu dans sa commande, et montre un contenu par son adresse (`telecommande::web::content_url`). Elle le réduit d'abord à ce qu'elle montrera : une image à la taille de sa tuile.
+- La console lui donne, à la connexion : l'adresse des téléphones (vide pour un jeu sans télécommande), le rythme du jeu, et avec chaque vue le numéro du pas. Un compte à rebours se dessine sans qu'on renvoie une vue à chaque pas. Ce numéro compte tous les pas que la machine a reçus depuis sa naissance : il ne repart pas de zéro quand la console relance un jeu dont elle garde l'état.
 
 ### Rien d'autre
 
@@ -116,12 +125,14 @@ fn main() -> std::process::ExitCode {
 - **Les effets** : portés une fois, aux pages présentes.
 - **Le journal** : la graine et chaque entrée, avec le numéro de son pas, dans un fichier par partie. `soiree rejouer` refait la partie à l'identique. Les vieux fichiers s'effacent tout seuls.
 - **`REMEMBERS`** : elle écrit l'état dans le dossier du jeu quand il change et le relit au lancement. Un état qu'elle n'arrive pas à relire est mis de côté, jamais écrasé, et elle le dit.
+- **`REMOTES`** : pour un jeu sans télécommande, elle ne donne ni adresse ni QR code aux téléphones. Celui qui arrive quand même lit que le jeu se joue sur le grand écran, la même page pour tous les jeux.
+- **Les contenus** : elle range ce que les pages lui confient dans le dossier du jeu, une seule fois chacun, 16 Mo au plus, et le rend sous le nom de son ticket. Quand le dossier dépasse 500 Mo, les contenus montrés il y a le plus longtemps s'effacent.
 
 ### Avant la soirée : `soiree check` joue
 
 Le linteur reste, aussi dur. S'y ajoute un banc, le même pour tous les jeux, sans une ligne écrite par le jeu :
 
-- il joue des parties au hasard : des écrans et des téléphones arrivent et partent, envoient des commandes suggérées ou tirées au hasard ; le temps passe par longues rafales, ou pas à pas devant des joueurs attentifs qui saisissent une suggestion qui ne vaut qu'un instant ;
+- il joue des parties au hasard : des écrans et des téléphones (des écrans seulement, pour un jeu sans télécommande) arrivent et partent, envoient des commandes suggérées ou tirées au hasard ; le temps passe par longues rafales, ou pas à pas devant des joueurs attentifs qui saisissent une suggestion qui ne vaut qu'un instant ;
 - il photographie la partie en route, la reprend depuis la photo, et vérifie qu'elle continue à l'identique ;
 - il compare les empreintes en natif et en WebAssembly ;
 - il calcule les vues de toutes les pages à chaque pas ;

@@ -17,6 +17,7 @@ Il se joue en soirée, chez un ami, sur sa « console » : son ordinateur branch
 - **`suggest` dit ce que chaque page pourrait envoyer maintenant.** Tiens-le à jour quand le jeu grandit : c'est grâce à lui que les parties que joue `soiree check` avancent jusqu'au bout.
 - **Un cas impossible se note, il ne se cache pas.** Une page peut envoyer n'importe quoi : ce qui n'a pas de sens s'ignore sans bruit. Mais un état que le jeu croyait impossible se note avec `cartouche::oups!("…")` avant de continuer.
 - **Les pages ne décident de rien.** Elles montrent la vue que la machine leur donne, jouent ses effets (un son, une vibration) et envoient des commandes, le plus brut possible.
+- **Ce qui est lourd ne voyage pas dans une commande.** Une image ou un son qu'un joueur apporte : la page le confie à la console (`telecommande::web::upload`), et la commande, l'état et la vue n'en portent que le ticket (`cartouche::Content`).
 - **La page du téléphone est libre.** Boutons, dessin au doigt, glisser, gyroscope, vibrations : tout ce qu'un navigateur de téléphone permet.
 - **Joue une partie entière avant de dire qu'une étape est finie.** Au démarrage, le jeu affiche les adresses à ouvrir, pour l'écran et pour plusieurs joueurs.
 - **`soiree check` décide si le jeu est joué à la soirée.** Quand il refuse, il dit quoi corriger : suis-le.

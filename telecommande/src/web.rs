@@ -10,6 +10,18 @@
 //! link.send(&Command::Tap);
 //! ```
 //!
+//! Ce qui est lourd (une image, un son) ne voyage pas dans une commande : la
+//! page le confie à la console, qui rend un ticket, et la commande porte le
+//! ticket.
+//!
+//! ```ignore
+//! telecommande::web::upload(&bytes, "image/webp", move |kept| match kept {
+//!     Ok(content) => link.send(&Command::AddImage(content)),
+//!     Err(why) => { /* le dire au joueur */ }
+//! });
+//! // Pour le montrer : <img src="{content_url(content)}">
+//! ```
+//!
 //! La page garde son identité dans le navigateur : rechargée ou revenue de
 //! veille, elle arrive à la machine sous le même numéro de [`crate::Page`].
 //! Pour essayer plusieurs joueurs dans un seul navigateur, ajoute `?j=1`,
@@ -24,9 +36,9 @@ use serde::de::DeserializeOwned;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::js_sys::Object;
-use web_sys::{CloseEvent, MessageEvent, UrlSearchParams, WebSocket};
+use web_sys::{Blob, CloseEvent, MessageEvent, UrlSearchParams, WebSocket, XmlHttpRequest};
 
-use crate::{REPLACED, Role, Welcome, Wire};
+use crate::{Content, REPLACED, Role, Welcome, Wire};
 
 /// Le délai avant de rouvrir un lien coupé.
 const RETRY_MS: i32 = 1000;
@@ -219,6 +231,82 @@ fn url(role: Role) -> Result<String, JsValue> {
         "{scheme}://{host}/ws?id={id}&role={}",
         role.as_str()
     ))
+}
+
+/// L'adresse d'un contenu confié à la console : pour un `<img src>`, un
+/// `<audio src>`. Un ticket qui ne mène à rien donne une adresse qui ne
+/// répond pas : la page laisse un vide.
+pub fn content_url(content: Content) -> String {
+    format!("/contenu/{}", content.name())
+}
+
+/// Confie des octets à la console. `content_type` dit ce que c'est
+/// (`image/webp`). `on_done` reçoit le ticket à mettre dans une commande, ou
+/// pourquoi la console n'en a pas voulu.
+pub fn upload(
+    bytes: &[u8],
+    content_type: &str,
+    on_done: impl FnOnce(Result<Content, String>) + 'static,
+) {
+    post(Some(content_type), on_done, |request| {
+        request.send_with_opt_u8_array(Some(bytes))
+    });
+}
+
+/// Confie à la console ce que le navigateur tient déjà : un fichier choisi,
+/// le dessin d'un `<canvas>` (`toBlob`). Son type est celui qu'il annonce.
+pub fn upload_blob(blob: &Blob, on_done: impl FnOnce(Result<Content, String>) + 'static) {
+    post(None, on_done, |request| {
+        request.send_with_opt_blob(Some(blob))
+    });
+}
+
+const UNSENT: &str = "le contenu n'a pas pu partir";
+
+type Done = Box<dyn FnOnce(Result<Content, String>)>;
+
+/// Envoie un contenu à `/contenu` et appelle `on_done` une seule fois : à la
+/// fin de l'envoi, réussi ou non, ou tout de suite s'il n'a pas pu partir.
+fn post(
+    content_type: Option<&str>,
+    on_done: impl FnOnce(Result<Content, String>) + 'static,
+    send: impl FnOnce(&XmlHttpRequest) -> Result<(), JsValue>,
+) {
+    let done: Rc<RefCell<Option<Done>>> = Rc::new(RefCell::new(Some(Box::new(on_done))));
+    let call = |done: &RefCell<Option<Done>>, outcome| {
+        let waiting = done.borrow_mut().take();
+        if let Some(waiting) = waiting {
+            waiting(outcome);
+        }
+    };
+    let outcome = XmlHttpRequest::new().and_then(|request| {
+        request.open("POST", "/contenu")?;
+        if let Some(content_type) = content_type {
+            request.set_request_header("Content-Type", content_type)?;
+        }
+        // `loadend` arrive une fois, que l'envoi ait réussi ou non.
+        let ended = {
+            let done = Rc::clone(&done);
+            let request = request.clone();
+            Closure::once_into_js(move || call(&done, answer(&request)))
+        };
+        request.set_onloadend(Some(ended.unchecked_ref()));
+        send(&request)
+    });
+    if outcome.is_err() {
+        call(&done, Err(UNSENT.to_owned()));
+    }
+}
+
+fn answer(request: &XmlHttpRequest) -> Result<Content, String> {
+    let text = request.response_text().ok().flatten().unwrap_or_default();
+    match request.status() {
+        Ok(200) => serde_json::from_str(&text)
+            .map_err(|error| format!("réponse illisible de la console : {error}")),
+        Ok(0) | Err(_) => Err("la console ne répond pas".to_owned()),
+        Ok(_) if text.is_empty() => Err("la console a refusé ce contenu".to_owned()),
+        Ok(_) => Err(text),
+    }
 }
 
 fn log(message: &str) {

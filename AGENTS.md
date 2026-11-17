@@ -12,8 +12,8 @@ Lis `MANIFESTE.md`, puis `CONTRAT.md`. Ne les modifie pas sans demande explicite
 | `outil/` | l'outil `soiree` : `new`, `check`, `publish`, `rules`, `manifeste`, et `games` pour l'hôte |
 | `REJOINDRE.md` | le texte qu'un ami colle dans son assistant IA pour commencer |
 | `CONTRAT.md` | le contrat de la cartouche : ce qu'un jeu fournit, ce que la console fournit. L'outil l'embarque (`soiree contrat`). |
-| `cartouche/` | la brique « cartouche » : le contrat (`Machine`, `State`, `Input`), le tirage au hasard des commandes (`draw`), le journal d'une partie (`journal`) et le banc qui joue des parties (`bench`). Sans système, comme la machine qui l'emprunte. |
-| `telecommande/` | la brique « télécommande » : le programme de tous les jeux (`console`, sur l'ordinateur : il fait tourner la machine, sert les pages, écrit le journal) et le lien d'une page vers le jeu (`web`, dans le navigateur) |
+| `cartouche/` | la brique « cartouche » : le contrat (`Machine`, `State`, `Input`, le ticket `Content` d'un contenu lourd), le tirage au hasard des commandes (`draw`), le journal d'une partie (`journal`) et le banc qui joue des parties (`bench`). Sans système, comme la machine qui l'emprunte. |
+| `telecommande/` | la brique « télécommande » : le programme de tous les jeux (`console`, sur l'ordinateur : il fait tourner la machine, sert les pages, écrit le journal, range les contenus lourds) et le lien d'une page vers le jeu (`web`, dans le navigateur : `connect`, `upload`) |
 | `iphone/` | l'app iPhone « Soirée » (Swift) : une manette pour tous les jeux. Elle scanne le QR code, charge la télécommande du jeu et lui donne les capteurs de mouvement et les vibrations que Safari refuse. Son contrat avec les pages est dans `iphone/README.md`. |
 | `modele/` | le jeu de départ, un vrai jeu avec son propre workspace ; `soiree new` le copie |
 | `dossier/` | les modèles des fichiers du dossier de l'hôte |
@@ -57,7 +57,10 @@ Chaque jeu déclare sa machine : le crate qui porte ses règles (`[package.metad
 `telecommande::console::run` est le programme de tous les jeux. Il donne le temps (`TICKS_PER_SECOND`, au plus un dixième de seconde de rattrapage), n'envoie une vue que si elle a changé (au plus soixante par seconde), porte les effets une fois, et écrit dans le dossier du jeu, sous `.soiree/` :
 
 - **le journal** de chaque lancement (`.soiree/journal/`) : la graine et chaque entrée, avec le numéro de son pas. `soiree rejouer <fichier>` refait la partie et vérifie ses repères ;
-- **l'état gardé** (`.soiree/etat`) des jeux qui le demandent (`REMEMBERS`). Un état illisible est mis de côté, jamais écrasé.
+- **l'état gardé** (`.soiree/etat`) des jeux qui le demandent (`REMEMBERS`). Un état illisible est mis de côté, jamais écrasé ;
+- **les contenus lourds** (`.soiree/contenus/`) que les pages lui confient à `/contenu` : une image, un son. Chacun porte le nom de son ticket (`cartouche::Content`) et se redemande à `/contenu/<nom>`. Au-delà de 500 Mo, les contenus montrés il y a le plus longtemps s'effacent.
+
+Un jeu qui se joue sans télécommande (`REMOTES = false`) n'a ni adresse ni QR code pour les téléphones : la console répond elle-même à `/t`, et refuse un lien de télécommande.
 
 ## Avant de dire que c'est fini
 
