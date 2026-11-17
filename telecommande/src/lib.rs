@@ -1,24 +1,27 @@
 //! # La brique « télécommande »
 //!
-//! Elle relie trois choses : le jeu, qui tourne sur l'ordinateur de l'hôte,
-//! l'écran (une page ouverte sur cet ordinateur) et les téléphones (une page
-//! que chaque joueur ouvre en scannant un QR code).
+//! Le programme de tous les jeux. Elle relie trois choses : la machine du jeu
+//! (voir la brique `cartouche`), l'écran (une page ouverte sur l'ordinateur de
+//! l'hôte) et les téléphones (une page que chaque joueur ouvre en scannant un
+//! QR code).
 //!
-//! - Sur l'ordinateur : [`pages::build`] prépare les pages, puis
-//!   [`host::Room`] les sert et échange des messages avec elles.
-//! - Dans le navigateur : [`web::connect`] ouvre le lien vers le jeu.
+//! - Sur l'ordinateur : [`console::run`] est tout le programme d'un jeu. Il
+//!   prépare les pages, les sert, donne le temps à la machine, lui passe ce
+//!   que les pages envoient et leur renvoie ce qu'elles doivent montrer.
+//! - Dans le navigateur : [`web::connect`] ouvre le lien vers la console.
 //!
-//! Les messages sont deux types à toi, partagés par le jeu et les pages :
-//! ce qu'une page envoie (`Up`) et ce que le jeu répond (`Down`). Une page qui
-//! envoie un message que le jeu ne connaît pas ne compile pas.
-//!
-//! La brique ne sait rien des joueurs, des scores ni des manches. Elle dit
-//! qu'une page est arrivée, ce qu'elle a envoyé, et qu'elle est partie.
+//! Sur le fil, la console envoie un [`Wire`] ; la page envoie sa commande
+//! telle quelle, en JSON. Une page qui envoie une commande que la machine ne
+//! connaît pas ne compile pas, si elle emprunte le type de la machine.
 
 use serde::{Deserialize, Serialize};
 
+pub use cartouche::{Page, Role};
+
 #[cfg(not(target_arch = "wasm32"))]
-pub mod host;
+pub mod console;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod host;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pages;
 #[cfg(not(target_arch = "wasm32"))]
@@ -31,27 +34,23 @@ pub mod web;
 /// les deux se reprendraient la place sans fin.
 pub(crate) const REPLACED: u16 = 4000;
 
-/// Une page, reconnue d'une connexion à l'autre : un téléphone qui se met en
-/// veille puis revient garde le même `Id`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Id(pub u64);
-
-/// Ce qu'est une page pour le jeu.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Ce que la console envoie à une page.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Role {
-    /// L'écran, sur l'ordinateur de l'hôte.
-    Screen,
-    /// La télécommande d'un joueur, sur son téléphone.
-    Remote,
+pub enum Wire<View, Effect> {
+    /// À la connexion : ce que la console sait et que la page ne peut pas deviner.
+    Welcome(Welcome),
+    /// Ce que la page doit montrer maintenant, et le numéro du pas.
+    View { tick: u64, view: View },
+    /// Ce que la page joue une fois.
+    Effect(Effect),
 }
 
-impl Role {
-    /// Le nom du rôle dans l'adresse du lien.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Role::Screen => "screen",
-            Role::Remote => "remote",
-        }
-    }
+/// Ce que la console dit à une page qui arrive.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Welcome {
+    /// L'adresse que les téléphones ouvrent (son QR code est servi à `/qr.svg`).
+    pub join_url: String,
+    /// Le rythme du jeu : pour dessiner un compte à rebours à partir du numéro du pas.
+    pub ticks_per_second: u32,
 }

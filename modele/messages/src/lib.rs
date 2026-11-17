@@ -1,4 +1,5 @@
-//! Ce que les pages envoient au jeu (`Up`) et ce que le jeu leur répond (`Down`).
+//! Ce qui passe entre les pages et la machine : ce qu'une page envoie (`Up`),
+//! ce qu'elle doit montrer (`View`), ce qu'elle joue une fois (`Effect`).
 //!
 //! La machine emprunte ces types : comme elle, ce crate se passe du système.
 
@@ -20,9 +21,10 @@ pub enum Up {
     Tap,
 }
 
-/// Du jeu vers une page : ce qu'elle doit afficher maintenant.
+/// Ce qu'une page doit montrer maintenant. Une page qui se recharge retrouve
+/// tout ici : elle ne garde rien elle-même.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Down {
+pub enum View {
     Screen(Screen),
     Remote(Remote),
 }
@@ -30,8 +32,6 @@ pub enum Down {
 /// Ce que montre l'écran.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Screen {
-    /// L'adresse que les téléphones ouvrent.
-    pub join_url: String,
     pub players: Vec<Player>,
 }
 
@@ -48,4 +48,11 @@ pub struct Player {
 pub struct Remote {
     pub name: String,
     pub taps: u32,
+}
+
+/// Ce qu'une page joue une fois, et qu'on peut rater sans rien perdre.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Effect {
+    /// Un joueur vient de passer une dizaine de taps : l'écran le fête.
+    Cheer { name: String, taps: u32 },
 }

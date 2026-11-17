@@ -2,10 +2,11 @@
 # du dossier qui contient `soiree/` et `games/`. Ce fichier n'est dans aucun
 # dépôt. Voir AGENTS.md, à côté de `.cargo/`.
 #
-# Décommenté, il remplace, pour tout projet placé sous ce dossier, la brique
-# empruntée à une étiquette de la console par le dossier local : c'est ce qui
-# permet de changer la console et un jeu en même temps. Remets-le en
+# Décommenté, il remplace, pour tout projet placé sous ce dossier, les briques
+# empruntées à une étiquette de la console par les dossiers locaux : c'est ce
+# qui permet de changer la console et un jeu en même temps. Remets-le en
 # commentaire avant de vérifier et de committer un jeu.
 
 # [patch."https://github.com/build-your-own-game/soiree"]
+# cartouche = { path = "soiree/cartouche" }
 # telecommande = { path = "soiree/telecommande" }

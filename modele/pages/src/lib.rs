@@ -1,8 +1,11 @@
 //! Les pages du jeu : l'écran à `/`, la télécommande à `/t`.
+//!
+//! Une page reçoit des vues et des effets, envoie des commandes. Elle ne
+//! garde aucune vérité : rechargée, elle retrouve tout dans la vue suivante.
 #![cfg(target_arch = "wasm32")]
 
 use leptos::prelude::*;
-use messages::{Down, Up};
+use messages::{Effect, Up, View};
 use telecommande::Role;
 use telecommande::web::{Signal, connect};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -23,11 +26,21 @@ fn App() -> impl IntoView {
     } else {
         Role::Screen
     };
-    let (down, set_down) = signal(None::<Down>);
+    let (view, set_view) = signal(None::<View>);
     let (connected, set_connected) = signal(false);
-    let link = connect::<Up, Down>(role, move |signal| match signal {
-        Signal::Open => set_connected.set(true),
-        Signal::Message(message) => set_down.set(Some(message)),
+    // L'adresse des téléphones : la console la donne à la connexion.
+    let (join_url, set_join_url) = signal(String::new());
+    // Le dernier joueur fêté : un effet, joué une fois.
+    let (cheer, set_cheer) = signal(None::<String>);
+    let link = connect::<Up, View, Effect>(role, move |signal| match signal {
+        Signal::Open(welcome) => {
+            set_connected.set(true);
+            set_join_url.set(welcome.join_url);
+        }
+        Signal::View { view, tick: _ } => set_view.set(Some(view)),
+        Signal::Effect(Effect::Cheer { name, taps }) => {
+            set_cheer.set(Some(format!("{name} : {taps} !")));
+        }
         Signal::Closed => set_connected.set(false),
     });
     // Le lien vit dans la page : on le range là où les boutons le retrouvent.
@@ -44,9 +57,9 @@ fn App() -> impl IntoView {
     };
 
     if is_remote {
-        let taps = move || match down.get() {
-            Some(Down::Remote(remote)) => remote.taps,
-            Some(Down::Screen(_)) | None => 0,
+        let taps = move || match view.get() {
+            Some(View::Remote(remote)) => remote.taps,
+            Some(View::Screen(_)) | None => 0,
         };
         view! {
             <main class="remote">
@@ -63,13 +76,9 @@ fn App() -> impl IntoView {
         }
         .into_any()
     } else {
-        let players = move || match down.get() {
-            Some(Down::Screen(screen)) => screen.players,
-            Some(Down::Remote(_)) | None => Vec::new(),
-        };
-        let join_url = move || match down.get() {
-            Some(Down::Screen(screen)) => screen.join_url,
-            Some(Down::Remote(_)) | None => String::new(),
+        let players = move || match view.get() {
+            Some(View::Screen(screen)) => screen.players,
+            Some(View::Remote(_)) | None => Vec::new(),
         };
         view! {
             <main class="screen">
@@ -92,6 +101,7 @@ fn App() -> impl IntoView {
                             .collect_view()
                     }}
                 </ul>
+                <p class="cheer">{cheer}</p>
                 <p class="status">{status}</p>
             </main>
         }

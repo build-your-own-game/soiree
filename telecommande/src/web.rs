@@ -1,18 +1,19 @@
-//! Le côté navigateur : le lien d'une page vers le jeu.
+//! Le côté navigateur : le lien d'une page vers la console.
 //!
 //! ```ignore
-//! let link = telecommande::web::connect::<Up, Down>(Role::Remote, |signal| match signal {
-//!     Signal::Open => { /* connecté */ }
-//!     Signal::Message(down) => { /* affiche ce que le jeu envoie */ }
+//! let link = telecommande::web::connect::<Command, View, Effect>(Role::Remote, |signal| match signal {
+//!     Signal::Open(welcome) => { /* connecté : welcome.join_url, welcome.ticks_per_second */ }
+//!     Signal::View { view, tick } => { /* montre ce qu'il faut montrer maintenant */ }
+//!     Signal::Effect(effect) => { /* un son, une vibration */ }
 //!     Signal::Closed => { /* coupé : le lien se rouvre tout seul */ }
 //! })?;
-//! link.send(&Up::Tap);
+//! link.send(&Command::Tap);
 //! ```
 //!
 //! La page garde son identité dans le navigateur : rechargée ou revenue de
-//! veille, elle arrive au jeu sous le même [`crate::Id`]. Pour essayer
-//! plusieurs joueurs dans un seul navigateur, ajoute `?j=1`, `?j=2`… à
-//! l'adresse : chaque numéro est un joueur différent.
+//! veille, elle arrive à la machine sous le même numéro de [`crate::Page`].
+//! Pour essayer plusieurs joueurs dans un seul navigateur, ajoute `?j=1`,
+//! `?j=2`… à l'adresse : chaque numéro est un joueur différent.
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -25,31 +26,31 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::js_sys::Object;
 use web_sys::{CloseEvent, MessageEvent, UrlSearchParams, WebSocket};
 
-use crate::{REPLACED, Role};
+use crate::{REPLACED, Role, Welcome, Wire};
 
 /// Le délai avant de rouvrir un lien coupé.
 const RETRY_MS: i32 = 1000;
 
 /// Ce qui arrive à la page.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Signal<Down> {
-    /// Le lien est ouvert : le jeu va envoyer ce que la page doit afficher.
-    Open,
-    /// Le jeu a envoyé un message.
-    Message(Down),
+pub enum Signal<View, Effect> {
+    /// Le lien est ouvert et la console s'est présentée.
+    Open(Welcome),
+    /// Ce que la page doit montrer maintenant.
+    View { view: View, tick: u64 },
+    /// À jouer une fois.
+    Effect(Effect),
     /// Le lien est coupé. Il se rouvre tout seul, sauf si la même page s'est
     /// ouverte dans un autre onglet : c'est alors l'autre qui joue.
     Closed,
 }
 
 enum Raw {
-    Open,
     Text(String),
     Closed,
 }
 
 struct Handlers {
-    _open: Closure<dyn FnMut()>,
     _message: Closure<dyn FnMut(MessageEvent)>,
     _close: Closure<dyn FnMut(CloseEvent)>,
 }
@@ -70,27 +71,27 @@ impl Inner {
     }
 }
 
-/// Le lien vers le jeu. Il vit aussi longtemps que la page.
-pub struct Link<Up> {
+/// Le lien vers la console. Il vit aussi longtemps que la page.
+pub struct Link<Command> {
     inner: Rc<Inner>,
-    up: PhantomData<fn(Up)>,
+    command: PhantomData<fn(Command)>,
 }
 
-impl<Up> Clone for Link<Up> {
+impl<Command> Clone for Link<Command> {
     fn clone(&self) -> Self {
         Self {
             inner: Rc::clone(&self.inner),
-            up: PhantomData,
+            command: PhantomData,
         }
     }
 }
 
-impl<Up: Serialize> Link<Up> {
-    /// Envoie un message au jeu. Sans effet tant que le lien est coupé.
-    pub fn send(&self, message: &Up) {
-        let text = match serde_json::to_string(message) {
+impl<Command: Serialize> Link<Command> {
+    /// Envoie une commande à la machine. Sans effet tant que le lien est coupé.
+    pub fn send(&self, command: &Command) {
+        let text = match serde_json::to_string(command) {
             Ok(text) => text,
-            Err(error) => return log(&format!("message impossible à écrire : {error}")),
+            Err(error) => return log(&format!("commande impossible à écrire : {error}")),
         };
         if let Some(socket) = self.inner.socket.borrow().as_ref()
             && socket.ready_state() == WebSocket::OPEN
@@ -100,18 +101,24 @@ impl<Up: Serialize> Link<Up> {
     }
 }
 
-/// Ouvre le lien vers le jeu qui a servi cette page, et le rouvre à chaque
-/// coupure. `on_signal` est appelé pour tout ce qui arrive.
-pub fn connect<Up, Down: DeserializeOwned + 'static>(
+/// Ouvre le lien vers la console qui a servi cette page, et le rouvre à
+/// chaque coupure. `on_signal` est appelé pour tout ce qui arrive : d'abord
+/// [`Signal::Open`], puis la vue de la page.
+pub fn connect<Command, View, Effect>(
     role: Role,
-    mut on_signal: impl FnMut(Signal<Down>) + 'static,
-) -> Result<Link<Up>, JsValue> {
+    mut on_signal: impl FnMut(Signal<View, Effect>) + 'static,
+) -> Result<Link<Command>, JsValue>
+where
+    View: DeserializeOwned + 'static,
+    Effect: DeserializeOwned + 'static,
+{
     let on_raw = move |raw| match raw {
-        Raw::Open => on_signal(Signal::Open),
         Raw::Closed => on_signal(Signal::Closed),
-        Raw::Text(text) => match serde_json::from_str(&text) {
-            Ok(message) => on_signal(Signal::Message(message)),
-            Err(error) => log(&format!("message illisible du jeu : {error}")),
+        Raw::Text(text) => match serde_json::from_str::<Wire<View, Effect>>(&text) {
+            Ok(Wire::Welcome(welcome)) => on_signal(Signal::Open(welcome)),
+            Ok(Wire::View { tick, view }) => on_signal(Signal::View { view, tick }),
+            Ok(Wire::Effect(effect)) => on_signal(Signal::Effect(effect)),
+            Err(error) => log(&format!("message illisible de la console : {error}")),
         },
     };
     let inner = Rc::new(Inner {
@@ -124,17 +131,13 @@ pub fn connect<Up, Down: DeserializeOwned + 'static>(
     open(&inner);
     Ok(Link {
         inner,
-        up: PhantomData,
+        command: PhantomData,
     })
 }
 
 fn open(inner: &Rc<Inner>) {
     let Ok(socket) = WebSocket::new(&inner.url) else {
         return retry_later(inner);
-    };
-    let on_open = {
-        let inner = Rc::clone(inner);
-        Closure::<dyn FnMut()>::new(move || inner.emit(Raw::Open))
     };
     let on_message = {
         let inner = Rc::clone(inner);
@@ -154,12 +157,10 @@ fn open(inner: &Rc<Inner>) {
             }
         })
     };
-    socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
     socket.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
     socket.set_onclose(Some(on_close.as_ref().unchecked_ref()));
     *inner.socket.borrow_mut() = Some(socket);
     *inner.handlers.borrow_mut() = Some(Handlers {
-        _open: on_open,
         _message: on_message,
         _close: on_close,
     });
@@ -180,7 +181,7 @@ fn retry_later(inner: &Rc<Inner>) {
     *inner.retry.borrow_mut() = Some(again);
 }
 
-/// L'adresse du lien : le jeu qui a servi la page, l'identité de la page et
+/// L'adresse du lien : la console qui a servi la page, l'identité de la page et
 /// son rôle.
 fn url(role: Role) -> Result<String, JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("pas de fenêtre"))?;

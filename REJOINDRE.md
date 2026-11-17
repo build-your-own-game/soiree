@@ -17,10 +17,10 @@ Je n'ai peut-être jamais codé. Parle-moi simplement, une étape à la fois, et
 2. **Rust**, avec rustup : https://rustup.rs.
 3. **L'outil de la soirée.** La première installation prend quelques minutes.
    ```sh
-   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.6.1 soiree
+   cargo install --locked --git https://github.com/build-your-own-game/soiree --tag v0.7.0 soiree
    ```
 4. **Mon jeu.** Demande-moi un nom, en minuscules, chiffres et tirets. Puis, dans le dossier où je range mes projets :
    ```sh
    soiree new <nom>
    ```
-5. **La suite est dans l'outil.** `soiree help` donne les commandes, `soiree manifeste` donne les règles de la soirée, et le fichier `AGENTS.md` du jeu dit comment travailler avec moi. Lis-les, lance le jeu pour me le montrer, puis demande-moi quel jeu je veux faire.
+5. **La suite est dans l'outil.** `soiree help` donne les commandes, `soiree manifeste` donne les règles de la soirée, `soiree contrat` dit ce qu'un jeu fournit à la console, et le fichier `AGENTS.md` du jeu dit comment travailler avec moi. Lis-les, lance le jeu pour me le montrer, puis demande-moi quel jeu je veux faire.

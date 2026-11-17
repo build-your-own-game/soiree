@@ -1,6 +1,6 @@
-# La brique « télécommande » : le téléphone trouve le jeu par un QR code et
-# lui parle. Un seul crate pour les deux côtés : `host` et `pages` sur
-# l'ordinateur, `web` dans le navigateur.
+# La brique « télécommande » : le programme de tous les jeux. Le téléphone
+# trouve le jeu par un QR code et lui parle. Un seul crate pour les deux
+# côtés : `console` sur l'ordinateur, `web` dans le navigateur.
 [package]
 name = "telecommande"
 description = "Brique de la console : relier le jeu, l'écran et les téléphones."
@@ -10,10 +10,13 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+cartouche = { path = "../cartouche" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Le journal d'une partie, que la console écrit.
+cartouche = { path = "../cartouche", features = ["journal"] }
 axum = { version = "0.8", features = ["ws"] }
 futures-util = "0.3"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }

@@ -1,13 +1,18 @@
 //! La machine du jeu : ses règles. Chacun tape, l'écran compte.
 //!
-//! Rien ici ne connaît le réseau, l'horloge ni le navigateur : la partie ne
-//! dépend que des entrées qu'on lui donne ([`Game::join`], [`Game::apply`],
-//! [`Game::leave`]). Les mêmes entrées, dans le même ordre, donnent la même
-//! partie : [`Game::empreinte`] permet de le vérifier.
+//! Elle remplit le contrat de la console ([`cartouche::Machine`]) :
 //!
-//! La machine se passe du système (`#![no_std]`) : l'horloge, les fichiers, le
-//! réseau et le hasard du système n'existent pas ici, et `soiree check` s'en
-//! assure. Les listes et les textes viennent de `alloc`.
+//! - tout ce qui lui arrive passe par une seule porte, [`Machine::apply`] : une
+//!   page arrive, part, envoie une commande, ou le temps passe ;
+//! - tout son état s'écrit et se relit (`Serialize`, `Deserialize`) : la
+//!   console en tire l'empreinte de la partie, sa photo et sa reprise ;
+//! - elle se passe du système (`#![no_std]`) : l'horloge, les fichiers, le
+//!   réseau et le hasard du système n'existent pas ici, et `soiree check` s'en
+//!   assure. Les listes et les textes viennent de `alloc`.
+//!
+//! Les mêmes entrées, dans le même ordre, donnent la même partie. Le banc de
+//! la console (`examples/banc.rs`) joue des parties avec elle sans que tu
+//! écrives un test ; les tests d'ici disent ce que le jeu doit faire.
 
 #![no_std]
 
@@ -17,49 +22,113 @@ use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
-use messages::{Player, Remote, Screen, Up};
-
-/// Un téléphone, pour la machine : son numéro, le même d'une connexion à l'autre.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Phone(pub u64);
+use cartouche::{Input, Machine, Page, Role, To};
+use messages::{Effect, Player, Remote, Screen, Up, View};
+use serde::{Deserialize, Serialize};
 
 const NAME_MAX: usize = 16;
+/// L'écran fête un joueur tous les tant de taps.
+const CHEER_EVERY: u32 = 10;
 
-#[derive(Default)]
-pub struct Game {
-    seats: BTreeMap<Phone, Seat>,
+/// La partie. Tout ce qui compte est ici : une page n'a rien à elle.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Jeu {
+    /// Une place par téléphone, sous le numéro de sa page.
+    seats: BTreeMap<u64, Seat>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Seat {
     name: String,
     taps: u32,
     here: bool,
 }
 
-impl Game {
-    /// Un téléphone arrive ou revient : il garde sa place et son score.
-    pub fn join(&mut self, id: Phone) {
-        let number = self.seats.len().saturating_add(1);
-        self.seats
-            .entry(id)
-            .or_insert_with(|| Seat {
-                name: format!("Joueur {number}"),
-                taps: 0,
-                here: true,
-            })
-            .here = true;
+impl Machine for Jeu {
+    type Command = Up;
+    type View = View;
+    type Effect = Effect;
+
+    /// Ce jeu se passe du temps. Avec un rythme (60, par exemple), la console
+    /// envoie `Input::Tick` soixante fois par seconde : la machine compte des
+    /// pas, elle ne reçoit jamais l'heure.
+    const TICKS_PER_SECOND: u32 = 0;
+
+    /// La graine est tout le hasard du jeu ; celui-ci n'en a pas.
+    fn new(_seed: u64) -> Self {
+        Self::default()
     }
 
-    pub fn leave(&mut self, id: Phone) {
-        if let Some(seat) = self.seats.get_mut(&id) {
-            seat.here = false;
+    fn apply(&mut self, input: Input<Up>) -> Vec<(To, Effect)> {
+        match input {
+            // Un téléphone arrive ou revient : il garde sa place et son score.
+            Input::Joined(page) => {
+                if page.role == Role::Remote {
+                    let number = self.seats.len().saturating_add(1);
+                    self.seats
+                        .entry(page.id)
+                        .or_insert_with(|| Seat {
+                            name: format!("Joueur {number}"),
+                            taps: 0,
+                            here: true,
+                        })
+                        .here = true;
+                }
+                Vec::new()
+            }
+            Input::Left(page) => {
+                if let Some(seat) = self.seats.get_mut(&page.id) {
+                    seat.here = false;
+                }
+                Vec::new()
+            }
+            Input::Message(page, up) => self.play(page, up),
+            Input::Tick => Vec::new(),
         }
     }
 
-    pub fn apply(&mut self, id: Phone, up: Up) {
-        let Some(seat) = self.seats.get_mut(&id) else {
-            return;
+    fn view(&self, page: Page) -> Option<View> {
+        match page.role {
+            Role::Screen => Some(View::Screen(Screen {
+                players: self
+                    .seats
+                    .values()
+                    .map(|seat| Player {
+                        name: seat.name.clone(),
+                        taps: seat.taps,
+                        here: seat.here,
+                    })
+                    .collect(),
+            })),
+            Role::Remote => self.seats.get(&page.id).map(|seat| {
+                View::Remote(Remote {
+                    name: seat.name.clone(),
+                    taps: seat.taps,
+                })
+            }),
+        }
+    }
+
+    /// Ce que les boutons de cette page enverraient maintenant : le banc s'en
+    /// sert pour jouer des parties qui avancent.
+    fn suggest(&self, page: Page) -> Vec<Up> {
+        if self.seats.contains_key(&page.id) {
+            vec![Up::Tap, Up::Name("Ada".to_owned())]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+impl Jeu {
+    /// Une page envoie une commande. Une page peut envoyer n'importe quoi :
+    /// ce qui n'a pas de sens est ignoré, sans bruit.
+    fn play(&mut self, page: Page, up: Up) -> Vec<(To, Effect)> {
+        let Some(seat) = self.seats.get_mut(&page.id) else {
+            return Vec::new();
         };
         match up {
             Up::Name(name) => {
@@ -67,120 +136,102 @@ impl Game {
                 if !name.is_empty() {
                     seat.name = name;
                 }
+                Vec::new()
             }
-            Up::Tap => seat.taps = seat.taps.saturating_add(1),
+            Up::Tap => {
+                seat.taps = seat.taps.saturating_add(1);
+                if seat.taps.is_multiple_of(CHEER_EVERY) {
+                    // Un effet : l'écran le joue une fois. Le score, lui, est
+                    // dans l'état : une page qui rate l'effet ne perd rien.
+                    vec![(
+                        To::Screens,
+                        Effect::Cheer {
+                            name: seat.name.clone(),
+                            taps: seat.taps,
+                        },
+                    )]
+                } else {
+                    Vec::new()
+                }
+            }
         }
-    }
-
-    pub fn players(&self) -> impl Iterator<Item = Phone> + '_ {
-        self.seats.keys().copied()
-    }
-
-    pub fn screen(&self, join_url: &str) -> Screen {
-        Screen {
-            join_url: join_url.to_owned(),
-            players: self
-                .seats
-                .values()
-                .map(|seat| Player {
-                    name: seat.name.clone(),
-                    taps: seat.taps,
-                    here: seat.here,
-                })
-                .collect(),
-        }
-    }
-
-    pub fn remote(&self, id: Phone) -> Option<Remote> {
-        self.seats.get(&id).map(|seat| Remote {
-            name: seat.name.clone(),
-            taps: seat.taps,
-        })
-    }
-
-    /// Un nombre calculé sur tout l'état de la partie : deux parties dans le
-    /// même état ont la même empreinte, ici comme dans un navigateur.
-    ///
-    /// Chaque champ y entre par ses octets, dans un ordre fixé. Pas de
-    /// `#[derive(Hash)]` : il compte les longueurs en `usize`, qui n'a pas la
-    /// même taille sur l'ordinateur et en WebAssembly.
-    pub fn empreinte(&self) -> u64 {
-        let mut print = Empreinte::default();
-        for (id, seat) in &self.seats {
-            print.bytes(&id.0.to_le_bytes());
-            print.text(&seat.name);
-            print.bytes(&seat.taps.to_le_bytes());
-            print.bytes(&[u8::from(seat.here)]);
-        }
-        print.0
-    }
-}
-
-/// Une empreinte FNV-1a sur 64 bits : la même sur toutes les machines.
-/// Un flottant y entre par ses bits : `print.bytes(&x.to_bits().to_le_bytes())`.
-struct Empreinte(u64);
-
-impl Default for Empreinte {
-    fn default() -> Self {
-        Self(0xcbf2_9ce4_8422_2325)
-    }
-}
-
-impl Empreinte {
-    fn bytes(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.0 = (self.0 ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-
-    /// Un texte, suivi d'un octet qui ne peut pas en faire partie : « ab » puis
-    /// « c » ne se confond pas avec « a » puis « bc ».
-    fn text(&mut self, text: &str) {
-        self.bytes(text.as_bytes());
-        self.bytes(&[0xff]);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
+    use cartouche::State;
 
     use super::*;
 
-    #[test]
-    fn a_player_keeps_name_and_score_across_a_disconnection() {
-        let mut game = Game::default();
-        let ada = Phone(1);
-        game.join(ada);
-        game.apply(ada, Up::Name("  Ada  ".to_owned()));
-        game.apply(ada, Up::Tap);
-        game.leave(ada);
-        assert!(!game.screen("").players[0].here);
-        game.join(ada);
-        let remote = game.remote(ada).unwrap();
-        assert_eq!((remote.name.as_str(), remote.taps), ("Ada", 1));
-        assert!(game.screen("").players[0].here);
+    const ADA: Page = Page {
+        id: 1,
+        role: Role::Remote,
+    };
+    const TV: Page = Page {
+        id: 9,
+        role: Role::Screen,
+    };
+
+    fn players(game: &Jeu) -> Vec<Player> {
+        match game.view(TV) {
+            Some(View::Screen(screen)) => screen.players,
+            Some(View::Remote(_)) | None => Vec::new(),
+        }
     }
 
     #[test]
-    fn the_same_inputs_give_the_same_game() {
-        let play = || {
-            let mut game = Game::default();
-            game.join(Phone(2));
-            game.join(Phone(1));
-            game.apply(Phone(1), Up::Name("Ada".to_owned()));
-            game.apply(Phone(2), Up::Tap);
-            game.leave(Phone(2));
-            game.empreinte()
-        };
-        assert_eq!(play(), play());
-        assert_ne!(play(), Game::default().empreinte());
+    fn a_player_keeps_name_and_score_across_a_disconnection() {
+        let mut game = Jeu::new(0);
+        let _: Vec<_> = game.apply(Input::Joined(ADA));
+        let _: Vec<_> = game.apply(Input::Message(ADA, Up::Name("  Ada  ".to_owned())));
+        let _: Vec<_> = game.apply(Input::Message(ADA, Up::Tap));
+        let _: Vec<_> = game.apply(Input::Left(ADA));
+        assert!(!players(&game)[0].here);
+        let _: Vec<_> = game.apply(Input::Joined(ADA));
+        assert_eq!(
+            game.view(ADA),
+            Some(View::Remote(Remote {
+                name: "Ada".to_owned(),
+                taps: 1
+            }))
+        );
+        assert!(players(&game)[0].here);
+    }
+
+    #[test]
+    fn the_screen_cheers_every_tenth_tap() {
+        let mut game = Jeu::new(0);
+        let _: Vec<_> = game.apply(Input::Joined(ADA));
+        for _ in 0..9 {
+            assert_eq!(game.apply(Input::Message(ADA, Up::Tap)), Vec::new());
+        }
+        assert_eq!(
+            game.apply(Input::Message(ADA, Up::Tap)),
+            vec![(
+                To::Screens,
+                Effect::Cheer {
+                    name: "Joueur 1".to_owned(),
+                    taps: 10
+                }
+            )]
+        );
     }
 
     #[test]
     fn a_page_that_never_joined_cannot_play() {
-        let mut game = Game::default();
-        game.apply(Phone(7), Up::Tap);
-        assert_eq!(game.screen("").players, Vec::new());
+        let mut game = Jeu::new(0);
+        let _: Vec<_> = game.apply(Input::Message(ADA, Up::Tap));
+        let _: Vec<_> = game.apply(Input::Message(TV, Up::Tap));
+        assert_eq!(players(&game), Vec::new());
+        assert_eq!(game.view(ADA), None);
+    }
+
+    #[test]
+    fn the_whole_game_is_in_its_state() {
+        let mut game = Jeu::new(0);
+        let _: Vec<_> = game.apply(Input::Joined(ADA));
+        let _: Vec<_> = game.apply(Input::Message(ADA, Up::Tap));
+        assert_eq!(Jeu::load(&game.save()), Some(game));
     }
 }

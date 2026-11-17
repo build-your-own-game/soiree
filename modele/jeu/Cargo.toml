@@ -1,4 +1,5 @@
 # Le jeu : le programme que `cargo run --release` lance sur l'ordinateur de l'hôte.
+# Il tient en une ligne : c'est la console qui fait tourner la machine.
 [package]
 name = "jeu"
 version.workspace = true
@@ -8,7 +9,6 @@ publish.workspace = true
 
 [dependencies]
 machine.workspace = true
-messages.workspace = true
 telecommande.workspace = true
 
 [lints]

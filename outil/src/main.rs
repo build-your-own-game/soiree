@@ -1,5 +1,6 @@
 //! `soiree` : l'outil de la console. Voir `soiree help`.
 
+mod cartridge;
 mod check;
 mod games;
 mod machine;
@@ -17,6 +18,7 @@ use std::process::ExitCode;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const MANIFESTE: &str = include_str!("../../MANIFESTE.md");
+const CONTRAT: &str = include_str!("../../CONTRAT.md");
 
 const HELP: &str = "soiree : l'outil de la console
 
@@ -27,8 +29,13 @@ Pour faire un jeu :
                              un jeu qui ne passe pas n'est pas joué à la soirée
   soiree publish [dossier]   met le jeu sur GitHub, dans l'organisation de la soirée :
                              c'est sa sauvegarde, et c'est ainsi qu'il est proposé
-  soiree rules [dossier]     écrit dans le jeu les règles de cette version de la console
+  soiree rules [dossier]     écrit dans le jeu les règles de cette version de la console,
+                             le banc de sa machine et son programme
+  soiree rejouer <fichier>   refait à l'identique une partie de son journal (dans `.soiree/`),
+                             depuis le dossier du jeu
   soiree manifeste           affiche le manifeste : le but et les règles
+  soiree contrat             affiche le contrat entre un jeu et la console : la machine,
+                             les pages, et ce que la console fait du reste
 
 Pour l'hôte :
   soiree games [dossier]     récupère tous les jeux de l'organisation (dans `games/`
@@ -51,8 +58,16 @@ fn main() -> ExitCode {
         "publish" => dir(rest).and_then(|dir| publish::run(&dir)),
         "games" => games_dir(rest).and_then(|dir| games::run(&dir)),
         "new" => new::run(rest),
+        "rejouer" => match machine::replay_journal(rest) {
+            Ok(code) => return code,
+            Err(message) => Err(message),
+        },
         "manifeste" => {
             println!("{MANIFESTE}");
+            Ok(())
+        }
+        "contrat" => {
+            println!("{CONTRAT}");
             Ok(())
         }
         "version" | "--version" | "-V" => {

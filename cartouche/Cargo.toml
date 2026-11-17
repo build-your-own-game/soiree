@@ -1,0 +1,33 @@
+# La brique « cartouche » : le contrat entre un jeu et la console (voir
+# CONTRAT.md). La machine d'un jeu l'emprunte : comme elle, cette brique se
+# passe du système.
+[package]
+name = "cartouche"
+description = "Brique de la console : le contrat entre un jeu et la console."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# Le journal d'une partie, que la console écrit et que le banc rejoue. Il
+# demande le système : la machine ne l'active pas.
+journal = ["dep:serde_json"]
+# Le banc : jouer des parties au hasard, mesurer, comparer. Il demande le
+# système : seul l'exemple `banc` de la machine l'active.
+bench = ["journal"]
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+# La photo de l'état : un format exact au bit près, le même partout.
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+# Garde la dernière note d'`oups!` sans système.
+spin = { version = "0.10", default-features = false, features = ["spin_mutex"] }
+serde_json = { version = "1", optional = true }
+
+# Les tests de la brique essaient aussi le banc et le journal.
+[dev-dependencies]
+cartouche = { path = ".", features = ["bench"] }
+
+[lints]
+workspace = true

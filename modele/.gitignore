@@ -1,2 +1,4 @@
 target/
 .DS_Store
+# Le journal des parties et l'état gardé, que la console écrit.
+/.soiree/

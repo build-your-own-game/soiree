@@ -1,8 +1,8 @@
-# La machine : les règles du jeu, sans réseau, sans horloge, sans navigateur.
-# On lui donne des entrées, elle rend la partie : la même à chaque fois, sur
-# l'ordinateur comme dans un navigateur. `soiree check` le vérifie : la machine
-# se compile sans système, et `examples/empreinte.rs` donne les mêmes lignes en
-# natif et en WebAssembly.
+# La machine : les règles du jeu, et rien d'autre. Elle remplit le contrat de
+# la console (`soiree contrat`) : on lui donne une graine et des entrées, elle
+# rend la partie, la même à chaque fois, sur l'ordinateur comme dans un
+# navigateur. `soiree check` le vérifie : la machine se compile sans système,
+# et le banc (`examples/banc.rs`) joue des parties avec elle.
 [package]
 name = "machine"
 version.workspace = true
@@ -14,7 +14,13 @@ publish.workspace = true
 machine = true
 
 [dependencies]
+cartouche.workspace = true
 messages.workspace = true
+serde.workspace = true
+
+# Le banc de la console, pour l'exemple `banc` seulement : il demande le système.
+[dev-dependencies]
+cartouche = { workspace = true, features = ["bench"] }
 
 [lints]
 workspace = true

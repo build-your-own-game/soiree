@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde::Deserialize;
 
 use crate::rules::{self, Metadata};
-use crate::{machine, plug};
+use crate::{cartridge, machine, plug};
 
 /// Les dossiers qu'on ne fouille pas : ce qui se fabrique, et l'historique.
 const SKIPPED: [&str; 3] = ["target", ".git", "node_modules"];
@@ -63,6 +63,10 @@ pub fn run(dir: &Path) -> Result<(), String> {
         ));
     }
     let has_machine = report.step("le jeu a une machine", machine::declared(&metadata));
+    let _: bool = report.step(
+        "le jeu a des pages et un seul programme",
+        cartridge::program_and_pages(&metadata),
+    );
     let _: bool = report.step("tout est en Rust", only_rust(&root));
     let _: bool = report.step(
         "le formatage",
@@ -104,7 +108,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
             "Un test échoue : corrige le jeu, ou le test s'il se trompe.",
         ),
     );
-    let replays = "la machine rejoue la même partie, en natif et en WebAssembly";
+    let replays = "la machine rejoue la même partie, en natif et en WebAssembly, et passe le banc";
     if compiles && has_machine {
         let _: bool = report.step(replays, machine::replays(&metadata));
     } else {
@@ -252,7 +256,7 @@ fn advice(lints: &BTreeSet<String>) -> String {
     if text.is_empty() {
         text.push_str("  Corrige chaque erreur ci-dessus.\n");
     } else {
-        text.insert_str(0, "  Ce que la console en dit :\n");
+        text = format!("  Ce que la console en dit :\n{text}");
     }
     text.push_str(
         "  Une exception, `#[expect(lint, reason = \"…\")]`, est le dernier recours : au plus près \
@@ -262,8 +266,9 @@ fn advice(lints: &BTreeSet<String>) -> String {
     text
 }
 
-/// La version de Rust, les réglages de Clippy et la table des lints sont ceux
-/// de la console, et chaque crate du jeu s'y soumet.
+/// La version de Rust, les réglages de Clippy, la table des lints et le profil
+/// de release sont ceux de la console, chaque crate du jeu s'y soumet, et git
+/// laisse de côté le dossier de la console.
 fn rule_files(metadata: &Metadata) -> Result<(), String> {
     let root = &metadata.workspace_root;
     let shown = |path: &Path| {
@@ -297,6 +302,20 @@ fn rule_files(metadata: &Metadata) -> Result<(), String> {
     if lints != Some(&rules::lints_table()?) {
         wrong.push(format!(
             "[{prefix}] de Cargo.toml n'est pas la table de la console"
+        ));
+    }
+    if !rules::checks_overflow(&manifest) {
+        wrong.push(
+            "Cargo.toml n'a pas `overflow-checks = true` dans `[profile.release]` : un dépassement \
+             d'entier doit arrêter le banc, pas passer en silence"
+                .to_owned(),
+        );
+    }
+    if !fs::read_to_string(root.join(".gitignore")).is_ok_and(|text| rules::ignores_soiree(&text)) {
+        wrong.push(format!(
+            ".gitignore n'a pas la ligne `{}` : la console y écrit le journal des parties et \
+             l'état gardé, qui n'ont rien à faire dans le dépôt",
+            rules::IGNORED
         ));
     }
     if prefix == "workspace.lints" {
@@ -363,7 +382,7 @@ fn only_rust(root: &Path) -> Result<(), String> {
 }
 
 /// Visite chaque fichier du jeu, hors de ce qui se fabrique.
-fn walk(dir: &Path, visit: &mut impl FnMut(&Path)) -> std::io::Result<()> {
+pub fn walk(dir: &Path, visit: &mut impl FnMut(&Path)) -> std::io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path: PathBuf = entry.path();
@@ -524,7 +543,8 @@ mod tests {
             "clippy::needless_pass_by_value".to_owned(),
         ]);
         let text = advice(&lints);
-        assert!(text.contains("Un dépassement d'entier arrête la partie."));
+        assert!(text.contains("Un dépassement d'entier arrête la partie"));
+        assert!(text.contains("Par où sortir : Sur des entiers"));
         assert!(text.contains("needless_pass_by_value : le message"));
     }
 }

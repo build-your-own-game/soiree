@@ -19,10 +19,10 @@ Ce dossier n'est pas un dépôt git. Il en contient plusieurs, chacun avec son h
 ```
 
 Avant de toucher un fichier, sache dans quel dépôt il est. Puis lis l'`AGENTS.md` de ce dépôt : c'est lui qui fait foi pour ce qui s'y trouve.
-- `soiree/AGENTS.md` : pour modifier la console (les règles, l'outil, les briques, le jeu de départ).
+- `soiree/AGENTS.md` : pour modifier la console (les règles, le contrat, l'outil, les briques, le jeu de départ).
 - `games/<jeu>/AGENTS.md` : pour modifier un jeu.
 
-Le manifeste de la console est `soiree/MANIFESTE.md`. Ne le modifie pas sans demande explicite de l'hôte.
+Le manifeste de la console est `soiree/MANIFESTE.md`, et le contrat que chaque jeu remplit est `soiree/CONTRAT.md`. Ne les modifie pas sans demande explicite de l'hôte.
 
 ## Committer et pousser
 
@@ -45,13 +45,14 @@ Réinstalle-le après chaque changement dans `soiree/regles/` ou `soiree/outil/`
 
 ## La console et les jeux, côte à côte
 
-Un jeu emprunte une brique de la console par étiquette git, ici comme chez les amis :
+Un jeu emprunte les deux briques de la console par étiquette git, ici comme chez les amis :
 
 ```toml
+cartouche = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }
 telecommande = { git = "https://github.com/build-your-own-game/soiree", tag = "vX.Y.Z" }
 ```
 
-Pour changer la console et un jeu en même temps, décommente le `[patch]` de `.cargo/config.toml`. Cargo lit ce fichier pour tout projet placé sous ce dossier et remplace alors la brique par le dossier `soiree/telecommande` :
+Pour changer la console et un jeu en même temps, décommente le `[patch]` de `.cargo/config.toml`. Cargo lit ce fichier pour tout projet placé sous ce dossier et remplace alors les briques par les dossiers `soiree/cartouche` et `soiree/telecommande` :
 - Un changement dans une brique se voit tout de suite dans les jeux, sans étiquette ni push.
 - Le jeu compile ici avec une console que les amis n'ont pas. Chez eux, c'est l'étiquette qui compte.
 - L'étiquette nommée dans le `Cargo.toml` du jeu doit exister sur GitHub : Cargo la récupère avant d'appliquer le `[patch]`.

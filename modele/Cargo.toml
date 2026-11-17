@@ -9,13 +9,19 @@ rust-version = "1.99"
 publish = false
 
 [workspace.dependencies]
-# La brique « télécommande » de la console : le lien entre le jeu, l'écran et
-# les téléphones. Tu peux t'en passer et faire autrement.
+# Les deux briques de la console. `cartouche` est le contrat que la machine
+# remplit ; `telecommande` est le programme : elle fait tourner la machine,
+# sert les pages et relie les téléphones.
+cartouche = { path = "../cartouche" }
 telecommande = { path = "../telecommande" }
 machine = { path = "machine" }
 messages = { path = "messages" }
 # Sans ses options par défaut : la machine et les messages se compilent sans système.
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+# Un dépassement d'entier arrête le banc au lieu de passer en silence, même en release.
+[profile.release]
+overflow-checks = true
 
 # Le linteur de la console : la table `[workspace.lints]` de chaque jeu.
 # Copié par `soiree rules`, vérifié par `soiree check`.

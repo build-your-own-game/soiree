@@ -1,24 +1,11 @@
-//! Le côté ordinateur : servir les pages et parler avec elles.
-//!
-//! ```ignore
-//! let pages = telecommande::pages::build(Path::new(env!("CARGO_MANIFEST_DIR")), "pages")?;
-//! let room = Room::<Up, Down>::open(&pages, "/t")?;
-//! loop {
-//!     match room.next(Duration::from_millis(100)) {
-//!         Some(Event::Joined { id, role }) => { /* montre-lui ce qu'il doit voir */ }
-//!         Some(Event::Message { id, message }) => { /* un geste */ }
-//!         Some(Event::Left { id }) => { /* parti, peut-être pour quelques secondes */ }
-//!         None => { /* le temps passe */ }
-//!     }
-//! }
-//! ```
+//! Le côté ordinateur : servir les pages et parler avec elles. Un détail de
+//! la brique : [`crate::console`] s'en sert, les jeux n'y touchent pas.
 //!
 //! `Joined` arrive à chaque connexion, y compris quand une page revient après
-//! une coupure : renvoie-lui alors ce qu'elle doit afficher.
+//! une coupure : la console lui renvoie alors ce qu'elle doit afficher.
 
 use std::collections::BTreeMap;
 use std::io;
-use std::marker::PhantomData;
 use std::net::{IpAddr, TcpListener, ToSocketAddrs as _, UdpSocket};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -35,15 +22,14 @@ use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use qrcode::QrCode;
 use qrcode::render::svg;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::tls::{self, Identity};
-use crate::{Id, REPLACED, Role};
+use crate::{REPLACED, Role};
 
 /// Le port quand la console n'en donne pas (chez toi, pendant que tu codes).
 const DEFAULT_PORT: u16 = 8080;
@@ -52,20 +38,20 @@ const HEARTBEAT: Duration = Duration::from_secs(3);
 /// Une page muette aussi longtemps est partie : téléphone en veille, Wi-Fi perdu.
 const SILENCE: Duration = Duration::from_secs(10);
 
-/// Ce qui arrive au jeu.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Event<Up> {
-    /// Une page vient de se connecter, pour la première fois ou de nouveau.
-    Joined { id: Id, role: Role },
-    /// Une page a envoyé un message.
-    Message { id: Id, message: Up },
-    /// Une page n'est plus là.
-    Left { id: Id },
-}
+/// Une page, reconnue d'une connexion à l'autre : un téléphone qui se met en
+/// veille puis revient garde le même `Id`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Id(pub u64);
 
-enum Raw {
+/// Ce qui arrive au jeu. Le texte d'une page est laissé tel quel : la console
+/// le garde pour le journal avant de le lire.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Event {
+    /// Une page vient de se connecter, pour la première fois ou de nouveau.
     Joined(Id, Role),
+    /// Une page a envoyé un texte.
     Text(Id, String),
+    /// Une page n'est plus là.
     Left(Id),
 }
 
@@ -77,7 +63,7 @@ struct Peer {
 struct Shared {
     peers: Mutex<BTreeMap<Id, Peer>>,
     connections: AtomicU64,
-    events: mpsc::Sender<Raw>,
+    events: mpsc::Sender<Event>,
     qr: String,
 }
 
@@ -86,15 +72,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Le jeu, ouvert aux pages.
-pub struct Room<Up, Down> {
+pub(crate) struct Room {
     shared: Arc<Shared>,
-    events: mpsc::Receiver<Raw>,
+    events: mpsc::Receiver<Event>,
     remote_url: String,
-    screen_url: String,
-    messages: PhantomData<fn(Down) -> Up>,
 }
 
-impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
+impl Room {
     /// Sert le dossier `pages` et attend les connexions.
     ///
     /// Le port est celui que donne la console (la variable `PORT`). L'adresse
@@ -111,7 +95,7 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
     ///
     /// Un chemin qui n'est pas un fichier du dossier reçoit `index.html` : une
     /// seule page peut donc être l'écran à `/` et la télécommande à `/t`.
-    pub fn open(pages: &Path, remote_path: &str) -> io::Result<Self> {
+    pub(crate) fn open(pages: &Path, remote_path: &str) -> io::Result<Self> {
         let port = port()?;
         let listener = TcpListener::bind(("0.0.0.0", port))?;
         listener.set_nonblocking(true)?;
@@ -168,49 +152,28 @@ impl<Up: DeserializeOwned, Down: Serialize> Room<Up, Down> {
             shared,
             events,
             remote_url,
-            screen_url,
-            messages: PhantomData,
         })
     }
 
     /// Le prochain événement, ou `None` si rien n'arrive pendant `wait`.
-    pub fn next(&self, wait: Duration) -> Option<Event<Up>> {
+    pub(crate) fn next(&self, wait: Duration) -> Option<Event> {
         let deadline = Instant::now().checked_add(wait)?;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.events.recv_timeout(left).ok()? {
-                Raw::Joined(id, role) => return Some(Event::Joined { id, role }),
-                Raw::Left(id) => return Some(Event::Left { id }),
-                Raw::Text(id, text) => match serde_json::from_str(&text) {
-                    Ok(message) => return Some(Event::Message { id, message }),
-                    Err(error) => eprintln!("message illisible de {id:?} : {error}"),
-                },
-            }
-        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        self.events.recv_timeout(left).ok()
     }
 
-    /// Envoie un message à une page. Sans effet si elle n'est pas connectée :
-    /// elle recevra ce qu'il faut à son prochain `Joined`.
-    pub fn send(&self, to: Id, message: &Down) {
-        match serde_json::to_string(message) {
-            Ok(text) => {
-                if let Some(peer) = lock(&self.shared.peers).get(&to) {
-                    let _: Result<(), SendError<String>> = peer.outbox.send(text);
-                }
-            }
-            Err(error) => eprintln!("message impossible à écrire : {error}"),
+    /// Envoie un texte déjà écrit à une page. Sans effet si elle n'est pas
+    /// connectée : elle recevra ce qu'il faut à son prochain `Joined`.
+    pub(crate) fn send(&self, to: Id, text: String) {
+        if let Some(peer) = lock(&self.shared.peers).get(&to) {
+            let _: Result<(), SendError<String>> = peer.outbox.send(text);
         }
     }
 
     /// L'adresse que les téléphones ouvrent. Le QR code de cette adresse est
     /// servi à `/qr.svg` : `<img src="/qr.svg">` suffit à l'afficher.
-    pub fn remote_url(&self) -> &str {
+    pub(crate) fn remote_url(&self) -> &str {
         &self.remote_url
-    }
-
-    /// L'adresse de l'écran, sur cet ordinateur.
-    pub fn screen_url(&self) -> &str {
-        &self.screen_url
     }
 }
 
@@ -337,7 +300,7 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
     let connection = shared.connections.fetch_add(1, Ordering::Relaxed);
     let (outbox, mut outgoing) = unbounded_channel::<String>();
     let _: Option<Peer> = lock(&shared.peers).insert(id, Peer { connection, outbox });
-    let _: Result<(), mpsc::SendError<Raw>> = shared.events.send(Raw::Joined(id, role));
+    let _: Result<(), mpsc::SendError<Event>> = shared.events.send(Event::Joined(id, role));
     let (mut sink, mut stream) = socket.split();
     let mut beat = tokio::time::interval(HEARTBEAT);
     let mut heard = tokio::time::Instant::now();
@@ -362,8 +325,8 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
             incoming = stream.next() => match incoming {
                 Some(Ok(Message::Text(text))) => {
                     heard = tokio::time::Instant::now();
-                    let _: Result<(), mpsc::SendError<Raw>> =
-                        shared.events.send(Raw::Text(id, text.as_str().to_owned()));
+                    let _: Result<(), mpsc::SendError<Event>> =
+                        shared.events.send(Event::Text(id, text.as_str().to_owned()));
                 }
                 Some(Ok(Message::Binary(_) | Message::Ping(_) | Message::Pong(_))) => {
                     heard = tokio::time::Instant::now();
@@ -386,6 +349,6 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
     {
         let _: Option<Peer> = peers.remove(&id);
         drop(peers);
-        let _: Result<(), mpsc::SendError<Raw>> = shared.events.send(Raw::Left(id));
+        let _: Result<(), mpsc::SendError<Event>> = shared.events.send(Event::Left(id));
     }
 }
