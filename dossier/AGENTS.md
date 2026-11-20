@@ -43,6 +43,18 @@ Réinstalle-le après chaque changement dans `soiree/regles/` ou `soiree/outil/`
 
 `soiree games`, lancé ici, récupère dans `games/` tous les jeux de l'organisation et dit lesquels passent la vérification. `soiree help` liste le reste.
 
+## L'étagère, le soir de la soirée
+
+`soiree play`, lancé ici, ouvre l'étagère dans le navigateur : la jaquette de chaque jeu, et un clic pour le lancer.
+
+- **Au démarrage**, elle récupère les jeux, vérifie chacun et range de quoi le lancer sans rien compiler (`games/.etagere/`). La première fois prend plusieurs minutes par jeu ; ensuite, un jeu qui n'a pas changé est prêt tout de suite. Lance-la avant que les invités arrivent.
+- **Pendant la soirée**, rien ne bouge : ce qu'un ami pousse sur GitHub ne change pas le jeu rangé.
+- **Mettre un jeu à jour** : la touche M sur l'étagère, ou `soiree maj <jeu>` dans un autre terminal. Le dossier `games/<jeu>` est pris tel qu'il est s'il a des changements locaux, sinon mis à jour depuis GitHub. L'ancienne version reste jouable, et n'est remplacée que si la nouvelle passe la vérification.
+- **Dans un jeu**, Échap maintenu ouvre le menu de la console (un appui court reste au jeu) : reprendre, recommencer, quitter vers l'étagère. Le jeu est en pause pour tout le monde tant qu'il est ouvert.
+- **Les téléphones** scannent le QR code du premier jeu, puis gardent la page ouverte : le jeu suivant y arrive. Ils passent tous par l'étagère, qui les amène au jeu en cours : au premier lancement, macOS demande une fois si `soiree` peut recevoir des connexions. Réponds oui, sinon aucun téléphone n'arrive.
+
+Lance-la depuis un terminal ouvert dans ce dossier : c'est lui qui donne aux jeux le certificat du HTTPS (voir plus bas).
+
 ## La console et les jeux, côte à côte
 
 Un jeu emprunte les deux briques de la console par étiquette git, ici comme chez les amis :

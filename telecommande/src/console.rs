@@ -13,6 +13,7 @@
 //! brancher sur la salle, l'horloge, le disque et les portes
 //! ([`crate::doors`]).
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs::{self, File, OpenOptions};
@@ -23,10 +24,12 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cartouche::journal::Line;
-use cartouche::{ASKS_MAX, Answer, Ask, Date, Input, Machine, Page, To, fingerprint, take_notes};
+use cartouche::{
+    ASKS_MAX, Answer, Ask, Date, Input, Machine, Page, Role, To, fingerprint, take_notes,
+};
 
 use crate::doors::Doors;
-use crate::host::{Event, Id, Opening, Room};
+use crate::host::{Event, Id, Opening, Order, Room};
 use crate::{Welcome, Wire};
 
 /// Le plus court écart entre deux vues envoyées à une page : au plus soixante
@@ -41,6 +44,8 @@ const MARK_EVERY: u64 = 50;
 /// Au-delà, les plus vieux journaux s'effacent au lancement.
 const JOURNAL_LIMIT: u64 = 200_000_000;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+/// Le temps laissé aux pages pour apprendre que le jeu ferme.
+const FAREWELL: Duration = Duration::from_millis(400);
 
 /// Fait tourner le jeu dont la machine est `M`. Ne rend la main que si le jeu
 /// ne peut pas démarrer (les pages ne compilent pas, le port est pris).
@@ -109,6 +114,8 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
     };
     let mut doors = Doors::new(room.answers(), room.store(), folder.join("sauvegardes"));
     let mut session = Session::new(woken.machine, &welcome, Instant::now(), first_tick);
+    let menu = Menu::of::<M>(&workspace, game, stamp, folder.join("journal"));
+    room.announce(menu.state());
     loop {
         let wake = [
             session.next_wake(),
@@ -127,6 +134,10 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
             Some(Event::Text(id, text)) => session.message(id.0, &text, now),
             Some(Event::Left(id)) => session.left(id.0, now),
             Some(Event::Answer(serial, answer)) => session.answered(serial, answer, now),
+            Some(Event::Order(order)) => {
+                let keeper = keeper.as_mut();
+                obey(order, &mut session, &mut journal, keeper, &menu, &room, now)
+            }
             None => Out::default(),
         };
         out.extend(session.advance(now));
@@ -135,13 +146,7 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
             if happened || session.ticks() != before {
                 keeper.touch();
             }
-            keeper.keep(now, || {
-                Kept {
-                    ticks: session.ticks(),
-                    state: session.machine().save(),
-                }
-                .file()
-            });
+            keeper.keep(now, || kept(&session));
         }
         // Rien n'est prévu : le jeu attend. Ce qui est écrit doit être sur le
         // disque si on l'arrête maintenant.
@@ -150,6 +155,177 @@ fn serve<M: Machine>(manifest_dir: &Path) -> io::Result<Infallible> {
             journal.flush();
         }
     }
+}
+
+/// Le fichier de l'état gardé, tel qu'il est maintenant.
+fn kept<M: Machine>(session: &Session<M>) -> Vec<u8> {
+    Kept {
+        ticks: session.ticks(),
+        state: session.machine().save(),
+    }
+    .file()
+}
+
+/// Fait ce que l'hôte a choisi dans le menu de la console.
+fn obey<M: Machine>(
+    order: Order,
+    session: &mut Session<M>,
+    journal: &mut Journal,
+    keeper: Option<&mut Keeper>,
+    menu: &Menu,
+    room: &Room,
+    now: Instant,
+) -> Out {
+    match order {
+        Order::Pause => {
+            menu.open.set(true);
+            session.pause(now, Hears::Nobody);
+            room.announce(menu.state());
+            Out::default()
+        }
+        Order::Hold => {
+            menu.held.set(true);
+            if !menu.open.get() {
+                session.pause(now, Hears::Screens);
+            }
+            room.announce(menu.state());
+            Out::default()
+        }
+        Order::Resume | Order::Release => {
+            if order == Order::Resume {
+                menu.open.set(false);
+            } else {
+                menu.held.set(false);
+            }
+            room.announce(menu.state());
+            // Le temps ne reprend que si ni le menu ni le jeu ne le tiennent.
+            if menu.open.get() {
+                Out::default()
+            } else if menu.held.get() {
+                session.pause(now, Hears::Screens);
+                Out::default()
+            } else {
+                session.resume(now)
+            }
+        }
+        Order::Restart if menu.restarts => {
+            journal.write(session.settle().as_slice());
+            journal.flush();
+            let relaunched = SystemTime::now();
+            let seed = seed(relaunched);
+            *journal = Journal::open(&menu.journals, &stamp(relaunched));
+            journal.write(&[Line::start(&menu.game, seed, M::TICKS_PER_SECOND, None)]);
+            journal.flush();
+            menu.open.set(false);
+            menu.held.set(false);
+            room.announce(menu.state());
+            session.restart(M::new(seed), now)
+        }
+        Order::Quit if menu.shelf.is_some() => {
+            journal.write(session.settle().as_slice());
+            journal.flush();
+            if let Some(keeper) = keeper {
+                keeper.keep_now(now, || kept(session));
+            }
+            menu.closed.set(true);
+            room.announce(menu.state());
+            std::thread::sleep(FAREWELL);
+            std::process::exit(0);
+        }
+        // Ce que ce jeu ne propose pas dans son menu.
+        Order::Restart | Order::Quit => Out::default(),
+    }
+}
+
+/// Qui la machine écoute encore pendant que le temps est arrêté.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Hears {
+    /// Tout le monde : le jeu se joue.
+    Everyone,
+    /// Les écrans seulement : c'est le jeu qui a demandé la pause, et son
+    /// écran doit pouvoir en sortir (arrêter le match, par exemple).
+    Screens,
+    /// Personne : le menu de la console est ouvert.
+    Nobody,
+}
+
+/// Ce que le menu de la console sait de ce jeu.
+struct Menu {
+    /// Le nom du jeu : celui de son dossier.
+    game: String,
+    /// Le titre du jeu, tel que son `Cargo.toml` le donne à l'étagère.
+    title: String,
+    /// Ce qui distingue ce lancement de tout autre à la même adresse : une
+    /// page qui en voit un autre (le jeu suivant de la soirée) repart de zéro.
+    party: String,
+    /// Le menu propose de recommencer la partie.
+    restarts: bool,
+    /// Le jeu a des télécommandes : le menu montre leur QR code.
+    remotes: bool,
+    /// L'adresse de l'étagère, quand c'est elle qui a lancé le jeu
+    /// (`SOIREE_ETAGERE`) : le menu propose alors de quitter le jeu.
+    shelf: Option<String>,
+    /// Le dossier des journaux : une partie recommencée a le sien.
+    journals: PathBuf,
+    /// Le menu de la console est ouvert.
+    open: Cell<bool>,
+    /// Le jeu a demandé la pause (`telecommande::web::pause`).
+    held: Cell<bool>,
+    /// Le jeu ferme : l'écran retourne à l'étagère.
+    closed: Cell<bool>,
+}
+
+impl Menu {
+    fn of<M: Machine>(workspace: &Path, game: String, party: String, journals: PathBuf) -> Self {
+        let manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap_or_default();
+        Self {
+            title: title(&manifest).unwrap_or_else(|| game.clone()),
+            game,
+            party,
+            // Un jeu dont la console garde l'état décide lui-même quand il
+            // repart de zéro : le menu ne l'efface pas à sa place.
+            restarts: !M::REMEMBERS,
+            remotes: M::REMOTES,
+            shelf: std::env::var("SOIREE_ETAGERE")
+                .ok()
+                .filter(|shelf| !shelf.trim().is_empty()),
+            journals,
+            open: Cell::new(false),
+            held: Cell::new(false),
+            closed: Cell::new(false),
+        }
+    }
+
+    /// Ce que la console dit aux pages, pour `menu.js`.
+    fn state(&self) -> String {
+        serde_json::json!({
+            "partie": format!("{} {}", self.game, self.party),
+            "jeu": self.title,
+            "pause": self.open.get(),
+            "tenu": self.held.get(),
+            "ferme": self.closed.get(),
+            "recommencer": self.restarts,
+            "qr": self.remotes,
+            "etagere": self.shelf,
+        })
+        .to_string()
+    }
+}
+
+/// Le titre du jeu dans son `Cargo.toml` : la ligne `titre = "…"` de sa
+/// section `metadata.soiree`.
+fn title(manifest: &str) -> Option<String> {
+    let mut lines = manifest
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| !(line.starts_with('[') && line.ends_with(".metadata.soiree]")))
+        .skip(1)
+        .take_while(|line| !line.starts_with('['));
+    let value = lines.find_map(|line| {
+        let rest = line.strip_prefix("titre")?.trim_start().strip_prefix('=')?;
+        rest.trim().strip_prefix('"')?.split('"').next()
+    })?;
+    (!value.is_empty()).then(|| value.to_owned())
 }
 
 /// Porte ce que la session a décidé : aux pages, aux portes, au journal, sur
@@ -331,6 +507,10 @@ pub(crate) struct Session<M: Machine> {
     /// On a déjà dit que la machine demande trop à la fois.
     crowded: bool,
     since_mark: SinceMark,
+    /// Le menu de la console est ouvert depuis ce moment : le temps ne passe
+    /// plus, et ce que les pages envoient est jeté.
+    paused: Option<Instant>,
+    hears: Hears,
     out: Out,
 }
 
@@ -355,8 +535,62 @@ impl<M: Machine> Session<M> {
             listened: false,
             crowded: false,
             since_mark: SinceMark::default(),
+            paused: None,
+            hears: Hears::Everyone,
             out: Out::default(),
         }
+    }
+
+    /// Le menu de la console s'ouvre : le jeu se fige. La machine n'en sait
+    /// rien : elle ne reçoit ni pas ni commande tant qu'il est ouvert.
+    pub(crate) fn pause(&mut self, now: Instant, hears: Hears) {
+        if self.paused.is_none() {
+            self.paused = Some(now);
+        }
+        self.hears = hears;
+    }
+
+    /// Le menu se ferme : le temps reprend où il s'était arrêté, et chaque
+    /// page reçoit sa vue avec le numéro du pas, pour recaler ce qu'elle
+    /// dessinait toute seule (un compte à rebours).
+    pub(crate) fn resume(&mut self, now: Instant) -> Out {
+        self.hears = Hears::Everyone;
+        if let Some(since) = self.paused.take() {
+            let frozen = now.saturating_duration_since(since);
+            self.clock.start = self.clock.start.checked_add(frozen).unwrap_or(now);
+            for present in self.pages.values_mut() {
+                present.fresh = true;
+            }
+            self.refresh();
+            self.flush_views(now);
+        }
+        std::mem::take(&mut self.out)
+    }
+
+    /// Une partie neuve, pour les pages déjà là : chacune arrive dans la
+    /// nouvelle machine. Les demandes de l'ancienne partie sont oubliées, et
+    /// leurs réponses avec.
+    pub(crate) fn restart(&mut self, machine: M, now: Instant) -> Out {
+        let pages: Vec<Page> = self.pages.values().map(|present| present.page).collect();
+        self.machine = machine;
+        self.clock = Clock {
+            start: now,
+            ticks_per_second: M::TICKS_PER_SECOND,
+            base: 0,
+            played: 0,
+            dropped: 0,
+        };
+        self.pages.clear();
+        self.asked.clear();
+        self.listened = false;
+        self.since_mark = SinceMark::default();
+        self.paused = None;
+        self.hears = Hears::Everyone;
+        let mut out = std::mem::take(&mut self.out);
+        for page in pages {
+            out.extend(self.joined(page, now));
+        }
+        out
     }
 
     pub(crate) fn machine(&self) -> &M {
@@ -413,6 +647,15 @@ impl<M: Machine> Session<M> {
                 .push(format!("message d'une page inconnue ({id}) : ignoré"));
             return std::mem::take(&mut self.out);
         };
+        // En pause : rien n'est gardé pour la reprise.
+        let heard = match self.hears {
+            Hears::Everyone => true,
+            Hears::Screens => page.role == Role::Screen,
+            Hears::Nobody => false,
+        };
+        if !heard {
+            return std::mem::take(&mut self.out);
+        }
         let read = serde_json::from_str::<serde_json::Value>(text).and_then(|command| {
             serde_json::from_value::<M::Command>(command.clone()).map(|parsed| (command, parsed))
         });
@@ -460,7 +703,11 @@ impl<M: Machine> Session<M> {
     /// Le temps a passé jusqu'à `now` : joue les pas qui sont dus, et envoie
     /// les vues qui attendaient leur tour.
     pub(crate) fn advance(&mut self, now: Instant) -> Out {
-        let due = self.clock.catch_up(now);
+        let due = if self.paused.is_some() {
+            0
+        } else {
+            self.clock.catch_up(now)
+        };
         let rate = u64::from(M::TICKS_PER_SECOND);
         for _ in 0..due {
             self.apply(Input::Tick);
@@ -486,7 +733,7 @@ impl<M: Machine> Session<M> {
         self.pages
             .values()
             .filter_map(Present::ready_at)
-            .chain(self.clock.next_at())
+            .chain(self.clock.next_at().filter(|_| self.paused.is_none()))
             .min()
     }
 
@@ -770,6 +1017,13 @@ impl Keeper {
         self.last.and_then(|last| last.checked_add(SAVE_GAP))
     }
 
+    /// Écrit l'état tout de suite, sans attendre l'écart : le jeu ferme.
+    fn keep_now(&mut self, now: Instant, file: impl FnOnce() -> Vec<u8>) {
+        self.touched = true;
+        self.last = None;
+        self.keep(now, file);
+    }
+
     fn keep(&mut self, now: Instant, file: impl FnOnce() -> Vec<u8>) {
         if !self.touched {
             return;
@@ -972,7 +1226,7 @@ fn stamp(now: SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use cartouche::journal::{read, replay};
-    use cartouche::{Role, State, To};
+    use cartouche::{State, To};
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -1153,6 +1407,79 @@ mod tests {
         // Le texte écrit à la main est bien celui de `Wire::View`.
         let wire: Wire<u64, ()> = serde_json::from_str(&view_text(3, "7")).unwrap();
         assert_eq!(wire, Wire::View { tick: 3, view: 7 });
+    }
+
+    #[test]
+    fn while_the_console_menu_is_open_time_stops_and_commands_are_dropped() {
+        let start = Instant::now();
+        let mut session = Session::new(Toy::<10>::new(1), &welcome(), start, 0);
+        let ada = Page::remote(1);
+        let _: Out = session.joined(ada, start);
+        let _: Out = session.advance(after(start, 100));
+        let _: Out = session.advance(after(start, 200));
+        assert_eq!(session.ticks(), 2);
+
+        session.pause(after(start, 250), Hears::Nobody);
+        assert_eq!(session.next_wake(), None);
+        let out = session.message(1, "\"Tap\"", after(start, 300));
+        assert_eq!(out, Out::default());
+        let out = session.advance(after(start, 5_000));
+        assert_eq!(out, Out::default());
+        assert_eq!(session.ticks(), 2);
+        assert_eq!(session.machine().taps, 0);
+
+        // À la reprise, la machine n'a rien vu : le temps repart d'où il
+        // était, et la page reçoit sa vue avec le numéro du pas.
+        let out = session.resume(after(start, 5_250));
+        assert_eq!(out.sends, [(ada, view(2, 0))]);
+        assert_eq!(out.lines, []);
+        let _: Out = session.advance(after(start, 5_299));
+        assert_eq!(session.ticks(), 2);
+        let _: Out = session.advance(after(start, 5_300));
+        assert_eq!(session.ticks(), 3);
+    }
+
+    #[test]
+    fn the_menu_shows_the_title_the_game_gives_the_shelf() {
+        let manifest = "[workspace]\nmembers = []\n\n[workspace.metadata.soiree]\n\
+                        titre = \"Course de canards\"\njoueurs = [2, 8]\n\n[workspace.package]\n";
+        assert_eq!(title(manifest).as_deref(), Some("Course de canards"));
+        assert_eq!(title("[package]\ntitre = \"non\"\n"), None);
+    }
+
+    #[test]
+    fn while_the_game_holds_time_only_the_screen_is_heard() {
+        let start = Instant::now();
+        let mut session = Session::new(Toy::<0>::new(1), &welcome(), start, 0);
+        let (tv, ada) = (Page::screen(1), Page::remote(2));
+        let _: Out = session.joined(tv, start);
+        let _: Out = session.joined(ada, start);
+        session.pause(after(start, 100), Hears::Screens);
+        let _: Out = session.message(2, "\"Tap\"", after(start, 200));
+        assert_eq!(session.machine().taps, 0);
+        let _: Out = session.message(1, "\"Tap\"", after(start, 300));
+        assert_eq!(session.machine().taps, 1);
+    }
+
+    #[test]
+    fn a_restart_is_a_new_game_for_the_pages_already_there() {
+        let start = Instant::now();
+        let mut session = Session::new(Toy::<0>::new(1), &welcome(), start, 0);
+        let ada = Page::remote(1);
+        let _: Out = session.joined(ada, start);
+        let _: Out = session.message(1, "\"Tap\"", after(start, 100));
+        assert_eq!(session.machine().taps, 1);
+        session.pause(after(start, 200), Hears::Nobody);
+
+        let out = session.restart(Toy::<0>::new(2), after(start, 500));
+        assert_eq!(session.machine().seed, 2);
+        assert_eq!(session.machine().taps, 0);
+        assert_eq!(session.machine().here, [ada]);
+        assert_eq!(to(&out, ada), [welcome_text(), view(0, 0)]);
+        assert!(matches!(out.lines.as_slice(), [Line::Joined { .. }]));
+        // Le menu est fermé : les commandes entrent de nouveau.
+        let _: Out = session.message(1, "\"Tap\"", after(start, 600));
+        assert_eq!(session.machine().taps, 1);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 mod cartridge;
 mod check;
+mod cover;
 mod games;
 mod machine;
 mod new;
@@ -9,6 +10,7 @@ mod plug;
 mod publish;
 mod rules;
 mod sh;
+mod shelf;
 mod wasm;
 
 use std::path::PathBuf;
@@ -40,6 +42,9 @@ Pour faire un jeu :
 Pour l'hôte :
   soiree games [dossier]     récupère tous les jeux de l'organisation (dans `games/`
                              par défaut) et dit lesquels passent la vérification
+  soiree play [dossier]      ouvre l'étagère : les jeux du dossier (`games/` par défaut),
+                             vérifiés et prêts une fois pour toutes, se lancent d'un clic
+  soiree maj <jeu>           met un jeu à jour sur l'étagère qui tourne, sans la relancer
 
   soiree version
 
@@ -57,6 +62,8 @@ fn main() -> ExitCode {
         "rules" => dir(rest).and_then(|dir| rules::run(&dir)),
         "publish" => dir(rest).and_then(|dir| publish::run(&dir)),
         "games" => games_dir(rest).and_then(|dir| games::run(&dir)),
+        "play" => games_dir(rest).and_then(|dir| shelf::run(&dir)),
+        "maj" => shelf::update(rest),
         "new" => new::run(rest),
         "rejouer" => match machine::replay_journal(rest) {
             Ok(code) => return code,

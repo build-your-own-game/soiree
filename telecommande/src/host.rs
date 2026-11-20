@@ -6,21 +6,23 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::net::{IpAddr, TcpListener, ToSocketAddrs as _, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, TcpListener, ToSocketAddrs as _, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
+use axum::extract::connect_info::Connected;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{DefaultBodyLimit, Path as Named, Query, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path as Named, Query, State};
 use axum::http::header::{
     CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS,
 };
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::serve::IncomingStream;
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use qrcode::QrCode;
@@ -28,6 +30,7 @@ use qrcode::render::svg;
 use serde::Deserialize;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use tokio::sync::watch;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -70,6 +73,51 @@ pub(crate) enum Event {
     /// Le monde extérieur a répondu à une demande de la machine : le numéro
     /// que la console a donné à cette demande, et la réponse.
     Answer(u64, Answer),
+    /// L'hôte a choisi quelque chose dans le menu de la console.
+    Order(Order),
+}
+
+/// Ce que l'hôte demande à la console, depuis son menu. Seule une page
+/// ouverte sur l'ordinateur de l'hôte peut le demander.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Order {
+    /// Ouvre le menu : le jeu se fige pour tout le monde.
+    Pause,
+    /// Ferme le menu : le jeu reprend.
+    Resume,
+    /// Le jeu demande la pause : le temps s'arrête, sans le menu.
+    Hold,
+    /// Le jeu rend le temps.
+    Release,
+    /// Une partie neuve, sans relancer le jeu.
+    Restart,
+    /// Ferme le jeu et rend la main à l'étagère.
+    Quit,
+}
+
+impl Order {
+    fn read(text: &str) -> Option<Self> {
+        match text {
+            "pause" => Some(Self::Pause),
+            "reprendre" => Some(Self::Resume),
+            "tenir" => Some(Self::Hold),
+            "lacher" => Some(Self::Release),
+            "recommencer" => Some(Self::Restart),
+            "quitter" => Some(Self::Quit),
+            _ => None,
+        }
+    }
+}
+
+/// D'où vient une connexion : le menu de la console ne s'ouvre que depuis
+/// l'ordinateur de l'hôte.
+#[derive(Clone, Copy, Debug)]
+struct Caller(tls::Origin);
+
+impl Connected<IncomingStream<'_, tls::Listener>> for Caller {
+    fn connect_info(stream: IncomingStream<'_, tls::Listener>) -> Self {
+        Self(*stream.remote_addr())
+    }
 }
 
 struct Peer {
@@ -85,6 +133,9 @@ struct Shared {
     /// télécommande, et aucune n'entre.
     qr: Option<String>,
     store: Arc<Store>,
+    /// Ce que le menu de la console doit montrer, écrit par la console :
+    /// chaque page le reçoit en arrivant, puis à chaque changement.
+    console: watch::Sender<String>,
 }
 
 /// Ce qu'il faut pour ouvrir le jeu aux pages.
@@ -141,20 +192,21 @@ impl Room {
             remotes,
         } = opening;
         let port = port()?;
-        let listener = TcpListener::bind(("0.0.0.0", port))?;
-        listener.set_nonblocking(true)?;
+        let relay = Relay::from_env()?;
+        let (listener, door) = listen(port, relay.as_ref())?;
         let identity = Identity::from_env()?;
+        let public = relay.as_ref().map_or(port, |relay| relay.public);
         let base = std::env::var("SOIREE_ADRESSE").map_or_else(
             |_| match &identity {
-                Some(identity) => format!("https://{}:{port}", identity.name),
-                None => format!("http://{}:{port}", lan_address()),
+                Some(identity) => format!("https://{}:{public}", identity.name),
+                None => format!("http://{}:{public}", lan_address()),
             },
             |address| address.trim_end_matches('/').to_owned(),
         );
         if let Some(identity) = &identity
             && remotes
         {
-            follow(&identity.name, port);
+            follow(&identity.name, public);
         }
         let remote_url = if remotes {
             format!("{base}{remote_path}")
@@ -173,13 +225,15 @@ impl Room {
                 None
             },
             store: Arc::new(Store::open(contents)),
+            console: watch::Sender::new(String::from("{}")),
         });
         let no_cache =
             SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
         let files = ServeDir::new(pages).fallback(ServeFile::new(pages.join("index.html")));
         let mut app = Router::new()
             .route("/ws", get(upgrade))
-            .route("/qr.svg", get(qr));
+            .route("/qr.svg", get(qr))
+            .route("/soiree/console", get(console_upgrade));
         if !remotes {
             app = app.route(remote_path, get(|| async { Html(NO_REMOTES) }));
         }
@@ -199,8 +253,13 @@ impl Room {
         let _: std::thread::JoinHandle<()> = std::thread::spawn(move || {
             let served = runtime.block_on(async move {
                 let listener = tokio::net::TcpListener::from_std(listener)?;
-                let listener = tls::Listener::new(listener, identity.as_ref())?;
-                axum::serve(listener, app).await
+                let door = door.map(tokio::net::TcpListener::from_std).transpose()?;
+                let listener = tls::Listener::new(listener, door, identity.as_ref())?;
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<Caller>(),
+                )
+                .await
             });
             if let Err(error) = served {
                 eprintln!("le serveur s'est arrêté : {error}");
@@ -240,6 +299,12 @@ impl Room {
         }
     }
 
+    /// Dit aux pages ce que le menu de la console doit montrer : un objet
+    /// JSON déjà écrit (voir `menu.rs`).
+    pub(crate) fn announce(&self, state: String) {
+        let _: String = self.shared.console.send_replace(state);
+    }
+
     /// Par où une réponse du monde extérieur arrive au jeu : elle sort de
     /// [`Room::next`] comme ce qui vient des pages, à son tour.
     pub(crate) fn answers(&self) -> mpsc::Sender<Event> {
@@ -259,6 +324,52 @@ impl Room {
     }
 }
 
+/// L'étagère reçoit les téléphones à la place du jeu (`SOIREE_RELAIS`, deux
+/// ports séparés par `:`), toujours à la même adresse d'un jeu à l'autre.
+struct Relay {
+    /// Le port que les téléphones ouvrent, sur l'étagère.
+    public: u16,
+    /// Le port, sur cet ordinateur seulement, où elle les amène au jeu.
+    door: u16,
+}
+
+/// Ouvre le port du jeu, et la porte des téléphones s'il y a un relais.
+/// Lancé par l'étagère, le jeu n'écoute que cet ordinateur : c'est elle qui
+/// reçoit les téléphones et les amène à leur porte.
+fn listen(port: u16, relay: Option<&Relay>) -> io::Result<(TcpListener, Option<TcpListener>)> {
+    let (listener, door) = match relay {
+        Some(relay) => (
+            TcpListener::bind((Ipv4Addr::LOCALHOST, port))?,
+            Some(TcpListener::bind((Ipv4Addr::LOCALHOST, relay.door))?),
+        ),
+        None => (TcpListener::bind(("0.0.0.0", port))?, None),
+    };
+    listener.set_nonblocking(true)?;
+    if let Some(door) = &door {
+        door.set_nonblocking(true)?;
+    }
+    Ok((listener, door))
+}
+
+impl Relay {
+    fn from_env() -> io::Result<Option<Self>> {
+        let Ok(text) = std::env::var("SOIREE_RELAIS") else {
+            return Ok(None);
+        };
+        text.split_once(':')
+            .and_then(|(public, door)| {
+                Some(Self {
+                    public: public.parse().ok()?,
+                    door: door.parse().ok()?,
+                })
+            })
+            .map(Some)
+            .ok_or_else(|| {
+                io::Error::other(format!("SOIREE_RELAIS n'est pas `port:port` : {text}"))
+            })
+    }
+}
+
 fn port() -> io::Result<u16> {
     match std::env::var("PORT") {
         Ok(text) => text
@@ -270,13 +381,25 @@ fn port() -> io::Result<u16> {
 
 /// L'adresse de cet ordinateur sur le réseau local. Aucun paquet n'est
 /// envoyé : on demande seulement au système par où il sortirait.
+///
+/// D'abord vers une adresse du réseau local lui-même (celle par laquelle les
+/// appareils s'y annoncent) : un VPN détourne ce qui part vers internet, pas
+/// ça. Demander par où l'on sort vers internet donnerait, sous VPN, l'adresse
+/// du tunnel, où aucun téléphone n'arrive.
 fn lan_address() -> IpAddr {
-    UdpSocket::bind(("0.0.0.0", 0))
-        .and_then(|socket| {
-            socket.connect(("192.0.2.1", 9))?;
-            socket.local_addr()
-        })
-        .map_or(IpAddr::from([127, 0, 0, 1]), |address| address.ip())
+    let toward = |target: (&str, u16)| {
+        UdpSocket::bind(("0.0.0.0", 0))
+            .and_then(|socket| {
+                socket.connect(target)?;
+                socket.local_addr()
+            })
+            .ok()
+            .map(|address| address.ip())
+            .filter(|address| !address.is_loopback() && !address.is_unspecified())
+    };
+    toward(("224.0.0.251", 9))
+        .or_else(|| toward(("192.0.2.1", 9)))
+        .unwrap_or(IpAddr::from([127, 0, 0, 1]))
 }
 
 /// En HTTPS, les téléphones arrivent par un nom : s'il ne mène pas à cet
@@ -415,6 +538,84 @@ async fn download(State(shared): State<Arc<Shared>>, Named(name): Named<String>)
         .into_response()
 }
 
+async fn console_upgrade(
+    upgrade: WebSocketUpgrade,
+    ConnectInfo(Caller(address)): ConnectInfo<Caller>,
+    State(shared): State<Arc<Shared>>,
+) -> Response {
+    // Le menu ne s'ouvre que depuis l'ordinateur de l'hôte : un téléphone
+    // sur le Wi-Fi reçoit ce qu'il doit montrer, et ne demande rien.
+    let seat = if !address.relayed && address.address.ip().is_loopback() {
+        Seat::Host
+    } else {
+        Seat::Guest
+    };
+    upgrade.on_upgrade(move |socket| console_link(socket, seat, shared))
+}
+
+/// D'où une page regarde le jeu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Seat {
+    /// Sur l'ordinateur de l'hôte : elle peut ouvrir le menu.
+    Host,
+    /// Ailleurs sur le réseau : un téléphone.
+    Guest,
+}
+
+/// Le lien du menu de la console avec une page, du début à la fin.
+async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
+    let local = seat == Seat::Host;
+    let mut state = shared.console.subscribe();
+    let (mut sink, mut stream) = socket.split();
+    let first = state.borrow_and_update().clone();
+    let hello = format!("{{\"ici\":{local}}}");
+    if sink.send(Message::Text(hello.into())).await.is_err()
+        || sink.send(Message::Text(first.into())).await.is_err()
+    {
+        return;
+    }
+    let mut beat = tokio::time::interval(HEARTBEAT);
+    // Cette page tient la pause du jeu : si elle part, le temps reprend.
+    let mut holding = false;
+    loop {
+        tokio::select! {
+            changed = state.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let text = state.borrow_and_update().clone();
+                if sink.send(Message::Text(text.into())).await.is_err() {
+                    break;
+                }
+            }
+            incoming = stream.next() => match incoming {
+                Some(Ok(Message::Text(text))) => {
+                    if let Some(order) = Order::read(text.as_str()).filter(|_| local) {
+                        holding = match order {
+                            Order::Hold => true,
+                            Order::Release => false,
+                            Order::Pause | Order::Resume | Order::Restart | Order::Quit => holding,
+                        };
+                        let _: Result<(), mpsc::SendError<Event>> =
+                            shared.events.send(Event::Order(order));
+                    }
+                }
+                Some(Ok(Message::Binary(_) | Message::Ping(_) | Message::Pong(_))) => {}
+                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
+            },
+            _ = beat.tick() => {
+                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    if holding {
+        let _: Result<(), mpsc::SendError<Event>> =
+            shared.events.send(Event::Order(Order::Release));
+    }
+}
+
 #[derive(Deserialize)]
 struct Hello {
     id: u64,
@@ -490,5 +691,17 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
         let _: Option<Peer> = peers.remove(&id);
         drop(peers);
         let _: Result<(), mpsc::SendError<Event>> = shared.events.send(Event::Left(id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_orders_of_the_menu_are_read() {
+        assert_eq!(Order::read("pause"), Some(Order::Pause));
+        assert_eq!(Order::read("quitter"), Some(Order::Quit));
+        assert_eq!(Order::read("{\"Tap\":1}"), None);
     }
 }

@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde::Deserialize;
 
 use crate::rules::{self, Metadata};
-use crate::{cartridge, machine, plug};
+use crate::{cartridge, cover, machine, plug};
 
 /// Les dossiers qu'on ne fouille pas : ce qui se fabrique, et l'historique.
 const SKIPPED: [&str; 3] = ["target", ".git", "node_modules"];
@@ -67,6 +67,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
         "le jeu a des pages et un seul programme",
         cartridge::program_and_pages(&metadata),
     );
+    let _: bool = report.step("le jeu a un titre et une jaquette", cover::check(&root));
     let _: bool = report.step("tout est en Rust", only_rust(&root));
     let _: bool = report.step(
         "le formatage",

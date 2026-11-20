@@ -12,8 +12,11 @@
 //!   chronomètre les parties. Un exemple `empreinte` du jeu, s'il en a un, est
 //!   lancé comme le banc sans argument.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use crate::cartridge::{self, BENCH};
 use crate::rules::{Metadata, Package};
@@ -31,6 +34,8 @@ const GLAM_FEATURES: [&str; 2] = ["libm", "scalar-math"];
 /// La brique dont la machine remplit le contrat, et l'option du banc.
 const CARTOUCHE: &str = "cartouche";
 const BENCH_FEATURE: &str = "bench";
+/// Ce qu'on demande au banc pour qu'il joue une seule de ses parties courtes.
+const ONE_SHORT: &str = "--courte";
 
 /// Le jeu a une machine, une seule, et elle a de quoi se faire vérifier.
 pub fn declared(metadata: &Metadata) -> Result<(), String> {
@@ -377,7 +382,7 @@ fn compare(metadata: &Metadata, machine: &Package, example: Example) -> Result<(
         );
         return Ok(());
     }
-    let web = wasm::run(&bytes).map_err(|error| {
+    let web = web(root, name, example, &bytes, &first).map_err(|error| {
         format!("  En WebAssembly, `{file_name}` de la machine {name} s'arrête :\n  {error}")
     })?;
     if let Some(difference) = difference(&first, &web) {
@@ -403,6 +408,88 @@ fn compare(metadata: &Metadata, machine: &Package, example: Example) -> Result<(
     }
     let _: std::io::Result<()> = std::fs::write(&memo, proof);
     Ok(())
+}
+
+/// Ce que l'exemple affiche en WebAssembly.
+///
+/// L'interpréteur est lent. Un banc qui sait jouer une partie à la fois
+/// (`--sait parties`) est lancé une fois par partie, ensemble sur tous les
+/// cœurs : chaque lancement a sa mémoire à lui, et leurs sorties mises bout à
+/// bout, dans l'ordre, sont celles du banc entier. Sinon (un banc d'avant, ou
+/// l'exemple du jeu), le programme est lancé une fois, tel quel.
+fn web(
+    root: &Path,
+    name: &str,
+    example: Example,
+    bytes: &[u8],
+    native: &str,
+) -> Result<String, String> {
+    let program = wasm::Program::new(bytes)?;
+    let seeds = match example {
+        Example::Bench if knows_parties(root, name) => seeds(native),
+        Example::Bench | Example::Own => Vec::new(),
+    };
+    let cores = std::thread::available_parallelism().map_or(1, core::num::NonZero::get);
+    let workers = cores.min(seeds.len());
+    if workers < 2 {
+        return program.run(&[]);
+    }
+    let next = AtomicUsize::new(0);
+    let told: Mutex<BTreeMap<usize, Result<String, String>>> = Mutex::new(BTreeMap::new());
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let _: std::thread::ScopedJoinHandle<'_, ()> = scope.spawn(|| {
+                loop {
+                    let rank = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(seed) = seeds.get(rank) else {
+                        break;
+                    };
+                    let party = program.run(&[ONE_SHORT, seed]);
+                    let _: Option<Result<String, String>> = told
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(rank, party);
+                }
+            });
+        }
+    });
+    // Dans l'ordre des parties ; la première qui s'arrête est celle qu'on raconte.
+    told.into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+        .into_values()
+        .collect()
+}
+
+/// Le banc de cette machine sait-il jouer une seule partie à la fois ? Un jeu
+/// qui emprunte une console d'avant a un banc qui ne le sait pas.
+fn knows_parties(root: &Path, name: &str) -> bool {
+    Command::new("cargo")
+        .current_dir(root)
+        .args(["run", "--quiet", "--release", "--package", name])
+        .args(["--example", BENCH, "--", "--sait", "parties"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Les parties du banc, d'après ce qu'il a affiché en natif : chaque ligne
+/// commence par « partie <graine>, ».
+fn seeds(native: &str) -> Vec<String> {
+    let mut seeds: Vec<String> = Vec::new();
+    for line in native.lines() {
+        let seed = line
+            .strip_prefix("partie ")
+            .and_then(|rest| rest.split_once(','))
+            .map(|(seed, _)| seed);
+        if let Some(seed) = seed
+            && seed.parse::<u64>().is_ok()
+            && seeds.last().map(String::as_str) != Some(seed)
+        {
+            seeds.push(seed.to_owned());
+        }
+    }
+    seeds
 }
 
 /// `soiree rejouer <fichier>` : le banc refait la partie d'un journal, à
@@ -519,5 +606,16 @@ mod tests {
         assert!(text.contains("d'abord : b"));
         assert!(text.contains("ensuite : x"));
         assert!(difference("a\n", "a\nb\n").unwrap().contains("(plus rien)"));
+    }
+
+    #[test]
+    fn the_parties_of_the_bench_are_read_from_its_lines() {
+        let native = "partie 0, entrée 0, pas 0 : aa, vues bb\n\
+                      partie 0, entrée 40, pas 12 : cc, vues dd\n\
+                      partie 1, entrée 0, pas 0 : ee, vues ff\n\
+                      partie 12, entrée 0, pas 0 : aa, vues bb\n";
+        assert_eq!(seeds(native), ["0", "1", "12"]);
+        // L'exemple d'un jeu affiche ce qu'il veut : aucune partie à y lire.
+        assert_eq!(seeds("étape 1 : 0123\npartie finie, bravo\n").len(), 0);
     }
 }

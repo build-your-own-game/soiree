@@ -18,8 +18,8 @@ struct Repository {
     archived: bool,
 }
 
-pub fn run(dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|error| format!("{} : {error}", dir.display()))?;
+/// Les jeux de l'organisation, par leur nom, d'après GitHub.
+pub fn listed(dir: &Path) -> Result<Vec<String>, String> {
     let listing = sh::output(
         dir,
         "gh",
@@ -42,13 +42,32 @@ pub fn run(dir: &Path) -> Result<(), String> {
     let mut repositories: Vec<Repository> =
         serde_json::from_str(&listing).map_err(|error| format!("gh repo list : {error}"))?;
     repositories.retain(|repository| !repository.archived && repository.name != CONSOLE);
-    repositories.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut names: Vec<String> = repositories
+        .into_iter()
+        .map(|repository| repository.name)
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
+/// Récupère le jeu `name` de l'organisation dans `dir`. Vrai s'il y est.
+pub fn clone(dir: &Path, name: &str) -> bool {
+    sh::quiet(
+        dir,
+        "gh",
+        &["repo", "clone", &format!("{ORG}/{name}"), name],
+    )
+}
+
+pub fn run(dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|error| format!("{} : {error}", dir.display()))?;
+    let repositories = listed(dir)?;
 
     let tool = std::env::current_exe().map_err(|error| format!("soiree : {error}"))?;
     let tool = tool.to_string_lossy();
     let (mut playable, mut refused) = (Vec::new(), Vec::new());
-    for repository in &repositories {
-        let name = repository.name.as_str();
+    for name in &repositories {
+        let name = name.as_str();
         let game = dir.join(name);
         println!("── {name}");
         if game.is_dir() {
@@ -57,11 +76,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
                     "  pas mis à jour : il a peut-être des changements locaux. Vérifié tel qu'il est ici."
                 );
             }
-        } else if !sh::quiet(
-            dir,
-            "gh",
-            &["repo", "clone", &format!("{ORG}/{name}"), name],
-        ) {
+        } else if !clone(dir, name) {
             println!("  impossible de le récupérer.");
             refused.push(name);
             continue;

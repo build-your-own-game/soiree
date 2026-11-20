@@ -425,7 +425,9 @@ mod tests {
     fn next(events: &mpsc::Receiver<Event>) -> (u64, Answer) {
         match events.recv_timeout(Duration::from_secs(10)).unwrap() {
             Event::Answer(serial, answer) => (serial, answer),
-            other @ (Event::Joined(..) | Event::Text(..) | Event::Left(_)) => panic!("{other:?}"),
+            other @ (Event::Joined(..) | Event::Text(..) | Event::Left(_) | Event::Order(_)) => {
+                panic!("{other:?}")
+            }
         }
     }
 

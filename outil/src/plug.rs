@@ -50,14 +50,14 @@ pub fn run(root: &Path) -> Result<(), String> {
     outcome
 }
 
-fn free_port() -> std::io::Result<u16> {
+pub fn free_port() -> std::io::Result<u16> {
     Ok(TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?
         .local_addr()?
         .port())
 }
 
 /// `GET /` répond 200 avec une page HTML.
-fn serves_a_page(port: u16) -> bool {
+pub fn serves_a_page(port: u16) -> bool {
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let Ok(mut stream) = TcpStream::connect_timeout(&address, ANSWER_WITHIN) else {
         return false;

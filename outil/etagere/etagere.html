@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soirée · l'étagère</title>
+<style>
+  @font-face { font-family: "Silkscreen"; src: url("/police/silkscreen.woff2") format("woff2"); font-weight: 700; }
+  @font-face { font-family: "VT323"; src: url("/police/vt323.woff2") format("woff2"); }
+  :root { --nuit: #0b0820; --fond: #05030f; --violet: #2c2450; --magenta: #ff3ea5; --cyan: #3ff2ff;
+    --or: #ffcf4a; --menthe: #7dffb2; --texte: #efe9ff; --pale: #a79fd6; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--fond); color: var(--texte); overflow: hidden; }
+  body { display: grid; grid-template-rows: auto 1fr auto; font: 500 clamp(15px, 1.5vw, 22px)/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #1a1147 0%, var(--fond) 62%); }
+  header { text-align: center; padding: 2.6vh 3vw 0;
+    font-family: "Silkscreen", monospace; letter-spacing: .14em; }
+  header h1 { font-size: clamp(22px, 2.6vw, 40px); color: #fff; text-shadow: -3px 0 0 var(--cyan), 3px 0 0 var(--magenta); }
+
+  /* Assez de marge de chaque côté pour que la carte choisie soit toujours au milieu. */
+  .rayon { --haut: min(56vh, 68vw); display: flex; gap: 2.2vw; align-items: center;
+    padding: 3vh calc(50vw - var(--haut) * .375); overflow-x: auto; scrollbar-width: none; }
+  .rayon::-webkit-scrollbar { display: none; }
+  .jeu { all: unset; position: relative; flex: none; height: var(--haut); aspect-ratio: 3 / 4; cursor: pointer;
+    border-radius: 8px; background: #160f3d; box-shadow: 0 0 0 2px var(--violet), 0 2vh 4vh rgba(0, 0, 0, .55);
+    transition: transform .14s ease-out, box-shadow .14s ease-out, filter .2s; transform: scale(.88); overflow: hidden; }
+  .jeu img { position: relative; width: 100%; height: 100%; display: block; object-fit: cover; }
+  .jeu .sans { position: absolute; inset: 0; display: grid; place-items: center; padding: 1em; text-align: center;
+    font-family: "Silkscreen", monospace; font-size: 1.3em; color: var(--pale); }
+  .jeu.choisi { transform: scale(1); box-shadow: 0 0 0 4px var(--magenta), 0 0 5vh rgba(255, 62, 165, .5), 0 2vh 4vh rgba(0, 0, 0, .6); }
+  .jeu.eteint img { filter: grayscale(1) brightness(.45); }
+  .jeu .etat { position: absolute; left: 0; right: 0; bottom: 0; padding: .5em .7em; background: rgba(0, 0, 0, .82);
+    font-family: "Silkscreen", monospace; font-size: .62em; letter-spacing: .1em; text-align: center; }
+  .etat.preparation { color: var(--or); } .etat.attente { color: var(--pale); } .etat.refuse { color: #ff6b6b; }
+  .etat.en-cours { color: var(--menthe); }
+  .etat.preparation::after { content: " ▮"; animation: clignote 1s steps(1) infinite; }
+  @keyframes clignote { 50% { opacity: 0; } }
+
+  footer { padding: 0 4vw 3vh; min-height: 20vh; text-align: center; }
+  footer h2 { font-family: "Silkscreen", monospace; font-size: clamp(24px, 3.2vw, 52px); letter-spacing: .04em; color: #fff; }
+  .joueurs { font-family: "VT323", monospace; font-size: 1.5em; color: var(--or); letter-spacing: .06em; }
+  .note { margin-top: .5em; font-size: .8em; color: var(--pale); min-height: 1.4em; }
+  .note a { color: var(--cyan); }
+  .touches { margin-top: .9em; font-family: "VT323", monospace; font-size: 1.15em; color: var(--pale); letter-spacing: .05em; }
+  .touches b { color: var(--cyan); font-weight: 400; }
+  .avis { position: fixed; top: 9vh; left: 50%; transform: translateX(-50%); max-width: 80vw; padding: .7em 1.1em; background: #3a0d1c;
+    box-shadow: 0 0 0 2px #ff6b6b; border-radius: 6px; font-size: .85em; }
+  .voile { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5, 3, 15, .9);
+    font-family: "Silkscreen", monospace; font-size: clamp(20px, 2.6vw, 40px); letter-spacing: .1em; text-align: center; }
+  .voile small { display: block; margin-top: 1em; font-family: "VT323", monospace; font-size: .7em; color: var(--pale); letter-spacing: .04em; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><h1>SOIRÉE</h1></header>
+<main class="rayon" id="rayon"></main>
+<footer>
+  <h2 id="titre">…</h2>
+  <div class="joueurs" id="joueurs"></div>
+  <p class="note" id="note"></p>
+  <p class="touches"><b>← →</b> choisir · <b>Entrée</b> jouer · <b>M</b> mettre à jour · dans un jeu, <b>Échap maintenu</b> ouvre le menu</p>
+</footer>
+<div class="avis" id="avis" hidden></div>
+<div class="voile" id="voile" hidden></div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let jeux = [];
+let enCours = null;
+let choisi = sessionStorage.getItem("choisi") || "";
+let dessine = "";
+let occupe = false;
+let vu = "";
+
+const LIBELLES = { attente: "En attente", preparation: "Préparation", refuse: "Refusé", pret: "" };
+
+function demander(chemin) {
+  return fetch(chemin, { method: "POST", headers: { "X-Soiree": "1" } }).then(async (reponse) => {
+    const corps = await reponse.json().catch(() => ({}));
+    if (!reponse.ok) throw new Error(corps.erreur || "l'étagère a refusé");
+    return corps;
+  });
+}
+
+function courant() {
+  return jeux.find((jeu) => jeu.nom === choisi) || jeux[0];
+}
+
+function choisir(nom) {
+  choisi = nom;
+  sessionStorage.setItem("choisi", nom);
+  dessiner(true);
+}
+
+function dessiner(force) {
+  const empreinte = JSON.stringify([jeux, enCours, choisi]);
+  if (!force && empreinte === dessine) return;
+  dessine = empreinte;
+  const actuel = courant();
+  const rayon = $("rayon");
+  // Les cartes ne sont refaites que si la liste change : les images ne clignotent pas.
+  if (rayon.children.length !== jeux.length || jeux.some((jeu, rang) => rayon.children[rang].dataset.nom !== jeu.nom)) {
+    rayon.replaceChildren(...jeux.map((jeu) => {
+      const carte = document.createElement("button");
+      carte.className = "jeu";
+      carte.dataset.nom = jeu.nom;
+      carte.append(Object.assign(document.createElement("div"), { className: "sans" }), document.createElement("img"),
+        Object.assign(document.createElement("div"), { className: "etat" }));
+      carte.addEventListener("click", () => (jeu.nom === choisi ? jouer() : choisir(jeu.nom)));
+      return carte;
+    }));
+  }
+  jeux.forEach((jeu, rang) => {
+    const carte = rayon.children[rang];
+    const [sans, image, etat] = carte.children;
+    const tourne = enCours && enCours.nom === jeu.nom;
+    carte.className = "jeu" + (actuel && jeu.nom === actuel.nom ? " choisi" : "") + (jeu.jouable ? "" : " eteint");
+    sans.textContent = jeu.titre;
+    const adresse = `/jaquette/${jeu.nom}?v=${jeu.version}`;
+    if (image.dataset.adresse !== adresse) {
+      image.dataset.adresse = adresse;
+      image.hidden = false;
+      image.onerror = () => { image.hidden = true; };
+      image.src = adresse;
+    }
+    image.alt = jeu.titre;
+    const libelle = tourne ? "En cours" : jeu.jouable && jeu.etat === "preparation" ? "Mise à jour" : LIBELLES[jeu.etat];
+    etat.textContent = libelle;
+    etat.className = "etat " + (tourne ? "en-cours" : jeu.etat);
+    etat.hidden = !libelle;
+  });
+  if (!actuel) return;
+  // La carte choisie reste en vue, y compris au retour d'un jeu.
+  if (vu !== actuel.nom) {
+    document.querySelector(".jeu.choisi")?.scrollIntoView({ behavior: vu ? "smooth" : "auto", inline: "center", block: "nearest" });
+    vu = actuel.nom;
+  }
+  $("titre").textContent = actuel.titre;
+  const j = actuel.joueurs;
+  $("joueurs").textContent = !j ? "" : j[1] === 1 ? "1 joueur" : j[0] === j[1] ? `${j[0]} joueurs` : `${j[0]} à ${j[1]} joueurs`;
+  const note = $("note");
+  note.textContent = actuel.etat === "pret" ? "" : actuel.note;
+  if (actuel.etat === "refuse") {
+    const lien = Object.assign(document.createElement("a"), { href: `/journal/${actuel.nom}`, target: "_blank", textContent: "voir pourquoi" });
+    note.append(" · ", lien);
+  }
+}
+
+function voile(texte, detail) {
+  const v = $("voile");
+  v.hidden = !texte;
+  v.replaceChildren(texte || "");
+  if (detail) v.append(Object.assign(document.createElement("small"), { textContent: detail }));
+}
+
+function jouer() {
+  const jeu = courant();
+  if (!jeu || occupe) return;
+  if (enCours && enCours.nom === jeu.nom) return void (location.href = enCours.adresse);
+  if (!jeu.jouable) return;
+  occupe = true;
+  voile(`${jeu.titre}`, "Le jeu s'ouvre…");
+  demander(`/lancer/${jeu.nom}`)
+    .then((reponse) => { location.href = reponse.adresse; })
+    .catch((erreur) => {
+      occupe = false;
+      voile(`${jeu.titre} ne s'ouvre pas`, `${erreur.message} · Entrée pour revenir`);
+    });
+}
+
+function mettreAJour() {
+  const jeu = courant();
+  if (jeu && jeu.etat !== "preparation") demander(`/maj/${jeu.nom}`).then(lire).catch(() => {});
+}
+
+function lire() {
+  return fetch("/etat").then((reponse) => reponse.json()).then((etat) => {
+    jeux = etat.jeux;
+    enCours = etat.en_cours;
+    $("avis").hidden = !etat.avis;
+    $("avis").textContent = etat.avis;
+    dessiner(false);
+  }).catch(() => {
+    $("avis").hidden = false;
+    $("avis").textContent = "L'étagère ne répond plus : relance `soiree play`.";
+  });
+}
+
+addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (!$("voile").hidden) {
+    if (!occupe && (event.key === "Enter" || event.key === "Escape")) voile("");
+    return;
+  }
+  const rang = Math.max(0, jeux.findIndex((jeu) => jeu.nom === (courant() || {}).nom));
+  if (event.key === "ArrowRight" && jeux.length) choisir(jeux[(rang + 1) % jeux.length].nom);
+  else if (event.key === "ArrowLeft" && jeux.length) choisir(jeux[(rang + jeux.length - 1) % jeux.length].nom);
+  else if (event.key === "Enter" || event.key === " ") jouer();
+  else if (event.key === "m" || event.key === "M") mettreAJour();
+  else return;
+  event.preventDefault();
+});
+// Revenu d'un jeu par le bouton « précédent » : la page repart d'un état neuf.
+addEventListener("pageshow", (event) => { if (event.persisted) { occupe = false; voile(""); lire(); } });
+
+lire();
+setInterval(lire, 1000);
+</script>
+</body>
+</html>

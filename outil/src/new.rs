@@ -8,7 +8,17 @@ include!(concat!(env!("OUT_DIR"), "/modele.rs"));
 /// Les briques de la console. Dans son dépôt, le jeu de départ les emprunte
 /// par leur chemin ; un jeu neuf les emprunte à la version de cet outil.
 const BRICKS: [&str; 2] = ["telecommande", "cartouche"];
-const TITLE: &str = "Mon jeu";
+/// Le titre du jeu de départ : `soiree new` le remplace partout par le nom du
+/// jeu neuf.
+pub const TITLE: &str = "Mon jeu";
+
+/// Un fichier du jeu de départ, par son chemin depuis sa racine.
+pub fn starter_file(relative: &str) -> Option<&'static [u8]> {
+    FILES
+        .iter()
+        .find(|(path, _)| *path == relative)
+        .map(|(_, bytes)| *bytes)
+}
 
 /// D'où un jeu emprunte une brique : le dépôt de la console, à l'étiquette
 /// de cette version.

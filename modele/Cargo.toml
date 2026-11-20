@@ -2,6 +2,11 @@
 resolver = "3"
 members = ["jeu", "machine", "messages", "pages"]
 
+# Ce que le jeu montre sur l'étagère de la soirée, avec `jaquette.png`.
+[workspace.metadata.soiree]
+titre = "Mon jeu"
+joueurs = [1, 8]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

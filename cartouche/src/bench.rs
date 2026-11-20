@@ -19,6 +19,12 @@
 //!
 //! `--graine <n>` rejoue une partie en racontant chaque entrée ;
 //! `--rejouer <fichier>` rejoue le journal d'une partie de soirée.
+//!
+//! Les parties ne se doivent rien l'une à l'autre : en natif, le banc les
+//! joue ensemble, une par cœur. Il se relance lui-même, une partie par
+//! processus (`--courte <n>`, `--longue <n>`), et rend ce qu'elles disent
+//! dans l'ordre des graines : la même sortie que jouées l'une après l'autre.
+//! `--sait parties` dit à `soiree check` que ce banc sait le faire.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -28,7 +34,7 @@ use std::process::ExitCode;
 use std::string::{String, ToString};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::vec::Vec;
-use std::{eprintln, println};
+use std::{eprintln, print, println};
 
 use serde::Serialize;
 
@@ -122,6 +128,11 @@ impl Timing {
         500_000_u64
             .checked_div(u64::from(M::TICKS_PER_SECOND))
             .unwrap_or(UNPACED_BUDGET)
+    }
+
+    /// Plus d'une mesure sur cent dépasse son temps.
+    fn too_slow(&self) -> bool {
+        self.slow.saturating_mul(100) > self.steps
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -223,13 +234,12 @@ pub fn main<M: Machine>() -> ExitCode {
     let outcome = match arguments.as_slice() {
         [] => short::<M>(),
         ["--long"] => long::<M>(),
-        ["--graine", seed] => match seed.parse() {
-            Ok(seed) => one::<M>(seed),
-            Err(_) => Err(Failure(format!(
-                "`{seed}` n'est pas une graine : un nombre."
-            ))),
-        },
+        ["--graine", seed] => number(seed).and_then(one::<M>),
         ["--rejouer", file] => replay::<M>(file),
+        // Ce que le banc se demande à lui-même, et ce que `soiree check` lui demande.
+        [ONE_SHORT, seed] => number(seed).and_then(short_one::<M>),
+        [ONE_LONG, seed] => number(seed).and_then(long_one::<M>),
+        ["--sait", "parties"] => Ok(()),
         _ => Err(Failure(
             "Le banc se lance sans argument, avec `--long`, avec `--graine <n>` ou avec \
              `--rejouer <fichier>`."
@@ -245,70 +255,120 @@ pub fn main<M: Machine>() -> ExitCode {
     }
 }
 
+/// Une seule partie courte, et une seule partie longue : ce que le banc se
+/// demande à lui-même pour jouer les parties ensemble.
+const ONE_SHORT: &str = "--courte";
+const ONE_LONG: &str = "--longue";
+
+/// Une graine écrite en argument.
+fn number(seed: &str) -> Result<u64, Failure> {
+    seed.parse()
+        .map_err(|_| Failure(format!("`{seed}` n'est pas une graine : un nombre.")))
+}
+
 /// Les parties que `soiree check` compare d'une machine à l'autre.
 fn short<M: Machine>() -> Result<(), Failure> {
-    let progress = Progress::default();
-    let mut timing = Timing::default();
-    for seed in 0..SHORT.parties {
-        let played = guarded(&progress, || {
-            play::<M>(
-                seed,
-                SHORT,
-                Resume::Yes,
-                Talk::Marks,
-                &progress,
-                &mut timing,
-            )
-        })?;
-        for line in played.lines {
-            println!("{line}");
+    if let Some(told) = together(ONE_SHORT, SHORT.parties) {
+        for party in told? {
+            print!("{party}");
         }
+        return Ok(());
+    }
+    for seed in 0..SHORT.parties {
+        short_one::<M>(seed)?;
     }
     Ok(())
 }
 
-/// Le banc d'essai complet.
-fn long<M: Machine>() -> Result<(), Failure> {
+/// Une des parties courtes.
+fn short_one<M: Machine>(seed: u64) -> Result<(), Failure> {
     let progress = Progress::default();
     let mut timing = Timing::default();
-    let (mut inputs, mut ticks, mut suggested, mut answers) = (0_u64, 0_u64, 0_u64, 0_u64);
-    for seed in 0..LONG.parties {
-        let resumed = guarded(&progress, || {
-            play::<M>(seed, LONG, Resume::Yes, Talk::Marks, &progress, &mut timing)
-        })?;
-        let straight = guarded(&progress, || {
-            play::<M>(seed, LONG, Resume::No, Talk::Marks, &progress, &mut timing)
-        })?;
-        if let Some((straight, resumed)) = straight
-            .lines
-            .iter()
-            .zip(&resumed.lines)
-            .find(|(straight, resumed)| straight != resumed)
-        {
-            return Err(Failure(format!(
-                "Reprise depuis sa photo, la partie {seed} ne continue pas à l'identique.\n  \
-                 d'une traite : {straight}\n  \
-                 reprise      : {resumed}\n\
-                 L'état de la machine ne tient pas tout entier dans sa photo : un champ que \
-                 `serde` saute (`#[serde(skip)]`), un état gardé hors de la machine (une \
-                 variable globale), ou un `save`/`load` écrit à la main qui oublie quelque chose.\n\
-                 Pour revoir la partie : {}",
-                again(seed)
-            )));
-        }
-        inputs = inputs.saturating_add(resumed.inputs);
-        ticks = ticks.saturating_add(resumed.ticks);
-        suggested = suggested.saturating_add(resumed.suggested);
-        answers = answers.saturating_add(resumed.answers);
+    let played = guarded(&progress, || {
+        play::<M>(
+            seed,
+            SHORT,
+            Resume::Yes,
+            Talk::Marks,
+            &progress,
+            &mut timing,
+        )
+    })?;
+    for line in played.lines {
+        println!("{line}");
     }
+    Ok(())
+}
+
+/// Ce que des parties longues laissent, mises bout à bout.
+#[derive(Default)]
+struct Totals {
+    inputs: u64,
+    ticks: u64,
+    suggested: u64,
+    answers: u64,
+    timing: Timing,
+}
+
+impl Totals {
+    fn add(&mut self, other: &Self) {
+        self.inputs = self.inputs.saturating_add(other.inputs);
+        self.ticks = self.ticks.saturating_add(other.ticks);
+        self.suggested = self.suggested.saturating_add(other.suggested);
+        self.answers = self.answers.saturating_add(other.answers);
+        self.timing.steps = self.timing.steps.saturating_add(other.timing.steps);
+        self.timing.slow = self.timing.slow.saturating_add(other.timing.slow);
+        self.timing.worst = self.timing.worst.max(other.timing.worst);
+    }
+
+    /// Ce qu'une partie jouée à part dit à celui qui l'a lancée.
+    fn line(&self) -> String {
+        format!(
+            "{} {} {} {} {} {} {}",
+            self.inputs,
+            self.ticks,
+            self.suggested,
+            self.answers,
+            self.timing.steps,
+            self.timing.slow,
+            self.timing.worst
+        )
+    }
+
+    fn read(line: &str) -> Option<Self> {
+        let mut numbers = line.split_whitespace().map(str::parse::<u64>);
+        let mut next = || numbers.next()?.ok();
+        Some(Self {
+            inputs: next()?,
+            ticks: next()?,
+            suggested: next()?,
+            answers: next()?,
+            timing: Timing {
+                steps: next()?,
+                slow: next()?,
+                worst: next()?,
+            },
+        })
+    }
+}
+
+/// Le banc d'essai complet.
+fn long<M: Machine>() -> Result<(), Failure> {
+    let (totals, apart) = match long_together() {
+        Some(totals) => (totals?, Apart::No),
+        None => (long_alone::<M>()?, Apart::Yes),
+    };
     println!(
-        "{} parties, {inputs} entrées, {ticks} pas ; {suggested} commandes suggérées par la machine.",
-        LONG.parties
+        "{} parties, {} entrées, {} pas ; {} commandes suggérées par la machine.",
+        LONG.parties, totals.inputs, totals.ticks, totals.suggested
     );
-    if answers > 0 {
-        println!("{answers} réponses du monde extérieur, données par le banc.");
+    if totals.answers > 0 {
+        println!(
+            "{} réponses du monde extérieur, données par le banc.",
+            totals.answers
+        );
     }
-    if suggested == 0 {
+    if totals.suggested == 0 {
         return Err(Failure(
             "La machine ne suggère jamais rien : `suggest` rend toujours une liste vide.\n\
              Sans suggestions, les parties du banc n'avancent pas : il ne tire que des commandes \
@@ -317,13 +377,34 @@ fn long<M: Machine>() -> Result<(), Failure> {
                 .to_string(),
         ));
     }
+    if apart == Apart::No && totals.timing.too_slow() {
+        // Jouées ensemble, les parties se disputent l'ordinateur : avant de
+        // refuser un jeu pour sa lenteur, on le mesure seul.
+        println!(
+            "Jouées ensemble, les parties se gênent : le temps des pas est mesuré à nouveau, \
+             une partie à la fois."
+        );
+        return paced::<M>(&long_alone::<M>()?.timing);
+    }
+    paced::<M>(&totals.timing)
+}
+
+/// Les parties ont-elles été jouées une à la fois ?
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Apart {
+    Yes,
+    No,
+}
+
+/// Dit le temps des pas, et refuse une machine trop lente.
+fn paced<M: Machine>(timing: &Timing) -> Result<(), Failure> {
     let budget = Timing::budget::<M>();
     println!(
         "Le pas le plus lent : {} (un pas a droit à {}).",
         millis(timing.worst),
         millis(budget)
     );
-    if timing.slow.saturating_mul(100) > timing.steps {
+    if timing.too_slow() {
         return Err(Failure(format!(
             "La machine est trop lente : {} mesures sur {} dépassent {}, la moitié du temps d'un \
              pas (la plus lente : {}).\n\
@@ -337,6 +418,160 @@ fn long<M: Machine>() -> Result<(), Failure> {
         )));
     }
     Ok(())
+}
+
+/// Les parties longues, l'une après l'autre.
+fn long_alone<M: Machine>() -> Result<Totals, Failure> {
+    let mut totals = Totals::default();
+    for seed in 0..LONG.parties {
+        totals.add(&long_party::<M>(seed)?);
+    }
+    Ok(totals)
+}
+
+/// Les parties longues, ensemble : chacune dit ses comptes sur sa dernière ligne.
+fn long_together() -> Option<Result<Totals, Failure>> {
+    let told = together(ONE_LONG, LONG.parties)?;
+    Some(told.and_then(|parties| {
+        let mut totals = Totals::default();
+        for (seed, party) in parties.iter().enumerate() {
+            let one = party.lines().last().and_then(Totals::read).ok_or_else(|| {
+                Failure(format!(
+                    "La partie {seed}, jouée à part, n'a pas rendu ses comptes."
+                ))
+            })?;
+            totals.add(&one);
+        }
+        Ok(totals)
+    }))
+}
+
+/// Une des parties longues, jouée à part : ses comptes, sur une ligne.
+fn long_one<M: Machine>(seed: u64) -> Result<(), Failure> {
+    println!("{}", long_party::<M>(seed)?.line());
+    Ok(())
+}
+
+/// Une partie longue : reprise depuis sa photo en cours de route, puis jouée
+/// d'une traite. Les deux doivent se suivre ligne à ligne.
+fn long_party<M: Machine>(seed: u64) -> Result<Totals, Failure> {
+    let progress = Progress::default();
+    let mut timing = Timing::default();
+    let resumed = guarded(&progress, || {
+        play::<M>(seed, LONG, Resume::Yes, Talk::Marks, &progress, &mut timing)
+    })?;
+    let straight = guarded(&progress, || {
+        play::<M>(seed, LONG, Resume::No, Talk::Marks, &progress, &mut timing)
+    })?;
+    if let Some((straight, resumed)) = straight
+        .lines
+        .iter()
+        .zip(&resumed.lines)
+        .find(|(straight, resumed)| straight != resumed)
+    {
+        return Err(Failure(format!(
+            "Reprise depuis sa photo, la partie {seed} ne continue pas à l'identique.\n  \
+             d'une traite : {straight}\n  \
+             reprise      : {resumed}\n\
+             L'état de la machine ne tient pas tout entier dans sa photo : un champ que \
+             `serde` saute (`#[serde(skip)]`), un état gardé hors de la machine (une \
+             variable globale), ou un `save`/`load` écrit à la main qui oublie quelque chose.\n\
+             Pour revoir la partie : {}",
+            again(seed)
+        )));
+    }
+    Ok(Totals {
+        inputs: resumed.inputs,
+        ticks: resumed.ticks,
+        suggested: resumed.suggested,
+        answers: resumed.answers,
+        timing,
+    })
+}
+
+/// Joue `parties` parties ensemble, une par cœur : le banc se relance, un
+/// processus par partie (`flag` et la graine), et rend ce que chacune a
+/// affiché, dans l'ordre des graines. Un processus par partie, pas un fil :
+/// une machine a le droit de ne pas savoir tourner à plusieurs dans le même
+/// programme, et rien de ce qu'une partie laisse ne déteint sur la suivante.
+///
+/// `None` quand il n'y a rien à gagner (un seul cœur) ou pas moyen (le banc
+/// ne retrouve pas son propre programme) : les parties se jouent alors l'une
+/// après l'autre.
+#[cfg(not(target_arch = "wasm32"))]
+fn together(flag: &str, parties: u64) -> Option<Result<Vec<String>, Failure>> {
+    use std::process::{Command, Output, Stdio};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Mutex, PoisonError};
+
+    let cores = std::thread::available_parallelism().map_or(1, core::num::NonZero::get);
+    let workers = cores.min(usize::try_from(parties).unwrap_or(usize::MAX));
+    if workers < 2 {
+        return None;
+    }
+    let program = env::current_exe().ok()?;
+    let next = AtomicU64::new(0);
+    let stopped = AtomicBool::new(false);
+    let told: Mutex<BTreeMap<u64, std::io::Result<Output>>> = Mutex::new(BTreeMap::new());
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let _: std::thread::ScopedJoinHandle<'_, ()> = scope.spawn(|| {
+                // Une partie refusée arrête la distribution : les graines plus
+                // petites, déjà parties, finissent, et la plus petite qui
+                // refuse est celle qu'on raconte.
+                while !stopped.load(Ordering::Relaxed) {
+                    let seed = next.fetch_add(1, Ordering::Relaxed);
+                    if seed >= parties {
+                        break;
+                    }
+                    let output = Command::new(&program)
+                        .arg(flag)
+                        .arg(seed.to_string())
+                        .stdin(Stdio::null())
+                        .output();
+                    if !output.as_ref().is_ok_and(|output| output.status.success()) {
+                        stopped.store(true, Ordering::Relaxed);
+                    }
+                    let _: Option<std::io::Result<Output>> = told
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(seed, output);
+                }
+            });
+        }
+    });
+    let mut told = told.into_inner().unwrap_or_else(PoisonError::into_inner);
+    let mut parts = Vec::new();
+    for seed in 0..parties {
+        match told.remove(&seed) {
+            Some(Ok(output)) if output.status.success() => {
+                parts.push(String::from_utf8_lossy(&output.stdout).into_owned());
+            }
+            // Ce que la partie a dit en s'arrêtant : son refus, tel quel.
+            Some(Ok(output)) => {
+                return Some(Err(Failure(
+                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                )));
+            }
+            Some(Err(error)) => {
+                return Some(Err(Failure(format!(
+                    "Le banc n'a pas pu se relancer pour jouer la partie {seed} : {error}"
+                ))));
+            }
+            None => {
+                return Some(Err(Failure(format!(
+                    "Le banc s'est arrêté avant de jouer la partie {seed}."
+                ))));
+            }
+        }
+    }
+    Some(Ok(parts))
+}
+
+/// En WebAssembly, pas de processus à lancer : les parties se suivent.
+#[cfg(target_arch = "wasm32")]
+fn together(_: &str, _: u64) -> Option<Result<Vec<String>, Failure>> {
+    None
 }
 
 /// Une partie, racontée entrée par entrée.
@@ -1520,5 +1755,36 @@ mod tests {
     fn microseconds_read_as_milliseconds() {
         assert_eq!(millis(4_166), "4,166 ms");
         assert_eq!(millis(50), "0,050 ms");
+    }
+
+    #[test]
+    fn a_party_played_apart_tells_its_counts_on_one_line() {
+        let party = Totals {
+            inputs: 600,
+            ticks: 54_000,
+            suggested: 321,
+            answers: 4,
+            timing: Timing {
+                steps: 60_000,
+                slow: 7,
+                worst: 1_234,
+            },
+        };
+        let mut sum = Totals::read(&party.line()).unwrap();
+        sum.add(&party);
+        assert_eq!(sum.line(), "1200 108000 642 8 120000 14 1234");
+        assert!(Totals::read("pas des comptes").is_none());
+        assert!(Totals::read("1 2 3").is_none());
+    }
+
+    #[test]
+    fn more_than_one_slow_step_in_a_hundred_is_too_slow() {
+        let timed = |slow| Timing {
+            steps: 1_000,
+            slow,
+            worst: 0,
+        };
+        assert!(!timed(10).too_slow());
+        assert!(timed(11).too_slow());
     }
 }

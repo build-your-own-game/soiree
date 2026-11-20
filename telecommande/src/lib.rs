@@ -25,6 +25,8 @@ pub mod console;
 mod doors;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod host;
+#[cfg(target_arch = "wasm32")]
+mod menu;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pages;
 #[cfg(not(target_arch = "wasm32"))]

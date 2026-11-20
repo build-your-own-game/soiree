@@ -124,6 +124,8 @@ where
     View: DeserializeOwned + 'static,
     Effect: DeserializeOwned + 'static,
 {
+    // Le menu de la console vient avec le lien : toute page d'un jeu l'a.
+    crate::menu::start();
     let on_raw = move |raw| match raw {
         Raw::Closed => on_signal(Signal::Closed),
         Raw::Text(text) => match serde_json::from_str::<Wire<View, Effect>>(&text) {
@@ -231,6 +233,22 @@ fn url(role: Role) -> Result<String, JsValue> {
         "{scheme}://{host}/ws?id={id}&role={}",
         role.as_str()
     ))
+}
+
+/// Met le jeu en pause : la console arrête le temps pour tout le monde, fige
+/// l'image et le son des pages, et les téléphones lisent « Pause ». La page
+/// montre ce qu'elle veut par-dessus : sa propre pause, ses boutons. Pendant
+/// ce temps, seules les commandes de l'écran entrent dans la machine.
+///
+/// Seule une page ouverte sur l'ordinateur de l'hôte peut le demander. La
+/// pause s'arrête avec [`resume`], ou si la page se ferme.
+pub fn pause() {
+    crate::menu::ask_console("tenir");
+}
+
+/// Rend le temps après [`pause`].
+pub fn resume() {
+    crate::menu::ask_console("lacher");
 }
 
 /// L'adresse d'un contenu confié à la console : pour un `<img src>`, un

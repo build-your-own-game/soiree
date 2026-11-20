@@ -38,7 +38,21 @@ struct Metadata {
 /// ```
 ///
 /// où `pages` est le nom du crate, ses tirets remplacés par des `_`.
+///
+/// Quand l'étagère lance un jeu qu'elle a déjà préparé, elle donne le
+/// dossier des pages dans la variable `SOIREE_PAGES` : rien n'est recompilé,
+/// le jeu s'ouvre tout de suite.
 pub fn build(manifest_dir: &Path, package: &str) -> io::Result<PathBuf> {
+    if let Some(ready) = std::env::var_os("SOIREE_PAGES").map(PathBuf::from) {
+        return if ready.join("index.html").is_file() {
+            Ok(ready)
+        } else {
+            Err(io::Error::other(format!(
+                "SOIREE_PAGES ne mène pas aux pages du jeu : {}",
+                ready.display()
+            )))
+        };
+    }
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let output = Command::new(&cargo)
         .current_dir(manifest_dir)

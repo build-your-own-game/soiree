@@ -26,18 +26,50 @@ const LENT: [&str; 8] = [
     "proc_exit",
 ];
 
-/// Ce que le programme a écrit.
+/// Ce que le programme reçoit et ce qu'il a écrit.
 #[derive(Default)]
 struct Host {
+    /// Ses arguments, le nom du programme d'abord, chacun fini par un zéro.
+    /// Aucun : le programme est lancé sans rien, pas même son nom.
+    args: Vec<Vec<u8>>,
     out: Vec<u8>,
     err: Vec<u8>,
 }
 
-/// Lance le programme et rend sa sortie standard.
-pub fn run(bytes: &[u8]) -> Result<String, String> {
-    let engine = Engine::default();
-    let module = Module::new(&engine, bytes).map_err(|error| error.to_string())?;
-    let mut linker: Linker<Host> = Linker::new(&engine);
+/// Un programme WebAssembly lu une fois, qu'on peut lancer plusieurs fois, et
+/// de plusieurs fils à la fois : chaque lancement a sa propre mémoire.
+pub struct Program {
+    engine: Engine,
+    module: Module,
+}
+
+impl Program {
+    pub fn new(bytes: &[u8]) -> Result<Self, String> {
+        let engine = Engine::default();
+        let module = Module::new(&engine, bytes).map_err(|error| error.to_string())?;
+        Ok(Self { engine, module })
+    }
+
+    /// Lance le programme avec ces arguments (aucun : tel quel) et rend sa
+    /// sortie standard.
+    pub fn run(&self, args: &[&str]) -> Result<String, String> {
+        let host = Host {
+            args: if args.is_empty() {
+                Vec::new()
+            } else {
+                core::iter::once("programme")
+                    .chain(args.iter().copied())
+                    .map(|arg| arg.bytes().chain(core::iter::once(0)).collect())
+                    .collect()
+            },
+            ..Host::default()
+        };
+        started(&self.engine, &self.module, host)
+    }
+}
+
+fn started(engine: &Engine, module: &Module, host: Host) -> Result<String, String> {
+    let mut linker: Linker<Host> = Linker::new(engine);
     lend(&mut linker).map_err(|error| error.to_string())?;
     // Tout ce que le programme demande d'autre au système l'arrête.
     for import in module.imports() {
@@ -57,9 +89,9 @@ pub fn run(bytes: &[u8]) -> Result<String, String> {
             )
             .map_err(|error| error.to_string())?;
     }
-    let mut store = Store::new(&engine, Host::default());
+    let mut store = Store::new(engine, host);
     let outcome = linker
-        .instantiate_and_start(&mut store, &module)
+        .instantiate_and_start(&mut store, module)
         .and_then(|instance| instance.get_typed_func::<(), ()>(&store, "_start"))
         .and_then(|start| start.call(&mut store, ()));
     let host = store.into_data();
@@ -157,22 +189,58 @@ fn lend(linker: &mut Linker<Host>) -> Result<(), wasmi::errors::LinkerError> {
             Ok(0)
         },
     )?;
-    // Ni variables d'environnement, ni arguments : deux listes vides.
-    for name in ["environ_sizes_get", "args_sizes_get"] {
-        let _: &mut Linker<Host> = linker.func_wrap(
-            WASI,
-            name,
-            |mut caller: Caller<'_, Host>, count: i32, size: i32| {
-                write_u32(&mut caller, count, 0)?;
-                write_u32(&mut caller, size, 0)?;
-                Ok::<i32, Error>(0)
-            },
-        )?;
-    }
-    for name in ["environ_get", "args_get"] {
-        let _: &mut Linker<Host> =
-            linker.func_wrap(WASI, name, |_: Caller<'_, Host>, _: i32, _: i32| 0_i32)?;
-    }
+    // Aucune variable d'environnement : une liste vide.
+    let _: &mut Linker<Host> = linker.func_wrap(
+        WASI,
+        "environ_sizes_get",
+        |mut caller: Caller<'_, Host>, count: i32, size: i32| {
+            write_u32(&mut caller, count, 0)?;
+            write_u32(&mut caller, size, 0)?;
+            Ok::<i32, Error>(0)
+        },
+    )?;
+    let _: &mut Linker<Host> = linker.func_wrap(
+        WASI,
+        "environ_get",
+        |_: Caller<'_, Host>, _: i32, _: i32| 0_i32,
+    )?;
+    // Les arguments : combien, et combien d'octets en tout ; puis l'adresse de
+    // chacun, et leurs octets à la suite.
+    let _: &mut Linker<Host> = linker.func_wrap(
+        WASI,
+        "args_sizes_get",
+        |mut caller: Caller<'_, Host>, count: i32, size: i32| {
+            let args = &caller.data().args;
+            let total: usize = args.iter().map(Vec::len).sum();
+            let (many, total) = (
+                u32::try_from(args.len()).map_err(|_| Error::new("trop d'arguments"))?,
+                u32::try_from(total).map_err(|_| Error::new("arguments trop longs"))?,
+            );
+            write_u32(&mut caller, count, many)?;
+            write_u32(&mut caller, size, total)?;
+            Ok::<i32, Error>(0)
+        },
+    )?;
+    let _: &mut Linker<Host> = linker.func_wrap(
+        WASI,
+        "args_get",
+        |mut caller: Caller<'_, Host>, pointers: i32, bytes: i32| {
+            let args = caller.data().args.clone();
+            let (mut pointer, mut at) = (pointers, bytes);
+            for arg in args {
+                write_u32(&mut caller, pointer, at.cast_unsigned())?;
+                let place = address(at)?;
+                memory(&caller)?
+                    .write(&mut caller, place, &arg)
+                    .map_err(|_| Error::new("écriture hors de la mémoire"))?;
+                let length =
+                    i32::try_from(arg.len()).map_err(|_| Error::new("argument trop long"))?;
+                pointer = pointer.saturating_add(4);
+                at = at.saturating_add(length);
+            }
+            Ok::<i32, Error>(0)
+        },
+    )?;
     // Aucun dossier n'est ouvert pour le programme.
     let _: &mut Linker<Host> = linker.func_wrap(
         WASI,

@@ -139,10 +139,19 @@ impl AsyncWrite for Stream {
     }
 }
 
+/// D'où vient une connexion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Origin {
+    pub address: SocketAddr,
+    /// Elle est arrivée par la porte des téléphones : c'est l'étagère qui
+    /// l'amène du Wi-Fi, même si son adresse est celle de cet ordinateur.
+    pub relayed: bool,
+}
+
 /// Le port du jeu : il rend des connexions prêtes, en clair ou chiffrées.
 pub struct Listener {
     local: SocketAddr,
-    ready: mpsc::Receiver<(Stream, SocketAddr)>,
+    ready: mpsc::Receiver<(Stream, Origin)>,
 }
 
 impl Listener {
@@ -150,26 +159,41 @@ impl Listener {
     ///
     /// À appeler depuis le moteur asynchrone : chaque connexion est préparée
     /// à part, pour qu'un téléphone lent n'en fasse attendre aucun autre.
-    pub fn new(listener: TcpListener, identity: Option<&Identity>) -> io::Result<Self> {
+    ///
+    /// `door` est la porte des téléphones, quand l'étagère les amène : ce qui
+    /// y arrive vient du Wi-Fi.
+    pub fn new(
+        listener: TcpListener,
+        door: Option<TcpListener>,
+        identity: Option<&Identity>,
+    ) -> io::Result<Self> {
         let local = listener.local_addr()?;
         let acceptor = identity.map(|identity| TlsAcceptor::from(Arc::clone(&identity.config)));
         let (sender, ready) = mpsc::channel(BACKLOG);
-        let _: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-            loop {
-                let Ok((stream, address)) = listener.accept().await else {
-                    // Plus de descripteurs, par exemple : on laisse passer.
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                };
-                let acceptor = acceptor.clone();
-                let sender = sender.clone();
-                let _: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-                    if let Some(stream) = prepare(stream, acceptor).await {
-                        let _: Result<(), _> = sender.send((stream, address)).await;
-                    }
-                });
-            }
-        });
+        for (listener, relayed) in [(Some(listener), false), (door, true)] {
+            let Some(listener) = listener else {
+                continue;
+            };
+            let acceptor = acceptor.clone();
+            let sender = sender.clone();
+            let _: tokio::task::JoinHandle<()> = tokio::spawn(async move {
+                loop {
+                    let Ok((stream, address)) = listener.accept().await else {
+                        // Plus de descripteurs, par exemple : on laisse passer.
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        continue;
+                    };
+                    let acceptor = acceptor.clone();
+                    let sender = sender.clone();
+                    let _: tokio::task::JoinHandle<()> = tokio::spawn(async move {
+                        if let Some(stream) = prepare(stream, acceptor).await {
+                            let origin = Origin { address, relayed };
+                            let _: Result<(), _> = sender.send((stream, origin)).await;
+                        }
+                    });
+                }
+            });
+        }
         Ok(Self { local, ready })
     }
 }
@@ -197,7 +221,7 @@ async fn prepare(stream: TcpStream, acceptor: Option<TlsAcceptor>) -> Option<Str
 
 impl axum::serve::Listener for Listener {
     type Io = Stream;
-    type Addr = SocketAddr;
+    type Addr = Origin;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
@@ -210,6 +234,9 @@ impl axum::serve::Listener for Listener {
     }
 
     fn local_addr(&self) -> io::Result<Self::Addr> {
-        Ok(self.local)
+        Ok(Origin {
+            address: self.local,
+            relayed: false,
+        })
     }
 }
