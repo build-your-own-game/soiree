@@ -6,6 +6,7 @@ mod cover;
 mod games;
 mod internet;
 mod machine;
+mod network;
 mod new;
 mod plug;
 mod publish;
@@ -46,6 +47,9 @@ Pour l'hôte :
   soiree play [dossier]      ouvre l'étagère : les jeux du dossier (`games/` par défaut),
                              vérifiés et prêts une fois pour toutes, se lancent d'un clic
   soiree maj <jeu>           met un jeu à jour sur l'étagère qui tourne, sans la relancer
+  soiree reseau [scénario]   mesure ce qu'un téléphone voit du jeu en cours à travers un
+                             réseau abîmé exprès (une 4G faible, une coupure) :
+                             `soiree reseau --help`
 
   soiree version
 
@@ -65,6 +69,7 @@ fn main() -> ExitCode {
         "games" => games_dir(rest).and_then(|dir| games::run(&dir)),
         "play" => games_dir(rest).and_then(|dir| shelf::run(&dir)),
         "maj" => shelf::update(rest),
+        "reseau" => network::run(rest),
         "new" => new::run(rest),
         "rejouer" => match machine::replay_journal(rest) {
             Ok(code) => return code,

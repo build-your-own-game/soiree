@@ -9,7 +9,7 @@ Lis `MANIFESTE.md`, puis `CONTRAT.md`. Ne les modifie pas sans demande explicite
 | Dossier | Contenu |
 |---|---|
 | `regles/` | les règles : `rust-toolchain.toml`, `clippy.toml`, `lints.toml`, et `conseils.toml`, ce que `soiree check` dit quand une règle refuse. L'outil les embarque. |
-| `outil/` | l'outil `soiree` : `new`, `check`, `publish`, `rules`, `manifeste`, et pour l'hôte `games`, `play` (l'étagère, `outil/src/shelf.rs` et sa page `outil/etagere/`) et `maj` |
+| `outil/` | l'outil `soiree` : `new`, `check`, `publish`, `rules`, `manifeste`, et pour l'hôte `games`, `play` (l'étagère, `outil/src/shelf.rs` et sa page `outil/etagere/`), `maj` et `reseau` (le banc du réseau, `outil/src/network.rs`) |
 | `REJOINDRE.md` | le texte qu'un ami colle dans son assistant IA pour commencer |
 | `CONTRAT.md` | le contrat de la cartouche : ce qu'un jeu fournit, ce que la console fournit. L'outil l'embarque (`soiree contrat`). |
 | `cartouche/` | la brique « cartouche » : le contrat (`Machine`, `State`, `Input`, le ticket `Content` d'un contenu lourd, les demandes au monde extérieur `Ask` et leurs réponses `Answer`), le tirage au hasard des commandes (`draw`), le journal d'une partie (`journal`) et le banc qui joue des parties (`bench`). Sans système, comme la machine qui l'emprunte. |
@@ -99,6 +99,14 @@ Ce que la machine demande au monde extérieur (`Machine::asks`), `telecommande/s
 - Sans étagère reliée, le relais ne transmet rien : un téléphone lit qu'il n'y a pas de soirée. L'étagère prouve qui elle est par une clé partagée (`SOIREE_INTERNET_CLE` chez l'hôte, `RELAIS_CLE` sur le serveur). Il n'y a pas de code de soirée : pendant qu'elle est allumée, qui connaît l'adresse peut prendre une place.
 - Allumé mais pas encore relié (l'étagère vient de démarrer, l'hôte vient d'allumer), le relais a quelques secondes pour répondre avant qu'un jeu se lance. S'il ne répond pas, les téléphones restent sur le Wi-Fi, et l'étagère le dit.
 - Chaque geste fait l'aller-retour par le serveur : c'est fait pour les jeux qui supportent un délai. Avant un jeu en temps réel, l'hôte éteint.
+
+**Le banc du réseau** (`soiree reseau`, `outil/src/network.rs`) mesure ce qu'un téléphone voit du jeu en cours à travers un réseau abîmé exprès. Il sert à la demande, quand une question de réseau se pose (un téléphone qui rame, un réglage dont on doute). Il n'est pas obligatoire : il ne fait partie ni de `soiree check` ni de la liste « Avant de dire que c'est fini », et aucun changement de la console ou d'un jeu ne l'exige.
+
+- Il lance Toxiproxy (de Shopify, un programme à part : `brew install toxiproxy`), en fait un tuyau vers l'adresse des téléphones, et y fait passer un téléphone d'essai : une page comme une autre pour le jeu, qui présente le billet de la partie. Il lit cette adresse dans ce que le jeu en cours a écrit en se lançant (`partie.log`, sous l'étagère), ou la reçoit par `--adresse`.
+- Les scénarios sont dans le code (`SCENARIOS`) : la référence, une 4G correcte, une 4G faible, une coupure de cinq secondes, une chute des connexions. `soiree reseau tiens <scénario>` en tient un jusqu'à Ctrl-C et donne l'adresse où jouer soi-même à travers.
+- Il mesure le délai d'un aller-retour jusqu'au jeu, le rythme et le poids de ce que le jeu envoie (`--ecran` : ce que reçoit l'écran, le plus lourd), et si le lien tient.
+- Toxiproxy travaille au-dessus de TCP : il retarde, bride et coupe, mais ne perd pas de paquets, et la connexion du jeu s'arrête à lui. Ce qu'un réglage de TCP change entre le jeu et un vrai téléphone ne s'y voit donc pas.
+- Le téléphone d'essai prend une place dans un jeu qui assoit tout ce qui arrive (Jumpy) : le banc se lance hors d'une vraie partie.
 
 **Plusieurs hôtes.** Chaque hôte a son relais, son nom et sa clé (`deploy/compose.yaml`, `deploy/Caddyfile`) : plusieurs étagères peuvent être reliées en même temps, chacune sur son ordinateur, et un téléphone va à celle dont il a scanné le QR code. Un relais ne porte qu'une étagère : c'est voulu, les hôtes ne se touchent pas.
 

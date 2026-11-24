@@ -1196,6 +1196,43 @@ fn ask(port: u16, method: &str, path: &str) -> Option<String> {
     Some(body.to_owned())
 }
 
+/// L'adresse que le jeu en cours montre aux téléphones, celle de son QR code,
+/// lue dans ce qu'il a écrit en se lançant. `games` est le dossier des jeux de
+/// l'étagère qui tourne.
+pub fn phones_address(games: &Path) -> Result<String, String> {
+    let port = port()?;
+    let state: serde_json::Value = ask(port, "GET", "/etat")
+        .and_then(|body| serde_json::from_str(&body).ok())
+        .ok_or_else(|| {
+            format!(
+                "l'étagère ne répond pas sur le port {port} : lance-la d'abord, avec `soiree \
+                 play`, ou donne l'adresse des téléphones avec `--adresse`."
+            )
+        })?;
+    let name = state
+        .get("en_cours")
+        .and_then(|running| running.get("nom")?.as_str())
+        .ok_or("aucun jeu n'est lancé sur l'étagère : lances-en un, puis recommence.")?;
+    let log = games.join(FOLDER).join(name).join(GAME_LOG);
+    let said = fs::read_to_string(&log).map_err(|error| {
+        format!(
+            "{} ne se lit pas ({error}) : lance `soiree reseau` depuis le dossier où tourne \
+             `soiree play`, ou donne le dossier des jeux avec `--jeux`.",
+            log.display()
+        )
+    })?;
+    said.lines()
+        .filter(|line| line.starts_with("Téléphones"))
+        .find_map(|line| {
+            line.split_whitespace()
+                .find(|word| word.starts_with("http"))
+        })
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            format!("{name} ne montre pas d'adresse aux téléphones : il se joue sans télécommande.")
+        })
+}
+
 /// `soiree maj <jeu>` : demande à l'étagère qui tourne de mettre un jeu à
 /// jour, et attend de savoir s'il est passé.
 pub fn update(args: &[String]) -> Result<(), String> {

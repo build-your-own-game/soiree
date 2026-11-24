@@ -309,13 +309,14 @@ impl Passage {
     }
 }
 
-/// Une connexion vers le relais, chiffrée ou non.
-trait Duplex: AsyncRead + AsyncWrite + Unpin + Send {}
+/// Une connexion, chiffrée ou non : vers le relais, ou celle du téléphone
+/// d'essai du banc du réseau (`network.rs`).
+pub trait Duplex: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Duplex for T {}
-type Stream = Box<dyn Duplex>;
+pub type Stream = Box<dyn Duplex>;
 
-/// Chiffre la connexion, en vérifiant que le relais est bien ce nom-là.
-async fn secure(
+/// Chiffre la connexion, en vérifiant que celui d'en face est bien ce nom-là.
+pub async fn secure(
     tcp: TcpStream,
     host: &str,
 ) -> std::io::Result<tokio_rustls::client::TlsStream<TcpStream>> {

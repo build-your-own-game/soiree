@@ -117,6 +117,8 @@ D'ordinaire, les téléphones doivent être sur le Wi-Fi de l'ordinateur. Avec l
 - **Si le relais ne répond pas** au moment de lancer un jeu, les téléphones restent sur le Wi-Fi, et l'étagère le dit.
 - Il n'y a pas de code de soirée : pendant que c'est allumé, qui connaît l'adresse peut prendre une place.
 
+**Quand un téléphone rame**, `soiree reseau`, lancé ici pendant qu'un jeu tourne sur l'étagère, mesure ce qu'un téléphone voit de ce jeu : le délai d'un aller-retour, et si le lien tient sous une 4G faible ou une coupure. `soiree reseau --help` dit le reste. Il lui faut Toxiproxy (`brew install toxiproxy`). Son téléphone d'essai compte comme une page de plus : lance-le hors d'une vraie partie. C'est un outil à la demande : rien ne l'exige, ni pour lancer une soirée ni pour changer un jeu.
+
 `fnox.toml`, ici, porte deux variables de plus : `SOIREE_INTERNET` (l'adresse du relais, celle que les téléphones ouvrent) et `SOIREE_INTERNET_CLE` (la clé que le relais attend, la même que `RELAIS_CLE` dans `PROD_SOIREE_ENV`, côté infra). Sans elles, l'étagère ne propose rien.
 
 ## Les secrets d'un jeu
