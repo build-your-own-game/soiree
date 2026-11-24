@@ -20,8 +20,9 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::js_sys::{Array, Function, Object, Proxy, Reflect};
 use web_sys::{
-    AddEventListenerOptions, CloseEvent, Document, Element, Event, EventTarget, KeyboardEvent,
-    KeyboardEventInit, MessageEvent, ShadowRoot, ShadowRootInit, ShadowRootMode, WebSocket, Window,
+    AddEventListenerOptions, CloseEvent, Document, Element, Event, EventTarget, HtmlElement,
+    KeyboardEvent, KeyboardEventInit, MessageEvent, ShadowRoot, ShadowRootInit, ShadowRootMode,
+    TouchEvent, WebSocket, Window,
 };
 
 /// Le temps qu'Échap doit rester enfoncé pour ouvrir le menu.
@@ -32,6 +33,25 @@ const RETRY_MS: i32 = 1000;
 /// Sans réponse du jeu autant de fois de suite, l'écran retourne à l'étagère.
 const LOST_TRIES: u32 = 3;
 const ESCAPE: &str = "Escape";
+
+/// Ce que la console règle dans toute page, écran ou télécommande : la page
+/// ne zoome pas. Sur un téléphone, deux appuis rapprochés sur un bouton, ou
+/// deux pouces sur une manette, agrandissaient la page, et le joueur se
+/// retrouvait devant un bout d'écran. L'app iPhone le règle de son côté
+/// (`iphone/Soiree/reglages.js`) ; ici, c'est pour le navigateur.
+///
+/// Cette règle suffit là où le navigateur la suit. Safari, sur iPhone, ne la
+/// suit pas toujours : un joueur a vu la manette de Jumpy zoomer alors qu'elle
+/// dit `touch-action: none` partout (le bogue 218015 de son moteur parle des
+/// éléments placés en `position: absolute`). [`no_zoom`] fait le reste à la
+/// main.
+const PAGE_STYLE: &str = "html { touch-action: manipulation; }";
+/// Deux appuis sont un double appui s'ils se suivent d'aussi près, au même
+/// endroit : c'est ce que Safari prend pour une demande de zoom.
+const DOUBLE_TAP_MS: f64 = 400.0;
+const DOUBLE_TAP_REACH: f64 = 48.0;
+/// Un doigt qui a glissé plus loin que ça n'a pas appuyé : il a fait défiler.
+const TAP_REACH: f64 = 12.0;
 
 const STYLE: &str = "<style>
 :host { all: initial; }
@@ -481,6 +501,8 @@ pub(crate) fn start() {
     let Some(document) = window.document() else {
         return;
     };
+    settle(&document);
+    no_zoom(&document);
     let menu = Rc::new(Menu {
         frames: Frames::install(&window),
         sound: Sound::install(&window),
@@ -519,6 +541,138 @@ pub(crate) fn start() {
     on_blur.forget();
     menu.connect();
     MENU.with_borrow_mut(|kept| *kept = Some(menu));
+}
+
+/// Pose les réglages de la console dans la page ([`PAGE_STYLE`]). En tête du
+/// document : une règle que le jeu écrit pour `html` passe après, et l'emporte.
+/// Le `touch-action` d'un élément se combine avec celui de ses parents : une
+/// manette qui dit `none` reste `none`.
+fn settle(document: &Document) {
+    let Ok(style) = document.create_element("style") else {
+        return;
+    };
+    style.set_text_content(Some(PAGE_STYLE));
+    let head = document.query_selector("head").ok().flatten();
+    let Some(parent) = head.or_else(|| document.document_element()) else {
+        return;
+    };
+    let _: Result<web_sys::Node, JsValue> =
+        parent.insert_before(&style, parent.first_child().as_ref());
+}
+
+/// Un appui : où, et quand.
+#[derive(Clone, Copy)]
+struct Tap {
+    at: f64,
+    x: f64,
+    y: f64,
+}
+
+impl Tap {
+    fn near(self, x: f64, y: f64, reach: f64) -> bool {
+        (self.x - x).abs() <= reach && (self.y - y).abs() <= reach
+    }
+}
+
+/// Empêche le zoom là où `touch-action` ne suffit pas ([`PAGE_STYLE`]).
+///
+/// - Le double appui : la page refuse la fin du deuxième appui, ce qui annule
+///   le zoom. Le navigateur ne donne alors plus le clic de cet appui : la
+///   console le donne elle-même, pour qu'un bouton pressé deux fois vite
+///   reçoive ses deux clics. Un champ de saisie garde ses gestes à lui.
+/// - Le pincement (deux pouces sur une manette) : Safari l'annonce par
+///   `gesturestart`, que la page refuse.
+///
+/// Les événements de pointeur (`pointerdown`, `pointerup`) ne changent pas.
+fn no_zoom(document: &Document) {
+    let capture = |passive: bool| {
+        let options = AddEventListenerOptions::new();
+        options.set_capture(true);
+        options.set_passive(passive);
+        options
+    };
+    let down: Rc<Cell<Option<Tap>>> = Rc::new(Cell::new(None));
+    let on_start = {
+        let down = Rc::clone(&down);
+        Closure::<dyn FnMut(TouchEvent)>::new(move |event: TouchEvent| {
+            // Un deuxième doigt : ce n'est plus un appui.
+            let alone = event.touches().length() == 1;
+            down.set(
+                event
+                    .changed_touches()
+                    .get(0)
+                    .filter(|_| alone)
+                    .map(|touch| Tap {
+                        at: event.time_stamp(),
+                        x: f64::from(touch.client_x()),
+                        y: f64::from(touch.client_y()),
+                    }),
+            );
+        })
+    };
+    let _: Result<(), JsValue> = document
+        .add_event_listener_with_callback_and_add_event_listener_options(
+            "touchstart",
+            on_start.as_ref().unchecked_ref(),
+            &capture(true),
+        );
+    on_start.forget();
+    let last: Cell<Option<Tap>> = Cell::new(None);
+    let on_end = Closure::<dyn FnMut(TouchEvent)>::new(move |event: TouchEvent| {
+        let tap = down
+            .take()
+            .zip(event.changed_touches().get(0))
+            .and_then(|(down, touch)| {
+                let (x, y) = (f64::from(touch.client_x()), f64::from(touch.client_y()));
+                (event.touches().length() == 0 && down.near(x, y, TAP_REACH)).then_some(Tap {
+                    at: event.time_stamp(),
+                    x,
+                    y,
+                })
+            });
+        let before = last.replace(tap);
+        let (Some(tap), Some(before)) = (tap, before) else {
+            return;
+        };
+        if tap.at - before.at > DOUBLE_TAP_MS || !before.near(tap.x, tap.y, DOUBLE_TAP_REACH) {
+            return;
+        }
+        let target = event
+            .target()
+            .and_then(|target| target.dyn_into::<Element>().ok());
+        if target.as_ref().is_some_and(writes) {
+            return;
+        }
+        event.prevent_default();
+        if let Some(pressed) = target.and_then(|target| target.dyn_into::<HtmlElement>().ok()) {
+            pressed.click();
+        }
+    });
+    let _: Result<(), JsValue> = document
+        .add_event_listener_with_callback_and_add_event_listener_options(
+            "touchend",
+            on_end.as_ref().unchecked_ref(),
+            &capture(false),
+        );
+    on_end.forget();
+    let on_pinch = Closure::<dyn FnMut(Event)>::new(|event: Event| event.prevent_default());
+    for name in ["gesturestart", "gesturechange"] {
+        let _: Result<(), JsValue> = document
+            .add_event_listener_with_callback_and_add_event_listener_options(
+                name,
+                on_pinch.as_ref().unchecked_ref(),
+                &capture(false),
+            );
+    }
+    on_pinch.forget();
+}
+
+/// Un endroit où l'on écrit : ses gestes (placer le curseur, choisir un mot)
+/// restent ceux du navigateur.
+fn writes(element: &Element) -> bool {
+    element
+        .closest("input, textarea, select, [contenteditable]")
+        .is_ok_and(|found| found.is_some())
 }
 
 /// Le jeu demande à la console d'arrêter le temps, ou de le rendre (voir
