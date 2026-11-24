@@ -1,0 +1,5 @@
+# L'image du relais n'a besoin que du code Rust de la console.
+target
+modele/target
+iphone
+.git

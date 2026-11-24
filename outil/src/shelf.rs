@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::cover::{self, COVER, Card};
+use crate::internet::{Link, Passage};
 use crate::{games, plug, rules, sh};
 
 /// Le port de l'étagère, sauf si `SOIREE_ETAGERE_PORT` en donne un autre. Les
@@ -144,6 +145,10 @@ struct Shelf {
     busy: BTreeSet<String>,
     /// Les jeux redemandés pendant leur préparation : ils repassent ensuite.
     again: BTreeMap<String, Why>,
+    /// Le passage par internet, si l'hôte l'a réglé, et le lien tenu avec le
+    /// relais tant qu'il est allumé.
+    passage: Option<Passage>,
+    link: Option<Link>,
 }
 
 /// Pourquoi préparer un jeu.
@@ -325,6 +330,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
             games.display()
         ));
     }
+    let passage = Passage::from_env()?;
     let (jobs, queue) = mpsc::channel();
     let entries: BTreeMap<String, Entry> = names
         .iter()
@@ -344,6 +350,8 @@ pub fn run(dir: &Path) -> Result<(), String> {
         jobs: jobs.clone(),
         busy: BTreeSet::new(),
         again: BTreeMap::new(),
+        passage: passage.clone(),
+        link: None,
     }));
     for name in order {
         let _: Result<(), mpsc::SendError<Job>> = jobs.send(Job {
@@ -368,6 +376,12 @@ pub fn run(dir: &Path) -> Result<(), String> {
     let url = shelf_url(port);
     println!("\nÉtagère     : {url}");
     announce_phones(public);
+    if let Some(passage) = &passage {
+        println!(
+            "Internet    : éteint. La touche I, sur l'étagère, fait passer les téléphones par {}",
+            passage.phones()
+        );
+    }
     println!("Chaque jeu s'allume quand il est prêt. Ctrl-C ferme l'étagère et le jeu en cours.\n");
     // Lancée par un autre programme, l'étagère n'ouvre pas de fenêtre.
     if std::io::stdout().is_terminal() {
@@ -718,10 +732,25 @@ fn launch(shared: &Shared, name: &str) -> Result<String, String> {
         shelf.notice.clear();
         (shelf.games.clone(), shelf.port, filed)
     };
+    // Allumé et relié, le relais reçoit les téléphones : le jeu leur montre
+    // son adresse. Allumé sans réponse du relais, ils restent sur le Wi-Fi.
+    let internet = {
+        let mut shelf = lock(shared);
+        let linked = shelf.link.as_ref().is_some_and(Link::linked);
+        if shelf.link.is_some() && !linked {
+            "Le relais ne répond pas : pour ce jeu, les téléphones passent par le Wi-Fi."
+                .clone_into(&mut shelf.notice);
+        }
+        shelf
+            .passage
+            .as_ref()
+            .filter(|_| linked)
+            .map(|passage| passage.phones().to_owned())
+    };
     stop(shared);
     // Plus aucun jeu ne tourne : les versions remplacées ne servent plus.
     forget_older(&games, name, filed.version);
-    let started = start(&games, name, &filed, port);
+    let started = start(&games, name, &filed, port, internet.as_deref());
     let mut shelf = lock(shared);
     shelf.launching = false;
     let child = started?;
@@ -732,7 +761,13 @@ fn launch(shared: &Shared, name: &str) -> Result<String, String> {
     Ok(shelf_url(game_port(port)))
 }
 
-fn start(games: &Path, name: &str, filed: &Filed, port: u16) -> Result<Child, String> {
+fn start(
+    games: &Path,
+    name: &str,
+    filed: &Filed,
+    port: u16,
+    internet: Option<&str>,
+) -> Result<Child, String> {
     let game = games.join(name);
     let folder = filed_dir(games, name, filed.version);
     let log_path = games.join(FOLDER).join(name).join(GAME_LOG);
@@ -741,7 +776,8 @@ fn start(games: &Path, name: &str, filed: &Filed, port: u16) -> Result<Child, St
     let errors = log.try_clone().map_err(|error| error.to_string())?;
     let program = folder.join(&filed.program);
     let game_port = game_port(port);
-    let mut child = Command::new(&program)
+    let mut command = Command::new(&program);
+    let _: &mut Command = command
         .current_dir(&game)
         .envs(secrets(&game))
         .env("PORT", game_port.to_string())
@@ -751,9 +787,17 @@ fn start(games: &Path, name: &str, filed: &Filed, port: u16) -> Result<Child, St
         )
         .env("SOIREE_PAGES", folder.join("pages"))
         .env("SOIREE_ETAGERE", shelf_url(port))
+        // La clé du relais est à l'étagère : le jeu n'en a pas besoin.
+        .env_remove(crate::internet::KEY_VARIABLE)
         .stdin(Stdio::null())
         .stdout(log)
-        .stderr(errors)
+        .stderr(errors);
+    // L'adresse que le jeu montre aux téléphones (son QR code) : celle du
+    // relais, quand ils passent par internet.
+    if let Some(address) = internet {
+        let _: &mut Command = command.env("SOIREE_ADRESSE", address);
+    }
+    let mut child = command
         .spawn()
         .map_err(|error| format!("{} ne se lance pas : {error}", program.display()))?;
     let since = Instant::now();
@@ -831,6 +875,13 @@ fn state(shelf: &mut Shelf) -> serde_json::Value {
             "adresse": shelf_url(game_port(shelf.port)),
         })),
         "avis": shelf.notice,
+        // Le passage par internet : réglé par l'hôte, allumé sur l'étagère,
+        // et relié quand le relais répond.
+        "internet": shelf.passage.as_ref().map(|passage| json!({
+            "adresse": passage.phones(),
+            "allume": shelf.link.is_some(),
+            "relie": shelf.link.as_ref().is_some_and(Link::linked),
+        })),
     })
 }
 
@@ -967,6 +1018,21 @@ fn route(request: &Request, shared: &Shared) -> Reply {
             drop(shelf);
             note(shared, name, Status::Preparing, "mise à jour demandée");
             Reply::json(&json!({ "fait": true }))
+        }
+        ("POST", ["internet"]) => {
+            let mut shelf = lock(shared);
+            let Some(passage) = shelf.passage.clone() else {
+                return Reply::refused(
+                    "409 Conflict",
+                    "le passage par internet n'est pas réglé (SOIREE_INTERNET)",
+                );
+            };
+            // Lâcher le lien le ferme : les téléphones venus par internet repartent.
+            shelf.link = match shelf.link.take() {
+                Some(_) => None,
+                None => Some(passage.open(public_port(shelf.port))),
+            };
+            Reply::json(&json!({ "allume": shelf.link.is_some() }))
         }
         ("POST", ["arreter"]) => {
             stop(shared);

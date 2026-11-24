@@ -107,6 +107,18 @@ Le nom, son enregistrement dynamique et le certificat viennent du dépôt infra 
 - **Un jeu en clair, exprès** : `env -u SOIREE_TLS_NOM -u SOIREE_TLS_CERT -u SOIREE_TLS_KEY cargo run --release`.
 - **Un téléphone n'arrive pas** alors que le jeu dit que le nom mène ici : attends une minute (le temps que l'ancienne adresse s'oublie), puis soupçonne la box : certaines refusent un nom public qui mène à une adresse privée. L'app iPhone, elle, passe par l'adresse en clair.
 
+## Les téléphones par internet
+
+D'ordinaire, les téléphones doivent être sur le Wi-Fi de l'ordinateur. Avec le relais de la console, déployé sur la prod (`soiree/relais/`, `infra deploy soiree`), ils passent par internet : la 4G suffit.
+
+- **L'allumer** : la touche I, sur l'étagère. La ligne du bas dit où ça en est : éteint, allumé, ou allumé mais le relais ne répond pas.
+- **Il vaut pour tous les jeux, au prochain lancement.** Un jeu déjà lancé garde l'adresse qu'il a montrée : relance-le pour qu'il en change, et les téléphones rescannent son QR code.
+- **Éteins-le avant un jeu en temps réel** (Jumpy, Tennis) : chaque geste fait l'aller-retour par le serveur.
+- **Si le relais ne répond pas** au moment de lancer un jeu, les téléphones restent sur le Wi-Fi, et l'étagère le dit.
+- Il n'y a pas de code de soirée : pendant que c'est allumé, qui connaît l'adresse peut prendre une place.
+
+`fnox.toml`, ici, porte deux variables de plus : `SOIREE_INTERNET` (l'adresse du relais, celle que les téléphones ouvrent) et `SOIREE_INTERNET_CLE` (la clé que le relais attend, la même que `RELAIS_CLE` dans `PROD_SOIREE_ENV`, côté infra). Sans elles, l'étagère ne propose rien.
+
 ## Les secrets d'un jeu
 
 Un jeu qui interroge internet (une IA qui juge) n'a jamais de clé dans son code : sa machine écrit `{NOM}` dans un en-tête, et la console y met la clé. L'hôte la lui confie par deux variables, dans le `fnox.toml` du dossier du jeu :

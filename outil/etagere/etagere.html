@@ -43,6 +43,9 @@
   .note a { color: var(--cyan); }
   .touches { margin-top: .9em; font-family: "VT323", monospace; font-size: 1.15em; color: var(--pale); letter-spacing: .05em; }
   .touches b { color: var(--cyan); font-weight: 400; }
+  .internet { margin-top: .3em; font-family: "VT323", monospace; font-size: 1.15em; color: var(--pale); letter-spacing: .05em; }
+  .internet b { color: var(--cyan); font-weight: 400; }
+  .internet.relie { color: var(--menthe); } .internet.attend { color: var(--or); }
   .avis { position: fixed; top: 9vh; left: 50%; transform: translateX(-50%); max-width: 80vw; padding: .7em 1.1em; background: #3a0d1c;
     box-shadow: 0 0 0 2px #ff6b6b; border-radius: 6px; font-size: .85em; }
   .voile { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5, 3, 15, .9);
@@ -59,6 +62,7 @@
   <div class="joueurs" id="joueurs"></div>
   <p class="note" id="note"></p>
   <p class="touches"><b>← →</b> choisir · <b>Entrée</b> jouer · <b>M</b> mettre à jour · dans un jeu, <b>Échap maintenu</b> ouvre le menu</p>
+  <p class="internet" id="internet" hidden></p>
 </footer>
 <div class="avis" id="avis" hidden></div>
 <div class="voile" id="voile" hidden></div>
@@ -173,10 +177,31 @@ function mettreAJour() {
   if (jeu && jeu.etat !== "preparation") demander(`/maj/${jeu.nom}`).then(lire).catch(() => {});
 }
 
+// Le passage par internet : rien si l'hôte ne l'a pas réglé. Il vaut pour le
+// prochain jeu lancé : un jeu qui tourne garde l'adresse qu'il a montrée.
+function direInternet(internet) {
+  const ligne = $("internet");
+  ligne.hidden = !internet;
+  if (!internet) return;
+  const nom = internet.adresse.replace(/^https?:\/\//, "");
+  ligne.className = "internet" + (internet.relie ? " relie" : internet.allume ? " attend" : "");
+  ligne.replaceChildren();
+  const touche = Object.assign(document.createElement("b"), { textContent: "I" });
+  const suite = !internet.allume ? ` internet : éteint, les téléphones passent par le Wi-Fi`
+    : internet.relie ? ` internet : allumé, les téléphones passent par ${nom} au prochain jeu lancé`
+    : ` internet : allumé, mais ${nom} ne répond pas encore`;
+  ligne.append(touche, suite);
+}
+
+function basculerInternet() {
+  if (!$("internet").hidden) demander("/internet").then(lire).catch(() => {});
+}
+
 function lire() {
   return fetch("/etat").then((reponse) => reponse.json()).then((etat) => {
     jeux = etat.jeux;
     enCours = etat.en_cours;
+    direInternet(etat.internet);
     $("avis").hidden = !etat.avis;
     $("avis").textContent = etat.avis;
     dessiner(false);
@@ -197,6 +222,7 @@ addEventListener("keydown", (event) => {
   else if (event.key === "ArrowLeft" && jeux.length) choisir(jeux[(rang + jeux.length - 1) % jeux.length].nom);
   else if (event.key === "Enter" || event.key === " ") jouer();
   else if (event.key === "m" || event.key === "M") mettreAJour();
+  else if (event.key === "i" || event.key === "I") basculerInternet();
   else return;
   event.preventDefault();
 });

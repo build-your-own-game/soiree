@@ -4,6 +4,7 @@ mod cartridge;
 mod check;
 mod cover;
 mod games;
+mod internet;
 mod machine;
 mod new;
 mod plug;

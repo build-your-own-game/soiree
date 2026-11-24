@@ -1,0 +1,16 @@
+# Le relais : un petit programme pour un serveur joignable depuis internet.
+# Les téléphones s'y connectent, et il les amène à l'étagère de l'hôte, qui
+# est venue le rejoindre. Voir `relais/src/main.rs` et `deploy/`.
+[package]
+name = "relais"
+description = "Le relais de la console : il amène à l'étagère de l'hôte les téléphones venus par internet."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+
+[lints]
+workspace = true

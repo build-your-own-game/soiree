@@ -1,0 +1,14 @@
+# Les routes du relais, importées par le Caddy de la prod (infra, prod/proxy).
+#
+# Le relais a deux portes. Les chemins sous /_relais/ vont à celle de
+# l'étagère de l'hôte, qui présente sa clé ; tout le reste vient des
+# téléphones, et le relais le porte tel quel jusqu'au jeu.
+
+relais.soiree.colvenalabs.com {
+	handle /_relais/* {
+		reverse_proxy soiree-relais:8081
+	}
+	handle {
+		reverse_proxy soiree-relais:8080
+	}
+}

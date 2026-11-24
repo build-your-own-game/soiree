@@ -1,0 +1,27 @@
+# Le relais de la soirée sur la prod, déployé par `infra deploy soiree`
+# (dépôt infra). Le .env est posé à côté de ce fichier depuis fnox
+# (PROD_SOIREE_ENV) : il porte RELAIS_CLE, la clé que l'étagère de l'hôte
+# présente. Les routes sont dans Caddyfile.
+name: soiree
+
+services:
+  relais:
+    image: soiree-relais:prod
+    build: ..
+    pull_policy: never # reconstruite par `infra deploy soiree --build`
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      proxy:
+        aliases: [soiree-relais]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    logging:
+      driver: local
+
+networks:
+  proxy:
+    external: true
+    name: proxy
