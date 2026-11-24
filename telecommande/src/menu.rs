@@ -70,6 +70,8 @@ button { display: block; width: 100%; padding: .6em .8em; margin-top: .4em; bord
 button.on { background: #ff3ea5; color: #1a0620; }
 .qr { margin-top: 1.4em; padding-top: 1.2em; border-top: 2px solid #2a2168; font-size: .7em; color: #c9c0f2; }
 .qr img { display: block; width: 9em; height: 9em; padding: .5em; margin: 0 auto .6em; background: #fff; border-radius: .5em; }
+.delays { margin-top: 1.2em; font-size: .7em; color: #c9c0f2; }
+.delays b { font-weight: 600; color: #ffcf5c; }
 .keys { margin-top: 1.2em; font-size: .68em; color: #8f85c9; }
 .lone { padding: 2em; }
 .lone h1 { margin-bottom: .3em; }
@@ -106,6 +108,9 @@ struct State {
     recommencer: bool,
     qr: bool,
     etagere: Option<String>,
+    /// Le délai de chaque télécommande, en millisecondes, du plus court au
+    /// plus long. La console ne le dit qu'à l'hôte, et que menu ouvert.
+    delais: Vec<u32>,
 }
 
 /// Ce que la page montre par-dessus le jeu.
@@ -775,11 +780,38 @@ impl Inner {
                  Pour rejoindre avec un téléphone</div>",
             );
         }
+        html.push_str(&delays_html(&self.state.delais));
         html.push_str(
             "<div class=\"keys\">↑ ↓ pour choisir · Entrée pour valider · Échap pour reprendre</div></div>",
         );
         html
     }
+}
+
+/// Au-delà, un téléphone se sent en retard dans un jeu rapide : le menu le
+/// fait ressortir.
+const SLOW_MS: u32 = 150;
+
+/// Le délai de chaque téléphone : le temps d'un aller-retour entre lui et le
+/// jeu. C'est ce que l'hôte regarde quand un joueur dit que « ça rame ».
+fn delays_html(delays: &[u32]) -> String {
+    if delays.is_empty() {
+        return String::new();
+    }
+    let each: Vec<String> = delays
+        .iter()
+        .map(|delay| {
+            if *delay >= SLOW_MS {
+                format!("<b>{delay} ms</b>")
+            } else {
+                format!("{delay} ms")
+            }
+        })
+        .collect();
+    format!(
+        "<div class=\"delays\">Délai des téléphones : {}</div>",
+        each.join(" · ")
+    )
 }
 
 /// Un texte venu du jeu, sans rien qui se lise comme du HTML.

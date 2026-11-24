@@ -183,6 +183,10 @@ impl Listener {
                         tokio::time::sleep(Duration::from_millis(50)).await;
                         continue;
                     };
+                    // Chaque message part tout de suite : sans ça, le système
+                    // retient un petit envoi tant que le précédent n'a pas été
+                    // reçu, et les vues d'un jeu rapide arrivent par paquets.
+                    let _: io::Result<()> = stream.set_nodelay(true);
                     let acceptor = acceptor.clone();
                     let sender = sender.clone();
                     let _: tokio::task::JoinHandle<()> = tokio::spawn(async move {

@@ -140,6 +140,9 @@ struct Shared {
     /// Ce que le menu de la console doit montrer, écrit par la console :
     /// chaque page le reçoit en arrivant, puis à chaque changement.
     console: watch::Sender<String>,
+    /// Le délai de chaque télécommande : le temps d'un aller-retour jusqu'à
+    /// elle, mesuré à chaque battement de son lien. Le menu le montre à l'hôte.
+    delays: Mutex<BTreeMap<Id, Duration>>,
 }
 
 /// Ce qu'il faut pour ouvrir le jeu aux pages.
@@ -234,10 +237,17 @@ impl Room {
             ticket,
             store: Arc::new(Store::open(contents)),
             console: watch::Sender::new(String::from("{}")),
+            delays: Mutex::new(BTreeMap::new()),
         });
         let no_cache =
             SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-        let files = ServeDir::new(pages).fallback(ServeFile::new(pages.join("index.html")));
+        // Un fichier rangé avec sa version compressée (`pages_bg.wasm.gz`, que
+        // l'étagère écrit en rangeant un jeu) part compressé vers qui sait le
+        // lire : le programme d'une page pèse alors de trois à cinq fois moins.
+        // Sans elle, il part tel quel.
+        let files = ServeDir::new(pages)
+            .precompressed_gzip()
+            .fallback(ServeFile::new(pages.join("index.html")));
         let mut app = Router::new()
             .route("/ws", get(upgrade))
             .route("/qr.svg", get(qr))
@@ -621,6 +631,8 @@ async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
     let mut state = shared.console.subscribe();
     let (mut sink, mut stream) = socket.split();
     let first = state.borrow_and_update().clone();
+    // Ce que l'hôte a reçu en dernier : l'état, avec le délai des téléphones.
+    let mut told = first.clone();
     // D'abord qui elle est pour la console : chez l'hôte ou non, et entrée ou non.
     let admitted = seat != Seat::Stranger;
     let hello = format!("{{\"ici\":{local},\"billet\":{admitted}}}");
@@ -639,6 +651,8 @@ async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
                     break;
                 }
                 let text = state.borrow_and_update().clone();
+                let text = if local { with_delays(&text, &shared) } else { text };
+                told.clone_from(&text);
                 if sink.send(Message::Text(text.into())).await.is_err() {
                     break;
                 }
@@ -662,12 +676,50 @@ async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
                 if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
                     break;
                 }
+                // Le délai des téléphones ne va qu'à l'hôte, et seulement
+                // quand il a changé : les téléphones n'ont rien à en faire.
+                let text = with_delays(&state.borrow().clone(), &shared);
+                if local && text != told {
+                    told.clone_from(&text);
+                    if sink.send(Message::Text(text.into())).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     }
     if holding {
         let _: Result<(), mpsc::SendError<Event>> =
             shared.events.send(Event::Order(Order::Release));
+    }
+}
+
+/// L'état du menu, tel que l'hôte le reçoit : avec le délai de chaque
+/// télécommande.
+fn with_delays(state: &str, shared: &Shared) -> String {
+    let delays = lock(&shared.delays).values().copied().collect();
+    merge_delays(state, delays)
+}
+
+/// Ajoute à l'état du menu le délai de chaque télécommande, en millisecondes,
+/// du plus court au plus long (`delais`). Menu fermé, l'état reste tel quel :
+/// l'hôte ne lit les délais que dans le menu, et sa page n'a pas à se
+/// redessiner à chaque battement.
+fn merge_delays(state: &str, delays: Vec<Duration>) -> String {
+    let mut delays: Vec<u64> = delays
+        .into_iter()
+        .map(|delay| u64::try_from(delay.as_millis()).unwrap_or(u64::MAX))
+        .collect();
+    delays.sort_unstable();
+    match serde_json::from_str::<serde_json::Value>(state) {
+        Ok(serde_json::Value::Object(mut fields))
+            if fields.get("pause") == Some(&serde_json::Value::Bool(true)) =>
+        {
+            let _: Option<serde_json::Value> =
+                fields.insert("delais".to_owned(), serde_json::json!(delays));
+            serde_json::Value::Object(fields).to_string()
+        }
+        Ok(_) | Err(_) => state.to_owned(),
     }
 }
 
@@ -708,6 +760,9 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
     let (mut sink, mut stream) = socket.split();
     let mut beat = tokio::time::interval(HEARTBEAT);
     let mut heard = tokio::time::Instant::now();
+    // Le battement en attente de réponse : son numéro, et quand il est parti.
+    let mut asked: Option<(u64, tokio::time::Instant)> = None;
+    let mut number: u64 = 0;
     loop {
         tokio::select! {
             text = outgoing.recv() => {
@@ -732,15 +787,30 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
                     let _: Result<(), mpsc::SendError<Event>> =
                         shared.events.send(Event::Text(id, text.as_str().to_owned()));
                 }
-                Some(Ok(Message::Binary(_) | Message::Ping(_) | Message::Pong(_))) => {
+                Some(Ok(Message::Pong(answer))) => {
+                    heard = tokio::time::Instant::now();
+                    // La page renvoie le battement tel quel : le temps qu'il a
+                    // mis à revenir est le délai de ce téléphone.
+                    if let Some((sent, at)) = asked
+                        && answer.as_ref() == sent.to_be_bytes().as_slice()
+                    {
+                        asked = None;
+                        if role == Role::Remote {
+                            let _: Option<Duration> =
+                                lock(&shared.delays).insert(id, at.elapsed());
+                        }
+                    }
+                }
+                Some(Ok(Message::Binary(_) | Message::Ping(_))) => {
                     heard = tokio::time::Instant::now();
                 }
                 Some(Ok(Message::Close(_)) | Err(_)) | None => break,
             },
             _ = beat.tick() => {
-                if heard.elapsed() > SILENCE
-                    || sink.send(Message::Ping(Vec::new().into())).await.is_err()
-                {
+                number = number.wrapping_add(1);
+                asked = Some((number, tokio::time::Instant::now()));
+                let beat = Message::Ping(number.to_be_bytes().to_vec().into());
+                if heard.elapsed() > SILENCE || sink.send(beat).await.is_err() {
                     break;
                 }
             }
@@ -753,6 +823,7 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
     {
         let _: Option<Peer> = peers.remove(&id);
         drop(peers);
+        let _: Option<Duration> = lock(&shared.delays).remove(&id);
         let _: Result<(), mpsc::SendError<Event>> = shared.events.send(Event::Left(id));
     }
 }
@@ -762,6 +833,26 @@ mod tests {
     use std::net::SocketAddr;
 
     use super::*;
+
+    #[test]
+    fn the_host_reads_each_remote_delay_with_the_menu() {
+        let told = merge_delays(
+            r#"{"pause":true}"#,
+            vec![Duration::from_millis(180), Duration::from_millis(24)],
+        );
+        let read: serde_json::Value = serde_json::from_str(&told).unwrap();
+        assert_eq!(
+            read,
+            serde_json::json!({ "pause": true, "delais": [24, 180] })
+        );
+        // Menu fermé, ou état qui n'est pas un objet : rien ne change.
+        let closed = r#"{"pause":false}"#;
+        assert_eq!(
+            merge_delays(closed, vec![Duration::from_millis(24)]),
+            closed
+        );
+        assert_eq!(merge_delays("rien", Vec::new()), "rien");
+    }
 
     /// Une connexion arrivée directement au jeu.
     fn direct(address: [u8; 4]) -> tls::Origin {
