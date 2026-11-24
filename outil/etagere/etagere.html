@@ -178,18 +178,28 @@ function mettreAJour() {
 }
 
 // Le passage par internet : rien si l'hôte ne l'a pas réglé. Il vaut pour le
-// prochain jeu lancé : un jeu qui tourne garde l'adresse qu'il a montrée.
-function direInternet(internet) {
+// prochain jeu lancé : un jeu qui tourne garde l'adresse qu'il a montrée. La
+// ligne dit donc aussi quand le jeu en cours et l'interrupteur ne sont plus
+// d'accord, et qu'il faut le relancer.
+function direInternet(internet, enCours) {
   const ligne = $("internet");
   ligne.hidden = !internet;
   if (!internet) return;
   const nom = internet.adresse.replace(/^https?:\/\//, "");
-  ligne.className = "internet" + (internet.relie ? " relie" : internet.allume ? " attend" : "");
+  const jeu = enCours && (jeux.find((jeu) => jeu.nom === enCours.nom)?.titre || enCours.nom);
+  const relie = internet.allume && internet.relie;
+  const desaccord = enCours && internet.allume !== enCours.internet && (relie || !internet.allume);
+  ligne.className = "internet" + (desaccord || (internet.allume && !relie) ? " attend" : relie ? " relie" : "");
   ligne.replaceChildren();
   const touche = Object.assign(document.createElement("b"), { textContent: "I" });
-  const suite = !internet.allume ? ` internet : éteint, les téléphones passent par le Wi-Fi`
-    : internet.relie ? ` internet : allumé, les téléphones passent par ${nom} au prochain jeu lancé`
-    : ` internet : allumé, mais ${nom} ne répond pas encore`;
+  const suite = desaccord && internet.allume
+      ? ` internet : allumé, mais ${jeu} a été lancé avant et montre encore l'adresse du Wi-Fi. Relance-le pour passer par ${nom}`
+    : desaccord
+      ? ` internet : éteint, mais ${jeu} montre encore l'adresse de ${nom}, qui ne mène plus ici. Relance-le`
+    : !internet.allume ? ` internet : éteint, les téléphones passent par le Wi-Fi`
+    : !internet.relie ? ` internet : allumé, mais ${nom} ne répond pas encore`
+    : enCours ? ` internet : allumé, les téléphones de ${jeu} passent par ${nom}`
+    : ` internet : allumé, les téléphones passent par ${nom} au prochain jeu lancé`;
   ligne.append(touche, suite);
 }
 
@@ -201,7 +211,7 @@ function lire() {
   return fetch("/etat").then((reponse) => reponse.json()).then((etat) => {
     jeux = etat.jeux;
     enCours = etat.en_cours;
-    direInternet(etat.internet);
+    direInternet(etat.internet, etat.en_cours);
     $("avis").hidden = !etat.avis;
     $("avis").textContent = etat.avis;
     dessiner(false);

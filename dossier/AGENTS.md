@@ -111,8 +111,8 @@ Le nom, son enregistrement dynamique et le certificat viennent du dépôt infra 
 
 D'ordinaire, les téléphones doivent être sur le Wi-Fi de l'ordinateur. Avec le relais de la console, déployé sur la prod (`soiree/relais/`, `infra deploy soiree`), ils passent par internet : la 4G suffit.
 
-- **L'allumer** : la touche I, sur l'étagère. La ligne du bas dit où ça en est : éteint, allumé, ou allumé mais le relais ne répond pas.
-- **Il vaut pour tous les jeux, au prochain lancement.** Un jeu déjà lancé garde l'adresse qu'il a montrée : relance-le pour qu'il en change, et les téléphones rescannent son QR code.
+- **L'allumer** : la touche I, sur l'étagère. La ligne du bas dit où ça en est : éteint, allumé, ou allumé mais le relais ne répond pas. L'étagère s'en souvient : allumé un soir, il l'est encore au prochain `soiree play`, et le terminal le dit.
+- **Il vaut pour tous les jeux, au prochain lancement.** Un jeu déjà lancé garde l'adresse qu'il a montrée : relance-le pour qu'il en change, et les téléphones rescannent son QR code. Quand le jeu en cours et l'interrupteur ne sont plus d'accord, la ligne du bas le dit et demande de le relancer.
 - **Éteins-le avant un jeu en temps réel** (Jumpy, Tennis) : chaque geste fait l'aller-retour par le serveur.
 - **Si le relais ne répond pas** au moment de lancer un jeu, les téléphones restent sur le Wi-Fi, et l'étagère le dit.
 - Il n'y a pas de code de soirée : pendant que c'est allumé, qui connaît l'adresse peut prendre une place.

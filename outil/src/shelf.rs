@@ -48,9 +48,15 @@ const FOLDER: &str = ".etagere";
 const CARD_FILE: &str = "fiche.json";
 const CHECK_LOG: &str = "verification.log";
 const GAME_LOG: &str = "partie.log";
+/// Ce fichier existe, sous l'étagère, tant que l'hôte a laissé « internet »
+/// allumé : l'étagère s'en souvient d'un lancement à l'autre.
+const INTERNET_FILE: &str = "internet";
 /// Un jeu rangé sert sa première page en moins de temps que ça.
 const LAUNCH_PATIENCE: Duration = Duration::from_secs(20);
 const BETWEEN_TRIES: Duration = Duration::from_millis(100);
+/// Allumé mais pas encore relié, le relais a tant de temps pour répondre
+/// avant qu'un jeu se lance sans lui.
+const LINK_PATIENCE: Duration = Duration::from_secs(5);
 const ANSWER_WITHIN: Duration = Duration::from_secs(5);
 /// L'en-tête qu'une page d'un autre site ne peut pas envoyer : seule la page
 /// de l'étagère, ou `soiree maj`, lance ou met à jour un jeu.
@@ -133,6 +139,8 @@ struct Entry {
 struct Running {
     name: String,
     child: Child,
+    /// Son QR code mène au relais : ses téléphones passent par internet.
+    internet: bool,
 }
 
 struct Shelf {
@@ -337,6 +345,12 @@ pub fn run(dir: &Path) -> Result<(), String> {
         ));
     }
     let passage = Passage::from_env()?;
+    // Allumé la dernière fois, allumé cette fois : l'hôte n'a pas à y repenser.
+    let link = passage
+        .as_ref()
+        .filter(|_| remembers_internet(&games))
+        .map(|passage| passage.open(public));
+    let on = link.is_some();
     let (jobs, queue) = mpsc::channel();
     let entries: BTreeMap<String, Entry> = names
         .iter()
@@ -357,7 +371,7 @@ pub fn run(dir: &Path) -> Result<(), String> {
         busy: BTreeSet::new(),
         again: BTreeMap::new(),
         passage: passage.clone(),
-        link: None,
+        link,
     }));
     for name in order {
         let _: Result<(), mpsc::SendError<Job>> = jobs.send(Job {
@@ -383,10 +397,18 @@ pub fn run(dir: &Path) -> Result<(), String> {
     println!("\nÉtagère     : {url}");
     announce_phones(public);
     if let Some(passage) = &passage {
-        println!(
-            "Internet    : éteint. La touche I, sur l'étagère, fait passer les téléphones par {}",
-            passage.phones()
-        );
+        if on {
+            println!(
+                "Internet    : allumé, comme la dernière fois. Les téléphones passent par {}\n              \
+                 La touche I, sur l'étagère, l'éteint.",
+                passage.phones()
+            );
+        } else {
+            println!(
+                "Internet    : éteint. La touche I, sur l'étagère, fait passer les téléphones par {}",
+                passage.phones()
+            );
+        }
     }
     println!("Chaque jeu s'allume quand il est prêt. Ctrl-C ferme l'étagère et le jeu en cours.\n");
     // Lancée par un autre programme, l'étagère n'ouvre pas de fenêtre.
@@ -738,21 +760,7 @@ fn launch(shared: &Shared, name: &str) -> Result<String, String> {
         shelf.notice.clear();
         (shelf.games.clone(), shelf.port, filed)
     };
-    // Allumé et relié, le relais reçoit les téléphones : le jeu leur montre
-    // son adresse. Allumé sans réponse du relais, ils restent sur le Wi-Fi.
-    let internet = {
-        let mut shelf = lock(shared);
-        let linked = shelf.link.as_ref().is_some_and(Link::linked);
-        if shelf.link.is_some() && !linked {
-            "Le relais ne répond pas : pour ce jeu, les téléphones passent par le Wi-Fi."
-                .clone_into(&mut shelf.notice);
-        }
-        shelf
-            .passage
-            .as_ref()
-            .filter(|_| linked)
-            .map(|passage| passage.phones().to_owned())
-    };
+    let internet = internet(shared);
     stop(shared);
     // Plus aucun jeu ne tourne : les versions remplacées ne servent plus.
     forget_older(&games, name, filed.version);
@@ -763,8 +771,54 @@ fn launch(shared: &Shared, name: &str) -> Result<String, String> {
     shelf.running = Some(Running {
         name: name.to_owned(),
         child,
+        internet: internet.is_some(),
     });
     Ok(shelf_url(game_port(port)))
+}
+
+/// L'adresse du relais, si les téléphones du jeu qui se lance passent par
+/// internet : le jeu la leur montre. Allumé mais pas encore relié (l'étagère
+/// vient de démarrer, l'hôte vient d'allumer), le relais a quelques secondes
+/// pour répondre ; sans réponse, les téléphones restent sur le Wi-Fi, et
+/// l'étagère le dit.
+fn internet(shared: &Shared) -> Option<String> {
+    let since = Instant::now();
+    loop {
+        let mut shelf = lock(shared);
+        let linked = shelf.link.as_ref()?.linked();
+        if linked {
+            return shelf
+                .passage
+                .as_ref()
+                .map(|passage| passage.phones().to_owned());
+        }
+        if since.elapsed() >= LINK_PATIENCE {
+            "Le relais ne répond pas : pour ce jeu, les téléphones passent par le Wi-Fi."
+                .clone_into(&mut shelf.notice);
+            return None;
+        }
+        drop(shelf);
+        thread::sleep(BETWEEN_TRIES);
+    }
+}
+
+/// L'hôte avait-il laissé « internet » allumé ?
+fn remembers_internet(games: &Path) -> bool {
+    games.join(FOLDER).join(INTERNET_FILE).exists()
+}
+
+/// Retient qu'« internet » est allumé, pour le prochain `soiree play`. Si ça
+/// ne s'écrit pas, l'interrupteur marche quand même : il sera éteint la
+/// prochaine fois.
+fn remember_internet(games: &Path) {
+    let folder = games.join(FOLDER);
+    let _: std::io::Result<()> = fs::create_dir_all(&folder)
+        .and_then(|()| fs::write(folder.join(INTERNET_FILE), "allumé\n"));
+}
+
+/// Oublie qu'« internet » était allumé.
+fn forget_internet(games: &Path) {
+    let _: std::io::Result<()> = fs::remove_file(games.join(FOLDER).join(INTERNET_FILE));
 }
 
 fn start(
@@ -879,6 +933,8 @@ fn state(shelf: &mut Shelf) -> serde_json::Value {
         "en_cours": shelf.running.as_ref().map(|running| json!({
             "nom": running.name,
             "adresse": shelf_url(game_port(shelf.port)),
+            // Son QR code mène-t-il au relais ? Fixé à son lancement.
+            "internet": running.internet,
         })),
         "avis": shelf.notice,
         // Le passage par internet : réglé par l'hôte, allumé sur l'étagère,
@@ -1063,6 +1119,11 @@ fn route(request: &Request, shared: &Shared) -> Reply {
                 Some(_) => None,
                 None => Some(passage.open(public_port(shelf.port))),
             };
+            if shelf.link.is_some() {
+                remember_internet(&shelf.games);
+            } else {
+                forget_internet(&shelf.games);
+            }
             Reply::json(&json!({ "allume": shelf.link.is_some() }))
         }
         ("POST", ["guichet"]) => {
@@ -1228,6 +1289,18 @@ mod tests {
         // Une page d'un autre site ne peut pas envoyer l'en-tête de l'étagère.
         assert_eq!(route(&post(""), &shared).status, "403 Forbidden");
         assert_eq!(route(&post(TRUSTED), &shared).status, "409 Conflict");
+    }
+
+    #[test]
+    fn the_internet_switch_is_remembered() {
+        let games =
+            std::env::temp_dir().join(format!("soiree-interrupteur-{}", std::process::id()));
+        assert!(!remembers_internet(&games));
+        remember_internet(&games);
+        assert!(remembers_internet(&games));
+        forget_internet(&games);
+        assert!(!remembers_internet(&games));
+        fs::remove_dir_all(&games).unwrap();
     }
 
     #[test]
