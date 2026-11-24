@@ -480,6 +480,52 @@ fn version_prefix() -> String {
 }
 
 /// Le dossier d'une version rangée d'un jeu.
+/// Ce qui gagne à être compressé, dans les pages d'un jeu : son programme
+/// surtout, qui pèse de 0,6 à 6 Mo.
+const SQUEEZED: [&str; 6] = ["wasm", "js", "css", "html", "svg", "json"];
+
+/// Écrit, à côté de chaque fichier des pages qui y gagne, sa version
+/// compressée (`pages_bg.wasm.gz`) : la console la sert à sa place aux
+/// téléphones qui savent la lire (`telecommande/src/host.rs`). Sur une 4G
+/// faible, c'est le temps de charger une page divisé par trois à cinq.
+///
+/// Sans `gzip` sur cet ordinateur, les pages restent telles quelles : elles
+/// se chargent comme avant.
+fn squeeze(pages: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(pages)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            squeeze(&path)?;
+            continue;
+        }
+        let worth = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| SQUEEZED.contains(&extension));
+        if !worth {
+            continue;
+        }
+        let mut packed = path.clone().into_os_string();
+        packed.push(".gz");
+        let packed = PathBuf::from(packed);
+        let done = File::create(&packed).and_then(|to| {
+            Command::new("gzip")
+                .arg("-9")
+                .arg("-c")
+                .arg(&path)
+                .stdin(Stdio::null())
+                .stdout(to)
+                .stderr(Stdio::null())
+                .status()
+        });
+        // Une version compressée à moitié écrite serait servie telle quelle.
+        if !done.is_ok_and(|status| status.success()) {
+            let _: std::io::Result<()> = fs::remove_file(&packed);
+        }
+    }
+    Ok(())
+}
+
 fn filed_dir(games: &Path, name: &str, version: u32) -> PathBuf {
     games.join(FOLDER).join(name).join(version.to_string())
 }
@@ -664,7 +710,8 @@ fn file(games: &Path, name: &str, version: u32, key: String) -> Result<Filed, St
         let built = metadata.target_directory.join("release").join(&program);
         let _: u64 = fs::copy(built, to.join(&program))?;
         let _: u64 = fs::copy(game.join(COVER), to.join(COVER))?;
-        copy_dir(&metadata.target_directory.join("pages"), &to.join("pages"))
+        copy_dir(&metadata.target_directory.join("pages"), &to.join("pages"))?;
+        squeeze(&to.join("pages"))
     })();
     copied.map_err(|error: std::io::Error| {
         format!("ne se range pas dans {} : {error}", to.display())
@@ -1377,6 +1424,21 @@ mod tests {
         );
         assert_eq!(request.body, b"ping");
         drop(sent.join().unwrap());
+    }
+
+    #[test]
+    fn filed_pages_get_a_compressed_twin() {
+        let pages = std::env::temp_dir().join(format!("soiree-pages-{}", std::process::id()));
+        let _: std::io::Result<()> = fs::remove_dir_all(&pages);
+        fs::create_dir_all(pages.join("sons")).unwrap();
+        fs::write(pages.join("pages_bg.wasm"), vec![7_u8; 50_000]).unwrap();
+        fs::write(pages.join("sons").join("but.ogg"), vec![7_u8; 50_000]).unwrap();
+        squeeze(&pages).unwrap();
+        let packed = fs::metadata(pages.join("pages_bg.wasm.gz")).unwrap().len();
+        assert!(packed > 0 && packed < 5_000, "{packed}");
+        // Un son est déjà compressé : il reste seul.
+        assert!(!pages.join("sons").join("but.ogg.gz").exists());
+        fs::remove_dir_all(&pages).unwrap();
     }
 
     #[test]

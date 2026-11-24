@@ -52,7 +52,16 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// muet plus longtemps que ça est un fil coupé.
 const SILENCE: Duration = Duration::from_secs(45);
 const BEAT: Duration = Duration::from_secs(15);
-const RETRY: Duration = Duration::from_secs(2);
+/// Sans relais, l'étagère le redemande à ce rythme : celui auquel une page
+/// redemande son lien, pour que les téléphones reviennent dès qu'elle est là.
+const RETRY: Duration = Duration::from_secs(1);
+/// Un fil qui tenait depuis ce temps-là et qui casse est repris tout de
+/// suite, puis de moins en moins vite jusqu'à [`RETRY`] : le réseau a
+/// hoqueté, le relais est sans doute toujours là. Un fil qui casse à peine
+/// ouvert (une autre étagère prend la place, avec la même clé) attend
+/// [`RETRY`], pour ne pas se la disputer sans fin.
+const SETTLED: Duration = Duration::from_secs(10);
+const QUICK_RETRY: Duration = Duration::from_millis(200);
 
 /// Une adresse où se connecter.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,6 +136,17 @@ impl Passage {
             door,
             key,
         }))
+    }
+
+    /// Un passage donné tel quel, sans les variables de l'hôte : celui du banc
+    /// du réseau, vers son relais d'essai (`network/wire.rs`).
+    pub fn direct(phones: &str, door: &str, key: &str) -> Option<Self> {
+        let _: Target = Target::read(phones)?;
+        Some(Self {
+            phones: phones.trim_end_matches('/').to_owned(),
+            door: Target::read(door)?,
+            key: key.to_owned(),
+        })
     }
 
     /// L'adresse que les téléphones ouvrent.
@@ -211,13 +231,21 @@ impl Passage {
 
     /// Tient le fil du relais, et le reprend chaque fois qu'il casse.
     async fn hold(&self, local: u16, linked: &AtomicBool) {
+        let mut wait = RETRY;
         loop {
             if let Ok(mut wire) = self.dial(WIRE_PATH).await {
+                let since = tokio::time::Instant::now();
                 linked.store(true, Ordering::Relaxed);
                 self.listen(&mut wire, local).await;
                 linked.store(false, Ordering::Relaxed);
+                wait = if since.elapsed() >= SETTLED {
+                    QUICK_RETRY
+                } else {
+                    RETRY
+                };
             }
-            tokio::time::sleep(RETRY).await;
+            tokio::time::sleep(wait).await;
+            wait = wait.saturating_mul(2).min(RETRY);
         }
     }
 
@@ -226,9 +254,15 @@ impl Passage {
         let mut beat = tokio::time::interval(BEAT);
         let mut line = String::new();
         let mut heard = [0_u8; 256];
+        // Le silence du relais se compte depuis sa dernière parole. Compté
+        // depuis notre dernier battement, il ne durerait jamais assez : un fil
+        // mort sans erreur ne serait jamais repris.
+        let mut spoke = tokio::time::Instant::now();
         loop {
+            let silent = spoke.checked_add(SILENCE).unwrap_or(spoke);
             let read = tokio::select! {
-                read = tokio::time::timeout(SILENCE, wire.read(&mut heard)) => read,
+                read = wire.read(&mut heard) => read,
+                () = tokio::time::sleep_until(silent) => return,
                 // De quoi garder le fil ouvert en chemin, dans ce sens aussi.
                 _ = beat.tick() => {
                     if wire.write_all(b"\n").await.is_err() {
@@ -237,9 +271,10 @@ impl Passage {
                     continue;
                 }
             };
-            let Ok(Ok(count @ 1..)) = read else {
+            let Ok(count @ 1..) = read else {
                 return;
             };
+            spoke = tokio::time::Instant::now();
             for byte in heard.iter().take(count) {
                 if *byte != b'\n' {
                     line.push(char::from(*byte));
@@ -347,6 +382,12 @@ impl Link {
     /// Le relais est-il joint, là, maintenant ?
     pub fn linked(&self) -> bool {
         self.linked.load(Ordering::Relaxed)
+    }
+
+    /// De quoi suivre le lien depuis un autre fil : vrai tant que le relais
+    /// est joint.
+    pub fn flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.linked)
     }
 }
 

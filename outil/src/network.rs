@@ -16,21 +16,28 @@
 //! présente avec le billet de la partie, et le jeu le voit arriver. Il ne
 //! joue pas. Le banc se lance donc hors d'une vraie partie.
 
+mod load;
+mod wire;
+
 use std::collections::VecDeque;
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher as _;
 use std::net::{Ipv4Addr, TcpListener, ToSocketAddrs as _};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use futures_util::future::join_all;
 use futures_util::{SinkExt as _, StreamExt as _};
 use serde_json::json;
 use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 
+use self::load::Load;
 use crate::internet::Stream;
 
 const PROGRAM: &str = "toxiproxy-server";
@@ -45,6 +52,14 @@ const RETRY: Duration = Duration::from_secs(1);
 const SECONDS: u64 = 10;
 /// La coupure : rien ne passe pendant ce temps.
 const STALL: Duration = Duration::from_secs(5);
+/// La coupure longue : plus que ce que la console attend d'un téléphone muet
+/// (`SILENCE`, dans `telecommande/src/host.rs`).
+const LONG_STALL: Duration = Duration::from_secs(15);
+/// La panne : plus que ce que l'étagère attend d'un relais muet (`SILENCE`,
+/// dans `internet.rs`).
+const OUTAGE: Duration = Duration::from_mins(1);
+/// Au plus tant de téléphones d'essai à la fois.
+const PHONES_MAX: u64 = 200;
 /// La chute : le réseau revient après ce temps.
 const DOWN: Duration = Duration::from_secs(2);
 /// Après une coupure, la mesure continue ce temps-là : de quoi voir revenir.
@@ -57,7 +72,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// entre deux messages dit alors s'il arrive régulièrement.
 const STEADY: u64 = 5;
 
-const USAGE: &str = "usage : soiree reseau [tiens] [scénario] [--ecran] [--secondes <n>] [--adresse <a>] [--jeux <dossier>]
+const USAGE: &str = "usage : soiree reseau [tiens | lien] [scénario] [options]
 
 Mesure ce qu'un téléphone voit du jeu en cours, à travers un réseau abîmé exprès.
 Lance un jeu sur l'étagère (`soiree play`), puis, depuis le même dossier :
@@ -66,9 +81,17 @@ Lance un jeu sur l'étagère (`soiree play`), puis, depuis le même dossier :
   soiree reseau 4g-mauvaise      n'en joue qu'un
   soiree reseau tiens coupure    le tient jusqu'à Ctrl-C, et donne l'adresse où jouer
                                  soi-même à travers ce réseau-là
+  soiree reseau lien             abîme le lien entre l'étagère et le relais, celui
+                                 dont dépendent tous les téléphones venus par internet
+                                 (il dit ce qu'il lui faut)
+
+Les scénarios : direct, 4g, 4g-mauvaise, coupure (5 secondes), coupure-longue
+(15 secondes : le jeu voit partir le joueur), chute, et panne (une minute, sur
+demande seulement).
 
   --ecran            le téléphone d'essai regarde comme l'écran : il reçoit tout ce
                      que le jeu dessine, le plus lourd de ce qui passe
+  --telephones <n>   autant de téléphones d'essai à la fois (1 par défaut)
   --secondes <n>     la durée d'une mesure (10 par défaut)
   --adresse <a>      l'adresse des téléphones, celle sous le QR code, pour un jeu
                      lancé sans l'étagère
@@ -84,12 +107,23 @@ enum Way {
     ToGame,
 }
 
+/// Qui entre dans le tuyau. Toxiproxy nomme ses deux sens d'après lui :
+/// « upstream » part de celui qui entre, « downstream » lui revient.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Entering {
+    /// Les téléphones : le tuyau est entre eux et le jeu.
+    Phones,
+    /// L'étagère : le tuyau est entre elle et le relais, et les téléphones
+    /// sont de l'autre côté.
+    Shelf,
+}
+
 impl Way {
-    /// Le nom du sens pour Toxiproxy, dont le client est le téléphone.
-    fn stream(self) -> &'static str {
-        match self {
-            Self::ToPhone => "downstream",
-            Self::ToGame => "upstream",
+    /// Le nom du sens pour Toxiproxy.
+    fn stream(self, entering: Entering) -> &'static str {
+        match (self, entering) {
+            (Self::ToPhone, Entering::Phones) | (Self::ToGame, Entering::Shelf) => "downstream",
+            (Self::ToGame, Entering::Phones) | (Self::ToPhone, Entering::Shelf) => "upstream",
         }
     }
 }
@@ -104,8 +138,8 @@ struct Toxic {
 }
 
 impl Toxic {
-    fn name(&self) -> String {
-        format!("{}-{}", self.name, self.way.stream())
+    fn name(&self, entering: Entering) -> String {
+        format!("{}-{}", self.name, self.way.stream(entering))
     }
 }
 
@@ -113,10 +147,20 @@ impl Toxic {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Cut {
     Never,
-    /// Plus rien ne passe, les connexions restent ouvertes, puis ça revient.
-    Stall,
+    /// Plus rien ne passe pendant ce temps, les connexions restent ouvertes,
+    /// puis ça revient.
+    Stall(Duration),
     /// Les connexions tombent, et le réseau revient un peu après.
     Fall,
+}
+
+/// Quand un scénario se joue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Played {
+    /// Avec les autres, quand l'hôte n'en nomme aucun.
+    WithTheOthers,
+    /// Seulement quand l'hôte le nomme : il est long.
+    WhenNamed,
 }
 
 struct Scenario {
@@ -124,6 +168,7 @@ struct Scenario {
     tells: &'static str,
     toxics: &'static [Toxic],
     cut: Cut,
+    played: Played,
 }
 
 const SCENARIOS: &[Scenario] = &[
@@ -132,6 +177,7 @@ const SCENARIOS: &[Scenario] = &[
         tells: "rien d'abîmé : la référence",
         toxics: &[],
         cut: Cut::Never,
+        played: Played::WithTheOthers,
     },
     Scenario {
         name: "4g",
@@ -151,6 +197,7 @@ const SCENARIOS: &[Scenario] = &[
             },
         ],
         cut: Cut::Never,
+        played: Played::WithTheOthers,
     },
     Scenario {
         name: "4g-mauvaise",
@@ -183,12 +230,30 @@ const SCENARIOS: &[Scenario] = &[
             },
         ],
         cut: Cut::Never,
+        played: Played::WithTheOthers,
     },
     Scenario {
         name: "coupure",
         tells: "plus rien ne passe pendant 5 secondes (un tunnel, un ascenseur), puis ça revient",
         toxics: &[],
-        cut: Cut::Stall,
+        cut: Cut::Stall(STALL),
+        played: Played::WithTheOthers,
+    },
+    Scenario {
+        name: "coupure-longue",
+        tells: "plus rien ne passe pendant 15 secondes : la console voit le téléphone se \
+                taire, ferme son lien, et le jeu voit partir le joueur",
+        toxics: &[],
+        cut: Cut::Stall(LONG_STALL),
+        played: Played::WithTheOthers,
+    },
+    Scenario {
+        name: "panne",
+        tells: "plus rien ne passe pendant une minute (un ordinateur qui change de réseau, \
+                une box qui redémarre)",
+        toxics: &[],
+        cut: Cut::Stall(OUTAGE),
+        played: Played::WhenNamed,
     },
     Scenario {
         name: "chute",
@@ -196,6 +261,7 @@ const SCENARIOS: &[Scenario] = &[
                 saute), et le réseau revient 2 secondes après",
         toxics: &[],
         cut: Cut::Fall,
+        played: Played::WithTheOthers,
     },
 ];
 
@@ -243,6 +309,24 @@ impl Target {
             })
     }
 
+    /// Le nom à donner au serveur : sans le port quand c'est celui d'usage.
+    fn authority(&self) -> String {
+        if self.port == if self.secure { 443 } else { 80 } {
+            self.host.clone()
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+
+    /// La page qu'un téléphone ouvre, ou l'écran.
+    fn page(&self, role: &str) -> String {
+        match (role, &self.ticket) {
+            ("screen", _) => "/".to_owned(),
+            (_, Some(ticket)) => format!("/t?c={ticket}"),
+            (_, None) => "/t".to_owned(),
+        }
+    }
+
     /// La même adresse, par un autre port : celui du tuyau.
     fn through(&self, port: u16) -> String {
         let scheme = if self.secure { "https" } else { "http" };
@@ -261,6 +345,36 @@ enum Open {
     ToThisComputer,
     /// Les téléphones du Wi-Fi aussi.
     ToTheNetwork,
+}
+
+/// Ouvre une connexion vers l'adresse des téléphones, par le port donné sur
+/// cet ordinateur (celui du tuyau) : chiffrée si l'adresse l'est, au nom
+/// qu'elle porte.
+async fn open(target: &Target, through: u16) -> Result<Stream, String> {
+    let wrong = |error: &dyn std::fmt::Display| {
+        format!("la connexion vers le jeu ne s'ouvre pas ({error})")
+    };
+    let opening = async {
+        let tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, through))
+            .await
+            .map_err(|error| wrong(&error))?;
+        let _: std::io::Result<()> = tcp.set_nodelay(true);
+        let stream: Stream = if target.secure {
+            Box::new(
+                crate::internet::secure(tcp, &target.host)
+                    .await
+                    .map_err(|error| wrong(&error))?,
+            )
+        } else {
+            Box::new(tcp)
+        };
+        Ok(stream)
+    };
+    tokio::time::timeout(PATIENCE, opening)
+        .await
+        .unwrap_or_else(|_| {
+            Err("la connexion vers le jeu ne s'ouvre pas (pas de réponse)".to_owned())
+        })
 }
 
 /// Un port libre sur cet ordinateur, à l'instant.
@@ -287,7 +401,7 @@ impl Drop for Pipe {
 }
 
 impl Pipe {
-    fn open(target: &Target, open: Open) -> Result<Self, String> {
+    fn open(target: &Target, open: Open, entering: Entering) -> Result<Self, String> {
         let api = free_port()?;
         let port = free_port()?;
         let child = Command::new(PROGRAM)
@@ -306,6 +420,7 @@ impl Pipe {
             child,
             control: Control {
                 api: format!("http://127.0.0.1:{api}"),
+                entering,
             },
             port,
         };
@@ -338,6 +453,7 @@ impl Pipe {
 #[derive(Clone)]
 struct Control {
     api: String,
+    entering: Entering,
 }
 
 impl Control {
@@ -374,9 +490,9 @@ impl Control {
             "POST",
             &format!("/proxies/{PIPE}/toxics"),
             Some(&json!({
-                "name": toxic.name(),
+                "name": toxic.name(self.entering),
                 "type": toxic.kind,
-                "stream": toxic.way.stream(),
+                "stream": toxic.way.stream(self.entering),
                 "toxicity": 1.0,
                 "attributes": attributes,
             })),
@@ -386,16 +502,18 @@ impl Control {
     fn mend(&self, toxic: &Toxic) -> Result<(), String> {
         self.call(
             "DELETE",
-            &format!("/proxies/{PIPE}/toxics/{}", toxic.name()),
+            &format!("/proxies/{PIPE}/toxics/{}", toxic.name(self.entering)),
             None,
         )
     }
 
-    /// Casse le tuyau comme le scénario le dit, attend, et le répare.
-    fn cut(&self, cut: Cut) -> Result<(), String> {
+    /// Casse le tuyau comme le scénario le dit, attend, et le répare. Rend
+    /// le temps que la panne a duré.
+    fn cut(&self, cut: Cut) -> Result<Duration, String> {
+        let since = Instant::now();
         match cut {
-            Cut::Never => Ok(()),
-            Cut::Stall => {
+            Cut::Never => Ok(Duration::ZERO),
+            Cut::Stall(length) => {
                 // Un délai plus long que la coupure : tout est retenu, rien
                 // n'est perdu, et ce qui attendait repart quand on l'enlève.
                 // C'est ce que fait TCP sous un tunnel.
@@ -403,11 +521,15 @@ impl Control {
                     name: "coupure",
                     kind: "latency",
                     way,
-                    attributes: &[("latency", 60_000)],
+                    attributes: &[("latency", 600_000)],
                 });
                 holes.iter().try_for_each(|hole| self.spoil(hole))?;
-                thread::sleep(STALL);
-                holes.iter().try_for_each(|hole| self.mend(hole))
+                thread::sleep(length);
+                // Le réseau revient ici : Toxiproxy peut mettre du temps à
+                // rendre la main, alors que les octets repassent déjà.
+                let lasted = since.elapsed();
+                holes.iter().try_for_each(|hole| self.mend(hole))?;
+                Ok(lasted)
             }
             Cut::Fall => {
                 let switch = |enabled: &str| {
@@ -418,7 +540,9 @@ impl Control {
                 };
                 switch("false")?;
                 thread::sleep(DOWN);
-                switch("true")
+                let lasted = since.elapsed();
+                switch("true")?;
+                Ok(lasted)
             }
         }
     }
@@ -440,6 +564,55 @@ struct Tally {
     away: Vec<Duration>,
     /// Le lien était tombé à la fin de la mesure.
     gone: bool,
+    /// Ce que plusieurs téléphones ont vu, mis ensemble : combien ils
+    /// étaient, et combien ont perdu leur lien au moins une fois.
+    phones: u64,
+    dropped: u64,
+}
+
+/// Un poids, lisible : « 654 Ko », « 2,9 Mo ».
+fn weigh(bytes: u64) -> String {
+    if bytes >= 1_000_000 {
+        let tenths = bytes.checked_div(100_000).unwrap_or(0);
+        format!(
+            "{},{} Mo",
+            tenths.checked_div(10).unwrap_or(0),
+            tenths.checked_rem(10).unwrap_or(0)
+        )
+    } else {
+        format!("{} Ko", bytes.checked_div(1000).unwrap_or(0))
+    }
+}
+
+/// Le chargement de la page, vu par chaque téléphone d'essai.
+fn tell_loads(loads: &[Load]) -> Option<String> {
+    let first = loads.first()?;
+    let times: Vec<Duration> = loads.iter().map(|load| load.took).collect();
+    let mut sorted = times.clone();
+    sorted.sort_unstable();
+    let took = match (rank(&sorted, 50), rank(&sorted, 100)) {
+        (Some(median), Some(worst)) if loads.len() > 1 => {
+            format!("{} (le plus lent : {})", say(median), say(worst))
+        }
+        (Some(median), _) => say(median),
+        (None, _) => return None,
+    };
+    let heaviest = first.heaviest().map_or_else(String::new, |file| {
+        let packed = file.encoding.as_ref().map_or_else(
+            || "non compressé".to_owned(),
+            |by| format!("compressé ({by})"),
+        );
+        format!(
+            " · le plus lourd : {}, {}, {packed}",
+            file.path.split('?').next().unwrap_or(&file.path),
+            weigh(file.bytes)
+        )
+    });
+    Some(format!(
+        "{} en {took} · {} fichiers{heaviest}",
+        weigh(first.bytes()),
+        first.files.len()
+    ))
 }
 
 /// Le rang d'un centième dans une liste triée : la médiane est le 50e.
@@ -491,6 +664,26 @@ fn spread(series: &[Duration]) -> Option<String> {
 }
 
 impl Tally {
+    /// Ce que plusieurs téléphones ont vu, mis ensemble.
+    fn together(all: Vec<Self>) -> Self {
+        let mut whole = Self::default();
+        for one in all {
+            whole.phones = whole.phones.saturating_add(1);
+            if one.gone || !one.away.is_empty() {
+                whole.dropped = whole.dropped.saturating_add(1);
+            }
+            whole.delays.extend(one.delays);
+            whole.asked = whole.asked.saturating_add(one.asked);
+            whole.gaps.extend(one.gaps);
+            whole.messages = whole.messages.saturating_add(one.messages);
+            whole.bytes = whole.bytes.saturating_add(one.bytes);
+            whole.heaviest = whole.heaviest.max(one.heaviest);
+            whole.away.extend(one.away);
+            whole.gone = whole.gone || one.gone;
+        }
+        whole
+    }
+
     /// Ce qui est vu, en quelques lignes.
     fn report(&self, lasted: Duration) -> String {
         let unanswered = self
@@ -505,7 +698,8 @@ impl Tally {
                 )
             },
         );
-        let seconds = lasted.as_secs().max(1);
+        // Le rythme et le poids se disent par téléphone.
+        let seconds = lasted.as_secs().max(1).saturating_mul(self.phones.max(1));
         let stream = if self.messages == 0 {
             "aucun message : rien ne bouge pour ce téléphone (lance une partie pour mesurer \
              le rythme du jeu)"
@@ -543,6 +737,14 @@ impl Tally {
                 let longest = away.iter().max().copied().unwrap_or_default();
                 format!("tombé {} fois, revenu après {}", away.len(), say(longest))
             }
+        };
+        let link = if self.phones > 1 {
+            format!(
+                "{link} ({} téléphones sur {} l'ont perdu)",
+                self.dropped, self.phones
+            )
+        } else {
+            link
         };
         format!(
             "   aller-retour jusqu'au jeu    {delay}\n   \
@@ -598,19 +800,7 @@ impl Probe<'_> {
         let wrong =
             |error: &dyn std::fmt::Display| format!("le lien avec le jeu ne s'ouvre pas ({error})");
         let opening = async {
-            let tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, self.through))
-                .await
-                .map_err(|error| wrong(&error))?;
-            let _: std::io::Result<()> = tcp.set_nodelay(true);
-            let stream: Stream = if self.target.secure {
-                Box::new(
-                    crate::internet::secure(tcp, &self.target.host)
-                        .await
-                        .map_err(|error| wrong(&error))?,
-                )
-            } else {
-                Box::new(tcp)
-            };
+            let stream = open(self.target, self.through).await?;
             let ticket = self
                 .target
                 .ticket
@@ -630,6 +820,20 @@ impl Probe<'_> {
             .unwrap_or_else(|_| {
                 Err("le lien avec le jeu ne s'ouvre pas (pas de réponse)".to_owned())
             })
+    }
+
+    /// Fait ce que fait un téléphone qui scanne le QR code : charge la page
+    /// (si `page` en donne une), puis regarde le jeu pendant `length`.
+    async fn visit(
+        &self,
+        page: Option<&str>,
+        length: Duration,
+    ) -> Result<(Option<Load>, Tally), String> {
+        let loaded = match page {
+            Some(page) => Some(load::load(self.target, self.through, page).await?),
+            None => None,
+        };
+        Ok((loaded, self.watch(Some(length)).await?))
     }
 
     /// Regarde le jeu pendant `length` (ou jusqu'à Ctrl-C), en rouvrant le
@@ -730,27 +934,54 @@ impl Probe<'_> {
 /// Ce que l'hôte demande au banc.
 struct Asked {
     held: bool,
+    /// C'est le lien de l'étagère avec le relais qu'on abîme (`wire.rs`).
+    wire: bool,
     scenario: Option<String>,
     role: &'static str,
     seconds: u64,
+    phones: u64,
     address: Option<String>,
     games: PathBuf,
+    /// Pour le lien de l'étagère : le programme du relais, et le port du jeu.
+    relay: Option<PathBuf>,
+    game: Option<u16>,
 }
 
 impl Asked {
     fn read(args: &[String]) -> Result<Self, String> {
         let mut asked = Self {
             held: false,
+            wire: false,
             scenario: None,
             role: "remote",
             seconds: SECONDS,
+            phones: 1,
             address: None,
             games: PathBuf::from("games"),
+            relay: None,
+            game: None,
         };
         let mut words = args.iter().map(String::as_str);
         while let Some(word) = words.next() {
             match word {
                 "tiens" => asked.held = true,
+                "lien" => asked.wire = true,
+                "--telephones" => {
+                    asked.phones = words
+                        .next()
+                        .and_then(|count| count.parse().ok())
+                        .filter(|count| (1..=PHONES_MAX).contains(count))
+                        .ok_or(USAGE)?;
+                }
+                "--relais" => asked.relay = Some(PathBuf::from(words.next().ok_or(USAGE)?)),
+                "--jeu" => {
+                    asked.game = Some(
+                        words
+                            .next()
+                            .and_then(|port| port.parse().ok())
+                            .ok_or(USAGE)?,
+                    );
+                }
                 "--ecran" => asked.role = "screen",
                 "--secondes" => {
                     asked.seconds = words
@@ -781,6 +1012,18 @@ fn scenario(name: &str) -> Result<&'static Scenario, String> {
         })
 }
 
+/// Les scénarios à jouer : celui que l'hôte nomme, sinon tous ceux qui se
+/// jouent ensemble.
+fn chosen(asked: &Asked) -> Result<Vec<&'static Scenario>, String> {
+    match &asked.scenario {
+        Some(name) => Ok(vec![scenario(name)?]),
+        None => Ok(SCENARIOS
+            .iter()
+            .filter(|scenario| scenario.played == Played::WithTheOthers)
+            .collect()),
+    }
+}
+
 /// L'identité du téléphone d'essai : neuve à chaque banc.
 fn identity() -> u64 {
     let nanos = SystemTime::now()
@@ -798,6 +1041,13 @@ pub fn run(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let asked = Asked::read(args)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    if asked.wire {
+        return wire::run(&runtime, &asked);
+    }
     let address = match &asked.address {
         Some(address) => address.clone(),
         None => crate::shelf::phones_address(&asked.games)?,
@@ -805,72 +1055,154 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let target = Target::read(&address).ok_or_else(|| {
         format!("ce n'est pas l'adresse des téléphones (`https://nom:port/t?c=billet`) : {address}")
     })?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
     println!("soiree {} : le banc du réseau", crate::VERSION);
     println!("Les téléphones vont à {address}\n");
     if asked.held {
         let name = asked.scenario.as_deref().unwrap_or("4g");
         return hold(&runtime, &target, scenario(name)?, asked.role);
     }
-    let chosen: Vec<&Scenario> = match &asked.scenario {
-        Some(name) => vec![scenario(name)?],
-        None => SCENARIOS.iter().collect(),
+    let scenarios = chosen(&asked)?;
+    let pipe = Pipe::open(&target, Open::ToThisComputer, Entering::Phones)?;
+    let setup = Setup {
+        pipe: &pipe,
+        target: &target,
+        through: pipe.port,
+        wire: None,
     };
-    let pipe = Pipe::open(&target, Open::ToThisComputer)?;
-    for scenario in chosen {
-        measure(&runtime, &pipe, &target, scenario, &asked)?;
+    for scenario in scenarios {
+        measure(&runtime, &setup, scenario, &asked)?;
     }
     Ok(())
 }
 
-/// Joue un scénario et dit ce que le téléphone d'essai a vu.
+/// Où passent les téléphones d'essai, et ce que le banc suit en plus.
+struct Setup<'run> {
+    /// Le tuyau qu'on abîme.
+    pipe: &'run Pipe,
+    /// L'adresse des téléphones.
+    target: &'run Target,
+    /// Le port, sur cet ordinateur, par où les téléphones d'essai y vont.
+    through: u16,
+    /// Le lien de l'étagère avec le relais, quand c'est lui qu'on abîme.
+    wire: Option<Arc<AtomicBool>>,
+}
+
+/// Suit le lien de l'étagère jusqu'à `done` : chaque fois qu'il change, à
+/// quel moment, et ce qu'il devient.
+fn follow(wire: &AtomicBool, done: &AtomicBool, since: Instant) -> Vec<(Duration, bool)> {
+    let mut seen = Vec::new();
+    let mut linked = true;
+    while !done.load(Ordering::Relaxed) {
+        let now = wire.load(Ordering::Relaxed);
+        if now != linked {
+            linked = now;
+            seen.push((since.elapsed(), now));
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    seen
+}
+
+/// Ce que le lien de l'étagère est devenu pendant le scénario.
+fn tell_wire(seen: &[(Duration, bool)], cut: Option<(Duration, Duration)>) -> String {
+    let outage = cut.map_or_else(String::new, |(from, to)| {
+        format!("panne de {} à {} · ", say(from), say(to))
+    });
+    if seen.is_empty() {
+        return format!("{outage}tenu d'un bout à l'autre");
+    }
+    let turns: Vec<String> = seen
+        .iter()
+        .map(|(at, linked)| {
+            let what = if *linked { "relié" } else { "perdu" };
+            format!("{what} à {}", say(*at))
+        })
+        .collect();
+    format!("{outage}{}", turns.join(" · "))
+}
+
+/// Joue un scénario et dit ce que les téléphones d'essai ont vu.
 fn measure(
     runtime: &tokio::runtime::Runtime,
-    pipe: &Pipe,
-    target: &Target,
+    setup: &Setup<'_>,
     scenario: &Scenario,
     asked: &Asked,
 ) -> Result<(), String> {
     println!("── {} : {}", scenario.name, scenario.tells);
+    let control = &setup.pipe.control;
     scenario
         .toxics
         .iter()
-        .try_for_each(|toxic| pipe.control.spoil(toxic))?;
+        .try_for_each(|toxic| control.spoil(toxic))?;
     let before_cut = Duration::from_secs(asked.seconds.checked_div(2).unwrap_or(1).max(1));
     let length = match scenario.cut {
         Cut::Never => Duration::from_secs(asked.seconds),
-        Cut::Stall => before_cut.saturating_add(STALL).saturating_add(AFTER_CUT),
+        Cut::Stall(stall) => before_cut.saturating_add(stall).saturating_add(AFTER_CUT),
         Cut::Fall => before_cut.saturating_add(DOWN).saturating_add(AFTER_CUT),
     };
-    let probe = Probe {
-        target,
-        through: pipe.port,
-        role: asked.role,
-        id: identity(),
-        tells_every: None,
-    };
-    let control = pipe.control.clone();
+    // La page se charge avant de jouer : mesuré quand rien ne casse en route.
+    let page = (scenario.cut == Cut::Never).then(|| setup.target.page(asked.role));
+    let probes: Vec<Probe<'_>> = (0..asked.phones)
+        .map(|_| Probe {
+            target: setup.target,
+            through: setup.through,
+            role: asked.role,
+            id: identity(),
+            tells_every: None,
+        })
+        .collect();
+    let since = Instant::now();
+    let done = AtomicBool::new(false);
     let cut = scenario.cut;
-    let cutter = thread::spawn(move || {
-        if cut == Cut::Never {
-            return Ok(());
-        }
-        thread::sleep(before_cut);
-        control.cut(cut)
+    let (visits, cut_done, wire) = thread::scope(|scope| {
+        let cutter = scope.spawn(|| {
+            if cut == Cut::Never {
+                return Ok(None);
+            }
+            thread::sleep(before_cut);
+            let from = since.elapsed();
+            let lasted = control.cut(cut)?;
+            Ok(Some((from, from.saturating_add(lasted))))
+        });
+        let follower = setup
+            .wire
+            .as_ref()
+            .map(|wire| scope.spawn(|| follow(wire, &done, since)));
+        let visits = runtime.block_on(join_all(
+            probes
+                .iter()
+                .map(|probe| probe.visit(page.as_deref(), length)),
+        ));
+        done.store(true, Ordering::Relaxed);
+        let cut_done: Result<Option<(Duration, Duration)>, String> = cutter
+            .join()
+            .unwrap_or_else(|_| Err("la coupure a échoué".to_owned()));
+        let wire = follower.map(|follower| follower.join().unwrap_or_default());
+        (visits, cut_done, wire)
     });
-    let seen = runtime.block_on(probe.watch(Some(length)));
-    let cut_done = cutter
-        .join()
-        .unwrap_or_else(|_| Err("la coupure a échoué".to_owned()));
     scenario
         .toxics
         .iter()
-        .try_for_each(|toxic| pipe.control.mend(toxic))?;
-    cut_done?;
-    println!("{}\n", seen?.report(length));
+        .try_for_each(|toxic| control.mend(toxic))?;
+    let cut_done = cut_done?;
+    let mut loads = Vec::new();
+    let mut tallies = Vec::new();
+    for visit in visits {
+        let (loaded, tally) = visit?;
+        loads.extend(loaded);
+        tallies.push(tally);
+    }
+    if let Some(told) = tell_loads(&loads) {
+        println!("   chargement de la page        {told}");
+    }
+    println!("{}", Tally::together(tallies).report(length));
+    if let Some(seen) = wire {
+        println!(
+            "   lien de l'étagère            {}",
+            tell_wire(&seen, cut_done)
+        );
+    }
+    println!();
     Ok(())
 }
 
@@ -887,7 +1219,7 @@ fn hold(
     } else {
         Open::ToThisComputer
     };
-    let pipe = Pipe::open(target, open)?;
+    let pipe = Pipe::open(target, open, Entering::Phones)?;
     scenario
         .toxics
         .iter()

@@ -24,7 +24,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Le banc du réseau (`src/network.rs`) : un téléphone d'essai ouvre le lien
 # d'une page avec le jeu, à travers un tuyau abîmé exprès.
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
-futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 # Rejoue la machine d'un jeu en WebAssembly, sans rien installer à côté.
 wasmi = { version = "2", default-features = false, features = ["std", "stable", "validate", "auto-dispatch"] }
 
