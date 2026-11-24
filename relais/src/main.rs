@@ -61,6 +61,10 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// Sans rien à dire, le relais envoie une ligne vide à l'étagère : un fil
 /// muet finit par être coupé en chemin.
 const BEAT: Duration = Duration::from_secs(15);
+/// L'étagère dit quelque chose au moins à chaque battement, elle aussi : une
+/// étagère muette plus longtemps que ça n'est plus là (un ordinateur en
+/// veille, un réseau coupé sans prévenir).
+const SILENCE: Duration = Duration::from_secs(45);
 
 const NO_PARTY: &str = "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
@@ -364,8 +368,11 @@ async fn wire(relay: &Relay, mut stream: TcpStream) {
     let (mut from_shelf, mut to_shelf) = stream.split();
     let mut beat = tokio::time::interval(BEAT);
     let mut heard = [0_u8; 64];
+    let mut spoke = tokio::time::Instant::now();
     loop {
+        let silent = spoke.checked_add(SILENCE).unwrap_or(spoke);
         let line = tokio::select! {
+            () = tokio::time::sleep_until(silent) => break,
             id = called.recv() => match id {
                 Some(id) => format!("{id}\n"),
                 // Une autre étagère a pris la place.
@@ -375,7 +382,10 @@ async fn wire(relay: &Relay, mut stream: TcpStream) {
             // Ce que l'étagère écrit ne compte pas : seulement qu'elle soit là.
             read = from_shelf.read(&mut heard) => match read {
                 Ok(0) | Err(_) => break,
-                Ok(_) => continue,
+                Ok(_) => {
+                    spoke = tokio::time::Instant::now();
+                    continue;
+                }
             },
         };
         if to_shelf.write_all(line.as_bytes()).await.is_err() {

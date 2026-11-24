@@ -8,6 +8,11 @@
 		reverse_proxy {args[0]}:8081
 	}
 	handle {
+		# Les pages d'un jeu pèsent de 0,6 à 6 Mo et partent telles quelles de
+		# l'ordinateur de l'hôte : compressées ici, un téléphone en reçoit de
+		# trois à cinq fois moins. Le lien d'une page avec le jeu n'est pas
+		# touché.
+		encode zstd gzip
 		reverse_proxy {args[0]}:8080
 	}
 }
