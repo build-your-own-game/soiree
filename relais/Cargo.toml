@@ -11,6 +11,9 @@ publish.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+# Le guichet pose la question d'un jeu à internet, en HTTPS. Les certificats
+# racine sont dans le binaire (`webpki-roots`) : l'image n'en a pas.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [lints]
 workspace = true

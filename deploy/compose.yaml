@@ -1,25 +1,45 @@
-# Le relais de la soirée sur la prod, déployé par `infra deploy soiree`
+# Les relais de la soirée sur la prod, déployés par `infra deploy soiree`
 # (dépôt infra). Le .env est posé à côté de ce fichier depuis fnox
-# (PROD_SOIREE_ENV) : il porte RELAIS_CLE, la clé que l'étagère de l'hôte
-# présente. Les routes sont dans Caddyfile.
+# (PROD_SOIREE_ENV) : il porte la clé de chaque hôte, et les secrets que le
+# guichet prête aux jeux, deux variables par secret : RELAIS_SECRET_NOM (sa
+# valeur) et RELAIS_SECRET_NOM_POUR (la seule adresse où il a le droit
+# d'aller). Les routes sont dans Caddyfile.
+#
+# Un relais par hôte : chacun a son nom et sa clé, et ce qui arrive chez l'un
+# ne touche pas les autres. Ajouter un hôte : voir AGENTS.md, « Ajouter un
+# hôte ».
 name: soiree
 
+x-relais: &relais
+  image: soiree-relais:prod
+  build: ..
+  pull_policy: never # reconstruite par `infra deploy soiree --build`
+  restart: unless-stopped
+  env_file: .env
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 64m
+  logging:
+    driver: local
+
 services:
+  # L'hôte de la maison : relais.soiree.colvenalabs.com, clé RELAIS_CLE.
   relais:
-    image: soiree-relais:prod
-    build: ..
-    pull_policy: never # reconstruite par `infra deploy soiree --build`
-    restart: unless-stopped
-    env_file: .env
+    <<: *relais
     networks:
       proxy:
         aliases: [soiree-relais]
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    mem_limit: 64m
-    logging:
-      driver: local
+
+  # Un relais de réserve, à confier à un ami qui héberge :
+  # ami.relais.soiree.colvenalabs.com, clé CLE_AMI.
+  ami:
+    <<: *relais
+    environment:
+      RELAIS_CLE: ${CLE_AMI}
+    networks:
+      proxy:
+        aliases: [soiree-relais-ami]
 
 networks:
   proxy:

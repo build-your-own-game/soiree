@@ -5,7 +5,9 @@
 //! - **Internet** : une adresse en `https://`, ou `http://localhost`. Un
 //!   secret ne quitte jamais la console : `{NOM}`, dans un en-tête, devient
 //!   la valeur de `SOIREE_SECRET_NOM`, et seulement vers l'adresse que
-//!   `SOIREE_SECRET_NOM_POUR` nomme.
+//!   `SOIREE_SECRET_NOM_POUR` nomme. Sans ce secret, un jeu lancé par une
+//!   étagère passe par son guichet : la demande part telle quelle, `{NOM}`
+//!   compris, et c'est le relais de l'hôte qui y met le secret qu'il garde.
 //! - **Un contenu** : les octets que la console garde sous ce ticket.
 //! - **Les sauvegardes** : un fichier par nom, dans `.soiree/sauvegardes/`.
 //!
@@ -38,6 +40,19 @@ const MINUTE: Duration = Duration::from_secs(60);
 /// nomme l'adresse où il a le droit d'aller : `SOIREE_SECRET_NOM_POUR`.
 const SECRET: &str = "SOIREE_SECRET_";
 const SECRET_FOR: &str = "_POUR";
+/// L'adresse de l'étagère qui a lancé le jeu. Son guichet fait suivre au
+/// relais de l'hôte une demande dont la console n'a pas le secret.
+const SHELF: &str = "SOIREE_ETAGERE";
+const COUNTER: &str = "guichet";
+/// La demande au guichet est la question elle-même : sa méthode, son adresse
+/// et chacun de ses en-têtes (`nom: valeur`) dans ces en-têtes-là, ses octets
+/// dans le corps. Le guichet répond `200` avec le statut du serveur appelé
+/// dans le dernier, et ses octets dans le corps ; toute autre réponse dit que
+/// le guichet n'a pas pu.
+const COUNTER_METHOD: &str = "x-guichet-methode";
+const COUNTER_URL: &str = "x-guichet-adresse";
+const COUNTER_HEADER: &str = "x-guichet-en-tete";
+const COUNTER_STATUS: &str = "x-guichet-statut";
 
 /// Les portes de la console.
 pub(crate) struct Doors {
@@ -47,6 +62,8 @@ pub(crate) struct Doors {
     agent: ureq::Agent,
     /// Quand les dernières questions à internet sont parties.
     sent: VecDeque<Instant>,
+    /// Le guichet de l'étagère qui a lancé le jeu, s'il y en a une.
+    counter: Option<String>,
 }
 
 impl Doors {
@@ -67,6 +84,11 @@ impl Doors {
             saves: Saves { folder: saves },
             agent,
             sent: VecDeque::new(),
+            counter: std::env::var(SHELF)
+                .ok()
+                .map(|shelf| shelf.trim().trim_end_matches('/').to_owned())
+                .filter(|shelf| !shelf.is_empty())
+                .map(|shelf| format!("{shelf}/{COUNTER}")),
         }
     }
 
@@ -103,8 +125,9 @@ impl Doors {
             Want::Web(web) => {
                 if self.may_send(now) {
                     let (agent, answers) = (self.agent.clone(), self.answers.clone());
+                    let counter = self.counter.clone();
                     let _: std::thread::JoinHandle<()> = std::thread::spawn(move || {
-                        let answer = settle(id, fetch(&agent, &web, &secret));
+                        let answer = settle(id, ask_web(&agent, &web, &secret, counter.as_deref()));
                         let _: Result<(), mpsc::SendError<Event>> =
                             answers.send(Event::Answer(serial, answer));
                     });
@@ -166,20 +189,52 @@ fn secret(name: &str) -> Option<Secret> {
     })
 }
 
-/// Pose la question à internet et lit sa réponse.
-fn fetch(
+/// Pose la question à internet : la clé locale d'abord, le guichet sinon.
+///
+/// Si un secret que la question nomme manque ici et qu'une étagère a lancé
+/// le jeu (`counter`), la question part telle quelle au guichet de
+/// l'étagère, qui la fait suivre au relais de l'hôte. Sa réponse revient
+/// comme une réponse d'internet. La console n'attend pas plus longtemps :
+/// c'est le même `agent`, avec le même délai.
+fn ask_web(
     agent: &ureq::Agent,
     web: &Web,
     secret: &dyn Fn(&str) -> Option<Secret>,
+    counter: Option<&str>,
 ) -> Result<Answer, String> {
     if web.body().len() > WEB_MAX {
         return Err(format!("l'envoi dépasse {WEB_MAX} octets"));
     }
     let address = Address::read(web.url())?;
+    let missing = web
+        .headers()
+        .iter()
+        .flat_map(|(_, value)| names(value))
+        .find(|name| secret(name).is_none());
+    match (missing, counter) {
+        (Some(name), Some(counter)) if address.sealed => through_counter(agent, counter, web)
+            .map_err(|why| {
+                format!(
+                    "{}. Le guichet de l'étagère n'a pas pu non plus : {why}",
+                    missing_secret(name, &address)
+                )
+            }),
+        (Some(_) | None, Some(_) | None) => fetch(agent, web, &address, secret),
+    }
+}
+
+/// Pose la question à internet, avec les secrets de cette console, et lit
+/// sa réponse.
+fn fetch(
+    agent: &ureq::Agent,
+    web: &Web,
+    address: &Address,
+    secret: &dyn Fn(&str) -> Option<Secret>,
+) -> Result<Answer, String> {
     let headers = web
         .headers()
         .iter()
-        .map(|(name, value)| Ok((name.as_str(), fill(value, &address, secret)?)))
+        .map(|(name, value)| Ok((name.as_str(), fill(value, address, secret)?)))
         .collect::<Result<Vec<(&str, String)>, String>>()?;
     let response = match web.method() {
         Method::Get => headers
@@ -204,6 +259,66 @@ fn fetch(
         .read_to_vec()
         .map_err(|error| format!("la réponse de {} ne se lit pas ({error})", address.host))?;
     Ok(Answer::web(status, body))
+}
+
+/// Envoie la question, telle quelle, au guichet de l'étagère, et lit la
+/// réponse du serveur appelé.
+fn through_counter(agent: &ureq::Agent, counter: &str, web: &Web) -> Result<Answer, String> {
+    let method = match web.method() {
+        Method::Get => "GET",
+        Method::Post => "POST",
+    };
+    let request = agent
+        .post(counter)
+        .header("x-soiree", "1")
+        .header(COUNTER_METHOD, method)
+        .header(COUNTER_URL, web.url());
+    let request = web
+        .headers()
+        .iter()
+        .try_fold(request, |request, (name, value)| {
+            // Le nom s'arrête aux deux-points : il ne peut pas en contenir.
+            let token = !name.is_empty()
+                && !name.contains(|c: char| c == ':' || c.is_whitespace() || c.is_control());
+            if token {
+                Ok(request.header(COUNTER_HEADER, format!("{name}: {value}")))
+            } else {
+                Err(format!("`{name}` n'est pas un nom d'en-tête"))
+            }
+        })?;
+    let response = request
+        .send(web.body())
+        .map_err(|error| format!("l'étagère ne répond pas ({error})"))?;
+    let called = response
+        .headers()
+        .get(COUNTER_STATUS)
+        .and_then(|status| status.to_str().ok())
+        .and_then(|status| status.trim().parse::<u16>().ok())
+        .filter(|_| response.status().as_u16() == 200);
+    let body = response
+        .into_body()
+        .with_config()
+        .limit(u64::try_from(WEB_MAX).unwrap_or(u64::MAX))
+        .read_to_vec()
+        .map_err(|error| format!("la réponse du guichet ne se lit pas ({error})"))?;
+    match called {
+        Some(status) => Ok(Answer::web(status, body)),
+        None => Err(refusal(&body)),
+    }
+}
+
+/// Ce que le guichet dit quand il n'a pas pu : `{"erreur": "…"}`, ou du texte.
+fn refusal(body: &[u8]) -> String {
+    let said = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| value.get("erreur")?.as_str().map(str::to_owned))
+        .unwrap_or_else(|| String::from_utf8_lossy(body).into_owned());
+    let said: String = said.trim().chars().take(300).collect();
+    if said.is_empty() {
+        "il ne dit pas pourquoi".to_owned()
+    } else {
+        said
+    }
 }
 
 /// L'adresse d'une question à internet, une fois acceptée.
@@ -259,11 +374,9 @@ fn fill(
         };
         let Some(secret) = secret(name) else {
             return Err(format!(
-                "le jeu demande le secret `{name}`, que la console n'a pas. Pour le lui confier, \
-                 dans le dossier du jeu : `fnox set {SECRET}{name}` (sa valeur) et `fnox set \
-                 {SECRET}{name}{SECRET_FOR}` (l'adresse où il a le droit d'aller, par exemple \
-                 `{}`)",
-                address.host
+                "{}. Ou lance le jeu depuis une étagère dont le relais garde ce secret : son \
+                 guichet le prête",
+                missing_secret(name, address)
             ));
         };
         if !address.sealed || !secret.host.trim().eq_ignore_ascii_case(&address.host) {
@@ -279,6 +392,32 @@ fn fill(
     }
     filled.push_str(rest);
     Ok(filled)
+}
+
+/// Ce que l'hôte lit quand un secret manque à la console.
+fn missing_secret(name: &str, address: &Address) -> String {
+    format!(
+        "le jeu demande le secret `{name}`, que la console n'a pas. Pour le lui confier, dans le \
+         dossier du jeu : `fnox set {SECRET}{name}` (sa valeur) et `fnox set \
+         {SECRET}{name}{SECRET_FOR}` (l'adresse où il a le droit d'aller, par exemple `{}`)",
+        address.host
+    )
+}
+
+/// Les noms de secret qu'une valeur d'en-tête porte, lus comme [`fill`] les lit.
+fn names(value: &str) -> Vec<&str> {
+    let mut names = Vec::new();
+    let mut rest = value;
+    while let Some((_, after)) = rest.split_once('{') {
+        match after.split_once('}').filter(|(name, _)| is_name(name)) {
+            Some((name, after)) => {
+                names.push(name);
+                rest = after;
+            }
+            None => rest = after,
+        }
+    }
+    names
 }
 
 /// Un nom de secret : des majuscules, des chiffres et des tirets bas.
@@ -602,6 +741,123 @@ mod tests {
                 value
             );
         }
+    }
+
+    /// Un serveur qui lit une demande (son en-tête, puis `content-length`
+    /// octets), répond `reply` et rend ce qu'il a lu.
+    fn serve_once(reply: &'static [u8]) -> (u16, std::thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let served = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0_u8; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            let head = String::from_utf8(request.clone())
+                .unwrap()
+                .to_ascii_lowercase();
+            let length: usize = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .map_or(0, |length| length.trim().parse().unwrap());
+            let mut body = vec![0_u8; length];
+            stream.read_exact(&mut body).unwrap();
+            request.extend_from_slice(&body);
+            stream.write_all(reply).unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (port, served)
+    }
+
+    fn agent() -> ureq::Agent {
+        let (answers, _) = mpsc::channel();
+        let folder = folder("agent");
+        Doors::new(answers, Arc::new(Store::open(folder.join("c"))), folder).agent
+    }
+
+    #[test]
+    fn without_its_secret_a_question_goes_to_the_counter_as_it_is() {
+        let (port, served) = serve_once(
+            b"HTTP/1.1 200 OK\r\nx-guichet-statut: 201\r\ncontent-length: 4\r\nconnection: close\r\n\r\njuge",
+        );
+        let web = Web::post("https://juge.test/v1", b"ping".to_vec())
+            .header("authorization", "Bearer {JUGE}")
+            .header("content-type", "application/json");
+        let counter = format!("http://127.0.0.1:{port}/guichet");
+        let answer = ask_web(&agent(), &web, &no_secret, Some(&counter)).unwrap();
+        // Le statut du serveur appelé, pas celui du guichet.
+        assert_eq!(answer, Answer::web(201, b"juge".to_vec()));
+        let request = served.join().unwrap();
+        let lower = request.to_ascii_lowercase();
+        assert!(lower.starts_with("post /guichet http/1.1\r\n"), "{request}");
+        assert!(lower.contains("x-soiree: 1\r\n"), "{request}");
+        assert!(lower.contains("x-guichet-methode: post\r\n"), "{request}");
+        assert!(
+            request.contains("x-guichet-adresse: https://juge.test/v1\r\n"),
+            "{request}"
+        );
+        // Le secret reste un nom : c'est le relais qui le remplace.
+        assert!(
+            request.contains("x-guichet-en-tete: authorization: Bearer {JUGE}\r\n"),
+            "{request}"
+        );
+        assert!(
+            request.contains("x-guichet-en-tete: content-type: application/json\r\n"),
+            "{request}"
+        );
+        assert!(request.ends_with("\r\n\r\nping"), "{request}");
+    }
+
+    #[test]
+    fn a_counter_that_cannot_leaves_the_question_without_answer() {
+        let (port, served) = serve_once(
+            b"HTTP/1.1 409 Conflict\r\ncontent-length: 27\r\nconnection: close\r\n\r\n{\"erreur\":\"pas de guichet\"}",
+        );
+        let web = Web::get("https://juge.test/v1").header("authorization", "Bearer {JUGE}");
+        let counter = format!("http://127.0.0.1:{port}/guichet");
+        let why = ask_web(&agent(), &web, &no_secret, Some(&counter)).unwrap_err();
+        assert!(why.contains("pas de guichet"), "{why}");
+        assert!(why.contains("SOIREE_SECRET_JUGE_POUR"), "{why}");
+        let _: String = served.join().unwrap();
+        // Un « 200 » sans le statut du serveur appelé n'est pas une réponse.
+        let (port, served) =
+            serve_once(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok");
+        let counter = format!("http://127.0.0.1:{port}/guichet");
+        assert!(ask_web(&agent(), &web, &no_secret, Some(&counter)).is_err());
+        let _: String = served.join().unwrap();
+        // Sans étagère, ni étagère qui réponde, l'hôte lit qu'un guichet est possible.
+        let alone = ask_web(&agent(), &web, &no_secret, None).unwrap_err();
+        assert!(alone.contains("guichet"), "{alone}");
+        let gone = TcpListener::bind("127.0.0.1:0").unwrap();
+        let counter = format!("http://{}/guichet", gone.local_addr().unwrap());
+        drop(gone);
+        let silent = ask_web(&agent(), &web, &no_secret, Some(&counter)).unwrap_err();
+        assert!(silent.contains("ne répond pas"), "{silent}");
+    }
+
+    #[test]
+    fn a_secret_the_console_has_never_goes_to_the_counter() {
+        let shelf = TcpListener::bind("127.0.0.1:0").unwrap();
+        shelf.set_nonblocking(true).unwrap();
+        let counter = format!("http://{}/guichet", shelf.local_addr().unwrap());
+        // Le secret est là, mais pas pour cette adresse : refusé ici, sans guichet.
+        let web = Web::get("https://ailleurs.test/").header("authorization", "Bearer {JUGE}");
+        let why = ask_web(&agent(), &web, &judge, Some(&counter)).unwrap_err();
+        assert!(why.contains("ne part pas"), "{why}");
+        // En clair, le guichet ne sert pas : le relais n'y mettrait pas le secret.
+        let web = Web::get("http://localhost:1/").header("authorization", "Bearer {JUGE}");
+        assert!(ask_web(&agent(), &web, &no_secret, Some(&counter)).is_err());
+        assert!(shelf.accept().is_err(), "le guichet a été appelé");
+    }
+
+    #[test]
+    fn the_names_are_read_as_fill_reads_them() {
+        assert_eq!(names("Bearer {JUGE} {A_2}"), vec!["JUGE", "A_2"]);
+        assert_eq!(names("{\"a\":1} {juge} {} {"), Vec::<&str>::new());
+        assert_eq!(names("{{JUGE}}"), vec!["JUGE"]);
     }
 
     #[test]

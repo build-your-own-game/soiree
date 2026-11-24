@@ -214,7 +214,7 @@ checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
 
 [[package]]
 name = "cartouche"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "postcard",
  "serde",
@@ -2045,7 +2045,7 @@ dependencies = [
 
 [[package]]
 name = "telecommande"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "axum",
  "cartouche",

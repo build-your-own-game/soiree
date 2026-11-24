@@ -206,9 +206,8 @@ fn url(role: Role) -> Result<String, JsValue> {
         "ws"
     };
     let host = location.host()?;
-    let seat = UrlSearchParams::new_with_str(&location.search()?)?
-        .get("j")
-        .unwrap_or_default();
+    let asked = UrlSearchParams::new_with_str(&location.search()?)?;
+    let seat = asked.get("j").unwrap_or_default();
     let key = format!("soiree-id-{}-{seat}", role.as_str());
     // Sans stockage (navigation privée stricte), la page est neuve à chaque fois.
     let storage = window.local_storage().ok().flatten();
@@ -230,9 +229,28 @@ fn url(role: Role) -> Result<String, JsValue> {
         id
     };
     Ok(format!(
-        "{scheme}://{host}/ws?id={id}&role={}",
-        role.as_str()
+        "{scheme}://{host}/ws?id={id}&role={}{}",
+        role.as_str(),
+        ticket(&asked)
     ))
+}
+
+/// Le billet que porte l'adresse de la page (`?c=…`, venu du QR code), prêt à
+/// suivre une adresse : `&c=…`, ou rien. La console ne laisse entrer une page
+/// venue d'ailleurs que de l'ordinateur de l'hôte qu'avec le billet de la
+/// partie en cours.
+fn ticket(asked: &UrlSearchParams) -> String {
+    asked.get("c").map_or_else(String::new, |ticket| {
+        format!("&c={}", web_sys::js_sys::encode_uri_component(&ticket))
+    })
+}
+
+/// Le même billet, pour le lien du menu de la console.
+pub(crate) fn shown() -> String {
+    web_sys::window()
+        .and_then(|window| window.location().search().ok())
+        .and_then(|search| UrlSearchParams::new_with_str(&search).ok())
+        .map_or_else(String::new, |asked| ticket(&asked))
 }
 
 /// Met le jeu en pause : la console arrête le temps pour tout le monde, fige

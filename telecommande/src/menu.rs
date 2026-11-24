@@ -74,6 +74,9 @@ button.on { background: #ff3ea5; color: #1a0620; }
 struct State {
     /// Le premier message : cette page est-elle sur l'ordinateur de l'hôte ?
     ici: Option<bool>,
+    /// Avec lui : cette page est-elle entrée dans la partie ? Faux pour un
+    /// téléphone qui n'a pas scanné le QR code de cette partie.
+    billet: Option<bool>,
     partie: Option<String>,
     jeu: Option<String>,
     pause: bool,
@@ -92,8 +95,10 @@ enum Showing {
     Menu,
     /// Le voile de la pause, sur un téléphone.
     Paused,
-    /// Le jeu est fermé : un téléphone attend le suivant.
+    /// Le jeu est fermé : pour le suivant, un téléphone scannera son QR code.
     Closed,
+    /// Ce téléphone n'a pas le billet de la partie : il n'y est pas entré.
+    Uninvited,
     /// Le jeu a demandé la pause, sur l'ordinateur de l'hôte : l'image et le
     /// son se figent, et le jeu montre ce qu'il veut par-dessus.
     Held,
@@ -103,7 +108,7 @@ impl Showing {
     /// La console couvre la page : les touches ne vont plus au jeu.
     fn covers(self) -> bool {
         match self {
-            Self::Menu | Self::Paused | Self::Closed => true,
+            Self::Menu | Self::Paused | Self::Closed | Self::Uninvited => true,
             Self::Held => false,
         }
     }
@@ -157,6 +162,15 @@ struct Hold {
     timer: Option<i32>,
 }
 
+/// Une page est-elle entrée dans la partie ? Sur l'ordinateur de l'hôte,
+/// toujours ; ailleurs, seulement avec le billet que porte le QR code.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Entry {
+    #[default]
+    In,
+    Out,
+}
+
 #[derive(Default)]
 struct Inner {
     local: bool,
@@ -167,6 +181,8 @@ struct Inner {
     socket: Option<WebSocket>,
     lost: u32,
     closed: bool,
+    /// Ce que la console a dit de cette page : entrée dans la partie, ou non.
+    entry: Entry,
     hold: Option<Hold>,
     /// Le geste du menu a déjà été dit sur cette page.
     hinted: bool,
@@ -520,6 +536,9 @@ impl Inner {
         if self.closed {
             return (!self.local).then_some(Showing::Closed);
         }
+        if self.entry == Entry::Out && !self.local {
+            return Some(Showing::Uninvited);
+        }
         match (self.state.pause, self.state.tenu, self.local) {
             (true, _, true) => Some(Showing::Menu),
             (false, true, true) => Some(Showing::Held),
@@ -560,8 +579,13 @@ impl Inner {
                     .to_owned()
             }
             Some(Showing::Closed) => "<div class=\"panel lone\"><h1>Ce jeu est fermé</h1>\
-                 <p>Garde cette page ouverte : le prochain jeu arrive ici.</p></div>"
+                 <p>Pour le prochain jeu, scanne son QR code sur la télé.</p></div>"
                 .to_owned(),
+            Some(Showing::Uninvited) => format!(
+                "<div class=\"panel lone\"><h1>{}</h1>\
+                 <p>Pour jouer, scanne le QR code de la télé.</p></div>",
+                escape(self.state.jeu.as_deref().unwrap_or("Un jeu a commencé"))
+            ),
             Some(Showing::Menu) => self.menu_html(),
         };
         html.push_str("<div class=\"veil\">");
@@ -900,7 +924,16 @@ impl Menu {
 
     fn on_state(self: &Rc<Self>, next: State) {
         if let Some(local) = next.ici {
-            self.inner.borrow_mut().local = local;
+            {
+                let mut inner = self.inner.borrow_mut();
+                inner.local = local;
+                inner.entry = if next.billet == Some(false) {
+                    Entry::Out
+                } else {
+                    Entry::In
+                };
+            }
+            self.render();
             return;
         }
         let leave = {
@@ -966,10 +999,11 @@ impl Menu {
         } else {
             "ws"
         };
-        let socket = location
-            .host()
-            .ok()
-            .and_then(|host| WebSocket::new(&format!("{scheme}://{host}/soiree/console")).ok());
+        let socket = location.host().ok().and_then(|host| {
+            // Le billet de la page, s'il y en a un : `?c=…`.
+            let shown = crate::web::shown().replacen('&', "?", 1);
+            WebSocket::new(&format!("{scheme}://{host}/soiree/console{shown}")).ok()
+        });
         let Some(socket) = socket else {
             return self.retry();
         };

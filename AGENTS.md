@@ -66,6 +66,20 @@ Chaque jeu déclare sa machine : le crate qui porte ses règles (`[package.metad
 
 Ce que la machine demande au monde extérieur (`Machine::asks`), `telecommande/src/doors.rs` le fait : la date à la montre de l'hôte, une question à internet, les octets d'un contenu, les sauvegardes. La réponse revient par `Machine::answer` et s'écrit au journal ; d'un contenu, le journal ne garde que le ticket. Un secret (`{NOM}` dans un en-tête) vient de la variable `SOIREE_SECRET_NOM` et ne part que vers l'adresse de `SOIREE_SECRET_NOM_POUR` : il n'entre ni dans la machine ni dans le journal.
 
+**Le billet d'une partie.** À chaque lancement, la console tire un billet de quatre signes et le met dans l'adresse des téléphones (`…/t?c=k7f2`), donc dans le QR code. On ne joue qu'à ce qu'on a scanné.
+
+- La console (`telecommande/src/host.rs`, `Seat`) ne laisse entrer que l'ordinateur de l'hôte (l'écran, et les onglets de celui qui met un jeu au point : pas de billet à donner) et les pages qui présentent le billet de la partie. La machine ne voit jamais les autres.
+- La page présente le billet de sa propre adresse à ses deux liens (`telecommande/src/web.rs`). Recharger la page ou sortir de veille le garde : on reste dans la partie. « Recommencer », dans le menu, garde le billet : c'est une revanche. Relancer le jeu en tire un autre.
+- Une page sans le bon billet lit, par le menu de la console, le nom du jeu et « scanne le QR code de la télé ». C'est ce que lit un téléphone resté sur la page du jeu précédent : sa page se recharge d'elle-même quand un autre jeu répond à la même adresse, et le nouveau jeu ne lui trouve pas son billet.
+- L'étagère et le relais portent l'adresse telle quelle : la règle est la même sur le Wi-Fi, par internet et dans l'app iPhone.
+
+**Le guichet** prête les secrets que l'ordinateur n'a pas : la clé locale d'abord, le guichet sinon. Un ami qui reçoit chez lui n'a pas les clés de l'hôte ; elles restent sur le serveur du relais.
+
+- **La brique** (`doors.rs`) : quand un `{NOM}` n'a pas de secret local et qu'une étagère a lancé le jeu (`SOIREE_ETAGERE`), la question part telle quelle, `{NOM}` compris, à `POST {étagère}guichet`. La réponse revient à la machine comme une réponse d'internet, et s'écrit au journal comme elle. Le délai ne change pas : c'est le même appel, avec le même temps. Si le guichet n'a pas pu, il n'y a pas de réponse, et l'hôte lit pourquoi.
+- **L'étagère** (`shelf.rs`, `internet.rs`, `Passage::counter`) : réservé à l'ordinateur, comme ses autres `POST`. Avec le passage réglé (`SOIREE_INTERNET`, `SOIREE_INTERNET_CLE`), elle fait suivre au relais (`/_relais/guichet`) avec sa clé, que l'interrupteur soit allumé ou non. Sinon, elle répond qu'elle n'a pas de guichet. La clé du relais ne va jamais au jeu.
+- **Le relais** (`relais/src/counter.rs`), sur sa porte de l'étagère et avec la même clé : il remplace chaque `{NOM}` par `RELAIS_SECRET_NOM`, seulement vers l'adresse de `RELAIS_SECRET_NOM_POUR` et en HTTPS, pose la question et rend la réponse. Une question qui ne nomme aucun secret est refusée : le relais n'est pas un passage vers internet. Un secret ne s'écrit ni au journal ni dans une erreur. Les certificats racine sont dans le binaire : l'image n'en a pas.
+- **La forme est la même aux deux sauts** : la question tient dans les en-têtes `X-Guichet-Methode`, `X-Guichet-Adresse` et `X-Guichet-En-Tete: nom: valeur` (un par en-tête), ses octets dans le corps. La réponse est `200`, avec le statut du serveur appelé dans `X-Guichet-Statut` et ses octets dans le corps. Toute autre réponse veut dire que le guichet n'a pas pu.
+
 **Le menu de la console** (`telecommande/src/menu.rs`, dans le navigateur) est le même pour tous les jeux : il démarre avec le lien de la page (`web::connect`), écoute les touches avant le jeu, et parle à la console par `/soiree/console`.
 
 - Sur l'ordinateur de l'hôte, Échap maintenu l'ouvre ; un appui court est rendu au jeu. Une page venue d'ailleurs que de l'ordinateur ne peut rien demander : c'est l'adresse de la connexion qui le dit, pas la page.
@@ -83,6 +97,16 @@ Ce que la machine demande au monde extérieur (`Machine::asks`), `telecommande/s
 - Sans étagère reliée, le relais ne transmet rien : un téléphone lit qu'il n'y a pas de soirée. L'étagère prouve qui elle est par une clé partagée (`SOIREE_INTERNET_CLE` chez l'hôte, `RELAIS_CLE` sur le serveur). Il n'y a pas de code de soirée : pendant qu'elle est allumée, qui connaît l'adresse peut prendre une place.
 - Si le relais ne répond pas au moment de lancer un jeu, les téléphones restent sur le Wi-Fi, et l'étagère le dit.
 - Chaque geste fait l'aller-retour par le serveur : c'est fait pour les jeux qui supportent un délai. Avant un jeu en temps réel, l'hôte éteint.
+
+**Plusieurs hôtes.** Chaque hôte a son relais, son nom et sa clé (`deploy/compose.yaml`, `deploy/Caddyfile`) : plusieurs étagères peuvent être reliées en même temps, chacune sur son ordinateur, et un téléphone va à celle dont il a scanné le QR code. Un relais ne porte qu'une étagère : c'est voulu, les hôtes ne se touchent pas.
+
+Ajouter un hôte (`marie`, par exemple) :
+
+1. Dans `deploy/compose.yaml`, un service de plus, copié sur `ami` : son nom, `RELAIS_CLE: ${CLE_MARIE}`, l'alias `soiree-relais-marie`.
+2. Dans `deploy/Caddyfile`, son nom : `marie.relais.soiree.colvenalabs.com { import soiree_relais soiree-relais-marie }`. Tous les noms en `*.relais.soiree.colvenalabs.com` mènent déjà à la prod.
+3. Sa clé, dans le dépôt infra : une ligne `CLE_MARIE=…` de plus dans `PROD_SOIREE_ENV` (fnox, jamais affichée).
+4. Committer, pousser, puis `infra deploy soiree --build`.
+5. Chez elle, deux variables : `SOIREE_INTERNET=https://marie.relais.soiree.colvenalabs.com` et `SOIREE_INTERNET_CLE` (sa clé). Puis `soiree play`, et la touche I.
 
 Un jeu qui se joue sans télécommande (`REMOTES = false`) n'a ni adresse ni QR code pour les téléphones : la console répond elle-même à `/t`, et refuse un lien de télécommande.
 

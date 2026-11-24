@@ -5,12 +5,13 @@
 //! une coupure : la console lui renvoie alors ce qu'elle doit afficher.
 
 use std::collections::BTreeMap;
+use std::hash::{BuildHasher as _, RandomState};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, ToSocketAddrs as _, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
 use axum::extract::connect_info::Connected;
@@ -132,6 +133,9 @@ struct Shared {
     /// Le QR code de l'adresse des téléphones. `None` : le jeu se joue sans
     /// télécommande, et aucune n'entre.
     qr: Option<String>,
+    /// Le billet de cette partie : ce que porte le QR code. Une page venue
+    /// d'ailleurs que de cet ordinateur n'entre qu'en le présentant.
+    ticket: String,
     store: Arc<Store>,
     /// Ce que le menu de la console doit montrer, écrit par la console :
     /// chaque page le reçoit en arrivant, puis à chaque changement.
@@ -208,8 +212,11 @@ impl Room {
         {
             follow(&identity.name, public);
         }
+        // Un billet par lancement : le QR code le porte, et un téléphone resté
+        // sur la page d'un jeu précédent, avec son vieux billet, n'entre pas.
+        let ticket = ticket(SystemTime::now());
         let remote_url = if remotes {
-            format!("{base}{remote_path}")
+            format!("{base}{remote_path}?{TICKET}={ticket}")
         } else {
             String::new()
         };
@@ -224,6 +231,7 @@ impl Room {
             } else {
                 None
             },
+            ticket,
             store: Arc::new(Store::open(contents)),
             console: watch::Sender::new(String::from("{}")),
         });
@@ -541,25 +549,70 @@ async fn download(State(shared): State<Arc<Shared>>, Named(name): Named<String>)
 async fn console_upgrade(
     upgrade: WebSocketUpgrade,
     ConnectInfo(Caller(address)): ConnectInfo<Caller>,
+    Query(shown): Query<Shown>,
     State(shared): State<Arc<Shared>>,
 ) -> Response {
     // Le menu ne s'ouvre que depuis l'ordinateur de l'hôte : un téléphone
     // sur le Wi-Fi reçoit ce qu'il doit montrer, et ne demande rien.
-    let seat = if !address.relayed && address.address.ip().is_loopback() {
-        Seat::Host
-    } else {
-        Seat::Guest
-    };
+    let seat = Seat::of(address, shown.c.as_deref(), &shared.ticket);
     upgrade.on_upgrade(move |socket| console_link(socket, seat, shared))
+}
+
+/// Le billet qu'une page présente, s'il y en a un : `?c=…`, comme dans
+/// l'adresse du QR code.
+#[derive(Deserialize)]
+struct Shown {
+    c: Option<String>,
 }
 
 /// D'où une page regarde le jeu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Seat {
-    /// Sur l'ordinateur de l'hôte : elle peut ouvrir le menu.
+    /// Sur l'ordinateur de l'hôte : elle peut ouvrir le menu, et entre sans
+    /// billet (l'écran, et les onglets de celui qui met le jeu au point).
     Host,
-    /// Ailleurs sur le réseau : un téléphone.
+    /// Ailleurs sur le réseau, avec le billet de la partie : un téléphone qui
+    /// a scanné le QR code.
     Guest,
+    /// Ailleurs sur le réseau, sans le bon billet : la page d'un jeu
+    /// précédent, ou une adresse tapée à la main. Elle n'entre pas, et lit
+    /// qu'il faut scanner le QR code.
+    Stranger,
+}
+
+impl Seat {
+    fn of(origin: tls::Origin, shown: Option<&str>, ticket: &str) -> Self {
+        if !origin.relayed && origin.address.ip().is_loopback() {
+            Self::Host
+        } else if shown == Some(ticket) {
+            Self::Guest
+        } else {
+            Self::Stranger
+        }
+    }
+}
+
+/// Le nom du billet dans une adresse.
+const TICKET: &str = "c";
+/// Les signes d'un billet : ni `0` ni `o`, ni `1`, `i` ou `l`, qui se
+/// confondent quand on recopie une adresse à la main.
+const TICKET_SIGNS: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
+const TICKET_LENGTH: usize = 4;
+
+/// Tire le billet d'une partie.
+fn ticket(now: SystemTime) -> String {
+    let nanos = now
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    let mut drawn = RandomState::new().hash_one(nanos);
+    let signs = u64::try_from(TICKET_SIGNS.len()).unwrap_or(1);
+    (0..TICKET_LENGTH)
+        .filter_map(|_| {
+            let rank = usize::try_from(drawn.checked_rem(signs)?).ok()?;
+            drawn = drawn.checked_div(signs)?;
+            TICKET_SIGNS.get(rank).copied().map(char::from)
+        })
+        .collect()
 }
 
 /// Le lien du menu de la console avec une page, du début à la fin.
@@ -568,7 +621,9 @@ async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
     let mut state = shared.console.subscribe();
     let (mut sink, mut stream) = socket.split();
     let first = state.borrow_and_update().clone();
-    let hello = format!("{{\"ici\":{local}}}");
+    // D'abord qui elle est pour la console : chez l'hôte ou non, et entrée ou non.
+    let admitted = seat != Seat::Stranger;
+    let hello = format!("{{\"ici\":{local},\"billet\":{admitted}}}");
     if sink.send(Message::Text(hello.into())).await.is_err()
         || sink.send(Message::Text(first.into())).await.is_err()
     {
@@ -620,15 +675,23 @@ async fn console_link(socket: WebSocket, seat: Seat, shared: Arc<Shared>) {
 struct Hello {
     id: u64,
     role: Role,
+    /// Le billet de la partie, pour une page venue d'ailleurs.
+    c: Option<String>,
 }
 
 async fn upgrade(
     upgrade: WebSocketUpgrade,
+    ConnectInfo(Caller(address)): ConnectInfo<Caller>,
     Query(hello): Query<Hello>,
     State(shared): State<Arc<Shared>>,
 ) -> Response {
     // Un jeu sans télécommande : sa machine n'en voit jamais.
     if hello.role == Role::Remote && shared.qr.is_none() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // La machine ne voit que l'ordinateur de l'hôte et les pages qui ont
+    // scanné le QR code de cette partie.
+    if Seat::of(address, hello.c.as_deref(), &shared.ticket) == Seat::Stranger {
         return StatusCode::FORBIDDEN.into_response();
     }
     upgrade.on_upgrade(move |socket| serve(socket, Id(hello.id), hello.role, shared))
@@ -696,7 +759,54 @@ async fn serve(socket: WebSocket, id: Id, role: Role, shared: Arc<Shared>) {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
     use super::*;
+
+    /// Une connexion arrivée directement au jeu.
+    fn direct(address: [u8; 4]) -> tls::Origin {
+        tls::Origin {
+            address: SocketAddr::from((address, 50_000)),
+            relayed: false,
+        }
+    }
+
+    /// Une connexion que l'étagère amène : elle arrive de cet ordinateur.
+    fn brought() -> tls::Origin {
+        tls::Origin {
+            address: SocketAddr::from(([127, 0, 0, 1], 50_000)),
+            relayed: true,
+        }
+    }
+
+    #[test]
+    fn a_page_enters_from_the_host_or_with_the_ticket_of_the_party() {
+        let ticket = "k7f2";
+        let phone = direct([192, 168, 1, 20]);
+        // Sur l'ordinateur de l'hôte : l'écran, les onglets d'essai. Sans billet.
+        assert_eq!(Seat::of(direct([127, 0, 0, 1]), None, ticket), Seat::Host);
+        // Un téléphone du Wi-Fi qui a scanné le QR code.
+        assert_eq!(Seat::of(phone, Some(ticket), ticket), Seat::Guest);
+        // Le même, resté sur la page d'un jeu précédent, ou sans billet.
+        assert_eq!(Seat::of(phone, Some("abcd"), ticket), Seat::Stranger);
+        assert_eq!(Seat::of(phone, None, ticket), Seat::Stranger);
+        // Ce que l'étagère amène vient d'un téléphone, même s'il arrive de cet
+        // ordinateur : il lui faut le billet, et il n'est jamais l'hôte.
+        assert_eq!(Seat::of(brought(), None, ticket), Seat::Stranger);
+        assert_eq!(Seat::of(brought(), Some(ticket), ticket), Seat::Guest);
+    }
+
+    #[test]
+    fn a_ticket_is_four_signs_that_read_well() {
+        for nanos in [0_u64, 1, 987_654_321, u64::MAX] {
+            let drawn = ticket(UNIX_EPOCH + Duration::from_nanos(nanos));
+            assert_eq!(drawn.len(), TICKET_LENGTH, "{drawn}");
+            assert!(
+                drawn.bytes().all(|sign| TICKET_SIGNS.contains(&sign)),
+                "{drawn}"
+            );
+        }
+    }
 
     #[test]
     fn only_the_orders_of_the_menu_are_read() {

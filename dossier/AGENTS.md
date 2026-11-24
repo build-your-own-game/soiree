@@ -51,7 +51,7 @@ Réinstalle-le après chaque changement dans `soiree/regles/` ou `soiree/outil/`
 - **Pendant la soirée**, rien ne bouge : ce qu'un ami pousse sur GitHub ne change pas le jeu rangé.
 - **Mettre un jeu à jour** : la touche M sur l'étagère, ou `soiree maj <jeu>` dans un autre terminal. Le dossier `games/<jeu>` est pris tel qu'il est s'il a des changements locaux, sinon mis à jour depuis GitHub. L'ancienne version reste jouable, et n'est remplacée que si la nouvelle passe la vérification.
 - **Dans un jeu**, Échap maintenu ouvre le menu de la console (un appui court reste au jeu) : reprendre, recommencer, quitter vers l'étagère. Le jeu est en pause pour tout le monde tant qu'il est ouvert.
-- **Les téléphones** scannent le QR code du premier jeu, puis gardent la page ouverte : le jeu suivant y arrive. Ils passent tous par l'étagère, qui les amène au jeu en cours : au premier lancement, macOS demande une fois si `soiree` peut recevoir des connexions. Réponds oui, sinon aucun téléphone n'arrive.
+- **Les téléphones** scannent le QR code de chaque jeu : on ne joue qu'à ce qu'on a scanné. Un téléphone resté sur la page du jeu précédent lit le nom du nouveau jeu et qu'il faut scanner son QR code. Le QR code reste dans le menu de la console (Échap maintenu), pour un retardataire. « Recommencer » garde les joueurs ; relancer un jeu depuis l'étagère redemande de scanner. Ils passent tous par l'étagère, qui les amène au jeu en cours : au premier lancement, macOS demande une fois si `soiree` peut recevoir des connexions. Réponds oui, sinon aucun téléphone n'arrive.
 
 Lance-la depuis un terminal ouvert dans ce dossier : c'est lui qui donne aux jeux le certificat du HTTPS (voir plus bas).
 
@@ -121,14 +121,25 @@ D'ordinaire, les téléphones doivent être sur le Wi-Fi de l'ordinateur. Avec l
 
 ## Les secrets d'un jeu
 
-Un jeu qui interroge internet (une IA qui juge) n'a jamais de clé dans son code : sa machine écrit `{NOM}` dans un en-tête, et la console y met la clé. L'hôte la lui confie par deux variables, dans le `fnox.toml` du dossier du jeu :
+Un jeu qui interroge internet (une IA qui juge) n'a jamais de clé dans son code : sa machine écrit `{NOM}` dans un en-tête, et la console y met la clé. **La clé locale d'abord, le guichet sinon.**
 
-```sh
-fnox set SOIREE_SECRET_NOM          # la clé
-fnox set SOIREE_SECRET_NOM_POUR     # la seule adresse où elle a le droit d'aller : api.exemple.com
-```
+- **La clé locale.** L'hôte la confie au jeu par deux variables, dans le `fnox.toml` du dossier du jeu :
 
-Quand une clé manque, le jeu continue sans réponse, et la console dit dans le terminal quelles variables donner.
+  ```sh
+  fnox set SOIREE_SECRET_NOM          # la clé
+  fnox set SOIREE_SECRET_NOM_POUR     # la seule adresse où elle a le droit d'aller : api.exemple.com
+  ```
+
+- **Le guichet.** Sans clé locale, un jeu lancé par l'étagère lui envoie la question telle quelle, `{NOM}` compris. L'étagère la fait suivre au relais (il faut `SOIREE_INTERNET` et `SOIREE_INTERNET_CLE`, que l'interrupteur « internet » soit allumé ou non), et c'est le relais qui y met la clé. Les clés restent donc sur le serveur : un ami qui reçoit chez lui n'en a besoin d'aucune. Côté serveur, elles sont dans `PROD_SOIREE_ENV` (infra), deux variables par clé :
+
+  ```sh
+  RELAIS_SECRET_NOM=…                 # la clé
+  RELAIS_SECRET_NOM_POUR=api.exemple.com
+  ```
+
+  Le relais ne prête une clé qu'à l'adresse qui va avec, en HTTPS, et seulement à une étagère qui présente sa clé à lui.
+
+Quand une clé manque ici et au guichet, le jeu continue sans réponse, et la console dit dans le terminal (le journal du jeu, `partie.log`, sous l'étagère) quelles variables donner.
 
 ## Ce qui n'est dans aucun dépôt
 

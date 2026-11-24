@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
-use std::io::{BufRead as _, BufReader, IsTerminal as _, Read as _, Write as _};
+use std::io::{BufReader, IsTerminal as _, Read as _, Write as _};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream, ToSocketAddrs as _, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -55,6 +55,12 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(5);
 /// L'en-tête qu'une page d'un autre site ne peut pas envoyer : seule la page
 /// de l'étagère, ou `soiree maj`, lance ou met à jour un jeu.
 const TRUSTED: &str = "x-soiree";
+/// L'en-tête d'une demande à l'étagère ne dépasse pas cette taille : celui
+/// d'une question au guichet porte les en-têtes de la question.
+const HEAD_MAX: usize = 32 * 1024;
+/// Les en-têtes qu'une question au guichet porte, et que l'étagère fait
+/// suivre au relais tels quels.
+const COUNTER_HEADERS: &str = "x-guichet-";
 
 const PAGE: &str = include_str!("../etagere/etagere.html");
 const FONTS: [(&str, &[u8]); 2] = [
@@ -890,64 +896,90 @@ struct Request {
     path: String,
     /// La demande porte l'en-tête de l'étagère.
     trusted: bool,
+    /// Ses en-têtes, le nom en minuscules, dans l'ordre.
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
 }
 
 struct Reply {
     status: &'static str,
     kind: &'static str,
     body: Vec<u8>,
+    /// Le statut du serveur appelé, pour une réponse du guichet.
+    counted: Option<u16>,
 }
 
 impl Reply {
-    fn json(value: &serde_json::Value) -> Self {
+    fn new(status: &'static str, kind: &'static str, body: Vec<u8>) -> Self {
         Self {
-            status: "200 OK",
-            kind: "application/json; charset=utf-8",
-            body: value.to_string().into_bytes(),
+            status,
+            kind,
+            body,
+            counted: None,
         }
     }
 
+    fn json(value: &serde_json::Value) -> Self {
+        Self::new(
+            "200 OK",
+            "application/json; charset=utf-8",
+            value.to_string().into_bytes(),
+        )
+    }
+
     fn refused(status: &'static str, why: &str) -> Self {
-        Self {
+        Self::new(
             status,
-            kind: "application/json; charset=utf-8",
-            body: json!({ "erreur": why }).to_string().into_bytes(),
-        }
+            "application/json; charset=utf-8",
+            json!({ "erreur": why }).to_string().into_bytes(),
+        )
     }
 
     fn file(kind: &'static str, path: &Path) -> Self {
         match fs::read(path) {
-            Ok(body) => Self {
-                status: "200 OK",
-                kind,
-                body,
-            },
+            Ok(body) => Self::new("200 OK", kind, body),
             Err(_) => Self::refused("404 Not Found", "introuvable"),
         }
     }
 }
 
 fn read_request(stream: &TcpStream) -> Option<Request> {
-    let mut lines = BufReader::new(stream).lines();
-    let first = lines.next()?.ok()?;
+    let mut reader = BufReader::new(stream);
+    let mut head: Vec<u8> = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") && !head.ends_with(b"\n\n") {
+        if head.len() >= HEAD_MAX {
+            return None;
+        }
+        let mut byte = [0_u8; 1];
+        reader.read_exact(&mut byte).ok()?;
+        head.extend_from_slice(&byte);
+    }
+    let head = String::from_utf8(head).ok()?;
+    let mut lines = head.lines();
+    let first = lines.next()?;
     let mut parts = first.split(' ');
     let method = parts.next()?.to_owned();
     let path = parts.next()?.split('?').next()?.to_owned();
-    let mut trusted = false;
-    for line in lines {
-        let line = line.ok()?;
-        if line.is_empty() {
-            break;
-        }
-        trusted |= line
-            .split(':')
-            .next()
-            .is_some_and(|name| name.trim().eq_ignore_ascii_case(TRUSTED));
+    let headers: Vec<(String, String)> = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    let trusted = headers.iter().any(|(name, _)| name == TRUSTED);
+    let length = headers
+        .iter()
+        .find(|(name, _)| name == "content-length")
+        .map_or(Some(0), |(_, length)| length.parse::<usize>().ok())?;
+    if length > crate::internet::COUNTER_MAX {
+        return None;
     }
+    let mut body = vec![0_u8; length];
+    reader.read_exact(&mut body).ok()?;
     Some(Request {
         method,
         path,
         trusted,
+        headers,
+        body,
     })
 }
 
@@ -957,9 +989,12 @@ fn answer(mut stream: TcpStream, shared: &Shared) {
         return;
     };
     let reply = route(&request, shared);
+    let counted = reply.counted.map_or_else(String::new, |status| {
+        format!("{}: {status}\r\n", crate::internet::COUNTER_STATUS)
+    });
     let head = format!(
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\n\
-         Connection: close\r\n\r\n",
+         {counted}Connection: close\r\n\r\n",
         reply.status,
         reply.kind,
         reply.body.len()
@@ -973,19 +1008,15 @@ fn route(request: &Request, shared: &Shared) -> Reply {
     let segments: Vec<&str> = request.path.trim_matches('/').split('/').collect();
     let known = |name: &str| lock(shared).entries.contains_key(name);
     match (request.method.as_str(), segments.as_slice()) {
-        ("GET", [""]) => Reply {
-            status: "200 OK",
-            kind: "text/html; charset=utf-8",
-            body: PAGE.as_bytes().to_vec(),
-        },
+        ("GET", [""]) => Reply::new(
+            "200 OK",
+            "text/html; charset=utf-8",
+            PAGE.as_bytes().to_vec(),
+        ),
         ("GET", ["etat"]) => Reply::json(&state(&mut lock(shared))),
         ("GET", ["police", name]) => FONTS.iter().find(|(font, _)| font == name).map_or_else(
             || Reply::refused("404 Not Found", "introuvable"),
-            |(_, bytes)| Reply {
-                status: "200 OK",
-                kind: "font/woff2",
-                body: bytes.to_vec(),
-            },
+            |(_, bytes)| Reply::new("200 OK", "font/woff2", bytes.to_vec()),
         ),
         ("GET", ["jaquette", name]) if known(name) => {
             let shelf = lock(shared);
@@ -1034,11 +1065,41 @@ fn route(request: &Request, shared: &Shared) -> Reply {
             };
             Reply::json(&json!({ "allume": shelf.link.is_some() }))
         }
+        ("POST", ["guichet"]) => {
+            let passage = lock(shared).passage.clone();
+            counter(passage.as_ref(), request)
+        }
         ("POST", ["arreter"]) => {
             stop(shared);
             Reply::json(&json!({ "fait": true }))
         }
         _ => Reply::refused("404 Not Found", "introuvable"),
+    }
+}
+
+/// Le guichet : une question d'un jeu dont la console n'a pas le secret part
+/// au relais de l'hôte, qui y met le secret qu'il garde, que l'interrupteur
+/// « internet » soit allumé ou non. La clé du relais reste ici.
+fn counter(passage: Option<&Passage>, request: &Request) -> Reply {
+    let Some(passage) = passage else {
+        return Reply::refused(
+            "409 Conflict",
+            "cette étagère n'a pas de guichet : le passage par internet n'est pas réglé \
+             (SOIREE_INTERNET et SOIREE_INTERNET_CLE)",
+        );
+    };
+    let headers: Vec<(&str, &str)> = request
+        .headers
+        .iter()
+        .filter(|(name, _)| name.starts_with(COUNTER_HEADERS))
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    match passage.counter(&headers, &request.body) {
+        Ok((status, body)) => Reply {
+            counted: Some(status),
+            ..Reply::new("200 OK", "application/octet-stream", body)
+        },
+        Err(why) => Reply::refused("502 Bad Gateway", &why),
     }
 }
 
@@ -1133,6 +1194,79 @@ mod tests {
         assert_eq!(game_port(8088), 8090);
         assert_eq!(door_port(8088), 8091);
         assert_eq!(shelf_url(8088), "http://localhost:8088/");
+    }
+
+    /// Une demande au guichet, avec l'en-tête de l'étagère ou sans.
+    fn post(trusted: &str) -> Request {
+        Request {
+            method: "POST".to_owned(),
+            path: "/guichet".to_owned(),
+            trusted: trusted == TRUSTED,
+            headers: vec![(
+                "x-guichet-adresse".to_owned(),
+                "https://juge.test/".to_owned(),
+            )],
+            body: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn only_this_computer_may_ask_the_counter() {
+        let shared: Shared = Arc::new(Mutex::new(Shelf {
+            games: std::env::temp_dir(),
+            port: PORT,
+            entries: BTreeMap::new(),
+            running: None,
+            launching: false,
+            notice: String::new(),
+            jobs: mpsc::channel().0,
+            busy: BTreeSet::new(),
+            again: BTreeMap::new(),
+            passage: None,
+            link: None,
+        }));
+        // Une page d'un autre site ne peut pas envoyer l'en-tête de l'étagère.
+        assert_eq!(route(&post(""), &shared).status, "403 Forbidden");
+        assert_eq!(route(&post(TRUSTED), &shared).status, "409 Conflict");
+    }
+
+    #[test]
+    fn without_a_passage_there_is_no_counter() {
+        let reply = counter(None, &post(TRUSTED));
+        assert_eq!(reply.status, "409 Conflict");
+        assert_eq!(reply.counted, None);
+        let said = String::from_utf8(reply.body).unwrap();
+        assert!(said.contains("SOIREE_INTERNET_CLE"), "{said}");
+    }
+
+    #[test]
+    fn a_request_is_read_with_its_body() {
+        let server = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        let sent = thread::spawn(move || {
+            let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            stream
+                .write_all(
+                    b"POST /guichet?x HTTP/1.1\r\nX-Soiree: 1\r\nX-Guichet-En-Tete: a: {B}\r\n\
+                      Content-Length: 4\r\n\r\nping",
+                )
+                .unwrap();
+            stream
+        });
+        let (stream, _) = server.accept().unwrap();
+        let request = read_request(&stream).unwrap();
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("POST", "/guichet")
+        );
+        assert!(request.trusted);
+        assert!(
+            request
+                .headers
+                .contains(&("x-guichet-en-tete".to_owned(), "a: {B}".to_owned()))
+        );
+        assert_eq!(request.body, b"ping");
+        drop(sent.join().unwrap());
     }
 
     #[test]

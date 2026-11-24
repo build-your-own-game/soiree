@@ -18,6 +18,9 @@ toml = "1"
 tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
 webpki-roots = "1"
+# Le guichet : l'étagère fait suivre au relais la question d'un jeu dont la
+# console n'a pas le secret (`src/internet.rs`, `Passage::counter`).
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Rejoue la machine d'un jeu en WebAssembly, sans rien installer à côté.
 wasmi = { version = "2", default-features = false, features = ["std", "stable", "validate", "auto-dispatch"] }
 

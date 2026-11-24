@@ -21,9 +21,16 @@
 //!
 //! Devant le relais, un serveur web donne le HTTPS et choisit la porte : les
 //! chemins sous `/_relais/` vont à celle de l'étagère, tout le reste à celle
-//! des téléphones (`deploy/Caddyfile`). Deux portes, et pas une : ce serveur
+//! des téléphones (`deploy/Caddyfile`).
+//!
+//! Par la porte de l'étagère passe aussi le guichet (`counter.rs`) : le
+//! relais y prête à un jeu les secrets que l'hôte lui a confiés
+//! (`RELAIS_SECRET_NOM`), pour qu'un ami qui reçoit chez lui n'ait pas besoin
+//! des clés. Deux portes, et pas une : ce serveur
 //! réemploie ses connexions d'une demande à l'autre, et une connexion jointe
 //! à un téléphone ne doit jamais recevoir une demande de l'étagère.
+
+mod counter;
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -197,7 +204,7 @@ impl Relay {
 /// Dit à un téléphone qu'il n'y a pas de soirée, et referme.
 async fn refuse(mut stream: TcpStream) {
     // Sa demande d'abord : une réponse écrite avant de l'avoir lue se perd.
-    let _: Option<String> = head(&mut stream).await;
+    let _: Option<String> = head(&mut stream, HEAD_MAX).await;
     let reply = format!(
         "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/html; charset=utf-8\r\n\
          Cache-Control: no-store\r\nRetry-After: 3\r\nConnection: close\r\n\
@@ -209,11 +216,11 @@ async fn refuse(mut stream: TcpStream) {
 }
 
 /// Lit l'en-tête d'une demande, jusqu'à sa ligne vide, sans rien lire de plus.
-async fn head(stream: &mut TcpStream) -> Option<String> {
+async fn head(stream: &mut TcpStream, max: usize) -> Option<String> {
     let read = async {
         let mut bytes: Vec<u8> = Vec::new();
         while !bytes.ends_with(b"\r\n\r\n") {
-            if bytes.len() >= HEAD_MAX {
+            if bytes.len() >= max {
                 return None;
             }
             bytes.push(stream.read_u8().await.ok()?);
@@ -230,6 +237,8 @@ enum Ask {
     Wire,
     /// Venir chercher le téléphone de ce numéro.
     Door(u64),
+    /// Poser une question au guichet.
+    Counter,
     /// La clé manque ou n'est pas la bonne.
     Stranger,
     /// Rien que le relais connaisse.
@@ -252,6 +261,7 @@ fn ask(head: &str, key: &str) -> Ask {
     }
     match (method, path) {
         (Some("GET"), Some(WIRE_PATH)) => Ask::Wire,
+        (Some("POST"), Some(counter::PATH)) => Ask::Counter,
         (Some("GET"), Some(path)) => path
             .strip_prefix(DOOR_PATH)
             .and_then(|id| id.parse().ok())
@@ -273,15 +283,52 @@ fn same(presented: &str, key: &str) -> bool {
 
 /// Une connexion arrive par la porte de l'étagère.
 async fn shelf_side(relay: Arc<Relay>, mut stream: TcpStream) {
-    let Some(head) = head(&mut stream).await else {
+    let Some(head) = head(&mut stream, counter::HEAD_MAX).await else {
         return;
     };
     match ask(&head, &relay.key) {
         Ask::Wire => wire(&relay, stream).await,
         Ask::Door(id) => door(&relay, stream, id).await,
+        Ask::Counter => counter_side(stream, &head).await,
         Ask::Stranger => answer(stream, "401 Unauthorized").await,
         Ask::Unknown => answer(stream, "404 Not Found").await,
     }
+}
+
+/// Une question au guichet : le relais y met les secrets, la pose, et rend
+/// la réponse. Le journal ne dit que l'hôte appelé et ce qu'il a répondu.
+async fn counter_side(mut stream: TcpStream, head: &str) {
+    let asked = match counter::read(head) {
+        Ok(call) => {
+            let mut body = vec![0_u8; call.length];
+            let read = tokio::time::timeout(PATIENCE, stream.read_exact(&mut body)).await;
+            if matches!(read, Ok(Ok(_))) {
+                tokio::task::spawn_blocking(move || counter::ask(&call, &body, &counter::secret))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(counter::Refusal {
+                            status: "500 Internal Server Error",
+                            why: "le guichet s'est arrêté".to_owned(),
+                        })
+                    })
+            } else {
+                return;
+            }
+        }
+        Err(refusal) => Err(refusal),
+    };
+    let asked = match asked {
+        Ok((host, status, body)) => {
+            println!("relais : guichet, {host} répond {status}");
+            Ok((status, body))
+        }
+        Err(refusal) => {
+            println!("relais : guichet, refusé ({})", refusal.why);
+            Err(refusal)
+        }
+    };
+    let _: std::io::Result<()> = stream.write_all(&counter::reply(asked)).await;
+    let _: std::io::Result<()> = stream.shutdown().await;
 }
 
 async fn answer(mut stream: TcpStream, status: &str) {
@@ -389,6 +436,15 @@ mod tests {
         assert_eq!(ask(&request("/_relais/porte/42", KEY), KEY), Ask::Door(42));
         assert_eq!(ask(&request("/_relais/porte/x", KEY), KEY), Ask::Unknown);
         assert_eq!(ask(&request("/t", KEY), KEY), Ask::Unknown);
+        let counter = format!(
+            "POST {} HTTP/1.1\r\nAuthorization: Bearer {KEY}\r\n\r\n",
+            counter::PATH
+        );
+        assert_eq!(ask(&counter, KEY), Ask::Counter);
+        // Le guichet ne se demande pas sans la clé.
+        let stranger = format!("POST {} HTTP/1.1\r\n\r\n", counter::PATH);
+        assert_eq!(ask(&stranger, KEY), Ask::Stranger);
+        assert_eq!(ask(&request(counter::PATH, KEY), KEY), Ask::Unknown);
     }
 
     #[test]

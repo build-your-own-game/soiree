@@ -125,7 +125,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cartouche"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "cartouche",
  "postcard",
@@ -757,9 +757,10 @@ dependencies = [
 
 [[package]]
 name = "relais"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -951,13 +952,14 @@ dependencies = [
 
 [[package]]
 name = "soiree"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_json",
  "tokio",
  "tokio-rustls",
  "toml",
+ "ureq",
  "wasmi",
  "webpki-roots",
 ]
@@ -1026,7 +1028,7 @@ checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
 name = "telecommande"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "axum",
  "cartouche",

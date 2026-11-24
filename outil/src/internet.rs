@@ -12,6 +12,11 @@
 //! L'hôte le règle par deux variables : `SOIREE_INTERNET`, l'adresse du
 //! relais (celle que les téléphones ouvrent), et `SOIREE_INTERNET_CLE`, la
 //! clé qu'il partage avec lui. Sans elles, l'étagère ne propose rien.
+//!
+//! Le même réglage ouvre le guichet ([`Passage::counter`]) : une question
+//! d'un jeu dont la console n'a pas le secret part au relais, qui y met le
+//! secret qu'il garde. Le guichet ne dépend pas de l'interrupteur : les
+//! téléphones peuvent rester sur le Wi-Fi.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +38,14 @@ const DOOR_VARIABLE: &str = "SOIREE_INTERNET_PORTE";
 const WIRE_PATH: &str = "/_relais/etagere";
 const DOOR_PATH: &str = "/_relais/porte/";
 const PROTOCOL: &str = "soiree-relais";
+/// Le guichet du relais, et l'en-tête où il met le statut du serveur appelé.
+const COUNTER_PATH: &str = "/_relais/guichet";
+pub const COUNTER_STATUS: &str = "x-guichet-statut";
+/// Ce qui revient du guichet pèse au plus tant d'octets (`cartouche::WEB_MAX`).
+pub const COUNTER_MAX: usize = 1_048_576;
+/// Le relais a tant de temps pour répondre : moins que la console n'en
+/// laisse à l'étagère (30 secondes), plus qu'il n'en laisse au serveur appelé.
+const COUNTER_PATIENCE: Duration = Duration::from_secs(28);
 const HEAD_MAX: usize = 8 * 1024;
 const PATIENCE: Duration = Duration::from_secs(10);
 /// Le relais dit quelque chose au moins tous les quarts de minute : un fil
@@ -119,6 +132,54 @@ impl Passage {
     /// L'adresse que les téléphones ouvrent.
     pub fn phones(&self) -> &str {
         &self.phones
+    }
+
+    /// Fait suivre une question au guichet du relais : `headers` sont les
+    /// `x-guichet-…` que la console a écrits, `body` ses octets. Rend le
+    /// statut du serveur appelé et ses octets. La clé ne revient jamais.
+    pub fn counter(&self, headers: &[(&str, &str)], body: &[u8]) -> Result<(u16, Vec<u8>), String> {
+        let scheme = if self.door.secure { "https" } else { "http" };
+        let url = format!(
+            "{scheme}://{}:{}{COUNTER_PATH}",
+            self.door.host, self.door.port
+        );
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(COUNTER_PATIENCE))
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let request = headers.iter().fold(
+            agent
+                .post(&url)
+                .header("authorization", format!("Bearer {}", self.key)),
+            |request, (name, value)| request.header(*name, *value),
+        );
+        let response = request
+            .send(body)
+            .map_err(|error| format!("le relais ne répond pas ({error})"))?;
+        let status = response.status().as_u16();
+        let counted = response
+            .headers()
+            .get(COUNTER_STATUS)
+            .and_then(|counted| counted.to_str().ok())
+            .and_then(|counted| counted.trim().parse::<u16>().ok())
+            .filter(|_| status == 200);
+        let bytes = response
+            .into_body()
+            .with_config()
+            .limit(u64::try_from(COUNTER_MAX).unwrap_or(u64::MAX))
+            .read_to_vec()
+            .map_err(|error| format!("la réponse du relais ne se lit pas ({error})"))?;
+        if let Some(counted) = counted {
+            return Ok((counted, bytes));
+        }
+        let said: String = String::from_utf8_lossy(&bytes)
+            .trim()
+            .chars()
+            .take(300)
+            .collect();
+        Err(format!("le relais refuse ({status}) : {said}"))
     }
 
     /// Rejoint le relais et lui amène les téléphones à ce port de cet
